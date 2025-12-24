@@ -1,0 +1,16 @@
+# Project:   hs-rustlib
+# File:      .cargo/config.toml
+# Purpose:   Cargo build configuration
+# Language:  TOML
+#
+# License:   LicenseRef-HyperSec-EULA
+# Copyright: (c) 2025 HyperSec
+
+[build]
+rustflags = ["-D", "warnings"]
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-D", "warnings", "-C", "target-cpu=native"]
+
+[alias]
+xtask = "run --package xtask --"

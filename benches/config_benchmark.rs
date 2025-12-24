@@ -1,0 +1,22 @@
+// Project:   hs-rustlib
+// File:      benches/config_benchmark.rs
+// Purpose:   Configuration loading benchmarks
+// Language:  Rust
+//
+// License:   LicenseRef-HyperSec-EULA
+// Copyright: (c) 2025 HyperSec
+
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+
+fn config_loading_benchmark(c: &mut Criterion) {
+    c.bench_function("config_new_default", |b| {
+        b.iter(|| {
+            // Benchmark creating a new config with defaults
+            let opts = hs_rustlib::config::ConfigOptions::default();
+            black_box(opts)
+        });
+    });
+}
+
+criterion_group!(benches, config_loading_benchmark);
+criterion_main!(benches);
