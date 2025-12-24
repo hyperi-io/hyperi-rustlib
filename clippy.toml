@@ -1,0 +1,19 @@
+# Project:   hs-rustlib
+# File:      clippy.toml
+# Purpose:   Clippy linter configuration
+# Language:  TOML
+#
+# License:   LicenseRef-HyperSec-EULA
+# Copyright: (c) 2025 HyperSec
+
+# Allow up to 7 function arguments
+too-many-arguments-threshold = 7
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 25
+
+# Allow longer type complexity
+type-complexity-threshold = 350
+
+# Minimum lines for a function to be considered too long
+too-many-lines-threshold = 150
