@@ -74,6 +74,9 @@ pub mod logger;
 #[cfg(feature = "metrics")]
 pub mod metrics;
 
+#[cfg(feature = "transport")]
+pub mod transport;
+
 // Re-export common types at crate root
 pub use env::Environment;
 
@@ -88,6 +91,12 @@ pub use logger::{LogFormat, LoggerError, LoggerOptions};
 
 #[cfg(feature = "metrics")]
 pub use metrics::{MetricsConfig, MetricsError, MetricsManager};
+
+#[cfg(feature = "transport")]
+pub use transport::{
+    CommitToken, Message, PayloadFormat, SendResult, Transport, TransportConfig, TransportError,
+    TransportResult, TransportType,
+};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
