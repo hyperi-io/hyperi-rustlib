@@ -32,8 +32,15 @@ http = ["reqwest", "reqwest-middleware", "reqwest-retry"]
 database = []
 cache = []
 
+# Transport features
+transport = ["tokio", "async-trait", "serde_json", "rmp-serde", "chrono"]
+transport-memory = ["transport"]
+transport-kafka = ["transport", "rdkafka"]
+transport-zenoh = ["transport", "zenoh"]
+transport-all = ["transport-memory", "transport-kafka", "transport-zenoh"]
+
 # Full feature set
-full = ["config", "logger", "metrics", "env", "runtime", "http", "database", "cache"]
+full = ["config", "logger", "metrics", "env", "runtime", "http", "database", "cache", "transport-all"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -73,6 +80,19 @@ reqwest-retry = { version = "0.6", optional = true }
 
 # Sync primitives
 once_cell = "1.19"
+
+# Async (for transport)
+async-trait = { version = "0.1", optional = true }
+chrono = { version = "0.4", optional = true }
+
+# MessagePack (for transport)
+rmp-serde = { version = "1.3", optional = true }
+
+# Kafka transport
+rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
+
+# Zenoh transport
+zenoh = { version = "1.1", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full", "test-util"] }
