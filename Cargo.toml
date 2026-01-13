@@ -13,7 +13,8 @@ edition = "2021"
 rust-version = "1.75"
 description = "Shared utility library for HyperSec Rust applications"
 license = "LicenseRef-HyperSec-EULA"
-repository = "https://github.com/hypersec/hs-rustlib"
+repository = "https://github.com/hypersec-io/hs-rustlib"
+publish = ["hypersec"]
 keywords = ["config", "logging", "metrics", "prometheus"]
 categories = ["development-tools"]
 
