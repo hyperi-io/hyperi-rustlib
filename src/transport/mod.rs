@@ -43,6 +43,7 @@
 //! transport.commit(&tokens).await?;
 //! ```
 
+mod detect;
 mod error;
 mod payload;
 mod traits;
@@ -54,6 +55,9 @@ pub use payload::{
     parse_payload_with_format, serialize_json, serialize_msgpack, serialize_payload, PayloadValue,
 };
 pub use types::PayloadFormat;
+
+// Re-export stateful format detection
+pub use detect::{detect_format, DetectedFormat, FormatDetector, FormatMode};
 
 #[cfg(feature = "transport-kafka")]
 pub mod kafka;
