@@ -14,3 +14,13 @@ rustflags = ["-D", "warnings", "-C", "target-cpu=native"]
 
 [alias]
 xtask = "run --package xtask --"
+
+# =============================================================================
+# HyperSec Private Cargo Registry (Artifactory)
+# =============================================================================
+#
+# The 'hypersec' registry hosts internal crates.
+# Authentication is handled via ~/.cargo/credentials.toml
+
+[registries.hypersec]
+index = "sparse+https://hypersec.jfrog.io/artifactory/api/cargo/hypersec-cargo-virtual/index/"
