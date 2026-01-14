@@ -8,14 +8,14 @@
 
 [package]
 name = "hs-rustlib"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Shared utility library for HyperSec Rust applications"
 license = "LicenseRef-HyperSec-EULA"
 repository = "https://github.com/hypersec-io/hs-rustlib"
 publish = ["hypersec"]
-keywords = ["config", "logging", "metrics", "prometheus"]
+keywords = ["config", "logging", "metrics", "prometheus", "clickhouse"]
 categories = ["development-tools"]
 
 [features]
@@ -33,6 +33,9 @@ http = ["reqwest", "reqwest-middleware", "reqwest-retry"]
 database = []
 cache = []
 
+# ClickHouse support
+clickhouse = ["dep:clickhouse-arrow", "dep:arrow", "dep:futures-util", "tokio"]
+
 # Transport features
 transport = ["tokio", "async-trait", "serde_json", "rmp-serde", "chrono"]
 transport-memory = ["transport"]
@@ -41,7 +44,7 @@ transport-zenoh = ["transport", "zenoh"]
 transport-all = ["transport-memory", "transport-kafka", "transport-zenoh"]
 
 # Full feature set
-full = ["config", "logger", "metrics", "env", "runtime", "http", "database", "cache", "transport-all"]
+full = ["config", "logger", "metrics", "env", "runtime", "http", "database", "cache", "transport-all", "clickhouse"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -94,6 +97,11 @@ rdkafka = { version = "0.36", features = ["cmake-build"], optional = true }
 
 # Zenoh transport
 zenoh = { version = "1.1", optional = true }
+
+# ClickHouse
+clickhouse-arrow = { git = "https://github.com/hypersec-io/clickhouse-arrow", branch = "main", optional = true }
+arrow = { version = "57", optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["std"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["full", "test-util"] }

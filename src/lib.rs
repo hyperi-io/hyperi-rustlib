@@ -77,6 +77,9 @@ pub mod metrics;
 #[cfg(feature = "transport")]
 pub mod transport;
 
+#[cfg(feature = "clickhouse")]
+pub mod clickhouse;
+
 // Re-export common types at crate root
 pub use env::Environment;
 
@@ -96,6 +99,12 @@ pub use metrics::{MetricsConfig, MetricsError, MetricsManager};
 pub use transport::{
     CommitToken, Message, PayloadFormat, SendResult, Transport, TransportConfig, TransportError,
     TransportResult, TransportType,
+};
+
+#[cfg(feature = "clickhouse")]
+pub use clickhouse::{
+    default_value_for_category, is_null_string, ArrowClickHouseClient, ClickHouseConfig,
+    ClickHouseError, ColumnInfo, ParsedType, SharedArrowClient, TableSchema, NULL_STRINGS,
 };
 
 /// Library version
