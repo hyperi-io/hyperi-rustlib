@@ -14,6 +14,9 @@ None - dependency audit and migration complete.
 
 ### Accomplished
 
+- Transferred repo from `catinspace-au/hs-rustlib` to `hypersec-io/hs-rustlib`
+  - Note: Derek had not migrated this repo to the org previously
+  - Required for CI to access org-level GitHub App secrets
 - Comprehensive dependency audit and migration:
   - **serde_yml → serde-yaml-ng**: Security fix (serde_yml has segfault issues, archived)
   - **queue-file → yaque**: Async-native, actively maintained disk queue
