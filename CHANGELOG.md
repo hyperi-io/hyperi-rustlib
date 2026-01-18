@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/hypersec-io/hs-rustlib/compare/v1.0.0...v1.0.1) (2026-01-18)
+
+
+### Bug Fixes
+
+* **ci:** configure Artifactory registry before build step ([cd645fc](https://github.com/hypersec-io/hs-rustlib/commit/cd645fcb16cf8d60ca8431fde65832fb804e8f16))
+
 # 1.0.0 (2026-01-18)
 
 
