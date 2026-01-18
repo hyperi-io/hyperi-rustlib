@@ -77,8 +77,17 @@ pub mod metrics;
 #[cfg(feature = "transport")]
 pub mod transport;
 
-#[cfg(feature = "clickhouse")]
-pub mod clickhouse;
+#[cfg(feature = "clickhouse-arrow")]
+pub mod clickhouse_arrow;
+
+#[cfg(feature = "http-server")]
+pub mod http_server;
+
+#[cfg(feature = "spool")]
+pub mod spool;
+
+#[cfg(feature = "tiered-sink")]
+pub mod tiered_sink;
 
 // Re-export common types at crate root
 pub use env::Environment;
@@ -101,10 +110,22 @@ pub use transport::{
     TransportResult, TransportType,
 };
 
-#[cfg(feature = "clickhouse")]
-pub use clickhouse::{
+#[cfg(feature = "clickhouse-arrow")]
+pub use clickhouse_arrow::{
     default_value_for_category, is_null_string, ArrowClickHouseClient, ClickHouseConfig,
     ClickHouseError, ColumnInfo, ParsedType, SharedArrowClient, TableSchema, NULL_STRINGS,
+};
+
+#[cfg(feature = "http-server")]
+pub use http_server::{HttpServer, HttpServerConfig, HttpServerError};
+
+#[cfg(feature = "spool")]
+pub use spool::{Spool, SpoolConfig, SpoolError};
+
+#[cfg(feature = "tiered-sink")]
+pub use tiered_sink::{
+    CircuitBreaker, CircuitState, CompressionCodec, DrainStrategy, OrderingMode, Sink, SinkError,
+    TieredSink, TieredSinkConfig, TieredSinkError,
 };
 
 /// Library version

@@ -1,5 +1,5 @@
 // Project:   hs-rustlib
-// File:      src/clickhouse/client.rs
+// File:      src/clickhouse_arrow/client.rs
 // Purpose:   ClickHouse Arrow client wrapper
 // Language:  Rust
 //

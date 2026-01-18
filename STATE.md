@@ -2,58 +2,53 @@
 
 **Project:** hs-rustlib
 **Purpose:** Shared Rust utility library for HyperSec applications (port of hs-lib/hs-golib)
-**Status:** MVP Complete - Phase 1 Done
+**Status:** MVP Complete - v0.4.0
 
 ---
 
-## Current Session (2025-12-24)
+## Current Session (2025-01-19)
 
 ### In Progress
 
-None - session complete, all work committed and pushed.
+None - dependency audit and migration complete.
 
 ### Accomplished
 
-- Created full project structure with Cargo.toml and feature flags
-- Implemented all P0 modules:
-  - `env` - Environment detection (Kubernetes, Docker, Container, BareMetal)
-  - `runtime` - Runtime paths with XDG/container awareness
-  - `config` - 7-layer configuration cascade using figment
-  - `logger` - Structured logging (JSON/text) with sensitive data masking
-  - `metrics` - Prometheus metrics with process/container awareness
-- Added 36 unit tests and 4 doc tests (all passing)
-- Fixed figment Env configuration for proper key handling
-- Added tracing-subscriber time feature for RFC3339 timestamps
-- Fixed all clippy pedantic warnings
-- Created initial commit and pushed to GitHub
+- Comprehensive dependency audit and migration:
+  - **serde_yml → serde-yaml-ng**: Security fix (serde_yml has segfault issues, archived)
+  - **queue-file → yaque**: Async-native, actively maintained disk queue
+  - **once_cell → std::sync::LazyLock**: Using stdlib (MSRV 1.80)
+- Updated spool module to use yaque's async API
+- Updated tiered_sink module to use yaque with proper borrow handling
+- Added new feature flags:
+  - `otel`, `otel-metrics`, `otel-tracing` - OpenTelemetry support
+  - `resilience` - tower-resilience for circuit breakers
+- Bumped version to 0.4.0, MSRV to 1.80
+- All tests passing (78 tests total)
+- Clippy clean
 
 ### Key Files Modified
 
-- `Cargo.toml` - Project configuration with 5 feature flags
-- `src/lib.rs` - Library entry point with feature-gated exports
-- `src/env.rs` - Environment detection (~200 lines)
-- `src/runtime.rs` - Runtime paths (~150 lines)
-- `src/config/mod.rs` - 7-layer config cascade (~420 lines)
-- `src/logger/mod.rs` - Structured logging (~290 lines)
-- `src/logger/masking.rs` - Sensitive data masking (~230 lines)
-- `src/metrics/mod.rs` - Prometheus metrics manager (~390 lines)
-- `src/metrics/process.rs` - Process metrics (~130 lines)
-- `src/metrics/container.rs` - Container/cgroup metrics (~210 lines)
+- `Cargo.toml` - Dependency updates, new features, MSRV bump
+- `src/spool/queue.rs` - Migrated from queue-file to yaque (async API)
+- `src/spool/error.rs` - Removed queue_file error type
+- `src/spool/mod.rs` - Updated documentation
+- `src/tiered_sink/tiered.rs` - Migrated to yaque with Arc<Mutex<Receiver>>
+- `src/tiered_sink/drainer.rs` - Updated drain loop for yaque's RecvGuard semantics
+- `tests/metrics_integration.rs` - Replaced once_cell with LazyLock
 
 ### Decisions Made
 
-- **figment over config-rs**: Better hierarchical config with env var splitting
-- **tracing over log**: Better structured logging, async-compatible
-- **metrics crate over prometheus**: Cleaner API, better Rust idioms
-- **Feature flags**: Each module optional to minimize dependency footprint
-- **Clippy allows**: Several pedantic lints disabled for MVP cleaner API
+- **yaque over queue-file**: queue-file unmaintained since March 2023; yaque is async-native
+- **serde-yaml-ng over serde_yml**: serde_yml has security issues and is archived
+- **std::sync::LazyLock over once_cell**: Stdlib solution available in Rust 1.80+
+- **Keep async-trait for Sink trait**: Public API stability, native async traits can wait
 
 ### Next Steps
 
-1. Add integration tests for metrics HTTP server
-2. Implement parity tests against hs-golib
-3. Add example applications
-4. Consider P2 features (HTTP client, database, cache)
+1. Consider adding tower-resilience based circuit breaker as alternative to custom
+2. Add OpenTelemetry integration tests
+3. Document new features in README
 
 ### Blockers/Issues
 
@@ -61,20 +56,18 @@ None.
 
 ### Dead Ends & Hypotheses
 
-- `lowercase(false)` on figment Env caused key case mismatch - removed, default lowercasing works
-- Initial sysinfo API used `refresh_process_specifics` - renamed to `refresh_processes_specifics` in newer version
+- yaque's RecvGuard borrows the Receiver, so all operations (decompress, send, commit) must happen within the lock scope
+- yaque doesn't have a built-in `try_clear`, so clear() is implemented by consuming all items
 
 ### Git State
 
 - **Branch:** main
-- **Upstream:** origin/main (up to date)
-- **Uncommitted:** clean
+- **Uncommitted:** Multiple files (dependency migration)
 - **Staged:** none
-- **Remote:** [hsderek/hs-rustlib](https://github.com/hsderek/hs-rustlib) (private)
 
 ### Session Context Summary
 
-Implemented complete MVP of hs-rustlib Rust shared library with config (7-layer cascade), logger (JSON/text with masking), metrics (Prometheus + process/container), environment detection, and runtime paths. All 40 tests passing, clippy clean. Pushed to private GitHub repo hsderek/hs-rustlib.
+Performed comprehensive dependency audit and migrated from deprecated/unmaintained libraries to modern alternatives. Migrated spool and tiered_sink modules from synchronous queue-file to async-native yaque. Replaced once_cell with std::sync::LazyLock. Added OpenTelemetry and tower-resilience as optional features. All 78 tests passing, clippy clean.
 
 ---
 
@@ -91,14 +84,20 @@ Modular library with feature-gated components. Each module can be enabled/disabl
 3. **config** - 7-layer configuration cascade
 4. **logger** - Structured logging with JSON/text formats
 5. **metrics** - Prometheus metrics with process/container awareness
+6. **spool** - Disk-backed async FIFO queue (yaque)
+7. **tiered-sink** - Resilient message delivery with disk spillover
+8. **transport** - Kafka/Zenoh/Memory transport abstraction
+9. **clickhouse-arrow** - ClickHouse client with Arrow protocol
 
 ### Tech Stack
 
-- **Language:** Rust 1.75+
+- **Language:** Rust 1.80+ (MSRV)
 - **Config:** figment (0.10)
 - **Logging:** tracing + tracing-subscriber (0.3)
-- **Metrics:** metrics + metrics-exporter-prometheus (0.23/0.15)
+- **Metrics:** metrics + metrics-exporter-prometheus
 - **Async:** tokio (1.0)
+- **Disk Queue:** yaque (0.6)
+- **YAML:** serde-yaml-ng (0.10)
 
 ---
 
@@ -120,17 +119,19 @@ CARGO_BUILD_JOBS=2 cargo clippy
 
 - [WBS.md](WBS.md) - Work breakdown structure
 - [DESIGN.md](DESIGN.md) - Architecture and API design
+- [TODO.md](TODO.md) - Task tracking
 
 **External Resources:**
 
 - [figment docs](https://docs.rs/figment)
 - [tracing docs](https://docs.rs/tracing)
 - [metrics docs](https://docs.rs/metrics)
+- [yaque docs](https://docs.rs/yaque)
 
 ---
 
-**Last Updated:** 2025-12-24
-**Version:** 0.1.0
+**Last Updated:** 2025-01-19
+**Version:** 0.4.0
 **Status:** MVP Complete
 
 ---

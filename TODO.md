@@ -10,13 +10,15 @@
 
 ### High Priority
 
-- [ ] Add integration tests for metrics HTTP server
-- [ ] Implement parity tests against hs-golib (config cascade behavior)
-- [ ] Add example application demonstrating all features
+- [x] Add integration tests for metrics HTTP server - 2025-01-19
+- [x] Implement parity tests against hs-pylib (config cascade behavior) - 2025-01-19
+- [x] Gap analysis hs-pylib - 2025-01-19 (see docs/GAP_ANALYSIS.md)
+- [x] Add example application demonstrating all features - 2025-01-19
+- [x] Python bindings discussion for clickhouse - 2025-01-19 (see docs/CLICKHOUSE_PYTHON_BINDINGS.md)
 
 ### Medium Priority
 
-- [ ] Add more comprehensive config cascade tests (YAML file loading)
+- [x] Add more comprehensive config cascade tests (YAML file loading) - 2025-01-19
 - [ ] Implement log output capturing for logger tests
 - [ ] Add metrics server graceful shutdown tests
 
@@ -39,6 +41,23 @@
 - [x] All 36 unit tests passing - 2025-12-24
 - [x] Clippy passing with pedantic warnings - 2025-12-24
 - [x] Initial commit and push to GitHub - 2025-12-24
+- [x] Transport module (Kafka/Zenoh/Memory abstraction) - 2025-01-XX
+- [x] ClickHouse client (Arrow protocol) - 2025-01-XX
+- [x] Integration tests for metrics server (14 tests) - 2025-01-19
+- [x] Parity tests for config cascade (19 tests) - 2025-01-19
+- [x] Parity tests for env detection (4 tests) - 2025-01-19
+- [x] Gap analysis vs hs-pylib documented - 2025-01-19
+- [x] Example applications (quickstart, full_demo) - 2025-01-19
+- [x] Python bindings proposal documented - 2025-01-19
+- [x] HTTP server module (axum-based) - 2025-01-19
+- [x] Spool module (disk-backed queue) - 2025-01-19
+- [x] TieredSink module (disk spillover with circuit breaker) - 2025-01-19
+- [x] Dependency audit and migration to safer/maintained alternatives - 2025-01-19
+  - Replaced `serde_yml` with `serde-yaml-ng` (security fix)
+  - Migrated `queue-file` to `yaque` (async-native, maintained)
+  - Replaced `once_cell` with `std::sync::LazyLock` (MSRV 1.80)
+  - Added OpenTelemetry support (`otel`, `otel-metrics`, `otel-tracing` features)
+  - Added `tower-resilience` for circuit breaker patterns
 
 ---
 
@@ -48,20 +67,34 @@ None currently.
 
 ---
 
-## Backlog (P2)
+## Backlog (P2 - from Gap Analysis)
 
+### Phase 1 - Core Enterprise
+
+- [ ] Database URL builders module (PostgreSQL, Redis)
 - [ ] HTTP client module with retry middleware (reqwest-retry)
-- [ ] Database URL builders module
-- [ ] Cache module with disk backing
+
+### Phase 2 - Enhanced Features
+
+- [ ] Cache module with disk/Redis backing
+- [ ] CLI framework helpers (wrap Clap)
+
+### Phase 3 - Advanced
+
+- [ ] Standalone Kafka client (if transport layer insufficient)
+- [ ] PII anonymizer (evaluate Rust libraries)
+- [ ] Python bindings for ClickHouse client (PyO3)
 
 ---
 
 ## Notes
 
 - Use `CARGO_BUILD_JOBS=2` for all cargo commands
-- Feature flags: `config`, `logger`, `metrics`, `runtime`, `env` (always on)
+- Feature flags: `config`, `logger`, `metrics`, `runtime`, `env`, `transport`, `clickhouse-arrow`, `http-server`, `spool`, `tiered-sink`
 - MVP complete - iterate based on usage feedback
+- See docs/GAP_ANALYSIS.md for detailed comparison with hs-pylib
+- See docs/CLICKHOUSE_PYTHON_BINDINGS.md for Python binding proposal
 
 ---
 
-**Last Updated:** 2025-12-24
+**Last Updated:** 2025-01-19
