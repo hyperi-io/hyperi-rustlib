@@ -1,16 +1,20 @@
 // Project:   hs-rustlib
-// File:      src/clickhouse/mod.rs
-// Purpose:   ClickHouse client abstraction with Arrow protocol support
+// File:      src/clickhouse_arrow/mod.rs
+// Purpose:   ClickHouse Arrow client - native Arrow protocol for efficient data transfer
 // Language:  Rust
 //
 // License:   LicenseRef-HyperSec-EULA
 // Copyright: (c) 2025 HyperSec
 
-//! ClickHouse client abstraction with native Arrow protocol support.
+//! ClickHouse Arrow client - native Arrow protocol for efficient data transfer.
 //!
 //! This module provides a high-level client for ClickHouse that uses the native
 //! Arrow protocol for efficient columnar data transfer. It wraps the
 //! `clickhouse-arrow` crate with a simplified API suitable for common use cases.
+//!
+//! **Note:** The module is named `clickhouse_arrow` to distinguish it from the
+//! upstream `clickhouse-arrow` crate dependency. This module provides the
+//! HyperSec-specific wrapper API.
 //!
 //! ## Features
 //!
@@ -22,7 +26,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hs_rustlib::clickhouse::{ArrowClickHouseClient, ClickHouseConfig};
+//! use hs_rustlib::clickhouse_arrow::{ArrowClickHouseClient, ClickHouseConfig};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = ClickHouseConfig {

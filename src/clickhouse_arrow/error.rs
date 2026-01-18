@@ -1,5 +1,5 @@
 // Project:   hs-rustlib
-// File:      src/clickhouse/error.rs
+// File:      src/clickhouse_arrow/error.rs
 // Purpose:   ClickHouse-specific error types
 // Language:  Rust
 //

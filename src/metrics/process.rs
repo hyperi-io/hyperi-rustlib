@@ -28,7 +28,7 @@ impl ProcessMetrics {
     pub fn new(namespace: &str) -> Self {
         let pid = sysinfo::Pid::from_u32(std::process::id());
         let system = System::new_with_specifics(
-            RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
+            RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
         );
 
         let start_time = SystemTime::now()

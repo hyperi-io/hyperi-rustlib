@@ -1,5 +1,5 @@
 // Project:   hs-rustlib
-// File:      src/clickhouse/types.rs
+// File:      src/clickhouse_arrow/types.rs
 // Purpose:   ClickHouse type parsing (runtime, not compiled)
 // Language:  Rust
 //

@@ -1,5 +1,5 @@
 // Project:   hs-rustlib
-// File:      src/clickhouse/config.rs
+// File:      src/clickhouse_arrow/config.rs
 // Purpose:   ClickHouse connection configuration
 // Language:  Rust
 //
