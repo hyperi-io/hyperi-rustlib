@@ -30,6 +30,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   CARGO_BUILD_JOBS: 2
+  CARGO_REGISTRIES_HYPERSEC_TOKEN: "Bearer ${{ secrets.CARGO_REGISTRY_TOKEN }}"
 
 jobs:
   release:
@@ -52,10 +53,13 @@ jobs:
           echo '' >> ~/.cargo/config.toml
           echo '[registries.hypersec]' >> ~/.cargo/config.toml
           echo 'index = "sparse+https://hypersec.jfrog.io/artifactory/api/cargo/hypersec-cargo-virtual/index/"' >> ~/.cargo/config.toml
-          echo '[registries.hypersec]' > ~/.cargo/credentials.toml
-          echo "token = \"Bearer ${{ secrets.CARGO_REGISTRY_TOKEN }}\"" >> ~/.cargo/credentials.toml
           echo "=== config.toml ===" && cat ~/.cargo/config.toml
-          echo "=== credentials.toml (header only) ===" && head -1 ~/.cargo/credentials.toml
+          # Test if token is set (don't print it)
+          if [ -n "$CARGO_REGISTRIES_HYPERSEC_TOKEN" ]; then
+            echo "Token is set (length: ${#CARGO_REGISTRIES_HYPERSEC_TOKEN})"
+          else
+            echo "WARNING: Token is NOT set!"
+          fi
 
       - name: Cache cargo registry
         uses: actions/cache@v4
