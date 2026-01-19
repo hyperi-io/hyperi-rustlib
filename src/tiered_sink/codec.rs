@@ -18,27 +18,23 @@ use std::io;
 /// - `Snappy`: Very fast, Kafka-native - avoids transcode if sink uses Snappy
 /// - `Zstd`: Best compression ratio, higher CPU - good for constrained disk
 /// - `None`: No compression - maximum speed when CPU is bottleneck
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CompressionCodec {
     /// No compression - fastest, no CPU overhead
     None,
     /// LZ4 - fast compression, low CPU (default)
+    ///
+    /// LZ4 is the best default for hot-path fallback:
+    /// - Very low CPU overhead
+    /// - Still provides meaningful compression
+    /// - Pure Rust implementation (lz4_flex)
+    #[default]
     Lz4,
     /// Snappy - very fast, Kafka-native format
     Snappy,
     /// Zstd with configurable level (1-22)
     Zstd { level: i32 },
-}
-
-impl Default for CompressionCodec {
-    fn default() -> Self {
-        // LZ4 is the best default for hot-path fallback:
-        // - Very low CPU overhead
-        // - Still provides meaningful compression
-        // - Pure Rust implementation (lz4_flex)
-        Self::Lz4
-    }
 }
 
 impl CompressionCodec {

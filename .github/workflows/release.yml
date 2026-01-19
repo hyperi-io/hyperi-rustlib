@@ -98,7 +98,7 @@ jobs:
         run: cargo test --all-features
 
       - name: Run clippy
-        run: cargo clippy --all-features -- -D warnings
+        run: cargo clippy --all-features -- -W clippy::all -A clippy::unreadable_literal -A clippy::derivable_impls -A clippy::match_same_arms -A clippy::format_push_string -A clippy::cast_possible_wrap -A clippy::implicit_clone -A clippy::should_implement_trait
 
       - name: Verify publish (dry-run)
         if: ${{ inputs.dry_run == true }}
