@@ -17,6 +17,7 @@ repository = "https://github.com/hypersec-io/hs-rustlib"
 publish = ["hypersec"]
 keywords = ["config", "logging", "metrics", "prometheus", "clickhouse", "arrow", "opentelemetry"]
 categories = ["development-tools"]
+exclude = [".claude/", ".github/", "ci/", "ai/", "docs/", "examples/"]
 
 [features]
 default = ["config", "logger", "metrics", "env", "runtime"]
