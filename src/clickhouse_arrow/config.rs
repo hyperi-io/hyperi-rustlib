@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 /// ## Example
 ///
 /// ```rust
-/// use hs_rustlib::clickhouse::ClickHouseConfig;
+/// use hs_rustlib::clickhouse_arrow::ClickHouseConfig;
 ///
 /// let config = ClickHouseConfig {
 ///     hosts: vec!["clickhouse-1:9000".to_string(), "clickhouse-2:9000".to_string()],
