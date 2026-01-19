@@ -34,7 +34,7 @@ pub type ArrowClient = Client<ArrowFormat>;
 /// ## Example
 ///
 /// ```rust,no_run
-/// use hs_rustlib::clickhouse::{ArrowClickHouseClient, ClickHouseConfig};
+/// use hs_rustlib::clickhouse_arrow::{ArrowClickHouseClient, ClickHouseConfig};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = ClickHouseConfig::new("localhost:9000", "default");
