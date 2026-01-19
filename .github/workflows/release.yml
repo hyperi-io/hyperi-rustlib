@@ -47,7 +47,10 @@ jobs:
       - name: Configure Artifactory registry
         run: |
           mkdir -p ~/.cargo
-          echo '[registries.hypersec]' > ~/.cargo/config.toml
+          echo '[registry]' > ~/.cargo/config.toml
+          echo 'global-credential-providers = ["cargo:token"]' >> ~/.cargo/config.toml
+          echo '' >> ~/.cargo/config.toml
+          echo '[registries.hypersec]' >> ~/.cargo/config.toml
           echo 'index = "sparse+https://hypersec.jfrog.io/artifactory/api/cargo/hypersec-cargo-virtual/index/"' >> ~/.cargo/config.toml
           echo '[registries.hypersec]' > ~/.cargo/credentials.toml
           echo "token = \"Bearer ${{ secrets.CARGO_REGISTRY_TOKEN }}\"" >> ~/.cargo/credentials.toml
