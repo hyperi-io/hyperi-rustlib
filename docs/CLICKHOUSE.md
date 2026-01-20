@@ -283,7 +283,7 @@ Arrow DataType to ClickHouse type name (for schema introspection):
 | FixedSizeBinary(4) | IPv4 |
 | FixedSizeBinary(n) | FixedString(n) |
 | List(inner) | Array(inner) |
-| Timestamp(_, _) | DateTime64(3) |
+| Timestamp(_,_) | DateTime64(3) |
 | Time32(_) | DateTime |
 | Time64(_) | DateTime64(6) |
 
@@ -310,12 +310,14 @@ For applications needing type parsing:
 3. **Keep coercion logic local** to the ingestion pipeline
 
 The `clickhouse-arrow` crate (our fork at hypersec-io) handles:
+
 - Native Arrow protocol
 - Connection management
 - Schema introspection (Arrow format)
 - Efficient batch insert/query
 
 Applications add their own:
+
 - Type parsing for coercion
 - Null handling policies
 - Default value strategies
