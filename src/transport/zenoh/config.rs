@@ -164,10 +164,11 @@ impl ZenohConfig {
     /// Convert to JSON5 configuration string for Zenoh.
     #[must_use]
     pub fn to_json5(&self) -> String {
+        use std::fmt::Write;
         let mut config = String::from("{\n");
 
         // Mode
-        config.push_str(&format!("  mode: \"{}\",\n", self.mode));
+        let _ = writeln!(config, "  mode: \"{}\",", self.mode);
 
         // Connect endpoints
         if !self.connect.is_empty() {
@@ -176,7 +177,7 @@ impl ZenohConfig {
                 if i > 0 {
                     config.push_str(", ");
                 }
-                config.push_str(&format!("\"{ep}\""));
+                let _ = write!(config, "\"{ep}\"");
             }
             config.push_str("] },\n");
         }
@@ -188,7 +189,7 @@ impl ZenohConfig {
                 if i > 0 {
                     config.push_str(", ");
                 }
-                config.push_str(&format!("\"{ep}\""));
+                let _ = write!(config, "\"{ep}\"");
             }
             config.push_str("] },\n");
         }
