@@ -77,9 +77,6 @@ pub mod metrics;
 #[cfg(feature = "transport")]
 pub mod transport;
 
-#[cfg(feature = "clickhouse-arrow")]
-pub mod clickhouse_arrow;
-
 #[cfg(feature = "http-server")]
 pub mod http_server;
 
@@ -88,6 +85,9 @@ pub mod spool;
 
 #[cfg(feature = "tiered-sink")]
 pub mod tiered_sink;
+
+#[cfg(feature = "license")]
+pub mod license;
 
 // Re-export common types at crate root
 pub use env::Environment;
@@ -110,12 +110,6 @@ pub use transport::{
     TransportResult, TransportType,
 };
 
-#[cfg(feature = "clickhouse-arrow")]
-pub use clickhouse_arrow::{
-    default_value_for_category, is_null_string, ArrowClickHouseClient, ClickHouseConfig,
-    ClickHouseError, ColumnInfo, ParsedType, SharedArrowClient, TableSchema, NULL_STRINGS,
-};
-
 #[cfg(feature = "http-server")]
 pub use http_server::{HttpServer, HttpServerConfig, HttpServerError};
 
@@ -127,6 +121,9 @@ pub use tiered_sink::{
     CircuitBreaker, CircuitState, CompressionCodec, DrainStrategy, OrderingMode, Sink, SinkError,
     TieredSink, TieredSinkConfig, TieredSinkError,
 };
+
+#[cfg(feature = "license")]
+pub use license::{License, LicenseError, LicenseOptions, LicenseSettings, LicenseSource};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
