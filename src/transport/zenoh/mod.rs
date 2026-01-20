@@ -110,7 +110,8 @@ impl ZenohTransport {
                         key: Some(key_arc.clone()),
                         payload,
                         token: ZenohToken::new(key_arc.clone(), timestamp, seq),
-                        timestamp_ms: timestamp.map(|t| (t / 1_000_000) as i64), // Convert to ms
+                        timestamp_ms: timestamp
+                            .map(|t| i64::try_from(t / 1_000_000).unwrap_or(i64::MAX)),
                         format,
                     };
 

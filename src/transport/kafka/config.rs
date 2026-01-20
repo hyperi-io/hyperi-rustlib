@@ -160,7 +160,7 @@ fn default_heartbeat_interval() -> u32 {
 }
 
 fn default_max_poll_interval() -> u32 {
-    300000
+    300_000
 }
 
 fn default_fetch_min_bytes() -> i32 {

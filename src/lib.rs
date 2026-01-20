@@ -58,6 +58,9 @@
 #![allow(clippy::redundant_closure_for_method_calls)] // Clearer with explicit closure
 #![allow(clippy::result_large_err)] // figment::Error is large by design
 #![allow(clippy::needless_pass_by_value)] // API cleaner with owned values
+// Test code allowances - unwrap is acceptable in tests for cleaner assertions
+#![cfg_attr(test, allow(clippy::unwrap_used))]
+#![cfg_attr(test, allow(clippy::field_reassign_with_default))]
 
 // Core modules (always available)
 pub mod env;

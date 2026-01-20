@@ -81,7 +81,7 @@ pub enum FormatMode {
 impl FormatMode {
     /// Parse from string (for config).
     #[must_use]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "auto" => Some(FormatMode::Auto),
             "json" => Some(FormatMode::ForceJson),
@@ -242,16 +242,9 @@ fn detect_format_bytes(payload: &[u8]) -> Option<DetectedFormat> {
 
     // Check for MessagePack before considering whitespace
     // (MessagePack never starts with whitespace-like bytes)
-    match first_byte {
-        // MessagePack fixmap (0x80-0x8F)
-        0x80..=0x8F => return Some(DetectedFormat::MessagePack),
-        // MessagePack map16 (0xDE) or map32 (0xDF)
-        0xDE | 0xDF => return Some(DetectedFormat::MessagePack),
-        // MessagePack fixarray (0x90-0x9F)
-        0x90..=0x9F => return Some(DetectedFormat::MessagePack),
-        // MessagePack array16 (0xDC) or array32 (0xDD)
-        0xDC | 0xDD => return Some(DetectedFormat::MessagePack),
-        _ => {}
+    // MessagePack: fixmap (0x80-0x8F), map16/32 (0xDE/0xDF), fixarray (0x90-0x9F), array16/32 (0xDC/0xDD)
+    if matches!(first_byte, 0x80..=0x8F | 0xDE | 0xDF | 0x90..=0x9F | 0xDC | 0xDD) {
+        return Some(DetectedFormat::MessagePack);
     }
 
     // Slow path: skip leading whitespace for JSON (rare case)
@@ -436,18 +429,18 @@ mod tests {
 
     #[test]
     fn test_format_mode_from_str() {
-        assert_eq!(FormatMode::from_str("auto"), Some(FormatMode::Auto));
-        assert_eq!(FormatMode::from_str("AUTO"), Some(FormatMode::Auto));
-        assert_eq!(FormatMode::from_str("json"), Some(FormatMode::ForceJson));
-        assert_eq!(FormatMode::from_str("JSON"), Some(FormatMode::ForceJson));
+        assert_eq!(FormatMode::parse("auto"), Some(FormatMode::Auto));
+        assert_eq!(FormatMode::parse("AUTO"), Some(FormatMode::Auto));
+        assert_eq!(FormatMode::parse("json"), Some(FormatMode::ForceJson));
+        assert_eq!(FormatMode::parse("JSON"), Some(FormatMode::ForceJson));
         assert_eq!(
-            FormatMode::from_str("messagepack"),
+            FormatMode::parse("messagepack"),
             Some(FormatMode::ForceMessagePack)
         );
         assert_eq!(
-            FormatMode::from_str("msgpack"),
+            FormatMode::parse("msgpack"),
             Some(FormatMode::ForceMessagePack)
         );
-        assert_eq!(FormatMode::from_str("invalid"), None);
+        assert_eq!(FormatMode::parse("invalid"), None);
     }
 }

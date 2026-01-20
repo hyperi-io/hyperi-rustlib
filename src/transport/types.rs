@@ -59,19 +59,12 @@ impl PayloadFormat {
             return Self::Json; // Default to JSON for empty
         }
 
-        match payload[0] {
-            // JSON object or array
-            b'{' | b'[' => Self::Json,
-            // MsgPack fixmap (0x80-0x8f)
-            0x80..=0x8f => Self::MsgPack,
-            // MsgPack map16 or map32
-            0xde | 0xdf => Self::MsgPack,
-            // MsgPack fixarray (0x90-0x9f)
-            0x90..=0x9f => Self::MsgPack,
-            // MsgPack array16 or array32
-            0xdc | 0xdd => Self::MsgPack,
-            // Default to JSON (handles whitespace-prefixed JSON)
-            _ => Self::Json,
+        // MsgPack: fixmap (0x80-0x8f), map16/32 (0xde/0xdf), fixarray (0x90-0x9f), array16/32 (0xdc/0xdd)
+        if matches!(payload[0], 0x80..=0x8f | 0xde | 0xdf | 0x90..=0x9f | 0xdc | 0xdd) {
+            Self::MsgPack
+        } else {
+            // JSON object/array or whitespace-prefixed JSON - default to JSON
+            Self::Json
         }
     }
 }
