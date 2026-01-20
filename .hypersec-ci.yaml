@@ -8,8 +8,8 @@
 #   3. ci/defaults.yaml (CI defaults)
 
 # Project language (auto-detected if not specified)
-# Values: python, typescript, golang, none
-language: none
+# Values: python, typescript, golang, rust, none
+language: rust
 
 # Runner settings (override GH_RUNNER_* variables)
 # runners:
