@@ -26,3 +26,11 @@ coverage/
 # Rust
 target/
 Cargo.lock
+**/*.rs.bk
+*.pdb
+*.profraw
+*.profdata
+coverage-html/
+coverage.lcov
+.cargo/
+!.cargo/config.toml
