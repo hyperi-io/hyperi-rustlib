@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/hypersec-io/hs-rustlib/compare/v1.2.1...v1.2.2) (2026-01-20)
+
+
+### Bug Fixes
+
+* resolve additional clippy lints for CI --all-targets ([3161911](https://github.com/hypersec-io/hs-rustlib/commit/316191110b30d9ccd66da350b76578e8f5983990))
+
 ## [1.2.1](https://github.com/hypersec-io/hs-rustlib/compare/v1.2.0...v1.2.1) (2026-01-20)
 
 
