@@ -109,9 +109,7 @@ impl LicenseSettings {
     /// Check if this is an unlimited license (enterprise tier).
     #[must_use]
     pub fn is_unlimited(&self) -> bool {
-        self.max_cores.is_none()
-            && self.max_throughput_mbps.is_none()
-            && self.max_nodes.is_none()
+        self.max_cores.is_none() && self.max_throughput_mbps.is_none() && self.max_nodes.is_none()
     }
 
     /// Get the effective core limit, with a fallback.
@@ -170,9 +168,7 @@ fn chrono_lite_now() -> String {
 
     let (month, day) = days_to_month_day(remaining_days, is_leap_year(year));
 
-    format!(
-        "{year:04}-{month:02}-{day:02}T{hours:02}:{mins:02}:{secs:02}Z"
-    )
+    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{mins:02}:{secs:02}Z")
 }
 
 fn is_leap_year(year: i32) -> bool {

@@ -119,10 +119,7 @@ async fn test_01_server_start_and_stop() {
     );
 
     // Stop server
-    manager
-        .stop_server()
-        .await
-        .expect("failed to stop server");
+    manager.stop_server().await.expect("failed to stop server");
 
     // Give server time to shut down
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -199,10 +196,7 @@ async fn test_04_metrics_endpoint() {
     // Fetch metrics
     let (status, body) = http_get(&addr, "/metrics").await;
 
-    assert!(
-        status.contains("200 OK"),
-        "expected 200 OK, got: {status}"
-    );
+    assert!(status.contains("200 OK"), "expected 200 OK, got: {status}");
 
     // Verify counter is present
     assert!(

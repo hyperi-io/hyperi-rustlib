@@ -230,7 +230,10 @@ mod tests {
         let config = TieredSinkConfig::new("/tmp/test.queue");
         assert_eq!(config.send_timeout_ms, 1000);
         assert_eq!(config.compression, CompressionCodec::Lz4);
-        assert!(matches!(config.drain_strategy, DrainStrategy::Adaptive { .. }));
+        assert!(matches!(
+            config.drain_strategy,
+            DrainStrategy::Adaptive { .. }
+        ));
         assert_eq!(config.ordering, OrderingMode::Interleaved);
         assert_eq!(config.circuit_failure_threshold, 5);
     }

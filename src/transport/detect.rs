@@ -278,7 +278,10 @@ mod tests {
 
     #[test]
     fn test_detect_json_object() {
-        assert_eq!(detect_format(b"{\"key\": \"value\"}"), Some(DetectedFormat::Json));
+        assert_eq!(
+            detect_format(b"{\"key\": \"value\"}"),
+            Some(DetectedFormat::Json)
+        );
     }
 
     #[test]

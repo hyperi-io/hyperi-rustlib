@@ -96,11 +96,12 @@ pub fn encrypt(plaintext: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, LicenseError
     rand::thread_rng().fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
-    let ciphertext = cipher
-        .encrypt(nonce, plaintext)
-        .map_err(|e| LicenseError::EncryptionFailed {
-            reason: format!("encryption failed: {e}"),
-        })?;
+    let ciphertext =
+        cipher
+            .encrypt(nonce, plaintext)
+            .map_err(|e| LicenseError::EncryptionFailed {
+                reason: format!("encryption failed: {e}"),
+            })?;
 
     // Prepend nonce to ciphertext
     let mut result = Vec::with_capacity(NONCE_SIZE + ciphertext.len());

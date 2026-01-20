@@ -47,7 +47,9 @@ fn get_public_key_bytes() -> [u8; 32] {
 
     // Decode base64 and extract the 32-byte key
     // Ed25519 public keys in SPKI format have a 12-byte header
-    let decoded = BASE64.decode(key_b64_str.as_bytes()).unwrap_or_else(|_| vec![0u8; 44]);
+    let decoded = BASE64
+        .decode(key_b64_str.as_bytes())
+        .unwrap_or_else(|_| vec![0u8; 44]);
 
     if decoded.len() >= 44 {
         // SPKI format: skip 12-byte header
@@ -88,15 +90,16 @@ pub(crate) fn verify_signature(settings: &LicenseSettings) -> Result<(), License
     };
 
     // Decode the signature
-    let sig_bytes = BASE64.decode(sig_b64).map_err(|e| LicenseError::SignatureInvalid {
-        reason: format!("invalid signature encoding: {e}"),
-    })?;
+    let sig_bytes = BASE64
+        .decode(sig_b64)
+        .map_err(|e| LicenseError::SignatureInvalid {
+            reason: format!("invalid signature encoding: {e}"),
+        })?;
 
-    let signature = Signature::from_slice(&sig_bytes).map_err(|e| {
-        LicenseError::SignatureInvalid {
+    let signature =
+        Signature::from_slice(&sig_bytes).map_err(|e| LicenseError::SignatureInvalid {
             reason: format!("invalid signature format: {e}"),
-        }
-    })?;
+        })?;
 
     // Get the public key
     let pk_bytes = get_public_key_bytes();

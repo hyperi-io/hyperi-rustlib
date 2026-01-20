@@ -214,14 +214,14 @@ impl Default for KafkaConfig {
 /// These match the Python `hs_pylib.kafka.config.PRODUCER_DEFAULTS`.
 /// Configured for **at-least-once** delivery (not exactly-once).
 pub const PRODUCER_DEFAULTS: &[(&str, &str)] = &[
-    ("acks", "all"),                    // Wait for all replicas (at-least-once)
-    ("retries", "5"),                   // Retry on transient failures
-    ("retry.backoff.ms", "100"),        // Backoff between retries
-    ("delivery.timeout.ms", "120000"),  // 2 minutes max delivery time
-    ("request.timeout.ms", "30000"),    // 30 seconds per request
-    ("linger.ms", "5"),                 // Small delay for batching
-    ("compression.type", "lz4"),        // Fast compression
-    ("batch.size", "10000"),            // 10K batch size (HyperSec default)
+    ("acks", "all"),                   // Wait for all replicas (at-least-once)
+    ("retries", "5"),                  // Retry on transient failures
+    ("retry.backoff.ms", "100"),       // Backoff between retries
+    ("delivery.timeout.ms", "120000"), // 2 minutes max delivery time
+    ("request.timeout.ms", "30000"),   // 30 seconds per request
+    ("linger.ms", "5"),                // Small delay for batching
+    ("compression.type", "lz4"),       // Fast compression
+    ("batch.size", "10000"),           // 10K batch size (HyperSec default)
 ];
 
 impl KafkaConfig {
@@ -238,12 +238,7 @@ impl KafkaConfig {
 
     /// Create a config with SASL/SCRAM authentication.
     #[must_use]
-    pub fn with_scram(
-        mut self,
-        mechanism: &str,
-        username: &str,
-        password: &str,
-    ) -> Self {
+    pub fn with_scram(mut self, mechanism: &str, username: &str, password: &str) -> Self {
         self.security_protocol = "sasl_plaintext".to_string();
         self.sasl_mechanism = Some(mechanism.to_string());
         self.sasl_username = Some(username.to_string());
@@ -253,12 +248,7 @@ impl KafkaConfig {
 
     /// Create a config with SASL/SSL authentication.
     #[must_use]
-    pub fn with_scram_ssl(
-        mut self,
-        mechanism: &str,
-        username: &str,
-        password: &str,
-    ) -> Self {
+    pub fn with_scram_ssl(mut self, mechanism: &str, username: &str, password: &str) -> Self {
         self.security_protocol = "sasl_ssl".to_string();
         self.sasl_mechanism = Some(mechanism.to_string());
         self.sasl_username = Some(username.to_string());

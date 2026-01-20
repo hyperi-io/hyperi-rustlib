@@ -91,7 +91,12 @@ pub struct Message<T: CommitToken> {
 impl<T: CommitToken> Message<T> {
     /// Create a new message with auto-detected format.
     #[must_use]
-    pub fn new(key: Option<Arc<str>>, payload: Vec<u8>, token: T, timestamp_ms: Option<i64>) -> Self {
+    pub fn new(
+        key: Option<Arc<str>>,
+        payload: Vec<u8>,
+        token: T,
+        timestamp_ms: Option<i64>,
+    ) -> Self {
         let format = PayloadFormat::detect(&payload);
         Self {
             key,
@@ -208,7 +213,10 @@ mod tests {
 
     #[test]
     fn detect_msgpack_map16() {
-        assert_eq!(PayloadFormat::detect(&[0xde, 0x00, 0x10]), PayloadFormat::MsgPack);
+        assert_eq!(
+            PayloadFormat::detect(&[0xde, 0x00, 0x10]),
+            PayloadFormat::MsgPack
+        );
     }
 
     #[test]

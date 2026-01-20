@@ -9,8 +9,8 @@
 //! TieredSink implementation.
 
 use crate::tiered_sink::{
-    drainer, CircuitBreaker, CircuitState, CompressionCodec, OrderingMode, Result, Sink,
-    SinkError, TieredSinkConfig, TieredSinkError,
+    drainer, CircuitBreaker, CircuitState, CompressionCodec, OrderingMode, Result, Sink, SinkError,
+    TieredSinkConfig, TieredSinkError,
 };
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;

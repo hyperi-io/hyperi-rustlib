@@ -18,7 +18,7 @@ use yaque::Receiver;
 /// Drainer state and rate tracking.
 pub struct Drainer {
     strategy: DrainStrategy,
-    current_rate: f64,    // messages per second
+    current_rate: f64, // messages per second
     success_count: u64,
     failure_count: u64,
     last_adjustment: Instant,

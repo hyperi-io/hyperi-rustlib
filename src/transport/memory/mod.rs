@@ -197,9 +197,7 @@ impl Transport for MemoryTransport {
         match self.sender.try_send(msg) {
             Ok(()) => SendResult::Ok,
             Err(mpsc::error::TrySendError::Full(_)) => SendResult::Backpressured,
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                SendResult::Fatal(TransportError::Closed)
-            }
+            Err(mpsc::error::TrySendError::Closed(_)) => SendResult::Fatal(TransportError::Closed),
         }
     }
 
@@ -306,8 +304,14 @@ mod tests {
         let transport = MemoryTransport::new(&config);
 
         // Inject test messages
-        transport.inject(Some("key1"), b"msg1".to_vec()).await.unwrap();
-        transport.inject(Some("key2"), b"msg2".to_vec()).await.unwrap();
+        transport
+            .inject(Some("key1"), b"msg1".to_vec())
+            .await
+            .unwrap();
+        transport
+            .inject(Some("key2"), b"msg2".to_vec())
+            .await
+            .unwrap();
 
         // Receive them
         let messages = transport.recv(10).await.unwrap();
