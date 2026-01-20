@@ -2,75 +2,89 @@
 
 **Project:** hs-rustlib
 **Purpose:** Shared Rust utility library for HyperSec applications (port of hs-lib/hs-golib)
-**Status:** MVP Complete - v0.4.0
+**Status:** v1.0.8 published, license module added
 
 ---
 
-## Current Session (2025-01-19)
+## Current Session (2026-01-19)
 
 ### In Progress
 
-None - dependency audit and migration complete.
+None - license module implementation complete, ready for commit.
 
 ### Accomplished
 
-- Transferred repo from `catinspace-au/hs-rustlib` to `hypersec-io/hs-rustlib`
-  - Note: Derek had not migrated this repo to the org previously
-  - Required for CI to access org-level GitHub App secrets
-- Comprehensive dependency audit and migration:
-  - **serde_yml → serde-yaml-ng**: Security fix (serde_yml has segfault issues, archived)
-  - **queue-file → yaque**: Async-native, actively maintained disk queue
-  - **once_cell → std::sync::LazyLock**: Using stdlib (MSRV 1.80)
-- Updated spool module to use yaque's async API
-- Updated tiered_sink module to use yaque with proper borrow handling
-- Added new feature flags:
-  - `otel`, `otel-metrics`, `otel-tracing` - OpenTelemetry support
-  - `resilience` - tower-resilience for circuit breakers
-- Bumped version to 0.4.0, MSRV to 1.80
-- All tests passing (78 tests total)
-- Clippy clean
+- **License Module Implementation** - Full encrypted license system with anti-tampering:
+  - `src/license/mod.rs` - Main module with file/URL/default loading, global singleton API
+  - `src/license/crypto.rs` - AES-256-GCM encryption/decryption with SHA-256 key derivation
+  - `src/license/defaults.rs` - Obfuscated compile-time defaults using `obfstr`
+  - `src/license/types.rs` - `LicenseSettings` struct with feature flags, expiration, limits
+  - `src/license/error.rs` - Error types for license operations
+  - `src/license/integrity.rs` - Ed25519 signature verification, hash integrity checks, debugger detection
+
+- **Features Added**:
+  - `license` - Core license functionality (aes-gcm, obfstr, ed25519-dalek, sha2, base64, rand)
+  - `license-http` - HTTP license fetching (adds reqwest blocking)
+
+- **Earlier in session**:
+  - Published v1.0.8 to Artifactory (fixed package excludes)
+  - Created release workflow for cargo publish
+  - Transferred repo from catinspace-au to hypersec-io
 
 ### Key Files Modified
 
-- `Cargo.toml` - Dependency updates, new features, MSRV bump
-- `src/spool/queue.rs` - Migrated from queue-file to yaque (async API)
-- `src/spool/error.rs` - Removed queue_file error type
-- `src/spool/mod.rs` - Updated documentation
-- `src/tiered_sink/tiered.rs` - Migrated to yaque with Arc<Mutex<Receiver>>
-- `src/tiered_sink/drainer.rs` - Updated drain loop for yaque's RecvGuard semantics
-- `tests/metrics_integration.rs` - Replaced once_cell with LazyLock
+- `Cargo.toml` - Added license feature and dependencies (aes-gcm, obfstr, ed25519-dalek, sha2, base64, rand)
+- `src/lib.rs` - Added license module export and re-exports
+- `src/license/` - NEW: Complete license module (6 files)
 
 ### Decisions Made
 
-- **yaque over queue-file**: queue-file unmaintained since March 2023; yaque is async-native
-- **serde-yaml-ng over serde_yml**: serde_yml has security issues and is archived
-- **std::sync::LazyLock over once_cell**: Stdlib solution available in Rust 1.80+
-- **Keep async-trait for Sink trait**: Public API stability, native async traits can wait
+- **AES-256-GCM for encryption**: Audited crate, authenticated encryption
+- **obfstr for string obfuscation**: Compile-time XOR obfuscation, no proc-macro complexity
+- **Ed25519 for signatures**: Fast, secure, ed25519-dalek is well-maintained
+- **SHA-256 for key derivation**: Simple, deterministic key from secret
+- **Blocking reqwest for HTTP**: License loading happens at startup, simpler than async
+- **Fallback to compiled defaults**: Always have a working license, even if file missing
 
 ### Next Steps
 
-1. Consider adding tower-resilience based circuit breaker as alternative to custom
-2. Add OpenTelemetry integration tests
-3. Document new features in README
+1. Commit license module changes
+2. Bump version to 1.1.0 (new feature)
+3. Push and verify CI passes
+4. Update clickhouse-arrow dependency when new version published
 
 ### Blockers/Issues
 
-None.
+- clickhouse-arrow fork has new commits (Variant/Dynamic/Nested/BFloat16 support) but not yet published to Artifactory
 
 ### Dead Ends & Hypotheses
 
-- yaque's RecvGuard borrows the Receiver, so all operations (decompress, send, commit) must happen within the lock scope
-- yaque doesn't have a built-in `try_clear`, so clear() is implemented by consuming all items
+- obfstr! macro returns a temporary - must convert to String immediately before using
+- Ed25519 SPKI format has 12-byte header before 32-byte key
 
 ### Git State
 
 - **Branch:** main
-- **Uncommitted:** Multiple files (dependency migration)
+- **Upstream:** up to date with origin/main
+- **Uncommitted:** Cargo.toml, src/lib.rs modified
+- **Untracked:** src/license/ (new directory)
 - **Staged:** none
 
 ### Session Context Summary
 
-Performed comprehensive dependency audit and migrated from deprecated/unmaintained libraries to modern alternatives. Migrated spool and tiered_sink modules from synchronous queue-file to async-native yaque. Replaced once_cell with std::sync::LazyLock. Added OpenTelemetry and tower-resilience as optional features. All 78 tests passing, clippy clean.
+Implemented comprehensive license module with AES-256-GCM encryption, Ed25519 signature verification, obfuscated compile-time defaults, and anti-tampering measures. The module supports loading encrypted license files from local paths, environment variables, standard locations, or HTTPS URLs, with automatic fallback to compiled defaults. 38 unit tests passing, clippy clean.
+
+---
+
+## Previous Session (2025-01-19)
+
+### Accomplished
+
+- Transferred repo from `catinspace-au/hs-rustlib` to `hypersec-io/hs-rustlib`
+- Created `.github/workflows/release.yml` for Artifactory cargo publish
+- Fixed multiple CI issues (registry auth, doc tests, clippy, package excludes)
+- Published v1.0.7 and v1.0.8 to Artifactory
+- Comprehensive dependency audit and migration (serde_yml → serde-yaml-ng, queue-file → yaque, once_cell → LazyLock)
 
 ---
 
@@ -91,6 +105,7 @@ Modular library with feature-gated components. Each module can be enabled/disabl
 7. **tiered-sink** - Resilient message delivery with disk spillover
 8. **transport** - Kafka/Zenoh/Memory transport abstraction
 9. **clickhouse-arrow** - ClickHouse client with Arrow protocol
+10. **license** - Encrypted license files with anti-tampering (NEW)
 
 ### Tech Stack
 
@@ -101,6 +116,7 @@ Modular library with feature-gated components. Each module can be enabled/disabl
 - **Async:** tokio (1.0)
 - **Disk Queue:** yaque (0.6)
 - **YAML:** serde-yaml-ng (0.10)
+- **License Crypto:** aes-gcm, ed25519-dalek, obfstr
 
 ---
 
@@ -130,12 +146,14 @@ CARGO_BUILD_JOBS=2 cargo clippy
 - [tracing docs](https://docs.rs/tracing)
 - [metrics docs](https://docs.rs/metrics)
 - [yaque docs](https://docs.rs/yaque)
+- [aes-gcm docs](https://docs.rs/aes-gcm)
+- [obfstr docs](https://docs.rs/obfstr)
 
 ---
 
-**Last Updated:** 2025-01-19
-**Version:** 0.4.0
-**Status:** MVP Complete
+**Last Updated:** 2026-01-19
+**Version:** 1.0.8 (published), 1.1.0 (pending with license module)
+**Status:** License module complete, ready for release
 
 ---
 
@@ -149,3 +167,11 @@ This file maintains session state across conversations. Update this file when:
 - Planning next steps
 
 Keep this file concise and focused on current project state.
+
+### License Module Production Notes
+
+Before deploying to production:
+
+1. Change the obfuscated key in `src/license/defaults.rs` (`get_decryption_key()`)
+2. Replace the Ed25519 public key in `src/license/integrity.rs` (`get_public_key_bytes()`)
+3. Generate license files externally using `encrypt_license()` with your secret key

@@ -8,14 +8,14 @@
 
 [package]
 name = "hs-rustlib"
-version = "1.0.8"
+version = "1.1.0"
 edition = "2021"
 rust-version = "1.80"
 description = "Shared utility library for HyperSec Rust applications"
 license = "LicenseRef-HyperSec-EULA"
 repository = "https://github.com/hypersec-io/hs-rustlib"
 publish = ["hypersec"]
-keywords = ["config", "logging", "metrics", "prometheus", "clickhouse", "arrow", "opentelemetry"]
+keywords = ["config", "logging", "metrics", "prometheus", "opentelemetry"]
 categories = ["development-tools"]
 exclude = [".claude/", ".github/", "ci/", "ai/", "docs/", "examples/"]
 
@@ -43,9 +43,6 @@ resilience = ["tower-resilience", "tower"]
 database = []
 cache = []
 
-# ClickHouse Arrow client
-clickhouse-arrow = ["dep:clickhouse-arrow", "dep:arrow", "dep:futures-util", "tokio"]
-
 # Transport features
 transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait"]
 transport-memory = ["transport"]
@@ -58,7 +55,7 @@ license = ["aes-gcm", "obfstr", "ed25519-dalek", "sha2", "base64", "rand", "serd
 license-http = ["license", "reqwest"]
 
 # Full feature set
-full = ["config", "logger", "metrics", "otel", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "clickhouse-arrow", "license"]
+full = ["config", "logger", "metrics", "otel", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "license"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -121,11 +118,6 @@ rdkafka = { version = ">=0.38.0, <0.39", features = ["cmake-build"], optional = 
 
 # Zenoh transport
 zenoh = { version = ">=1.7.2, <2", optional = true }
-
-# ClickHouse
-clickhouse-arrow = { version = "0.3.0", registry = "hypersec", optional = true }
-arrow = { version = ">=57.2.0, <58", optional = true }
-futures-util = { version = ">=0.3.31, <0.4", default-features = false, features = ["std"], optional = true }
 
 # Spool (disk-backed async queue) - yaque is async-native and maintained
 yaque = { version = ">=0.6.6, <0.7", optional = true }
