@@ -323,7 +323,7 @@ mod tests {
         let messages = transport.recv(1).await.unwrap();
 
         // Commit the message
-        let tokens: Vec<_> = messages.iter().map(|m| m.token.clone()).collect();
+        let tokens: Vec<_> = messages.iter().map(|m| m.token).collect();
         transport.commit(&tokens).await.unwrap();
 
         // Verify committed sequence advanced
