@@ -149,9 +149,19 @@ async-trait = ">=0.1.88, <0.2"
 unsafe_code = "forbid"
 
 [lints.clippy]
-pedantic = "warn"
-unwrap_used = "warn"
+pedantic = { level = "warn", priority = -1 }
 # expect_used = "warn"  # Disabled for MVP, re-enable for stricter error handling
+
+# Allows for test/bench/example code (these don't inherit lib.rs attributes)
+doc_markdown = "allow"                    # Don't require backticks in doc comments
+unnecessary_debug_formatting = "allow"    # Allow {:?} in examples
+await_holding_lock = "allow"              # Common in test code with mocked locks
+redundant_closure = "allow"               # Sometimes clearer in tests
+redundant_closure_for_method_calls = "allow"  # Sometimes clearer in tests
+needless_raw_string_hashes = "allow"      # Convenience in test strings
+items_after_statements = "allow"          # Test helper structs defined where needed
+inefficient_to_string = "allow"           # Clarity over micro-optimization in tests
+unwrap_used = "allow"                     # Allowed in tests for cleaner assertions
 
 [[bench]]
 name = "config_benchmark"
