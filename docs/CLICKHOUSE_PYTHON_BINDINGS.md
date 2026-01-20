@@ -155,11 +155,13 @@ hs-rustlib/
 ```
 
 **Pros:**
+
 - Clean separation of concerns
 - Can version Python bindings independently
 - Easier to maintain
 
 **Cons:**
+
 - Separate build process
 - Need to keep in sync with core library
 
@@ -173,10 +175,12 @@ python = ["dep:pyo3"]
 ```
 
 **Pros:**
+
 - Single codebase
 - Always in sync
 
 **Cons:**
+
 - Increases core library complexity
 - PyO3 dependencies even when not needed
 
@@ -210,10 +214,12 @@ impl PyClickHouseClient {
 ```
 
 **Pros:**
+
 - Native async/await in Python
 - Non-blocking
 
 **Cons:**
+
 - Requires Python 3.7+
 - More complex error handling
 
@@ -233,10 +239,12 @@ impl PyClickHouseClient {
 ```
 
 **Pros:**
+
 - Simpler to use
 - Works with sync Python code
 
 **Cons:**
+
 - Blocks the thread
 - Can't be used in async Python context
 

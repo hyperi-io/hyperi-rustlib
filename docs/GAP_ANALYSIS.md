@@ -42,6 +42,7 @@
 ### 1. Transport Abstraction Layer (~1,000 LOC)
 
 Multi-transport abstraction supporting Kafka, Zenoh, and in-memory transports with:
+
 - Stateful format detection with auto-locking
 - Payload format handling (JSON/MsgPack)
 - Generic message interface with commit tokens
@@ -50,6 +51,7 @@ Multi-transport abstraction supporting Kafka, Zenoh, and in-memory transports wi
 ### 2. ClickHouse Client (~500 LOC)
 
 Native Arrow protocol client with:
+
 - Schema introspection and type parsing
 - Connection pooling
 - Type-safe queries
@@ -64,6 +66,7 @@ Native Arrow protocol client with:
 #### Kafka Client (~3,500 LOC)
 
 Full Kafka ecosystem that would require significant effort to port:
+
 - Sync/async producer, consumer, admin clients
 - Health monitoring with consumer group lag tracking
 - Schema analysis for JSON messages
@@ -77,6 +80,7 @@ Full Kafka ecosystem that would require significant effort to port:
 #### Database Module (~200 LOC)
 
 Connection URL builders:
+
 - PostgreSQL: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
 - MySQL: Similar ENV var patterns
 - MongoDB: Connection string builder
@@ -85,6 +89,7 @@ Connection URL builders:
 #### HTTP Client (~200 LOC)
 
 Production-ready HTTP client:
+
 - Sync and async variants
 - Automatic retries with exponential backoff (Stamina)
 - Configurable timeouts (30s default)
@@ -95,6 +100,7 @@ Production-ready HTTP client:
 #### Cache Module (~300 LOC)
 
 Multi-backend caching:
+
 - Disk cache (Cashews/SQLite)
 - PostgreSQL cache for distributed deployments
 - `@cached` decorator with TTL support
@@ -103,6 +109,7 @@ Multi-backend caching:
 #### CLI Framework (~300 LOC)
 
 Typer-based CLI utilities:
+
 - Reusable options (VERBOSE_OPTION, DRY_RUN_OPTION)
 - Version handling
 - Output formatters (tables, progress bars)
@@ -113,6 +120,7 @@ Typer-based CLI utilities:
 #### Anonymizer/PII Detection (~500 LOC)
 
 Microsoft Presidio integration:
+
 - Multiple presets (minimal, standard, compliance)
 - Strategies: mask, redact, hash, encrypt
 - Text/JSON/dict support
@@ -121,6 +129,7 @@ Microsoft Presidio integration:
 #### Harness/Testing Utilities (~300 LOC)
 
 CI/CD helpers:
+
 - Smart timeout monitoring for functions
 - Container registry login utilities
 - Docker Hub rate limit checking
@@ -176,10 +185,12 @@ CI/CD helpers:
 **hs-rustlib** is well-positioned as a core infrastructure library with type safety and performance advantages. The transport and ClickHouse modules are unique capabilities.
 
 **For full enterprise parity**, prioritise:
+
 1. Database URL builders (high utility, low effort)
 2. HTTP client with retries (already partially scaffolded)
 3. Evaluate need for standalone Kafka vs using transport layer
 
 **Keep unique in hs-rustlib**:
+
 - Transport abstraction (better in Rust)
 - ClickHouse Arrow client (Rust-specific advantage)
