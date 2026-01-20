@@ -9,12 +9,7 @@
 //! HTTP server implementation using axum.
 
 use crate::http_server::{HttpServerConfig, HttpServerError, Result};
-use axum::{
-    http::StatusCode,
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
+use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -91,19 +86,21 @@ impl HttpServer {
     {
         let app = self.build_router(app);
 
-        let addr: SocketAddr = self
-            .config
-            .bind_address
-            .parse()
+        let addr: SocketAddr =
+            self.config
+                .bind_address
+                .parse()
+                .map_err(|e| HttpServerError::Bind {
+                    address: self.config.bind_address.clone(),
+                    source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
+                })?;
+
+        let listener = TcpListener::bind(addr)
+            .await
             .map_err(|e| HttpServerError::Bind {
                 address: self.config.bind_address.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
+                source: e,
             })?;
-
-        let listener = TcpListener::bind(addr).await.map_err(|e| HttpServerError::Bind {
-            address: self.config.bind_address.clone(),
-            source: e,
-        })?;
 
         #[cfg(feature = "logger")]
         tracing::info!(address = %addr, "HTTP server listening");
@@ -136,19 +133,21 @@ impl HttpServer {
 
         let app = self.build_router(app);
 
-        let addr: SocketAddr = self
-            .config
-            .bind_address
-            .parse()
+        let addr: SocketAddr =
+            self.config
+                .bind_address
+                .parse()
+                .map_err(|e| HttpServerError::Bind {
+                    address: self.config.bind_address.clone(),
+                    source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
+                })?;
+
+        let listener = TcpListener::bind(addr)
+            .await
             .map_err(|e| HttpServerError::Bind {
                 address: self.config.bind_address.clone(),
-                source: std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
+                source: e,
             })?;
-
-        let listener = TcpListener::bind(addr).await.map_err(|e| HttpServerError::Bind {
-            address: self.config.bind_address.clone(),
-            source: e,
-        })?;
 
         #[cfg(feature = "logger")]
         tracing::info!(address = %addr, "HTTP server listening");
@@ -171,9 +170,10 @@ impl HttpServer {
 
         if self.config.enable_health_endpoints {
             let ready = Arc::clone(&self.ready);
-            router = router
-                .route("/health/live", get(health_live))
-                .route("/health/ready", get(move || health_ready(Arc::clone(&ready))));
+            router = router.route("/health/live", get(health_live)).route(
+                "/health/ready",
+                get(move || health_ready(Arc::clone(&ready))),
+            );
         }
 
         router
@@ -265,7 +265,12 @@ mod tests {
         let app = server.build_router(Router::new());
 
         let response = app
-            .oneshot(Request::builder().uri("/health/live").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/health/live")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -280,7 +285,12 @@ mod tests {
         let app = server.build_router(Router::new());
 
         let response = app
-            .oneshot(Request::builder().uri("/health/ready").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/health/ready")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -295,7 +305,12 @@ mod tests {
         let app = server.build_router(Router::new());
 
         let response = app
-            .oneshot(Request::builder().uri("/health/ready").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/health/ready")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 

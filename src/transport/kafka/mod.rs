@@ -206,7 +206,6 @@ impl KafkaTransport {
             format,
         }
     }
-
 }
 
 #[async_trait]

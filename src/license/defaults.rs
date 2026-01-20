@@ -36,7 +36,9 @@ use super::types::LicenseSettings;
 pub(crate) fn get_decryption_key() -> Vec<u8> {
     // The obfstr! macro encrypts this at compile time and decrypts at runtime
     // Change this value for your deployment!
-    obfstr!("hypersec-default-license-key-v1-change-me").as_bytes().to_vec()
+    obfstr!("hypersec-default-license-key-v1-change-me")
+        .as_bytes()
+        .to_vec()
 }
 
 /// Get the default license settings (Community tier).
@@ -93,7 +95,7 @@ pub(crate) fn get_test_enterprise_settings() -> LicenseSettings {
         max_memory_gb: None,       // Unlimited
         max_throughput_mbps: None, // Unlimited
         max_container_throughput_mbps: None,
-        max_nodes: None,           // Unlimited
+        max_nodes: None, // Unlimited
         expires_at: None,
         issued_at: Some("2025-01-01T00:00:00Z".to_string()),
         signature: None,

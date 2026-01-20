@@ -188,10 +188,7 @@ fn test_settings_yaml_overrides_defaults() {
     );
 
     // app_name only in settings.yaml
-    assert_eq!(
-        config.get_string("app_name"),
-        Some("test_app".to_string())
-    );
+    assert_eq!(config.get_string("app_name"), Some("test_app".to_string()));
 }
 
 // ============================================================================
@@ -250,8 +247,7 @@ fn test_dotenv_file_loaded() {
 
     // Create .env file in temp directory
     let dotenv_path = path.join(".env");
-    fs::write(&dotenv_path, "DOTENV_TEST_VAR=from_dotenv\n")
-        .expect("failed to write .env");
+    fs::write(&dotenv_path, "DOTENV_TEST_VAR=from_dotenv\n").expect("failed to write .env");
 
     // Change to temp directory so dotenvy finds it
     let original_dir = std::env::current_dir().expect("failed to get cwd");
@@ -342,10 +338,7 @@ fn test_env_var_deeply_nested() {
     .expect("config should load");
 
     // Three levels: cache.redis.enabled
-    assert_eq!(
-        config.get_bool("cache.redis.enabled"),
-        Some(true)
-    );
+    assert_eq!(config.get_bool("cache.redis.enabled"), Some(true));
 }
 
 // ============================================================================
@@ -418,10 +411,7 @@ fn test_full_cascade_priority() {
     assert_eq!(config.get_bool("debug"), Some(true));
 
     // settings.yaml values
-    assert_eq!(
-        config.get_string("app_name"),
-        Some("test_app".to_string())
-    );
+    assert_eq!(config.get_string("app_name"), Some("test_app".to_string()));
 
     // defaults.yaml values not overridden
     assert_eq!(config.get_int("database.port"), Some(5432));

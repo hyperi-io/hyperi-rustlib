@@ -147,7 +147,9 @@ impl Spool {
     pub async fn pop(&mut self) -> Result<()> {
         match self.receiver.try_recv() {
             Ok(guard) => {
-                guard.commit().map_err(|e| SpoolError::Queue(e.to_string()))?;
+                guard
+                    .commit()
+                    .map_err(|e| SpoolError::Queue(e.to_string()))?;
                 self.len = self.len.saturating_sub(1);
                 Ok(())
             }
@@ -174,7 +176,9 @@ impl Spool {
                 } else {
                     raw_data
                 };
-                guard.commit().map_err(|e| SpoolError::Queue(e.to_string()))?;
+                guard
+                    .commit()
+                    .map_err(|e| SpoolError::Queue(e.to_string()))?;
                 self.len = self.len.saturating_sub(1);
                 Ok(Some(data))
             }
@@ -206,7 +210,9 @@ impl Spool {
             raw_data
         };
 
-        guard.commit().map_err(|e| SpoolError::Queue(e.to_string()))?;
+        guard
+            .commit()
+            .map_err(|e| SpoolError::Queue(e.to_string()))?;
         self.len = self.len.saturating_sub(1);
         Ok(data)
     }
@@ -239,7 +245,9 @@ impl Spool {
         loop {
             match self.receiver.try_recv() {
                 Ok(guard) => {
-                    guard.commit().map_err(|e| SpoolError::Queue(e.to_string()))?;
+                    guard
+                        .commit()
+                        .map_err(|e| SpoolError::Queue(e.to_string()))?;
                 }
                 Err(yaque::TryRecvError::QueueEmpty) => break,
                 Err(yaque::TryRecvError::Io(e)) => return Err(SpoolError::Io(e)),
@@ -351,7 +359,10 @@ mod tests {
         spool.push(b"two").await.unwrap();
 
         let result = spool.push(b"three").await;
-        assert!(matches!(result, Err(SpoolError::MaxItemsReached { max: 2 })));
+        assert!(matches!(
+            result,
+            Err(SpoolError::MaxItemsReached { max: 2 })
+        ));
     }
 
     #[tokio::test]

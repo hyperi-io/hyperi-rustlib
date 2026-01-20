@@ -44,7 +44,9 @@ impl std::fmt::Display for KafkaToken {
 
 impl PartialEq for KafkaToken {
     fn eq(&self, other: &Self) -> bool {
-        self.topic == other.topic && self.partition == other.partition && self.offset == other.offset
+        self.topic == other.topic
+            && self.partition == other.partition
+            && self.offset == other.offset
     }
 }
 

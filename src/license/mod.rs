@@ -175,7 +175,9 @@ impl License {
     }
 
     /// Load license from file, URL, or defaults.
-    fn load_license(opts: &LicenseOptions) -> Result<(LicenseSettings, LicenseSource), LicenseError> {
+    fn load_license(
+        opts: &LicenseOptions,
+    ) -> Result<(LicenseSettings, LicenseSource), LicenseError> {
         // Priority 1: Explicit path
         if let Some(path) = &opts.license_path {
             return Self::load_from_file(path, opts);

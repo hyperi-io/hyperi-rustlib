@@ -91,7 +91,10 @@ pub fn parse_payload(bytes: &[u8]) -> TransportResult<PayloadValue> {
 /// # Errors
 ///
 /// Returns error if parsing fails.
-pub fn parse_payload_with_format(bytes: &[u8], format: PayloadFormat) -> TransportResult<PayloadValue> {
+pub fn parse_payload_with_format(
+    bytes: &[u8],
+    format: PayloadFormat,
+) -> TransportResult<PayloadValue> {
     match format {
         PayloadFormat::Auto => parse_payload(bytes),
         PayloadFormat::Json => {
@@ -130,7 +133,8 @@ pub fn parse_payload_typed<T: DeserializeOwned>(bytes: &[u8]) -> TransportResult
 ///
 /// Returns error if serialization fails.
 pub fn serialize_json<T: Serialize>(value: &T) -> TransportResult<Vec<u8>> {
-    serde_json::to_vec(value).map_err(|e| TransportError::Internal(format!("JSON serialize error: {e}")))
+    serde_json::to_vec(value)
+        .map_err(|e| TransportError::Internal(format!("JSON serialize error: {e}")))
 }
 
 /// Serialize a value to MsgPack bytes.
@@ -139,7 +143,8 @@ pub fn serialize_json<T: Serialize>(value: &T) -> TransportResult<Vec<u8>> {
 ///
 /// Returns error if serialization fails.
 pub fn serialize_msgpack<T: Serialize>(value: &T) -> TransportResult<Vec<u8>> {
-    rmp_serde::to_vec(value).map_err(|e| TransportError::Internal(format!("MsgPack serialize error: {e}")))
+    rmp_serde::to_vec(value)
+        .map_err(|e| TransportError::Internal(format!("MsgPack serialize error: {e}")))
 }
 
 /// Serialize a value to the specified format.
@@ -147,7 +152,10 @@ pub fn serialize_msgpack<T: Serialize>(value: &T) -> TransportResult<Vec<u8>> {
 /// # Errors
 ///
 /// Returns error if serialization fails.
-pub fn serialize_payload<T: Serialize>(value: &T, format: PayloadFormat) -> TransportResult<Vec<u8>> {
+pub fn serialize_payload<T: Serialize>(
+    value: &T,
+    format: PayloadFormat,
+) -> TransportResult<Vec<u8>> {
     match format {
         PayloadFormat::Json | PayloadFormat::Auto => serialize_json(value),
         PayloadFormat::MsgPack => serialize_msgpack(value),
@@ -174,7 +182,10 @@ pub fn extract_field(bytes: &[u8], field: &str) -> TransportResult<Option<serde_
 /// # Errors
 ///
 /// Returns error if the bytes are not valid JSON.
-pub fn extract_nested_field(bytes: &[u8], path: &str) -> TransportResult<Option<serde_json::Value>> {
+pub fn extract_nested_field(
+    bytes: &[u8],
+    path: &str,
+) -> TransportResult<Option<serde_json::Value>> {
     let value: serde_json::Value = serde_json::from_slice(bytes)
         .map_err(|e| TransportError::Internal(format!("JSON parse error: {e}")))?;
 

@@ -63,13 +63,9 @@ impl CompressionCodec {
             Self::Lz4 => Ok(lz4_flex::compress_prepend_size(data)),
             Self::Snappy => {
                 let mut encoder = snap::raw::Encoder::new();
-                encoder
-                    .compress_vec(data)
-                    .map_err(io::Error::other)
+                encoder.compress_vec(data).map_err(io::Error::other)
             }
-            Self::Zstd { level } => {
-                zstd::encode_all(data, *level).map_err(io::Error::other)
-            }
+            Self::Zstd { level } => zstd::encode_all(data, *level).map_err(io::Error::other),
         }
     }
 
@@ -90,8 +86,7 @@ impl CompressionCodec {
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
             }
             Self::Zstd { .. } => {
-                zstd::decode_all(data)
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+                zstd::decode_all(data).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
             }
         }
     }
