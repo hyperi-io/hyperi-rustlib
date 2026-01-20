@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/hypersec-io/hs-rustlib/compare/v1.2.0...v1.2.1) (2026-01-20)
+
+
+### Bug Fixes
+
+* resolve stricter clippy lints from Polars-inspired CI ([a41882e](https://github.com/hypersec-io/hs-rustlib/commit/a41882e953ae65e9e676bd45ac6e371e351b3c8c))
+
 # [1.2.0](https://github.com/hypersec-io/hs-rustlib/compare/v1.1.0...v1.2.0) (2026-01-20)
 
 
