@@ -1,3 +1,10 @@
+## [1.3.5](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.4...v1.3.5) (2026-02-03)
+
+
+### Bug Fixes
+
+* **test:** ensure VAULT_ADDR cleared in openbao fallback test ([64bfc49](https://github.com/hypersec-io/hs-rustlib/commit/64bfc49bf1e4bd9a018a2b168dc40c2ffc58595f))
+
 ## [1.3.4](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.3...v1.3.4) (2026-02-03)
 
 
