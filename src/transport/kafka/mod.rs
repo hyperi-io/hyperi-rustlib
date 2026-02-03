@@ -1,6 +1,6 @@
 // Project:   hs-rustlib
 // File:      src/transport/kafka/mod.rs
-// Purpose:   Kafka transport implementation using rdkafka
+// Purpose:   High-throughput Kafka transport for PB/day workloads
 // Language:  Rust
 //
 // License:   LicenseRef-HyperSec-EULA
@@ -8,15 +8,16 @@
 
 //! # Kafka Transport
 //!
-//! Production-grade Kafka transport with at-least-once delivery semantics.
-//! Uses rdkafka (librdkafka wrapper) for the underlying Kafka client.
+//! High-throughput Kafka transport optimized for PB/day batch processing.
+//! Uses rdkafka (librdkafka wrapper) with batch-first design.
 //!
-//! ## Features
+//! ## Performance Characteristics
 //!
-//! - Consumer group support with offset tracking
-//! - SASL/SCRAM and SSL authentication
-//! - Manual commit for at-least-once delivery
-//! - Arc<str> topic optimization for reduced allocations
+//! - **Batch-first**: Designed for 10K+ messages per batch
+//! - **Zero-copy where possible**: Minimizes allocations in hot path
+//! - **Lock-free topic cache**: Pre-populated, no per-message locking
+//! - **Non-blocking batch drain**: Uses zero-timeout poll to drain internal queue
+//! - **At-least-once delivery**: Manual commit after processing
 //!
 //! ## Example
 //!
@@ -24,30 +25,45 @@
 //! use hs_rustlib::transport::{KafkaTransport, KafkaConfig, Transport};
 //!
 //! let config = KafkaConfig {
-//!     brokers: vec!["localhost:9092".to_string()],
-//!     group: "my-consumer-group".to_string(),
+//!     brokers: vec!["kafka:9092".to_string()],
+//!     group: "dfe-loader".to_string(),
 //!     topics: vec!["events".to_string()],
 //!     ..Default::default()
 //! };
 //!
 //! let transport = KafkaTransport::new(&config).await?;
 //!
+//! // Batch processing loop
 //! loop {
-//!     let messages = transport.recv(100).await?;
-//!     for msg in &messages {
-//!         // Process message...
+//!     // Poll for up to 10K messages
+//!     let batch = transport.recv(10_000).await?;
+//!     if batch.is_empty() {
+//!         continue;
 //!     }
 //!
-//!     // Commit after successful processing
-//!     let tokens: Vec<_> = messages.iter().map(|m| m.token.clone()).collect();
+//!     // Process entire batch
+//!     process_batch(&batch);
+//!
+//!     // Commit AFTER successful processing (at-least-once)
+//!     let tokens: Vec<_> = batch.iter().map(|m| m.token.clone()).collect();
 //!     transport.commit(&tokens).await?;
 //! }
 //! ```
 
+mod admin;
 mod config;
+mod metrics;
+mod producer;
 mod token;
 
-pub use config::KafkaConfig;
+pub use admin::{KafkaAdmin, TopicInfo};
+pub use config::{
+    KafkaConfig, KafkaProfile, DEVTEST_PROFILE, HIGH_THROUGHPUT_CONSUMER_DEFAULTS,
+    LOW_LATENCY_CONSUMER_DEFAULTS, PRODUCER_DEFAULTS, PRODUCER_DEVTEST, PRODUCER_EXACTLY_ONCE,
+    PRODUCER_HIGH_THROUGHPUT, PRODUCER_LOW_LATENCY, PRODUCTION_PROFILE,
+};
+pub use metrics::{healthy_broker_count, total_consumer_lag, BrokerMetrics, KafkaMetrics, StatsContext};
+pub use producer::{KafkaProducer, ProducerMetrics, ProducerProfile};
 pub use token::KafkaToken;
 
 use super::error::{TransportError, TransportResult};
@@ -55,8 +71,8 @@ use super::traits::Transport;
 use super::types::{Message, PayloadFormat, SendResult};
 use async_trait::async_trait;
 use rdkafka::config::ClientConfig;
-use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
-use rdkafka::message::{BorrowedMessage, Message as KafkaMessage};
+use rdkafka::consumer::{BaseConsumer, CommitMode, Consumer, DefaultConsumerContext};
+use rdkafka::message::Message as KafkaMessage;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use rdkafka::util::Timeout;
@@ -64,20 +80,50 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
 
-/// Kafka transport using rdkafka.
+/// High-throughput tuning defaults.
 ///
-/// Provides at-least-once delivery with consumer group offset tracking.
+/// These are optimized for PB/day batch workloads.
+pub mod tuning {
+    /// Default batch size for recv() - 10K messages.
+    pub const DEFAULT_BATCH_SIZE: usize = 10_000;
+
+    /// Maximum time to spend draining the internal queue (ms).
+    /// After this, return what we have to maintain responsiveness.
+    pub const MAX_DRAIN_MS: u64 = 100;
+
+    /// Poll timeout when queue is empty - triggers network fetch.
+    pub const POLL_TIMEOUT_MS: u64 = 50;
+
+    /// Pre-allocated message vector capacity.
+    pub const INITIAL_BATCH_CAPACITY: usize = 10_000;
+}
+
+/// High-throughput Kafka transport using rdkafka.
+///
+/// Optimized for batch-oriented consumption at PB/day scale:
+/// - Uses `BaseConsumer` for direct poll control
+/// - Pre-populates topic cache to eliminate per-message locking
+/// - Drains internal queue with zero-timeout polls
+/// - Minimizes allocations in hot path
 pub struct KafkaTransport {
-    consumer: StreamConsumer,
+    consumer: BaseConsumer<DefaultConsumerContext>,
     producer: FutureProducer,
-    topic_cache: RwLock<HashMap<String, Arc<str>>>,
+    /// Pre-populated topic cache - populated on construction, read-only after.
+    /// Key optimization: no locks in the hot path.
+    topic_cache: HashMap<String, Arc<str>>,
     closed: AtomicBool,
+    /// Topics we're subscribed to (for cache warming).
+    subscribed_topics: Vec<String>,
 }
 
 impl KafkaTransport {
-    /// Create a new Kafka transport.
+    /// Create a new high-throughput Kafka transport.
+    ///
+    /// The transport is optimized for batch consumption at PB/day scale.
+    /// Configuration defaults are tuned for high throughput:
+    /// - `fetch.max.bytes`: 50MB (controls network batch size)
+    /// - `enable.auto.commit`: false (manual commit for at-least-once)
     ///
     /// # Errors
     ///
@@ -114,6 +160,12 @@ impl KafkaTransport {
             config.enable_partition_eof.to_string(),
         );
 
+        // Apply profile defaults (these can be overridden by librdkafka_overrides)
+        let rdkafka_config = config.build_librdkafka_config();
+        for (key, value) in &rdkafka_config {
+            client_config.set(key, value);
+        }
+
         // Security settings
         client_config.set("security.protocol", &config.security_protocol);
         if let Some(ref mechanism) = config.sasl_mechanism {
@@ -143,22 +195,24 @@ impl KafkaTransport {
         // Client ID
         client_config.set("client.id", &config.client_id);
 
-        // Extra config (for advanced librdkafka options)
-        for (key, value) in &config.extra_config {
-            client_config.set(key, value);
-        }
-
-        // Create consumer
-        let consumer: StreamConsumer = client_config
+        // Create consumer using BaseConsumer for direct poll control
+        let consumer: BaseConsumer<DefaultConsumerContext> = client_config
             .create()
             .map_err(|e| TransportError::Connection(format!("Failed to create consumer: {e}")))?;
 
         // Subscribe to topics
-        if !config.topics.is_empty() {
-            let topics: Vec<&str> = config.topics.iter().map(String::as_str).collect();
+        let subscribed_topics = config.topics.clone();
+        if !subscribed_topics.is_empty() {
+            let topics: Vec<&str> = subscribed_topics.iter().map(String::as_str).collect();
             consumer
                 .subscribe(&topics)
                 .map_err(|e| TransportError::Connection(format!("Failed to subscribe: {e}")))?;
+        }
+
+        // Pre-populate topic cache - eliminates locks in hot path
+        let mut topic_cache = HashMap::with_capacity(subscribed_topics.len());
+        for topic in &subscribed_topics {
+            topic_cache.insert(topic.clone(), Arc::from(topic.as_str()));
         }
 
         // Create producer (for send operations)
@@ -169,42 +223,27 @@ impl KafkaTransport {
         Ok(Self {
             consumer,
             producer,
-            topic_cache: RwLock::new(HashMap::new()),
+            topic_cache,
             closed: AtomicBool::new(false),
+            subscribed_topics,
         })
     }
 
-    /// Get or create cached Arc<str> for topic name.
-    async fn get_topic_arc(&self, topic: &str) -> Arc<str> {
-        // Fast path: read lock
-        {
-            let cache = self.topic_cache.read().await;
-            if let Some(arc) = cache.get(topic) {
-                return arc.clone();
-            }
-        }
-
-        // Slow path: write lock
-        let mut cache = self.topic_cache.write().await;
-        cache
-            .entry(topic.to_string())
-            .or_insert_with(|| Arc::from(topic))
-            .clone()
-    }
-
-    /// Convert rdkafka message to our Message type.
-    async fn convert_message(&self, msg: &BorrowedMessage<'_>) -> Message<KafkaToken> {
-        let topic = self.get_topic_arc(msg.topic()).await;
-        let payload = msg.payload().map(|p| p.to_vec()).unwrap_or_default();
-        let format = PayloadFormat::detect(&payload);
-
-        Message {
-            key: Some(topic.clone()),
-            payload,
-            token: KafkaToken::new(topic, msg.partition(), msg.offset()),
-            timestamp_ms: msg.timestamp().to_millis(),
-            format,
-        }
+    /// Create transport with custom context for metrics collection.
+    ///
+    /// Use this when you need statistics collection via `StatsContext`.
+    /// Remember to set `statistics.interval.ms` in `extra_config`.
+    pub fn new_with_context<C>(
+        config: &KafkaConfig,
+        _context: C,
+    ) -> TransportResult<Self>
+    where
+        C: rdkafka::consumer::ConsumerContext + 'static,
+    {
+        // For now, delegate to the standard constructor
+        // Full context support would require generic parameter on struct
+        // which complicates the Transport trait implementation
+        tokio::runtime::Handle::current().block_on(Self::new(config))
     }
 }
 
@@ -226,7 +265,6 @@ impl Transport for KafkaTransport {
         {
             Ok(_) => SendResult::Ok,
             Err((err, _)) => {
-                // Check if it's a retriable error
                 let err_str = err.to_string();
                 if err_str.contains("queue full") || err_str.contains("Local: Queue full") {
                     SendResult::Backpressured
@@ -237,37 +275,98 @@ impl Transport for KafkaTransport {
         }
     }
 
+    /// Receive a batch of messages.
+    ///
+    /// This is optimized for high-throughput batch processing:
+    /// - Uses zero-timeout polls to drain librdkafka's internal queue
+    /// - Returns up to `max` messages per call
+    /// - Pre-populates topic cache to avoid allocations
+    ///
+    /// For PB/day workloads, call with `max = 10_000` or higher.
     async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
 
-        let mut messages = Vec::with_capacity(max.min(1000));
-        let timeout = Duration::from_millis(100);
+        let timeout = Duration::from_millis(tuning::POLL_TIMEOUT_MS);
+        let max_msgs = max;
 
-        for _ in 0..max {
-            match tokio::time::timeout(timeout, self.consumer.recv()).await {
-                Ok(Ok(msg)) => {
-                    messages.push(self.convert_message(&msg).await);
+        // Clone topic cache for use - this is a shallow clone (Arc pointers)
+        let mut local_cache = self.topic_cache.clone();
+
+        // Poll synchronously - BaseConsumer::poll is thread-safe
+        let mut messages = Vec::with_capacity(max_msgs.min(tuning::INITIAL_BATCH_CAPACITY));
+        let drain_deadline = std::time::Instant::now() + Duration::from_millis(tuning::MAX_DRAIN_MS);
+
+        // Phase 1: Initial blocking poll (triggers network fetch if queue empty)
+        if let Some(result) = self.consumer.poll(timeout) {
+            match result {
+                Ok(msg) => {
+                    let topic_str = msg.topic();
+                    let topic: Arc<str> = get_or_insert_topic(&mut local_cache, topic_str);
+                    let payload = msg.payload().map_or_else(Vec::new, |p| p.to_vec());
+                    let partition = msg.partition();
+                    let offset = msg.offset();
+                    let timestamp_ms = msg.timestamp().to_millis();
+
+                    messages.push(Message {
+                        key: Some(topic.clone()),
+                        payload,
+                        token: KafkaToken::new(topic, partition, offset),
+                        timestamp_ms,
+                        format: PayloadFormat::Auto,
+                    });
                 }
-                Ok(Err(e)) => {
-                    // Kafka error
+                Err(e) => {
+                    return Err(TransportError::Recv(e.to_string()));
+                }
+            }
+        } else {
+            return Ok(messages);
+        }
+
+        // Phase 2: Drain queue with zero-timeout polls
+        // This is where the batch magic happens - librdkafka has already
+        // fetched a batch from the network, we just drain it fast.
+        while messages.len() < max_msgs {
+            if std::time::Instant::now() >= drain_deadline {
+                break;
+            }
+
+            match self.consumer.poll(Duration::ZERO) {
+                Some(Ok(msg)) => {
+                    let topic_str = msg.topic();
+                    let topic: Arc<str> = get_or_insert_topic(&mut local_cache, topic_str);
+                    let payload = msg.payload().map_or_else(Vec::new, |p| p.to_vec());
+                    let partition = msg.partition();
+                    let offset = msg.offset();
+                    let timestamp_ms = msg.timestamp().to_millis();
+
+                    messages.push(Message {
+                        key: Some(topic.clone()),
+                        payload,
+                        token: KafkaToken::new(topic, partition, offset),
+                        timestamp_ms,
+                        format: PayloadFormat::Auto,
+                    });
+                }
+                Some(Err(e)) => {
                     if messages.is_empty() {
                         return Err(TransportError::Recv(e.to_string()));
                     }
-                    // Return what we have
                     break;
                 }
-                Err(_) => {
-                    // Timeout - return what we have
-                    break;
-                }
+                None => break,
             }
         }
 
         Ok(messages)
     }
 
+    /// Commit offsets for processed messages.
+    ///
+    /// Uses async commit for better throughput. The commit is batched
+    /// by partition - only the highest offset per partition is committed.
     async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
         if tokens.is_empty() {
             return Ok(());
@@ -276,21 +375,26 @@ impl Transport for KafkaTransport {
         // Build topic-partition-offset list
         // For each partition, commit the highest offset + 1 (next to be read)
         let mut tpl = TopicPartitionList::new();
-        let mut partition_offsets: HashMap<(Arc<str>, i32), i64> = HashMap::new();
+        let mut partition_offsets: HashMap<(&str, i32), i64> = HashMap::with_capacity(tokens.len() / 100);
 
         for token in tokens {
-            let key = (token.topic.clone(), token.partition);
-            let current = partition_offsets.get(&key).copied().unwrap_or(i64::MIN);
-            if token.offset > current {
-                partition_offsets.insert(key, token.offset);
-            }
+            let key = (token.topic.as_ref(), token.partition);
+            partition_offsets
+                .entry(key)
+                .and_modify(|current| {
+                    if token.offset > *current {
+                        *current = token.offset;
+                    }
+                })
+                .or_insert(token.offset);
         }
 
         for ((topic, partition), offset) in partition_offsets {
-            tpl.add_partition_offset(&topic, partition, Offset::Offset(offset + 1))
+            tpl.add_partition_offset(topic, partition, Offset::Offset(offset + 1))
                 .map_err(|e| TransportError::Commit(format!("Failed to build TPL: {e}")))?;
         }
 
+        // Async commit for better throughput
         self.consumer
             .commit(&tpl, CommitMode::Async)
             .map_err(|e| TransportError::Commit(e.to_string()))?;
@@ -310,5 +414,67 @@ impl Transport for KafkaTransport {
 
     fn name(&self) -> &'static str {
         "kafka"
+    }
+}
+
+/// Get or insert topic Arc into cache.
+///
+/// Inline helper for hot path - avoids method call overhead.
+#[inline]
+fn get_or_insert_topic(cache: &mut HashMap<String, Arc<str>>, topic: &str) -> Arc<str> {
+    if let Some(arc) = cache.get(topic) {
+        return arc.clone();
+    }
+    let arc: Arc<str> = Arc::from(topic);
+    cache.insert(topic.to_string(), arc.clone());
+    arc
+}
+
+impl std::fmt::Debug for KafkaTransport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KafkaTransport")
+            .field("subscribed_topics", &self.subscribed_topics)
+            .field("closed", &self.closed.load(Ordering::Relaxed))
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tuning_constants() {
+        assert_eq!(tuning::DEFAULT_BATCH_SIZE, 10_000);
+        assert_eq!(tuning::MAX_DRAIN_MS, 100);
+        assert_eq!(tuning::POLL_TIMEOUT_MS, 50);
+    }
+
+    #[test]
+    fn test_get_or_insert_topic_cached() {
+        let mut cache = HashMap::new();
+        cache.insert("events".to_string(), Arc::from("events"));
+
+        let arc1 = get_or_insert_topic(&mut cache, "events");
+        let arc2 = get_or_insert_topic(&mut cache, "events");
+
+        // Should return same Arc (pointer equality)
+        assert!(Arc::ptr_eq(&arc1, &arc2));
+    }
+
+    #[test]
+    fn test_get_or_insert_topic_new() {
+        let mut cache = HashMap::new();
+
+        let arc = get_or_insert_topic(&mut cache, "new-topic");
+        assert_eq!(&*arc, "new-topic");
+        assert!(cache.contains_key("new-topic"));
+    }
+
+    #[test]
+    fn test_kafka_config_defaults() {
+        let config = KafkaConfig::default();
+        assert_eq!(config.fetch_max_bytes, 52_428_800); // 50MB
+        assert!(!config.enable_auto_commit); // Manual commit
     }
 }

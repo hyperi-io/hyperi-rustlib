@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Create a temporary directory with config files for testing.
+#[allow(dead_code)]
 pub fn create_test_config_dir() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("failed to create temp dir");
     let path = dir.path().to_path_buf();

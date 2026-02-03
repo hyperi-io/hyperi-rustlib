@@ -6,7 +6,7 @@
 // License:   LicenseRef-HyperSec-EULA
 // Copyright: (c) 2025 HyperSec
 
-//! Configuration management with 7-layer cascade.
+//! Configuration management with 8-layer cascade.
 //!
 //! Provides a hierarchical configuration system matching hs-lib (Python)
 //! and hs-golib (Go). Configuration is loaded from multiple sources with
@@ -16,11 +16,48 @@
 //!
 //! 1. CLI arguments (via clap integration)
 //! 2. Environment variables (with configurable prefix)
-//! 3. `.env` file
-//! 4. `settings.{env}.yaml` (environment-specific)
-//! 5. `settings.yaml` (base settings)
-//! 6. `defaults.yaml`
-//! 7. Hard-coded defaults
+//! 3. `.env` file (loaded via dotenvy)
+//! 4. PostgreSQL (optional, via `config-postgres` feature)
+//! 5. `settings.{env}.yaml` (environment-specific)
+//! 6. `settings.yaml` (base settings)
+//! 7. `defaults.yaml`
+//! 8. Hard-coded defaults
+//!
+//! ## How .env Files Work in the Cascade
+//!
+//! The `.env` file is loaded early in the cascade using `dotenvy::dotenv()`.
+//! This populates the process environment, so `.env` values become available
+//! via `std::env::var()`. The cascade then reads environment variables at
+//! layer 2, which includes both real environment variables AND `.env` values.
+//!
+//! **Important**: Real environment variables take precedence over `.env` values
+//! because `dotenvy` does NOT overwrite existing environment variables.
+//!
+//! ```text
+//! Priority (highest wins):
+//! ┌─────────────────────────────────────────────────────────────┐
+//! │ 1. CLI arguments (merged via merge_cli())                   │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │ 2. Environment variables (PREFIX_KEY)                       │
+//! │    ↑ Includes .env values (loaded into env by dotenvy)      │
+//! │    ↑ Real env vars win over .env (dotenvy doesn't overwrite)│
+//! ├─────────────────────────────────────────────────────────────┤
+//! │ 3. PostgreSQL config (if config-postgres feature enabled)   │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │ 4. settings.{env}.yaml (e.g., settings.production.yaml)     │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │ 5. settings.yaml                                            │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │ 6. defaults.yaml                                            │
+//! ├─────────────────────────────────────────────────────────────┤
+//! │ 7. Hard-coded defaults (lowest priority)                    │
+//! └─────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Environment Variable Naming
+//!
+//! Use the `env_compat` module for standardized environment variable names
+//! with legacy alias support and deprecation warnings.
 //!
 //! ## Example
 //!
@@ -39,6 +76,11 @@
 //! let port = cfg.get_int("database.port").unwrap_or(5432);
 //! ```
 
+pub mod env_compat;
+
+#[cfg(feature = "config-postgres")]
+pub mod postgres;
+
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -49,6 +91,9 @@ use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 use crate::env::get_app_env;
+
+#[cfg(feature = "config-postgres")]
+use self::postgres::{PostgresConfig, PostgresConfigError, PostgresConfigSource};
 
 /// Global configuration singleton.
 static CONFIG: OnceLock<Config> = OnceLock::new();
@@ -79,6 +124,11 @@ pub enum ConfigError {
     /// Configuration not initialised.
     #[error("configuration not initialised - call config::setup() first")]
     NotInitialised,
+
+    /// PostgreSQL config error.
+    #[cfg(feature = "config-postgres")]
+    #[error("PostgreSQL config error: {0}")]
+    Postgres(#[from] PostgresConfigError),
 }
 
 /// Configuration options.
@@ -93,8 +143,25 @@ pub struct ConfigOptions {
     /// Additional paths to search for config files.
     pub config_paths: Vec<PathBuf>,
 
-    /// Whether to load `.env` file.
+    /// Whether to load `.env` files.
+    ///
+    /// When enabled, loads `.env` files in this order (lowest to highest priority):
+    /// 1. `~/.env` (home directory - global defaults)
+    /// 2. Project `.env` (current directory - project overrides)
+    ///
+    /// Later files override earlier ones. Real environment variables always
+    /// take precedence over `.env` values.
     pub load_dotenv: bool,
+
+    /// Whether to load home directory `.env` file (`~/.env`).
+    ///
+    /// Only applies when `load_dotenv` is true.
+    /// Default: true
+    pub load_home_dotenv: bool,
+
+    /// PostgreSQL config source (optional, requires `config-postgres` feature).
+    #[cfg(feature = "config-postgres")]
+    pub postgres: Option<PostgresConfigSource>,
 }
 
 impl Default for ConfigOptions {
@@ -104,6 +171,9 @@ impl Default for ConfigOptions {
             app_env: None,
             config_paths: Vec::new(),
             load_dotenv: true,
+            load_home_dotenv: true,
+            #[cfg(feature = "config-postgres")]
+            postgres: None,
         }
     }
 }
@@ -124,9 +194,12 @@ impl Config {
     pub fn new(opts: ConfigOptions) -> Result<Self, ConfigError> {
         let app_env = opts.app_env.unwrap_or_else(get_app_env);
 
-        // Load .env file if requested
+        // Load .env files in cascade order (lowest to highest priority)
+        // Home directory .env provides global defaults
+        // Project .env provides project-specific overrides
+        // Real environment variables always win (dotenvy doesn't overwrite)
         if opts.load_dotenv {
-            let _ = dotenvy::dotenv();
+            Self::load_dotenv_cascade(opts.load_home_dotenv);
         }
 
         // Build the cascade (lowest to highest priority)
@@ -166,6 +239,126 @@ impl Config {
             figment,
             env_prefix: opts.env_prefix,
         })
+    }
+
+    /// Create a new configuration with async loading (for PostgreSQL support).
+    ///
+    /// This method loads configuration asynchronously, allowing PostgreSQL to be
+    /// used as a config source. PostgreSQL sits above file-based config in the
+    /// cascade, so database values override file values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if configuration loading fails.
+    #[cfg(feature = "config-postgres")]
+    pub async fn new_async(opts: ConfigOptions) -> Result<Self, ConfigError> {
+        let app_env = opts.app_env.clone().unwrap_or_else(get_app_env);
+
+        // Load .env files in cascade order (lowest to highest priority)
+        if opts.load_dotenv {
+            Self::load_dotenv_cascade(opts.load_home_dotenv);
+        }
+
+        // Determine PostgreSQL config source
+        let pg_source = opts.postgres.clone().unwrap_or_else(|| {
+            PostgresConfigSource::from_env(&opts.env_prefix)
+        });
+
+        // Load PostgreSQL config (async)
+        let pg_config = PostgresConfig::load(&pg_source).await?;
+
+        // Build the cascade (lowest to highest priority)
+        let mut figment = Figment::new();
+
+        // 8. Hard-coded defaults (lowest priority)
+        figment = figment.merge(Serialized::defaults(HardcodedDefaults::default()));
+
+        // 7. defaults.yaml
+        for path in Self::find_config_files("defaults", &opts.config_paths) {
+            figment = figment.merge(Yaml::file(&path));
+        }
+
+        // 6. settings.yaml
+        for path in Self::find_config_files("settings", &opts.config_paths) {
+            figment = figment.merge(Yaml::file(&path));
+        }
+
+        // 5. settings.{env}.yaml
+        let env_settings = format!("settings.{app_env}");
+        for path in Self::find_config_files(&env_settings, &opts.config_paths) {
+            figment = figment.merge(Yaml::file(&path));
+        }
+
+        // 4. PostgreSQL config (above files, below .env)
+        if let Some(ref pg) = pg_config {
+            let nested = pg.to_nested();
+            // For merge mode, we merge into existing config
+            // For replace mode, PostgreSQL config replaces file-based config
+            // Since figment merges are additive with later values winning,
+            // we just merge here - the position in the cascade determines priority
+            figment = figment.merge(Serialized::defaults(nested));
+        }
+
+        // 3. .env file values are already loaded into env vars
+
+        // 2. Environment variables (with prefix)
+        if !opts.env_prefix.is_empty() {
+            figment = figment.merge(Env::prefixed(&format!("{}_", opts.env_prefix)).split("__"));
+        }
+
+        // 1. CLI args would be merged by the application via merge_cli()
+
+        Ok(Self {
+            figment,
+            env_prefix: opts.env_prefix,
+        })
+    }
+
+    /// Load `.env` files in cascade order.
+    ///
+    /// Order (lowest to highest priority):
+    /// 1. `~/.env` (home directory - global defaults)
+    /// 2. Project `.env` (current directory - project overrides)
+    ///
+    /// Note: `dotenvy` does NOT overwrite existing environment variables,
+    /// so later files in the cascade take precedence. We load in reverse
+    /// order (project first, then home) so that project values are set first
+    /// and home values only fill in missing variables.
+    ///
+    /// Real environment variables always take precedence over all `.env` values.
+    fn load_dotenv_cascade(load_home: bool) {
+        use tracing::debug;
+
+        // Load project .env first (these values take precedence)
+        // dotenvy::dotenv() looks for .env in current directory
+        match dotenvy::dotenv() {
+            Ok(path) => {
+                debug!(path = %path.display(), "Loaded project .env file");
+            }
+            Err(dotenvy::Error::Io(ref e)) if e.kind() == std::io::ErrorKind::NotFound => {
+                // No project .env, that's fine
+            }
+            Err(e) => {
+                debug!(error = %e, "Failed to load project .env file");
+            }
+        }
+
+        // Load home directory .env (only fills in missing values)
+        if load_home {
+            if let Some(home) = dirs::home_dir() {
+                let home_env = home.join(".env");
+                if home_env.exists() {
+                    match dotenvy::from_path(&home_env) {
+                        Ok(()) => {
+                            debug!(path = %home_env.display(), "Loaded home .env file");
+                        }
+                        Err(e) => {
+                            debug!(path = %home_env.display(), error = %e, "Failed to load home .env file");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Find config files with the given base name.
@@ -339,6 +532,22 @@ pub fn setup(opts: ConfigOptions) -> Result<(), ConfigError> {
         .map_err(|_| ConfigError::AlreadyInitialised)
 }
 
+/// Initialise the global configuration with async loading (for PostgreSQL support).
+///
+/// This function loads configuration asynchronously, allowing PostgreSQL to be
+/// used as a config source.
+///
+/// # Errors
+///
+/// Returns an error if configuration loading fails or if already initialised.
+#[cfg(feature = "config-postgres")]
+pub async fn setup_async(opts: ConfigOptions) -> Result<(), ConfigError> {
+    let config = Config::new_async(opts).await?;
+    CONFIG
+        .set(config)
+        .map_err(|_| ConfigError::AlreadyInitialised)
+}
+
 /// Get the global configuration.
 ///
 /// # Panics
@@ -391,6 +600,7 @@ mod tests {
         assert!(opts.app_env.is_none());
         assert!(opts.config_paths.is_empty());
         assert!(opts.load_dotenv);
+        assert!(opts.load_home_dotenv);
     }
 
     #[test]
