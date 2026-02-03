@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.0...v1.3.1) (2026-02-03)
+
+
+### Bug Fixes
+
+* **ci:** add system dependencies for rdkafka build ([96afaf2](https://github.com/hypersec-io/hs-rustlib/commit/96afaf223324e4df3cc501736b8e017508c9ccb0))
+
 ## [1.2.2](https://github.com/hypersec-io/hs-rustlib/compare/v1.2.1...v1.2.2) (2026-01-20)
 
 
