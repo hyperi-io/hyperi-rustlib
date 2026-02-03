@@ -649,6 +649,8 @@ mod tests {
     #[test]
     fn test_vault_openbao_fallback() {
         setup();
+        // Ensure VAULT_ADDR is not set so fallback is tested
+        std::env::remove_var("VAULT_ADDR");
         std::env::set_var("OPENBAO_ADDR", "https://openbao:8200");
 
         assert_eq!(
