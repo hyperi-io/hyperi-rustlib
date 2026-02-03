@@ -125,19 +125,25 @@ cache:
 #[test]
 fn test_hardcoded_defaults_loaded() {
     // Use an empty temp directory to ensure no config files interfere
+    // The Config::find_config_files always checks CWD, so we must change to empty dir
     let temp_dir = TempDir::new().expect("failed to create temp dir");
-    let empty_path = temp_dir.path().to_path_buf();
+    let original_dir = std::env::current_dir().expect("failed to get current dir");
+
+    // Change to empty temp directory
+    std::env::set_current_dir(temp_dir.path()).expect("failed to change to temp dir");
 
     // Only search the empty temp directory (no defaults.yaml or settings.yaml present)
     let config = Config::new(ConfigOptions {
-        config_paths: vec![empty_path],
         load_dotenv: false,
         load_home_dotenv: false,
         ..Default::default()
     })
     .expect("config should load");
 
-    // These should come from HardcodedDefaults since empty_path has no config files
+    // Restore original directory before assertions (in case of panic)
+    std::env::set_current_dir(&original_dir).expect("failed to restore original dir");
+
+    // These should come from HardcodedDefaults since temp dir has no config files
     assert_eq!(config.get_string("log_level"), Some("info".to_string()));
     assert_eq!(config.get_string("log_format"), Some("auto".to_string()));
 }
