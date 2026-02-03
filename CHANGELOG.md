@@ -1,3 +1,10 @@
+## [1.3.8](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.7...v1.3.8) (2026-02-03)
+
+
+### Bug Fixes
+
+* **docs:** add missing SecretSource import in secrets doctest ([aa0f293](https://github.com/hypersec-io/hs-rustlib/commit/aa0f2936a6ecdc1582e41bece638ff8a61d6b543))
+
 ## [1.3.7](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.6...v1.3.7) (2026-02-03)
 
 
