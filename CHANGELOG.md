@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.1...v1.3.2) (2026-02-03)
+
+
+### Bug Fixes
+
+* **ci:** use system librdkafka instead of cmake-build ([2fc7e3c](https://github.com/hypersec-io/hs-rustlib/commit/2fc7e3c27eb72edf4b20aa460b216b53310f72fc))
+
 ## [1.3.1](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.0...v1.3.1) (2026-02-03)
 
 
