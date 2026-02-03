@@ -1,3 +1,10 @@
+## [1.3.3](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.2...v1.3.3) (2026-02-03)
+
+
+### Bug Fixes
+
+* **ci:** use org default runner for release workflow ([c65e4a2](https://github.com/hypersec-io/hs-rustlib/commit/c65e4a29c463d337f2fc91879a47784be79f8906))
+
 ## [1.3.2](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.1...v1.3.2) (2026-02-03)
 
 
