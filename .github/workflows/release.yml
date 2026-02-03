@@ -34,7 +34,7 @@ env:
 
 jobs:
   release:
-    runs-on: ${{ vars.GH_RUNNER_DEFAULT || 'ubuntu-latest' }}
+    runs-on: buildjet-32vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v4
         with:
