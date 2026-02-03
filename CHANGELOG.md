@@ -1,3 +1,10 @@
+## [1.3.7](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.6...v1.3.7) (2026-02-03)
+
+
+### Bug Fixes
+
+* **tests:** isolate hardcoded defaults test from CWD config files ([489160b](https://github.com/hypersec-io/hs-rustlib/commit/489160b946a54bbe778def97bdb9f388ff4e0e68))
+
 ## [1.3.6](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.5...v1.3.6) (2026-02-03)
 
 
