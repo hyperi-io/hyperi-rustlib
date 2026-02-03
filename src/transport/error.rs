@@ -40,6 +40,9 @@ pub enum TransportError {
 
     /// Internal transport error.
     Internal(String),
+
+    /// Admin operation error (topic/partition management).
+    Admin(String),
 }
 
 impl fmt::Display for TransportError {
@@ -54,6 +57,7 @@ impl fmt::Display for TransportError {
             Self::Timeout => write!(f, "transport operation timed out"),
             Self::Backpressure => write!(f, "transport backpressure"),
             Self::Internal(msg) => write!(f, "transport internal error: {msg}"),
+            Self::Admin(msg) => write!(f, "transport admin error: {msg}"),
         }
     }
 }

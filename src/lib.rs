@@ -90,8 +90,8 @@ pub mod spool;
 #[cfg(feature = "tiered-sink")]
 pub mod tiered_sink;
 
-#[cfg(feature = "license")]
-pub mod license;
+#[cfg(feature = "secrets")]
+pub mod secrets;
 
 // Re-export common types at crate root
 pub use env::Environment;
@@ -101,6 +101,9 @@ pub use runtime::RuntimePaths;
 
 #[cfg(feature = "config")]
 pub use config::{Config, ConfigError, ConfigOptions};
+
+#[cfg(feature = "config-postgres")]
+pub use config::postgres::{FallbackMode, PostgresConfig, PostgresConfigError, PostgresConfigSource};
 
 #[cfg(feature = "logger")]
 pub use logger::{LogFormat, LoggerError, LoggerOptions};
@@ -126,8 +129,17 @@ pub use tiered_sink::{
     TieredSink, TieredSinkConfig, TieredSinkError,
 };
 
-#[cfg(feature = "license")]
-pub use license::{License, LicenseError, LicenseOptions, LicenseSettings, LicenseSource};
+#[cfg(feature = "secrets")]
+pub use secrets::{
+    CacheConfig, FileProvider, RotationEvent, SecretMetadata, SecretProvider, SecretSource,
+    SecretValue, SecretsConfig, SecretsError, SecretsManager, SecretsResult,
+};
+
+#[cfg(feature = "secrets-vault")]
+pub use secrets::{OpenBaoAuth, OpenBaoConfig, OpenBaoProvider};
+
+#[cfg(feature = "secrets-aws")]
+pub use secrets::{AwsConfig, AwsProvider};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
