@@ -1,3 +1,10 @@
+## [1.3.6](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.5...v1.3.6) (2026-02-03)
+
+
+### Performance Improvements
+
+* **ci:** remove CARGO_BUILD_JOBS limit on release runner ([a2fcd4a](https://github.com/hypersec-io/hs-rustlib/commit/a2fcd4a481eeb4a391b0998d2ab6789da968252d))
+
 ## [1.3.5](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.4...v1.3.5) (2026-02-03)
 
 
