@@ -28,7 +28,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hs_rustlib::secrets::{SecretsManager, SecretsConfig};
+//! use hs_rustlib::secrets::{SecretsManager, SecretsConfig, SecretSource};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
