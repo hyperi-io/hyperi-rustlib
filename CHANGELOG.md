@@ -1,3 +1,10 @@
+## [1.3.4](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.3...v1.3.4) (2026-02-03)
+
+
+### Bug Fixes
+
+* **ci:** use buildjet-32vcpu runner for release ([e9077e0](https://github.com/hypersec-io/hs-rustlib/commit/e9077e09eaa17a0814b9587bed10dfb7a174350e))
+
 ## [1.3.3](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.2...v1.3.3) (2026-02-03)
 
 
