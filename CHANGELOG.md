@@ -1,3 +1,10 @@
+## [1.3.9](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.8...v1.3.9) (2026-02-03)
+
+
+### Bug Fixes
+
+* **tests:** change CWD to empty dir for hardcoded defaults test ([70cd34a](https://github.com/hypersec-io/hs-rustlib/commit/70cd34a3ee6ad332620bed5dbb07da804cde6a4f))
+
 ## [1.3.8](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.7...v1.3.8) (2026-02-03)
 
 
