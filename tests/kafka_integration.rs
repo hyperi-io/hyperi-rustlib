@@ -74,11 +74,26 @@ fn test_kafka_profile_defaults_devtest() {
 
 #[test]
 fn test_kafka_profile_from_str() {
-    assert_eq!("production".parse::<KafkaProfile>().unwrap(), KafkaProfile::Production);
-    assert_eq!("prod".parse::<KafkaProfile>().unwrap(), KafkaProfile::Production);
-    assert_eq!("devtest".parse::<KafkaProfile>().unwrap(), KafkaProfile::DevTest);
-    assert_eq!("dev".parse::<KafkaProfile>().unwrap(), KafkaProfile::DevTest);
-    assert_eq!("test".parse::<KafkaProfile>().unwrap(), KafkaProfile::DevTest);
+    assert_eq!(
+        "production".parse::<KafkaProfile>().unwrap(),
+        KafkaProfile::Production
+    );
+    assert_eq!(
+        "prod".parse::<KafkaProfile>().unwrap(),
+        KafkaProfile::Production
+    );
+    assert_eq!(
+        "devtest".parse::<KafkaProfile>().unwrap(),
+        KafkaProfile::DevTest
+    );
+    assert_eq!(
+        "dev".parse::<KafkaProfile>().unwrap(),
+        KafkaProfile::DevTest
+    );
+    assert_eq!(
+        "test".parse::<KafkaProfile>().unwrap(),
+        KafkaProfile::DevTest
+    );
     assert!("invalid".parse::<KafkaProfile>().is_err());
 }
 
@@ -92,8 +107,7 @@ fn test_kafka_profile_display() {
 
 #[test]
 fn test_kafka_config_with_override() {
-    let config = KafkaConfig::production()
-        .with_override("fetch.min.bytes", "2097152");
+    let config = KafkaConfig::production().with_override("fetch.min.bytes", "2097152");
 
     assert_eq!(
         config.librdkafka_overrides.get("fetch.min.bytes"),
@@ -103,11 +117,10 @@ fn test_kafka_config_with_override() {
 
 #[test]
 fn test_kafka_config_with_overrides() {
-    let config = KafkaConfig::production()
-        .with_overrides(&[
-            ("fetch.min.bytes", "2097152"),
-            ("statistics.interval.ms", "5000"),
-        ]);
+    let config = KafkaConfig::production().with_overrides(&[
+        ("fetch.min.bytes", "2097152"),
+        ("statistics.interval.ms", "5000"),
+    ]);
 
     assert_eq!(
         config.librdkafka_overrides.get("fetch.min.bytes"),
@@ -124,7 +137,9 @@ fn test_kafka_build_librdkafka_config_priority() {
     let mut config = KafkaConfig::production();
     // Profile sets fetch.min.bytes = 1048576 (1MB)
     // Override should win
-    config.librdkafka_overrides.insert("fetch.min.bytes".to_string(), "2097152".to_string());
+    config
+        .librdkafka_overrides
+        .insert("fetch.min.bytes".to_string(), "2097152".to_string());
 
     let built = config.build_librdkafka_config();
     assert_eq!(built.get("fetch.min.bytes"), Some(&"2097152".to_string()));
@@ -245,9 +260,18 @@ fn test_kafka_production_profile_settings() {
     let built = config.build_librdkafka_config();
 
     // Verify production profile settings
-    assert_eq!(built.get("queued.min.messages"), Some(&"100000".to_string()));
-    assert_eq!(built.get("queued.max.messages.kbytes"), Some(&"1048576".to_string()));
-    assert_eq!(built.get("partition.assignment.strategy"), Some(&"cooperative-sticky".to_string()));
+    assert_eq!(
+        built.get("queued.min.messages"),
+        Some(&"100000".to_string())
+    );
+    assert_eq!(
+        built.get("queued.max.messages.kbytes"),
+        Some(&"1048576".to_string())
+    );
+    assert_eq!(
+        built.get("partition.assignment.strategy"),
+        Some(&"cooperative-sticky".to_string())
+    );
     assert_eq!(built.get("check.crcs"), Some(&"false".to_string()));
     assert_eq!(built.get("socket.nagle.disable"), Some(&"true".to_string()));
 }
@@ -259,7 +283,10 @@ fn test_kafka_devtest_profile_settings() {
 
     // Verify devtest profile settings
     assert_eq!(built.get("queued.min.messages"), Some(&"1000".to_string()));
-    assert_eq!(built.get("queued.max.messages.kbytes"), Some(&"65536".to_string()));
+    assert_eq!(
+        built.get("queued.max.messages.kbytes"),
+        Some(&"65536".to_string())
+    );
     assert_eq!(built.get("check.crcs"), Some(&"true".to_string())); // CRC enabled in devtest
     assert_eq!(built.get("reconnect.backoff.ms"), Some(&"10".to_string()));
     assert_eq!(built.get("log.connection.close"), Some(&"true".to_string()));
@@ -273,7 +300,10 @@ fn test_kafka_config_with_low_latency() {
     assert_eq!(built.get("fetch.wait.max.ms"), Some(&"10".to_string()));
     assert_eq!(built.get("fetch.min.bytes"), Some(&"1".to_string()));
     assert_eq!(built.get("reconnect.backoff.ms"), Some(&"10".to_string()));
-    assert_eq!(built.get("reconnect.backoff.max.ms"), Some(&"100".to_string()));
+    assert_eq!(
+        built.get("reconnect.backoff.max.ms"),
+        Some(&"100".to_string())
+    );
 }
 
 #[test]
@@ -288,7 +318,10 @@ fn test_kafka_config_with_statistics() {
 
     // Also verify it appears in built config
     let built = config.build_librdkafka_config();
-    assert_eq!(built.get("statistics.interval.ms"), Some(&"5000".to_string()));
+    assert_eq!(
+        built.get("statistics.interval.ms"),
+        Some(&"5000".to_string())
+    );
 }
 
 #[test]
@@ -297,9 +330,18 @@ fn test_kafka_config_with_cloud_connection_tuning() {
     let built = config.build_librdkafka_config();
 
     // Cloud tuning is in librdkafka_overrides
-    assert_eq!(built.get("socket.keepalive.enable"), Some(&"true".to_string()));
-    assert_eq!(built.get("metadata.max.age.ms"), Some(&"180000".to_string()));
-    assert_eq!(built.get("socket.connection.setup.timeout.ms"), Some(&"30000".to_string()));
+    assert_eq!(
+        built.get("socket.keepalive.enable"),
+        Some(&"true".to_string())
+    );
+    assert_eq!(
+        built.get("metadata.max.age.ms"),
+        Some(&"180000".to_string())
+    );
+    assert_eq!(
+        built.get("socket.connection.setup.timeout.ms"),
+        Some(&"30000".to_string())
+    );
 }
 
 #[test]
@@ -318,13 +360,22 @@ fn test_kafka_config_chained_builders() {
     assert_eq!(config.sasl_mechanism, Some("SCRAM-SHA-512".to_string()));
 
     // Verify production profile defaults are present
-    assert_eq!(built.get("queued.min.messages"), Some(&"100000".to_string()));
+    assert_eq!(
+        built.get("queued.min.messages"),
+        Some(&"100000".to_string())
+    );
 
     // Verify statistics override
-    assert_eq!(built.get("statistics.interval.ms"), Some(&"1000".to_string()));
+    assert_eq!(
+        built.get("statistics.interval.ms"),
+        Some(&"1000".to_string())
+    );
 
     // Verify cloud tuning
-    assert_eq!(built.get("socket.keepalive.enable"), Some(&"true".to_string()));
+    assert_eq!(
+        built.get("socket.keepalive.enable"),
+        Some(&"true".to_string())
+    );
 
     // Verify explicit override wins
     assert_eq!(built.get("fetch.min.bytes"), Some(&"2097152".to_string()));
@@ -360,8 +411,7 @@ fn test_kafka_config_from_env() {
 #[test]
 fn test_kafka_librdkafka_overrides_win() {
     // User overrides should win over profile defaults
-    let config = KafkaConfig::production()
-        .with_override("queued.min.messages", "50000"); // Override the profile's 100000
+    let config = KafkaConfig::production().with_override("queued.min.messages", "50000"); // Override the profile's 100000
 
     let built = config.build_librdkafka_config();
 
@@ -523,7 +573,11 @@ async fn test_kafka_transport_connection() {
     };
 
     let transport = KafkaTransport::new(&config).await;
-    assert!(transport.is_ok(), "Failed to connect: {:?}", transport.err());
+    assert!(
+        transport.is_ok(),
+        "Failed to connect: {:?}",
+        transport.err()
+    );
 }
 
 #[tokio::test]

@@ -62,7 +62,9 @@ pub use config::{
     LOW_LATENCY_CONSUMER_DEFAULTS, PRODUCER_DEFAULTS, PRODUCER_DEVTEST, PRODUCER_EXACTLY_ONCE,
     PRODUCER_HIGH_THROUGHPUT, PRODUCER_LOW_LATENCY, PRODUCTION_PROFILE,
 };
-pub use metrics::{healthy_broker_count, total_consumer_lag, BrokerMetrics, KafkaMetrics, StatsContext};
+pub use metrics::{
+    healthy_broker_count, total_consumer_lag, BrokerMetrics, KafkaMetrics, StatsContext,
+};
 pub use producer::{KafkaProducer, ProducerMetrics, ProducerProfile};
 pub use token::KafkaToken;
 
@@ -233,10 +235,7 @@ impl KafkaTransport {
     ///
     /// Use this when you need statistics collection via `StatsContext`.
     /// Remember to set `statistics.interval.ms` in `extra_config`.
-    pub fn new_with_context<C>(
-        config: &KafkaConfig,
-        _context: C,
-    ) -> TransportResult<Self>
+    pub fn new_with_context<C>(config: &KafkaConfig, _context: C) -> TransportResult<Self>
     where
         C: rdkafka::consumer::ConsumerContext + 'static,
     {
@@ -296,7 +295,8 @@ impl Transport for KafkaTransport {
 
         // Poll synchronously - BaseConsumer::poll is thread-safe
         let mut messages = Vec::with_capacity(max_msgs.min(tuning::INITIAL_BATCH_CAPACITY));
-        let drain_deadline = std::time::Instant::now() + Duration::from_millis(tuning::MAX_DRAIN_MS);
+        let drain_deadline =
+            std::time::Instant::now() + Duration::from_millis(tuning::MAX_DRAIN_MS);
 
         // Phase 1: Initial blocking poll (triggers network fetch if queue empty)
         if let Some(result) = self.consumer.poll(timeout) {
@@ -375,7 +375,8 @@ impl Transport for KafkaTransport {
         // Build topic-partition-offset list
         // For each partition, commit the highest offset + 1 (next to be read)
         let mut tpl = TopicPartitionList::new();
-        let mut partition_offsets: HashMap<(&str, i32), i64> = HashMap::with_capacity(tokens.len() / 100);
+        let mut partition_offsets: HashMap<(&str, i32), i64> =
+            HashMap::with_capacity(tokens.len() / 100);
 
         for token in tokens {
             let key = (token.topic.as_ref(), token.partition);

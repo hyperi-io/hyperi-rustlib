@@ -189,10 +189,12 @@ impl PostgresConfigSource {
             url: std::env::var(format!("{prefix}_CONFIG_POSTGRES_URL")).ok(),
             namespace: std::env::var(format!("{prefix}_CONFIG_POSTGRES_NAMESPACE"))
                 .unwrap_or_else(|_| "default".to_string()),
-            connect_timeout_secs: std::env::var(format!("{prefix}_CONFIG_POSTGRES_CONNECT_TIMEOUT"))
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(5),
+            connect_timeout_secs: std::env::var(format!(
+                "{prefix}_CONFIG_POSTGRES_CONNECT_TIMEOUT"
+            ))
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5),
             query_timeout_secs: std::env::var(format!("{prefix}_CONFIG_POSTGRES_QUERY_TIMEOUT"))
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -234,9 +236,9 @@ impl PostgresConfigSource {
             return None;
         }
 
-        self.fallback_file.clone().or_else(|| {
-            dirs::cache_dir().map(|d| d.join("hs-config-fallback.json"))
-        })
+        self.fallback_file
+            .clone()
+            .or_else(|| dirs::cache_dir().map(|d| d.join("hs-config-fallback.json")))
     }
 }
 
@@ -440,7 +442,10 @@ impl PostgresConfig {
     }
 
     /// Write configuration to fallback file.
-    fn write_fallback_file(&self, source: &PostgresConfigSource) -> Result<(), PostgresConfigError> {
+    fn write_fallback_file(
+        &self,
+        source: &PostgresConfigSource,
+    ) -> Result<(), PostgresConfigError> {
         let Some(path) = source.fallback_path() else {
             return Ok(());
         };
@@ -547,9 +552,11 @@ pub fn flatten_nested<S: std::hash::BuildHasher>(
     nested: &HashMap<String, serde_json::Value, S>,
 ) -> HashMap<String, serde_json::Value> {
     let mut result = HashMap::new();
-    flatten_value(&mut result, String::new(), &serde_json::Value::Object(
-        nested.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-    ));
+    flatten_value(
+        &mut result,
+        String::new(),
+        &serde_json::Value::Object(nested.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
+    );
     result
 }
 
@@ -647,7 +654,10 @@ mod tests {
         assert_eq!(source.retry_attempts, 5);
         assert!(!source.optional);
         assert!(source.fallback_enabled);
-        assert_eq!(source.fallback_file, Some(PathBuf::from("/tmp/fallback.json")));
+        assert_eq!(
+            source.fallback_file,
+            Some(PathBuf::from("/tmp/fallback.json"))
+        );
         assert_eq!(source.fallback_mode, FallbackMode::Merge);
 
         std::env::remove_var("TESTAPP_CONFIG_POSTGRES_ENABLED");
@@ -828,7 +838,10 @@ mod tests {
             flat.get("kafka.group"),
             Some(&serde_json::json!("my-group"))
         );
-        assert_eq!(flat.get("buffer.flush_rows"), Some(&serde_json::json!(5000)));
+        assert_eq!(
+            flat.get("buffer.flush_rows"),
+            Some(&serde_json::json!(5000))
+        );
     }
 
     #[test]
@@ -860,7 +873,10 @@ mod tests {
             fallback_file: Some(PathBuf::from("/tmp/test.json")),
             ..Default::default()
         };
-        assert_eq!(source.fallback_path(), Some(PathBuf::from("/tmp/test.json")));
+        assert_eq!(
+            source.fallback_path(),
+            Some(PathBuf::from("/tmp/test.json"))
+        );
     }
 
     #[test]
@@ -886,7 +902,9 @@ mod tests {
         config.write_fallback_file(&source).unwrap();
 
         // Read it back
-        let loaded = PostgresConfig::load_fallback_file(&source).unwrap().unwrap();
+        let loaded = PostgresConfig::load_fallback_file(&source)
+            .unwrap()
+            .unwrap();
         assert_eq!(loaded.values.len(), 2);
         assert_eq!(
             loaded.get("kafka.brokers"),

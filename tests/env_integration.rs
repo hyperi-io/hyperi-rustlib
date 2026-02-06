@@ -226,9 +226,7 @@ mod vault_env {
         let config = OpenBaoConfig::from_env().expect("Should load from env");
 
         assert_eq!(config.address, "https://openbao:8200");
-        assert!(
-            matches!(config.auth, OpenBaoAuth::Token { token } if token == "s.openbao-token")
-        );
+        assert!(matches!(config.auth, OpenBaoAuth::Token { token } if token == "s.openbao-token"));
     }
 
     #[test]
@@ -369,10 +367,19 @@ mod env_compat_tests {
             ("PGDATABASE", "mydb"),
         ]);
 
-        assert_eq!(env_compat::postgres::host().get(), Some("pg-standard".to_string()));
+        assert_eq!(
+            env_compat::postgres::host().get(),
+            Some("pg-standard".to_string())
+        );
         assert_eq!(env_compat::postgres::port().get(), Some("5432".to_string()));
-        assert_eq!(env_compat::postgres::user().get(), Some("postgres".to_string()));
-        assert_eq!(env_compat::postgres::database().get(), Some("mydb".to_string()));
+        assert_eq!(
+            env_compat::postgres::user().get(),
+            Some("postgres".to_string())
+        );
+        assert_eq!(
+            env_compat::postgres::database().get(),
+            Some("mydb".to_string())
+        );
     }
 
     #[test]
@@ -383,7 +390,10 @@ mod env_compat_tests {
             ("POSTGRESQL_PORT", "5433"),
         ]);
 
-        assert_eq!(env_compat::postgres::host().get(), Some("pg-legacy".to_string()));
+        assert_eq!(
+            env_compat::postgres::host().get(),
+            Some("pg-legacy".to_string())
+        );
         assert_eq!(env_compat::postgres::port().get(), Some("5433".to_string()));
     }
 

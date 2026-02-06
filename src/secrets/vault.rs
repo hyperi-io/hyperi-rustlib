@@ -341,9 +341,7 @@ impl OpenBaoProvider {
                     {
                         SecretsError::AuthError("Vault token expired or invalid".into())
                     } else {
-                        SecretsError::ProviderError(format!(
-                            "failed to read secret {path}: {e}"
-                        ))
+                        SecretsError::ProviderError(format!("failed to read secret {path}: {e}"))
                     }
                 })?;
 
@@ -358,7 +356,10 @@ impl OpenBaoProvider {
             provider: Some("openbao".into()),
         };
 
-        Ok(SecretValue::with_metadata(value.as_bytes().to_vec(), metadata))
+        Ok(SecretValue::with_metadata(
+            value.as_bytes().to_vec(),
+            metadata,
+        ))
     }
 
     /// Parse a Vault path into mount and secret path.
@@ -396,9 +397,9 @@ impl SecretProvider for OpenBaoProvider {
         let client = self.get_client().await?;
 
         // Check sys/health endpoint
-        vaultrs::sys::health(&client).await.map_err(|e| {
-            SecretsError::ProviderError(format!("Vault health check failed: {e}"))
-        })?;
+        vaultrs::sys::health(&client)
+            .await
+            .map_err(|e| SecretsError::ProviderError(format!("Vault health check failed: {e}")))?;
 
         Ok(())
     }

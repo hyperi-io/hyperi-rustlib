@@ -231,7 +231,12 @@ pub mod postgres {
     /// PostgreSQL database.
     pub fn database() -> EnvVar {
         EnvVar::new("PGDATABASE")
-            .with_legacy_names(&["POSTGRESQL_DATABASE", "PG_DATABASE", "POSTGRES_DATABASE", "POSTGRES_DB"])
+            .with_legacy_names(&[
+                "POSTGRESQL_DATABASE",
+                "PG_DATABASE",
+                "POSTGRES_DATABASE",
+                "POSTGRES_DB",
+            ])
             .with_description("PostgreSQL database name")
     }
 
@@ -279,14 +284,12 @@ pub mod kafka {
 
     /// Kafka SASL username.
     pub fn sasl_username() -> EnvVar {
-        kafka_var("SASL_USERNAME", &["KAFKA_SASL_USER"])
-            .with_description("SASL username")
+        kafka_var("SASL_USERNAME", &["KAFKA_SASL_USER"]).with_description("SASL username")
     }
 
     /// Kafka SASL password.
     pub fn sasl_password() -> EnvVar {
-        kafka_var("SASL_PASSWORD", &[])
-            .with_description("SASL password")
+        kafka_var("SASL_PASSWORD", &[]).with_description("SASL password")
     }
 
     /// Kafka consumer group ID.
@@ -297,8 +300,7 @@ pub mod kafka {
 
     /// Kafka client ID.
     pub fn client_id() -> EnvVar {
-        kafka_var("CLIENT_ID", &[])
-            .with_description("Client ID for broker logs")
+        kafka_var("CLIENT_ID", &[]).with_description("Client ID for broker logs")
     }
 
     /// Kafka topics (comma-separated).
@@ -321,16 +323,14 @@ pub mod kafka {
 
     /// Kafka profile (production, devtest).
     pub fn profile() -> EnvVar {
-        kafka_var("PROFILE", &[])
-            .with_description("Kafka profile (production, devtest)")
+        kafka_var("PROFILE", &[]).with_description("Kafka profile (production, devtest)")
     }
 
     /// Create a prefixed Kafka env var.
     ///
     /// For custom prefixes like `MYAPP_KAFKA_BOOTSTRAP_SERVERS`.
     pub fn with_prefix(prefix: &str, name: &str) -> EnvVar {
-        EnvVar::new(&format!("{prefix}_KAFKA_{name}"))
-            .with_legacy(&format!("{prefix}_{name}"))
+        EnvVar::new(&format!("{prefix}_KAFKA_{name}")).with_legacy(&format!("{prefix}_{name}"))
     }
 }
 
@@ -364,7 +364,11 @@ pub mod vault {
     /// Vault skip TLS verification.
     pub fn skip_verify() -> EnvVar {
         EnvVar::new("VAULT_SKIP_VERIFY")
-            .with_legacy_names(&["OPENBAO_SKIP_VERIFY", "BAO_SKIP_VERIFY", "VAULT_TLS_SKIP_VERIFY"])
+            .with_legacy_names(&[
+                "OPENBAO_SKIP_VERIFY",
+                "BAO_SKIP_VERIFY",
+                "VAULT_TLS_SKIP_VERIFY",
+            ])
             .with_description("Skip TLS certificate verification")
     }
 
@@ -498,8 +502,14 @@ pub fn load_all_standard() -> HashMap<String, Option<String>> {
     vars.insert("pg.database".into(), postgres::database().get());
 
     // Kafka
-    vars.insert("kafka.bootstrap_servers".into(), kafka::bootstrap_servers().get());
-    vars.insert("kafka.security_protocol".into(), kafka::security_protocol().get());
+    vars.insert(
+        "kafka.bootstrap_servers".into(),
+        kafka::bootstrap_servers().get(),
+    );
+    vars.insert(
+        "kafka.security_protocol".into(),
+        kafka::security_protocol().get(),
+    );
     vars.insert("kafka.sasl_mechanism".into(), kafka::sasl_mechanism().get());
     vars.insert("kafka.sasl_username".into(), kafka::sasl_username().get());
 
@@ -638,10 +648,7 @@ mod tests {
         setup();
         std::env::set_var("VAULT_ADDR", "https://vault:8200");
 
-        assert_eq!(
-            vault::addr().get(),
-            Some("https://vault:8200".to_string())
-        );
+        assert_eq!(vault::addr().get(), Some("https://vault:8200".to_string()));
 
         std::env::remove_var("VAULT_ADDR");
     }

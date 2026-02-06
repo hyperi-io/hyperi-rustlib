@@ -195,7 +195,9 @@ impl StatsContext {
 
                 // Consumer lag
                 if partition.consumer_lag >= 0 {
-                    metrics.partition_lag.insert(key.clone(), partition.consumer_lag);
+                    metrics
+                        .partition_lag
+                        .insert(key.clone(), partition.consumer_lag);
                 }
 
                 // Committed offset
@@ -207,7 +209,9 @@ impl StatsContext {
 
                 // High watermark
                 if partition.hi_offset >= 0 {
-                    metrics.partition_high_watermark.insert(key, partition.hi_offset);
+                    metrics
+                        .partition_high_watermark
+                        .insert(key, partition.hi_offset);
                 }
             }
         }
@@ -293,11 +297,7 @@ pub fn total_consumer_lag(metrics: &KafkaMetrics) -> i64 {
 /// Get brokers in "UP" state.
 #[must_use]
 pub fn healthy_broker_count(metrics: &KafkaMetrics) -> usize {
-    metrics
-        .brokers
-        .values()
-        .filter(|b| b.state == "UP")
-        .count()
+    metrics.brokers.values().filter(|b| b.state == "UP").count()
 }
 
 #[cfg(test)]
@@ -330,15 +330,9 @@ mod tests {
     #[test]
     fn test_total_consumer_lag() {
         let mut metrics = KafkaMetrics::default();
-        metrics
-            .partition_lag
-            .insert(("topic".to_string(), 0), 100);
-        metrics
-            .partition_lag
-            .insert(("topic".to_string(), 1), 200);
-        metrics
-            .partition_lag
-            .insert(("topic".to_string(), 2), 50);
+        metrics.partition_lag.insert(("topic".to_string(), 0), 100);
+        metrics.partition_lag.insert(("topic".to_string(), 1), 200);
+        metrics.partition_lag.insert(("topic".to_string(), 2), 50);
 
         assert_eq!(total_consumer_lag(&metrics), 350);
     }

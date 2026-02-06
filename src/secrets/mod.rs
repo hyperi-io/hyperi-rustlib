@@ -110,11 +110,7 @@ impl SecretsManager {
             .transpose()?;
 
         #[cfg(feature = "secrets-aws")]
-        let aws_provider = config
-            .aws
-            .as_ref()
-            .map(AwsProvider::new)
-            .transpose()?;
+        let aws_provider = config.aws.as_ref().map(AwsProvider::new).transpose()?;
 
         let (rotation_tx, _) = broadcast::channel(16);
 
@@ -177,7 +173,11 @@ impl SecretsManager {
     }
 
     /// Get a secret from a specific source.
-    async fn get_from_source(&self, cache_key: &str, source: &SecretSource) -> SecretsResult<SecretValue> {
+    async fn get_from_source(
+        &self,
+        cache_key: &str,
+        source: &SecretSource,
+    ) -> SecretsResult<SecretValue> {
         // Check cache first
         if let Some(cached) = self.cache.read().get(cache_key) {
             debug!(key = %cache_key, "Secret loaded from cache");

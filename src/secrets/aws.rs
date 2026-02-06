@@ -104,13 +104,10 @@ impl AwsProvider {
     pub fn new(config: &AwsConfig) -> SecretsResult<Self> {
         // Build AWS config synchronously for now
         // In production, this should be async
-        let rt = tokio::runtime::Handle::try_current().map_err(|e| {
-            SecretsError::ConfigError(format!("tokio runtime required: {e}"))
-        })?;
+        let rt = tokio::runtime::Handle::try_current()
+            .map_err(|e| SecretsError::ConfigError(format!("tokio runtime required: {e}")))?;
 
-        let client = rt.block_on(async {
-            Self::create_client(config).await
-        })?;
+        let client = rt.block_on(async { Self::create_client(config).await })?;
 
         Ok(Self { client })
     }
@@ -151,9 +148,7 @@ impl AwsProvider {
                 } else if e.to_string().contains("AccessDenied") {
                     SecretsError::AuthError(format!("access denied to secret: {secret_id}"))
                 } else {
-                    SecretsError::ProviderError(format!(
-                        "failed to get secret {secret_id}: {e}"
-                    ))
+                    SecretsError::ProviderError(format!("failed to get secret {secret_id}: {e}"))
                 }
             })?;
 
@@ -217,9 +212,7 @@ impl SecretProvider for AwsProvider {
             .max_results(1)
             .send()
             .await
-            .map_err(|e| {
-                SecretsError::ProviderError(format!("AWS health check failed: {e}"))
-            })?;
+            .map_err(|e| SecretsError::ProviderError(format!("AWS health check failed: {e}")))?;
 
         Ok(())
     }
