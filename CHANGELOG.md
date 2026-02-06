@@ -1,3 +1,10 @@
+## [1.3.11](https://github.com/hypersec-io/hyperi-rustlib/compare/v1.3.10...v1.3.11) (2026-02-06)
+
+
+### Bug Fixes
+
+* resolve clippy single_char_pattern and uninlined_format_args lints ([028e4d6](https://github.com/hypersec-io/hyperi-rustlib/commit/028e4d6c2581fe5d00a3e6121d56f5bd7c4fd0f7))
+
 ## [1.3.10](https://github.com/hypersec-io/hyperi-rustlib/compare/v1.3.9...v1.3.10) (2026-02-06)
 
 
