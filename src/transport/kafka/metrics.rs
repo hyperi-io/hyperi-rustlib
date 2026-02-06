@@ -324,7 +324,7 @@ mod tests {
     fn test_broker_metrics_default() {
         let metrics = BrokerMetrics::default();
         assert_eq!(metrics.state, "");
-        assert_eq!(metrics.rtt_avg_ms, 0.0);
+        assert!(metrics.rtt_avg_ms.abs() < f64::EPSILON);
     }
 
     #[test]
