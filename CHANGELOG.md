@@ -1,3 +1,10 @@
+## [1.3.12](https://github.com/hypersec-io/hyperi-rustlib/compare/v1.3.11...v1.3.12) (2026-02-06)
+
+
+### Bug Fixes
+
+* apply cargo fmt formatting ([8f70877](https://github.com/hypersec-io/hyperi-rustlib/commit/8f70877cec8c66f2f8adef87e81fc98a64099d8b))
+
 ## [1.3.11](https://github.com/hypersec-io/hyperi-rustlib/compare/v1.3.10...v1.3.11) (2026-02-06)
 
 
