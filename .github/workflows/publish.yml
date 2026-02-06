@@ -1,6 +1,6 @@
 # Project:      hyperi-rustlib
-# File:         .github/workflows/ci.yml
-# Purpose:      Rust CI pipeline - Quality, Test
+# File:         .github/workflows/publish.yml
+# Purpose:      Rust Publish pipeline - Build, Publish to Cargo registry
 # License:      FSL-1.1-ALv2
 # Copyright:    (c) 2026 HYPERI PTY LIMITED
 #
@@ -10,14 +10,11 @@
 # IMPORTANT: Before triggering CI, always run a local build first:
 #   cargo fmt --check && cargo clippy --all-features && cargo test --all-features
 
-name: CI
+name: Publish
 
 on:
-  push:
-    branches: ["**"]
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE*', '.gitignore']
-  pull_request:
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE*', '.gitignore']
+  release:
+    types: [published]
   workflow_dispatch:
 
 jobs:
@@ -25,8 +22,8 @@ jobs:
     name: Detect Config
     runs-on: ${{ vars.GH_RUNNER_DEFAULT || 'ubuntu-latest' }}
     outputs:
+      rust_targets: ${{ steps.config.outputs.rust_targets }}
       rust_features: ${{ steps.config.outputs.rust_features }}
-      rust_test_tier: ${{ steps.config.outputs.rust_test_tier }}
     steps:
       - name: Generate token
         id: token
@@ -45,8 +42,8 @@ jobs:
         with:
           scripts-path: ./ci/scripts
 
-  quality:
-    name: Quality
+  build:
+    name: Build
     needs: detect
     runs-on: ${{ vars.GH_RUNNER_DEFAULT || 'ubuntu-latest' }}
     steps:
@@ -62,23 +59,21 @@ jobs:
           fetch-depth: 0
           submodules: recursive
           token: ${{ steps.token.outputs.token }}
-      - uses: ./ci/actions/jobs/quality
+      - uses: ./ci/actions/jobs/build
         with:
           language: rust
           artifactory-url: ${{ vars.ARTIFACTORY_CARGO_URL }}
           artifactory-username: ${{ secrets.ARTIFACTORY_CI_USERNAME }}
           artifactory-password: ${{ secrets.ARTIFACTORY_CI_TOKEN }}
+          rust-targets: ${{ needs.detect.outputs.rust_targets }}
           rust-features: ${{ needs.detect.outputs.rust_features }}
-      - name: Commit auto-fixes
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: 'docs: auto-fix markdown formatting [skip ci]'
-          file_pattern: '**/*.md'
 
-  test:
-    name: Test
-    needs: [detect, quality]
+  publish:
+    name: Publish
+    needs: [detect, build]
     runs-on: ${{ vars.GH_RUNNER_DEFAULT || 'ubuntu-latest' }}
+    permissions:
+      contents: write
     steps:
       - name: Generate token
         id: token
@@ -92,10 +87,11 @@ jobs:
           fetch-depth: 0
           submodules: recursive
           token: ${{ steps.token.outputs.token }}
-      - uses: ./ci/actions/jobs/test
+      - uses: ./ci/actions/jobs/publish
         with:
           language: rust
           artifactory-url: ${{ vars.ARTIFACTORY_CARGO_URL }}
           artifactory-username: ${{ secrets.ARTIFACTORY_CI_USERNAME }}
           artifactory-password: ${{ secrets.ARTIFACTORY_CI_TOKEN }}
-          rust-features: ${{ needs.detect.outputs.rust_features }}
+          linear-api-key: ${{ secrets.LINEAR_API_KEY }}
+          linear-prefixes: ${{ vars.LINEAR_PREFIXES || 'DFE' }}
