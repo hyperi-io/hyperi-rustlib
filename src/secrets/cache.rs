@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn test_key_to_filename() {
         let filename = SecretCache::key_to_filename("test/key:with/special");
-        assert!(filename.ends_with(".json"));
+        assert!(std::path::Path::new(&filename).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("json")));
         assert!(!filename.contains('/'));
         assert!(!filename.contains(':'));
     }
