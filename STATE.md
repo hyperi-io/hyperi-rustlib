@@ -56,6 +56,7 @@ None - license module implementation complete, ready for commit.
 ### Blockers/Issues
 
 - clickhouse-arrow fork has new commits (Variant/Dynamic/Nested/BFloat16 support) but not yet published to Artifactory
+- **GitHub org migration:** Currently `hypersec-io`, will migrate to `hyperi-io` next week. CI submodule attach.sh already defaults to `hyperi-io` but submodule URLs must remain `hypersec-io` until the org is created. Update `.gitmodules` after migration.
 
 ### Dead Ends & Hypotheses
 

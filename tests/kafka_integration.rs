@@ -493,7 +493,7 @@ fn test_topic_info_debug() {
     let debug = format!("{info:?}");
     assert!(debug.contains("events"));
     assert!(debug.contains("12"));
-    assert!(debug.contains("3"));
+    assert!(debug.contains('3'));
 }
 
 // --- Integration Tests (require running Kafka) ---
@@ -557,11 +557,11 @@ async fn test_kafka_admin_describe_topic() {
 
     let info = admin.describe_topic(topic);
     if let Ok(info) = info {
-        println!("Topic info: {:?}", info);
+        println!("Topic info: {info:?}");
         assert_eq!(info.name, *topic);
         assert!(info.partition_count > 0);
     } else {
-        eprintln!("Topic {} not found (expected in integration tests)", topic);
+        eprintln!("Topic {topic} not found (expected in integration tests)");
     }
 }
 
@@ -583,9 +583,9 @@ async fn test_kafka_send_receive_batch() {
 
     // Send a batch of messages
     for i in 0..10 {
-        let payload = format!(r#"{{"id": {}, "data": "test"}}"#, i);
+        let payload = format!(r#"{{"id": {i}, "data": "test"}}"#);
         let result = transport.send(topic, payload.as_bytes()).await;
-        assert!(result.is_ok(), "Send failed: {:?}", result);
+        assert!(result.is_ok(), "Send failed: {result:?}");
     }
 
     // Receive messages (may not get all if topic is shared)
@@ -616,9 +616,9 @@ async fn test_kafka_consumer_lag() {
 
     let lag = admin.get_consumer_lag(&config.group, topic).await;
     if let Ok(lag) = lag {
-        println!("Consumer lag per partition: {:?}", lag);
+        println!("Consumer lag per partition: {lag:?}");
         for (partition, lag) in lag {
-            println!("  Partition {}: lag {}", partition, lag);
+            println!("  Partition {partition}: lag {lag}");
         }
     } else {
         eprintln!("Could not get lag (may need messages in topic)");
