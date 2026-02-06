@@ -62,10 +62,13 @@ pub struct EnvGuard {
 impl EnvGuard {
     /// Create a new environment guard with the given variables.
     pub fn new(vars: &[(&str, &str)]) -> Self {
-        let var_names: Vec<String> = vars.iter().map(|(k, v)| {
-            std::env::set_var(k, v);
-            k.to_string()
-        }).collect();
+        let var_names: Vec<String> = vars
+            .iter()
+            .map(|(k, v)| {
+                std::env::set_var(k, v);
+                k.to_string()
+            })
+            .collect();
 
         Self { vars: var_names }
     }

@@ -108,9 +108,9 @@ impl KafkaAdmin {
         }
 
         // Create admin client
-        let admin: AdminClient<DefaultClientContext> = client_config
-            .create()
-            .map_err(|e| TransportError::Connection(format!("Failed to create admin client: {e}")))?;
+        let admin: AdminClient<DefaultClientContext> = client_config.create().map_err(|e| {
+            TransportError::Connection(format!("Failed to create admin client: {e}"))
+        })?;
 
         // Create consumer for offset queries (group.id required but can be arbitrary)
         let mut consumer_config = client_config.clone();
@@ -224,12 +224,8 @@ impl KafkaAdmin {
         // Build TPL with timestamps
         let mut tpl = TopicPartitionList::new();
         for elem in partition_list.elements() {
-            tpl.add_partition_offset(
-                elem.topic(),
-                elem.partition(),
-                Offset::Offset(timestamp_ms),
-            )
-            .map_err(|e| TransportError::Admin(format!("Failed to build TPL: {e}")))?;
+            tpl.add_partition_offset(elem.topic(), elem.partition(), Offset::Offset(timestamp_ms))
+                .map_err(|e| TransportError::Admin(format!("Failed to build TPL: {e}")))?;
         }
 
         // Get offsets for timestamps
@@ -493,11 +489,12 @@ impl KafkaAdmin {
                 .fetch_metadata(Some(topic), Duration::from_secs(10))
                 .map_err(|e| TransportError::Admin(format!("Failed to fetch metadata: {e}")))?;
 
-            let topic_meta: &MetadataTopic = metadata
-                .topics()
-                .iter()
-                .find(|t| t.name() == topic)
-                .ok_or_else(|| TransportError::Admin(format!("Topic {topic} not found")))?;
+            let topic_meta: &MetadataTopic =
+                metadata
+                    .topics()
+                    .iter()
+                    .find(|t| t.name() == topic)
+                    .ok_or_else(|| TransportError::Admin(format!("Topic {topic} not found")))?;
 
             for partition in topic_meta.partitions() {
                 tpl.add_partition(topic, partition.id());

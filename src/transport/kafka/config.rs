@@ -83,7 +83,9 @@ impl FromStr for KafkaProfile {
         match s.to_lowercase().as_str() {
             "production" | "prod" => Ok(Self::Production),
             "devtest" | "dev" | "test" | "development" => Ok(Self::DevTest),
-            _ => Err(format!("Unknown Kafka profile: {s}. Valid: production, devtest")),
+            _ => Err(format!(
+                "Unknown Kafka profile: {s}. Valid: production, devtest"
+            )),
         }
     }
 }
@@ -106,13 +108,13 @@ impl std::fmt::Display for KafkaProfile {
 /// Optimized for PB/day batch workloads with maximum throughput.
 pub const PRODUCTION_PROFILE: &[(&str, &str)] = &[
     // --- Pre-fetch queue tuning (large queues for continuous data flow) ---
-    ("queued.min.messages", "100000"),          // 100K messages per partition
-    ("queued.max.messages.kbytes", "1048576"),  // 1GB max queue size
+    ("queued.min.messages", "100000"), // 100K messages per partition
+    ("queued.max.messages.kbytes", "1048576"), // 1GB max queue size
     // --- Fetch tuning (batch larger requests, fewer round-trips) ---
-    ("fetch.wait.max.ms", "100"),               // Max wait for fetch response
-    ("fetch.min.bytes", "1048576"),             // 1MB minimum fetch
-    ("fetch.message.max.bytes", "10485760"),    // 10MB max message size
-    ("max.partition.fetch.bytes", "10485760"),  // 10MB per partition fetch
+    ("fetch.wait.max.ms", "100"),   // Max wait for fetch response
+    ("fetch.min.bytes", "1048576"), // 1MB minimum fetch
+    ("fetch.message.max.bytes", "10485760"), // 10MB max message size
+    ("max.partition.fetch.bytes", "10485760"), // 10MB per partition fetch
     ("receive.message.max.bytes", "104857600"), // 100MB max response size
     // --- Socket tuning ---
     ("socket.receive.buffer.bytes", "1048576"), // 1MB socket buffer
@@ -121,14 +123,14 @@ pub const PRODUCTION_PROFILE: &[(&str, &str)] = &[
     // --- Rebalancing optimization ---
     ("partition.assignment.strategy", "cooperative-sticky"), // Incremental rebalancing
     // --- Disable unnecessary overhead ---
-    ("check.crcs", "false"),                    // Skip CRC verification (trust TLS)
-    ("enable.partition.eof", "false"),          // Don't emit EOF events
-    ("fetch.error.backoff.ms", "100"),          // Fast retry on fetch errors
+    ("check.crcs", "false"),           // Skip CRC verification (trust TLS)
+    ("enable.partition.eof", "false"), // Don't emit EOF events
+    ("fetch.error.backoff.ms", "100"), // Fast retry on fetch errors
     // --- Connection tuning ---
-    ("reconnect.backoff.ms", "50"),             // Fast initial reconnect
-    ("reconnect.backoff.max.ms", "1000"),       // Cap reconnect backoff at 1s
-    ("connections.max.idle.ms", "540000"),      // 9 minutes idle timeout
-    ("metadata.max.age.ms", "180000"),          // Refresh metadata every 3 minutes
+    ("reconnect.backoff.ms", "50"),        // Fast initial reconnect
+    ("reconnect.backoff.max.ms", "1000"),  // Cap reconnect backoff at 1s
+    ("connections.max.idle.ms", "540000"), // 9 minutes idle timeout
+    ("metadata.max.age.ms", "180000"),     // Refresh metadata every 3 minutes
 ];
 
 /// Development/Test profile librdkafka settings.
@@ -136,26 +138,26 @@ pub const PRODUCTION_PROFILE: &[(&str, &str)] = &[
 /// Relaxed settings for local development and testing environments.
 pub const DEVTEST_PROFILE: &[(&str, &str)] = &[
     // --- Smaller queues (lower memory for dev machines) ---
-    ("queued.min.messages", "1000"),            // 1K messages per partition
-    ("queued.max.messages.kbytes", "65536"),    // 64MB max queue size
+    ("queued.min.messages", "1000"), // 1K messages per partition
+    ("queued.max.messages.kbytes", "65536"), // 64MB max queue size
     // --- Standard fetch (no aggressive batching) ---
-    ("fetch.wait.max.ms", "500"),               // Standard wait
-    ("fetch.min.bytes", "1"),                   // Return immediately with any data
-    ("fetch.message.max.bytes", "1048576"),     // 1MB max message
-    ("max.partition.fetch.bytes", "1048576"),   // 1MB per partition
+    ("fetch.wait.max.ms", "500"),             // Standard wait
+    ("fetch.min.bytes", "1"),                 // Return immediately with any data
+    ("fetch.message.max.bytes", "1048576"),   // 1MB max message
+    ("max.partition.fetch.bytes", "1048576"), // 1MB per partition
     // --- Socket tuning ---
-    ("socket.nagle.disable", "true"),           // Still disable Nagle
+    ("socket.nagle.disable", "true"), // Still disable Nagle
     // --- Rebalancing (cooperative for all environments) ---
     ("partition.assignment.strategy", "cooperative-sticky"),
     // --- Keep CRC checks in dev for safety ---
-    ("check.crcs", "true"),                     // Verify message integrity
-    ("enable.partition.eof", "false"),          // Don't emit EOF events
+    ("check.crcs", "true"),            // Verify message integrity
+    ("enable.partition.eof", "false"), // Don't emit EOF events
     // --- Fast reconnection for quick iteration ---
-    ("reconnect.backoff.ms", "10"),             // Very fast reconnect
-    ("reconnect.backoff.max.ms", "100"),        // Cap quickly
-    ("fetch.error.backoff.ms", "50"),           // Fast retry
+    ("reconnect.backoff.ms", "10"),      // Very fast reconnect
+    ("reconnect.backoff.max.ms", "100"), // Cap quickly
+    ("fetch.error.backoff.ms", "50"),    // Fast retry
     // --- Debug-friendly ---
-    ("log.connection.close", "true"),           // Log connection closes
+    ("log.connection.close", "true"), // Log connection closes
 ];
 
 // ============================================================================
@@ -172,35 +174,35 @@ pub const DEVTEST_PROFILE: &[(&str, &str)] = &[
 /// - Sticky partitioner for better batching
 pub const PRODUCER_HIGH_THROUGHPUT: &[(&str, &str)] = &[
     // --- Delivery guarantees (at-least-once) ---
-    ("acks", "all"),                            // Wait for all replicas
-    ("enable.idempotence", "false"),            // Disabled for max throughput
+    ("acks", "all"),                 // Wait for all replicas
+    ("enable.idempotence", "false"), // Disabled for max throughput
     // --- Batching (maximize batch size) ---
-    ("linger.ms", "100"),                       // 100ms to accumulate batches
-    ("batch.size", "262144"),                   // 256KB batch size
-    ("batch.num.messages", "10000"),            // Max 10K messages per batch
+    ("linger.ms", "100"),            // 100ms to accumulate batches
+    ("batch.size", "262144"),        // 256KB batch size
+    ("batch.num.messages", "10000"), // Max 10K messages per batch
     // --- Queue sizing (1GB buffer) ---
     ("queue.buffering.max.messages", "1000000"), // 1M messages
-    ("queue.buffering.max.kbytes", "1048576"),  // 1GB max queue
-    ("queue.buffering.max.ms", "100"),          // Alias for linger.ms
+    ("queue.buffering.max.kbytes", "1048576"),   // 1GB max queue
+    ("queue.buffering.max.ms", "100"),           // Alias for linger.ms
     // --- Compression (LZ4 = best throughput) ---
-    ("compression.type", "lz4"),                // Fast compression
-    ("compression.level", "1"),                 // Fastest compression level
+    ("compression.type", "lz4"), // Fast compression
+    ("compression.level", "1"),  // Fastest compression level
     // --- Parallelism (high in-flight for throughput) ---
     ("max.in.flight.requests.per.connection", "10"), // Parallel sends (ordering not guaranteed)
     // --- Timeouts ---
-    ("delivery.timeout.ms", "120000"),          // 2 minutes max delivery
-    ("request.timeout.ms", "30000"),            // 30s per request
-    ("message.timeout.ms", "120000"),           // Match delivery timeout
+    ("delivery.timeout.ms", "120000"), // 2 minutes max delivery
+    ("request.timeout.ms", "30000"),   // 30s per request
+    ("message.timeout.ms", "120000"),  // Match delivery timeout
     // --- Retries ---
-    ("retries", "5"),                           // Retry transient failures
-    ("retry.backoff.ms", "100"),                // 100ms backoff
-    ("retry.backoff.max.ms", "1000"),           // Cap at 1s
+    ("retries", "5"),                 // Retry transient failures
+    ("retry.backoff.ms", "100"),      // 100ms backoff
+    ("retry.backoff.max.ms", "1000"), // Cap at 1s
     // --- Socket tuning ---
-    ("socket.send.buffer.bytes", "1048576"),    // 1MB send buffer
-    ("socket.nagle.disable", "true"),           // Disable Nagle
-    ("socket.keepalive.enable", "true"),        // Keep connections alive
+    ("socket.send.buffer.bytes", "1048576"), // 1MB send buffer
+    ("socket.nagle.disable", "true"),        // Disable Nagle
+    ("socket.keepalive.enable", "true"),     // Keep connections alive
     // --- Partitioner ---
-    ("partitioner", "consistent_random"),       // Sticky-like for no-key messages
+    ("partitioner", "consistent_random"), // Sticky-like for no-key messages
 ];
 
 /// Producer settings optimized for exactly-once semantics.
@@ -211,13 +213,13 @@ pub const PRODUCER_HIGH_THROUGHPUT: &[(&str, &str)] = &[
 /// - Smaller batches for lower latency
 pub const PRODUCER_EXACTLY_ONCE: &[(&str, &str)] = &[
     // --- Delivery guarantees (exactly-once) ---
-    ("acks", "all"),                            // Wait for all replicas
-    ("enable.idempotence", "true"),             // Exactly-once semantics
+    ("acks", "all"),                // Wait for all replicas
+    ("enable.idempotence", "true"), // Exactly-once semantics
     // --- Ordering (limited in-flight) ---
     ("max.in.flight.requests.per.connection", "5"), // Max for idempotence
     // --- Batching (moderate) ---
-    ("linger.ms", "20"),                        // Smaller linger for latency
-    ("batch.size", "65536"),                    // 64KB batch
+    ("linger.ms", "20"),     // Smaller linger for latency
+    ("batch.size", "65536"), // 64KB batch
     // --- Queue sizing ---
     ("queue.buffering.max.messages", "100000"), // 100K messages
     ("queue.buffering.max.kbytes", "262144"),   // 256MB max queue
@@ -227,10 +229,10 @@ pub const PRODUCER_EXACTLY_ONCE: &[(&str, &str)] = &[
     ("delivery.timeout.ms", "120000"),
     ("request.timeout.ms", "30000"),
     // --- Retries (high for idempotence) ---
-    ("retries", "2147483647"),                  // Infinite retries (limited by timeout)
+    ("retries", "2147483647"), // Infinite retries (limited by timeout)
     ("retry.backoff.ms", "100"),
     // --- Socket tuning ---
-    ("socket.send.buffer.bytes", "262144"),     // 256KB send buffer
+    ("socket.send.buffer.bytes", "262144"), // 256KB send buffer
     ("socket.nagle.disable", "true"),
 ];
 
@@ -242,21 +244,21 @@ pub const PRODUCER_EXACTLY_ONCE: &[(&str, &str)] = &[
 /// - Fast acknowledgment (acks=1)
 pub const PRODUCER_LOW_LATENCY: &[(&str, &str)] = &[
     // --- Delivery guarantees (faster acks) ---
-    ("acks", "1"),                              // Leader ack only for speed
+    ("acks", "1"), // Leader ack only for speed
     ("enable.idempotence", "false"),
     // --- No batching ---
-    ("linger.ms", "0"),                         // Send immediately
-    ("batch.size", "16384"),                    // Small batch (16KB)
+    ("linger.ms", "0"),      // Send immediately
+    ("batch.size", "16384"), // Small batch (16KB)
     // --- Queue sizing (smaller) ---
     ("queue.buffering.max.messages", "10000"),
-    ("queue.buffering.max.kbytes", "65536"),    // 64MB
+    ("queue.buffering.max.kbytes", "65536"), // 64MB
     // --- Compression (optional, can disable) ---
-    ("compression.type", "lz4"),                // Still use LZ4 (fast)
+    ("compression.type", "lz4"), // Still use LZ4 (fast)
     // --- Parallelism ---
     ("max.in.flight.requests.per.connection", "5"),
     // --- Timeouts (shorter) ---
-    ("delivery.timeout.ms", "30000"),           // 30s max
-    ("request.timeout.ms", "10000"),            // 10s per request
+    ("delivery.timeout.ms", "30000"), // 30s max
+    ("request.timeout.ms", "10000"),  // 10s per request
     // --- Retries ---
     ("retries", "3"),
     ("retry.backoff.ms", "50"),
@@ -268,13 +270,13 @@ pub const PRODUCER_LOW_LATENCY: &[(&str, &str)] = &[
 ///
 /// Relaxed settings for local development.
 pub const PRODUCER_DEVTEST: &[(&str, &str)] = &[
-    ("acks", "1"),                              // Faster for dev
+    ("acks", "1"), // Faster for dev
     ("enable.idempotence", "false"),
     ("linger.ms", "10"),
-    ("batch.size", "32768"),                    // 32KB
+    ("batch.size", "32768"), // 32KB
     ("queue.buffering.max.messages", "10000"),
     ("queue.buffering.max.kbytes", "65536"),
-    ("compression.type", "none"),               // No compression in dev
+    ("compression.type", "none"), // No compression in dev
     ("max.in.flight.requests.per.connection", "5"),
     ("delivery.timeout.ms", "30000"),
     ("request.timeout.ms", "10000"),
@@ -307,15 +309,15 @@ pub const HIGH_THROUGHPUT_CONSUMER_DEFAULTS: &[(&str, &str)] = PRODUCTION_PROFIL
 ///
 /// Use this for real-time alerting, trading signals, etc.
 pub const LOW_LATENCY_CONSUMER_DEFAULTS: &[(&str, &str)] = &[
-    ("fetch.wait.max.ms", "10"),                // Return quickly
-    ("fetch.min.bytes", "1"),                   // No batching wait
-    ("reconnect.backoff.ms", "10"),             // Very fast reconnect
-    ("reconnect.backoff.max.ms", "100"),        // Cap backoff quickly
-    ("socket.nagle.disable", "true"),           // Disable Nagle
-    ("queued.min.messages", "1000"),            // Smaller queue
-    ("queued.max.messages.kbytes", "65536"),    // 64MB max queue
+    ("fetch.wait.max.ms", "10"),             // Return quickly
+    ("fetch.min.bytes", "1"),                // No batching wait
+    ("reconnect.backoff.ms", "10"),          // Very fast reconnect
+    ("reconnect.backoff.max.ms", "100"),     // Cap backoff quickly
+    ("socket.nagle.disable", "true"),        // Disable Nagle
+    ("queued.min.messages", "1000"),         // Smaller queue
+    ("queued.max.messages.kbytes", "65536"), // 64MB max queue
     ("partition.assignment.strategy", "cooperative-sticky"),
-    ("fetch.error.backoff.ms", "10"),           // Very fast retry
+    ("fetch.error.backoff.ms", "10"), // Very fast retry
 ];
 
 // ============================================================================
@@ -747,8 +749,10 @@ impl KafkaConfig {
     /// Enable statistics collection at the specified interval.
     #[must_use]
     pub fn with_statistics(mut self, interval_ms: u32) -> Self {
-        self.librdkafka_overrides
-            .insert("statistics.interval.ms".to_string(), interval_ms.to_string());
+        self.librdkafka_overrides.insert(
+            "statistics.interval.ms".to_string(),
+            interval_ms.to_string(),
+        );
         self
     }
 

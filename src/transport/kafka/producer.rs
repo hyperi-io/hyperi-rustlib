@@ -271,11 +271,7 @@ impl KafkaProducer {
     ///
     /// Number of messages successfully queued. If less than input length,
     /// the producer queue is full - call `poll()` or `flush()` and retry.
-    pub fn send_batch(
-        &self,
-        topic: &str,
-        messages: &[(Option<&[u8]>, &[u8])],
-    ) -> usize {
+    pub fn send_batch(&self, topic: &str, messages: &[(Option<&[u8]>, &[u8])]) -> usize {
         let mut sent = 0;
         for (key, payload) in messages {
             let mut record = BaseRecord::to(topic).payload(*payload);
@@ -370,7 +366,10 @@ mod tests {
 
     #[test]
     fn test_producer_profile_display() {
-        assert_eq!(ProducerProfile::HighThroughput.to_string(), "high_throughput");
+        assert_eq!(
+            ProducerProfile::HighThroughput.to_string(),
+            "high_throughput"
+        );
         assert_eq!(ProducerProfile::ExactlyOnce.to_string(), "exactly_once");
         assert_eq!(ProducerProfile::LowLatency.to_string(), "low_latency");
         assert_eq!(ProducerProfile::DevTest.to_string(), "devtest");

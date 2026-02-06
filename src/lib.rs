@@ -103,7 +103,9 @@ pub use runtime::RuntimePaths;
 pub use config::{Config, ConfigError, ConfigOptions};
 
 #[cfg(feature = "config-postgres")]
-pub use config::postgres::{FallbackMode, PostgresConfig, PostgresConfigError, PostgresConfigSource};
+pub use config::postgres::{
+    FallbackMode, PostgresConfig, PostgresConfigError, PostgresConfigSource,
+};
 
 #[cfg(feature = "logger")]
 pub use logger::{LogFormat, LoggerError, LoggerOptions};

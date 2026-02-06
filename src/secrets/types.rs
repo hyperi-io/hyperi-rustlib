@@ -76,11 +76,11 @@ impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            directory: None, // Auto-detect
-            ttl_secs: 3600,           // 1 hour
-            stale_grace_secs: 86400,  // 24 hours
+            directory: None,             // Auto-detect
+            ttl_secs: 3600,              // 1 hour
+            stale_grace_secs: 86400,     // 24 hours
             refresh_interval_secs: 1800, // 30 minutes
-            refresh_jitter_secs: 300, // 5 minutes
+            refresh_jitter_secs: 300,    // 5 minutes
             encryption_key: None,
         }
     }
@@ -246,8 +246,8 @@ impl CacheEntry {
             .decode(&self.data)
             .map_err(|e| super::error::SecretsError::CacheError(format!("invalid base64: {e}")))?;
 
-        let fetched_at = SystemTime::UNIX_EPOCH
-            + std::time::Duration::from_secs(self.fetched_at_secs);
+        let fetched_at =
+            SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(self.fetched_at_secs);
 
         Ok(SecretValue {
             data,

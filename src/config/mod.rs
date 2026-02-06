@@ -260,9 +260,10 @@ impl Config {
         }
 
         // Determine PostgreSQL config source
-        let pg_source = opts.postgres.clone().unwrap_or_else(|| {
-            PostgresConfigSource::from_env(&opts.env_prefix)
-        });
+        let pg_source = opts
+            .postgres
+            .clone()
+            .unwrap_or_else(|| PostgresConfigSource::from_env(&opts.env_prefix));
 
         // Load PostgreSQL config (async)
         let pg_config = PostgresConfig::load(&pg_source).await?;

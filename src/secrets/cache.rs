@@ -326,7 +326,7 @@ mod tests {
     #[test]
     fn test_cache_stale_fallback() {
         let config = CacheConfig {
-            ttl_secs: 0, // Immediately expired
+            ttl_secs: 0,             // Immediately expired
             stale_grace_secs: 86400, // But within grace
             ..test_config()
         };
@@ -382,7 +382,9 @@ mod tests {
     #[test]
     fn test_key_to_filename() {
         let filename = SecretCache::key_to_filename("test/key:with/special");
-        assert!(std::path::Path::new(&filename).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("json")));
+        assert!(std::path::Path::new(&filename)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json")));
         assert!(!filename.contains('/'));
         assert!(!filename.contains(':'));
     }
