@@ -1,3 +1,10 @@
+## [1.3.10](https://github.com/hypersec-io/hyperi-rustlib/compare/v1.3.9...v1.3.10) (2026-02-06)
+
+
+### Bug Fixes
+
+* resolve clippy float_cmp and case_sensitive_extension lints ([c4d538b](https://github.com/hypersec-io/hyperi-rustlib/commit/c4d538b82863168465fbe74d02feb164650e294b))
+
 ## [1.3.9](https://github.com/hypersec-io/hs-rustlib/compare/v1.3.8...v1.3.9) (2026-02-03)
 
 
