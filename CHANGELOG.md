@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.3.12...v1.4.0) (2026-02-16)
+
+
+### Features
+
+* add directory-config store, otel-metrics, and git2 integration ([a4f3938](https://github.com/hyperi-io/hyperi-rustlib/commit/a4f3938549d2b577920f6ae68eb2d27049e57801))
+
 ## [1.3.12](https://github.com/hypersec-io/hyperi-rustlib/compare/v1.3.11...v1.3.12) (2026-02-06)
 
 
