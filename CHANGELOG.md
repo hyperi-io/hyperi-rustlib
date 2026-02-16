@@ -1,3 +1,10 @@
+## [1.4.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.4.1...v1.4.2) (2026-02-16)
+
+
+### Bug Fixes
+
+* update cargo publish registry from hypersec to hyperi ([62c6393](https://github.com/hyperi-io/hyperi-rustlib/commit/62c63939bd53eb881197bdbe18b311c6b952a785))
+
 ## [1.4.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.4.0...v1.4.1) (2026-02-16)
 
 
