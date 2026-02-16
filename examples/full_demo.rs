@@ -122,6 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         enable_process_metrics: true,
         enable_container_metrics: environment.is_container(),
         update_interval: Duration::from_secs(15),
+        ..Default::default()
     };
 
     let mut manager = MetricsManager::with_config(metrics_config);
