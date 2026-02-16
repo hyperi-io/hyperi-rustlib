@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.4.0...v1.4.1) (2026-02-16)
+
+
+### Bug Fixes
+
+* add default spread to MetricsConfig in full_demo example ([d1eb919](https://github.com/hyperi-io/hyperi-rustlib/commit/d1eb919b7826365923c7487d2ed3f7d8c00688fd))
+
 # [1.4.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.3.12...v1.4.0) (2026-02-16)
 
 
