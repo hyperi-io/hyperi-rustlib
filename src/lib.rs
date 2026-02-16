@@ -75,7 +75,7 @@ pub mod config;
 #[cfg(feature = "logger")]
 pub mod logger;
 
-#[cfg(feature = "metrics")]
+#[cfg(any(feature = "metrics", feature = "otel-metrics"))]
 pub mod metrics;
 
 #[cfg(feature = "transport")]
@@ -92,6 +92,9 @@ pub mod tiered_sink;
 
 #[cfg(feature = "secrets")]
 pub mod secrets;
+
+#[cfg(feature = "directory-config")]
+pub mod directory_config;
 
 // Re-export common types at crate root
 pub use env::Environment;
@@ -110,8 +113,11 @@ pub use config::postgres::{
 #[cfg(feature = "logger")]
 pub use logger::{LogFormat, LoggerError, LoggerOptions};
 
-#[cfg(feature = "metrics")]
+#[cfg(any(feature = "metrics", feature = "otel-metrics"))]
 pub use metrics::{MetricsConfig, MetricsError, MetricsManager};
+
+#[cfg(feature = "otel-metrics")]
+pub use metrics::{OtelMetricsConfig, OtelProtocol};
 
 #[cfg(feature = "transport")]
 pub use transport::{
@@ -142,6 +148,12 @@ pub use secrets::{OpenBaoAuth, OpenBaoConfig, OpenBaoProvider};
 
 #[cfg(feature = "secrets-aws")]
 pub use secrets::{AwsConfig, AwsProvider};
+
+#[cfg(feature = "directory-config")]
+pub use directory_config::{
+    ChangeEvent, ChangeOperation, DirectoryConfigError, DirectoryConfigResult,
+    DirectoryConfigStore, DirectoryConfigStoreConfig, WriteMode, WriteResult,
+};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
