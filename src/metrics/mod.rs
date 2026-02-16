@@ -1,21 +1,26 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/metrics/mod.rs
 // Purpose:   Prometheus metrics with process and container awareness
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Prometheus metrics with process and container awareness.
+//! Metrics with Prometheus and/or OpenTelemetry backends.
 //!
-//! Provides production-ready metrics collection matching hs-golib.
+//! Provides production-ready metrics collection with support for:
+//!
+//! - **`metrics` feature only:** Prometheus scrape endpoint via `/metrics`
+//! - **`otel-metrics` feature only:** OTLP push to OTel-compatible backends
+//! - **Both features:** Fanout recorder sends to both Prometheus AND OTel
 //!
 //! ## Features
 //!
 //! - Counter, Gauge, Histogram metric types
 //! - Automatic process metrics (CPU, memory, file descriptors)
 //! - Container metrics from cgroups (memory limit, CPU limit)
-//! - Built-in HTTP server for `/metrics` endpoint
+//! - Built-in HTTP server for `/metrics` endpoint (Prometheus)
+//! - OTLP push to HyperDX, Jaeger, Grafana, etc. (OTel)
 //!
 //! ## Example
 //!
@@ -44,17 +49,27 @@
 mod container;
 mod process;
 
+#[cfg(feature = "otel-metrics")]
+pub(crate) mod otel;
+#[cfg(feature = "otel-metrics")]
+pub mod otel_types;
+
 use std::net::SocketAddr;
 use std::time::Duration;
 
 use metrics::{Counter, Gauge, Histogram, Unit};
-use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 
+#[cfg(feature = "metrics")]
+use metrics_exporter_prometheus::PrometheusHandle;
+
 pub use container::ContainerMetrics;
 pub use process::ProcessMetrics;
+
+#[cfg(feature = "otel-metrics")]
+pub use otel_types::{OtelMetricsConfig, OtelProtocol};
 
 /// Metrics errors.
 #[derive(Debug, Error)]
@@ -87,6 +102,9 @@ pub struct MetricsConfig {
     pub enable_container_metrics: bool,
     /// Update interval for auto-collected metrics.
     pub update_interval: Duration,
+    /// OTel-specific configuration (only used when `otel-metrics` feature is enabled).
+    #[cfg(feature = "otel-metrics")]
+    pub otel: OtelMetricsConfig,
 }
 
 impl Default for MetricsConfig {
@@ -96,17 +114,108 @@ impl Default for MetricsConfig {
             enable_process_metrics: true,
             enable_container_metrics: true,
             update_interval: Duration::from_secs(15),
+            #[cfg(feature = "otel-metrics")]
+            otel: OtelMetricsConfig::default(),
         }
     }
 }
 
-/// Metrics manager handling Prometheus exposition.
+/// Intermediate struct to pass recorder setup results across cfg boundaries.
+struct RecorderSetup {
+    #[cfg(feature = "metrics")]
+    prom_handle: Option<PrometheusHandle>,
+    #[cfg(feature = "otel-metrics")]
+    otel_provider: Option<opentelemetry_sdk::metrics::SdkMeterProvider>,
+}
+
+/// Install the metrics recorder(s) based on enabled features.
+///
+/// Returns setup results containing handles/providers. When both
+/// `metrics` and `otel-metrics` features are enabled, uses `metrics-util`
+/// `FanoutBuilder` to compose both recorders into a single global recorder.
+#[allow(unused_variables)]
+fn install_recorders(config: &MetricsConfig) -> RecorderSetup {
+    // --- Prometheus only (no OTel) ---
+    #[cfg(all(feature = "metrics", not(feature = "otel-metrics")))]
+    {
+        let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
+        let handle = recorder.handle();
+        metrics::set_global_recorder(recorder).expect("failed to install Prometheus recorder");
+        RecorderSetup {
+            prom_handle: Some(handle),
+        }
+    }
+
+    // --- OTel only (no Prometheus) ---
+    #[cfg(all(feature = "otel-metrics", not(feature = "metrics")))]
+    {
+        match otel::build_otel_recorder(&config.namespace, &config.otel) {
+            Ok((otel_recorder, provider)) => {
+                opentelemetry::global::set_meter_provider(provider.clone());
+                metrics::set_global_recorder(otel_recorder)
+                    .expect("failed to set OTel metrics recorder");
+                RecorderSetup {
+                    otel_provider: Some(provider),
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to build OTel metrics recorder");
+                RecorderSetup {
+                    otel_provider: None,
+                }
+            }
+        }
+    }
+
+    // --- Both Prometheus + OTel (Fanout) ---
+    #[cfg(all(feature = "metrics", feature = "otel-metrics"))]
+    {
+        // Build Prometheus recorder (without installing globally)
+        let prom_recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
+        let prom_handle = prom_recorder.handle();
+
+        // Build OTel recorder
+        match otel::build_otel_recorder(&config.namespace, &config.otel) {
+            Ok((otel_recorder, provider)) => {
+                opentelemetry::global::set_meter_provider(provider.clone());
+
+                // Compose via Fanout: both recorders receive every measurement
+                let fanout = metrics_util::layers::FanoutBuilder::default()
+                    .add_recorder(prom_recorder)
+                    .add_recorder(otel_recorder)
+                    .build();
+
+                metrics::set_global_recorder(fanout).expect("failed to set Fanout recorder");
+
+                RecorderSetup {
+                    prom_handle: Some(prom_handle),
+                    otel_provider: Some(provider),
+                }
+            }
+            Err(e) => {
+                // Fallback: just Prometheus if OTel fails
+                tracing::warn!(error = %e, "Failed to build OTel recorder, falling back to Prometheus only");
+                metrics::set_global_recorder(prom_recorder)
+                    .expect("failed to set Prometheus recorder");
+                RecorderSetup {
+                    prom_handle: Some(prom_handle),
+                    otel_provider: None,
+                }
+            }
+        }
+    }
+}
+
+/// Metrics manager handling Prometheus and/or OTel exposition.
 pub struct MetricsManager {
-    handle: PrometheusHandle,
+    #[cfg(feature = "metrics")]
+    handle: Option<PrometheusHandle>,
     config: MetricsConfig,
     shutdown_tx: Option<oneshot::Sender<()>>,
     process_metrics: Option<ProcessMetrics>,
     container_metrics: Option<ContainerMetrics>,
+    #[cfg(feature = "otel-metrics")]
+    otel_provider: Option<opentelemetry_sdk::metrics::SdkMeterProvider>,
 }
 
 impl MetricsManager {
@@ -120,12 +229,14 @@ impl MetricsManager {
     }
 
     /// Create a metrics manager with custom configuration.
+    ///
+    /// Installs the appropriate recorder(s) based on enabled features:
+    /// - `metrics` only: Prometheus recorder
+    /// - `otel-metrics` only: OTel recorder (OTLP push)
+    /// - Both: Fanout recorder (Prometheus scrape + OTel OTLP push)
     #[must_use]
     pub fn with_config(config: MetricsConfig) -> Self {
-        let builder = PrometheusBuilder::new();
-        let handle = builder
-            .install_recorder()
-            .expect("failed to install Prometheus recorder");
+        let setup = install_recorders(&config);
 
         let process_metrics = if config.enable_process_metrics {
             Some(ProcessMetrics::new(&config.namespace))
@@ -140,11 +251,14 @@ impl MetricsManager {
         };
 
         Self {
-            handle,
+            #[cfg(feature = "metrics")]
+            handle: setup.prom_handle,
             config,
             shutdown_tx: None,
             process_metrics,
             container_metrics,
+            #[cfg(feature = "otel-metrics")]
+            otel_provider: setup.otel_provider,
         }
     }
 
@@ -189,9 +303,15 @@ impl MetricsManager {
     }
 
     /// Get the Prometheus metrics output.
+    ///
+    /// Returns the rendered Prometheus text format. Only available when
+    /// the `metrics` feature is enabled.
+    #[cfg(feature = "metrics")]
     #[must_use]
     pub fn render(&self) -> String {
-        self.handle.render()
+        self.handle
+            .as_ref()
+            .map_or_else(String::new, PrometheusHandle::render)
     }
 
     /// Update process and container metrics.
@@ -206,9 +326,15 @@ impl MetricsManager {
 
     /// Start the metrics HTTP server.
     ///
+    /// Serves `/metrics` (Prometheus), `/healthz`, `/health/live`,
+    /// `/readyz`, `/health/ready` endpoints.
+    ///
+    /// Only available when the `metrics` feature is enabled (for scraping).
+    ///
     /// # Errors
     ///
     /// Returns an error if the server fails to start.
+    #[cfg(feature = "metrics")]
     pub async fn start_server(&mut self, addr: &str) -> Result<(), MetricsError> {
         if self.shutdown_tx.is_some() {
             return Err(MetricsError::AlreadyRunning);
@@ -225,7 +351,11 @@ impl MetricsManager {
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         self.shutdown_tx = Some(shutdown_tx);
 
-        let handle = self.handle.clone();
+        let handle = self
+            .handle
+            .as_ref()
+            .expect("Prometheus handle required for server")
+            .clone();
         let update_interval = self.config.update_interval;
         let process_metrics = self.process_metrics.clone();
         let container_metrics = self.container_metrics.clone();
@@ -259,6 +389,18 @@ impl MetricsManager {
         }
     }
 
+    /// Gracefully shut down the OTel provider (flushes pending exports).
+    ///
+    /// Call this before application exit to ensure all metrics are exported.
+    #[cfg(feature = "otel-metrics")]
+    pub fn shutdown_otel(&mut self) {
+        if let Some(provider) = self.otel_provider.take() {
+            if let Err(e) = provider.shutdown() {
+                tracing::warn!(error = %e, "OTel provider shutdown error");
+            }
+        }
+    }
+
     /// Get prefixed metric name.
     fn prefixed_key(&self, name: &str) -> String {
         if self.config.namespace.is_empty() {
@@ -270,6 +412,7 @@ impl MetricsManager {
 }
 
 /// Run the metrics HTTP server.
+#[cfg(feature = "metrics")]
 async fn run_server(
     listener: TcpListener,
     handle: PrometheusHandle,
@@ -306,6 +449,7 @@ async fn run_server(
 }
 
 /// Handle a single HTTP connection.
+#[cfg(feature = "metrics")]
 async fn handle_connection(mut stream: tokio::net::TcpStream, handle: PrometheusHandle) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
