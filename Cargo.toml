@@ -1,19 +1,19 @@
-# Project:   hs-rustlib
+# Project:   hyperi-rustlib
 # File:      Cargo.toml
-# Purpose:   Rust shared library for HyperSec projects
+# Purpose:   Rust shared library for HyperI projects
 # Language:  TOML
 #
-# License:   LicenseRef-HyperSec-EULA
-# Copyright: (c) 2025 HyperSec
+# License:   FSL-1.1-ALv2
+# Copyright: (c) 2026 HYPERI PTY LIMITED
 
 [package]
-name = "hs-rustlib"
+name = "hyperi-rustlib"
 version = "1.4.2"
 edition = "2021"
 rust-version = "1.80"
-description = "Shared utility library for HyperSec Rust applications"
-license = "LicenseRef-HyperSec-EULA"
-repository = "https://github.com/hypersec-io/hs-rustlib"
+description = "Shared utility library for HyperI Rust applications"
+license = "FSL-1.1-ALv2"
+repository = "https://github.com/hyperi-io/hyperi-rustlib"
 publish = ["hyperi"]
 keywords = ["config", "logging", "metrics", "prometheus", "opentelemetry"]
 categories = ["development-tools"]

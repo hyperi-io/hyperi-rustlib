@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/transport/detect.rs
 // Purpose:   Stateful payload format detection with auto-locking
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Format Detection
 //!
@@ -21,7 +21,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use hs_rustlib::transport::{FormatDetector, FormatMode, DetectedFormat};
+//! use hyperi_rustlib::transport::{FormatDetector, FormatMode, DetectedFormat};
 //!
 //! let detector = FormatDetector::new();
 //!

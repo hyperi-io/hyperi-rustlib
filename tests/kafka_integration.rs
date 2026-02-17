@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      tests/kafka_integration.rs
 // Purpose:   Kafka transport integration tests
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Integration tests for Kafka transport.
 //!
@@ -13,12 +13,12 @@
 //!
 //! Or set up via environment variables:
 //! - `TEST_KAFKA_BROKERS`: Kafka broker addresses (default: localhost:9092)
-//! - `TEST_KAFKA_TOPIC`: Test topic name (default: hs-rustlib-test)
-//! - `TEST_KAFKA_GROUP`: Consumer group ID (default: hs-rustlib-test-group)
+//! - `TEST_KAFKA_TOPIC`: Test topic name (default: hyperi-rustlib-test)
+//! - `TEST_KAFKA_GROUP`: Consumer group ID (default: hyperi-rustlib-test-group)
 
 #![cfg(feature = "transport-kafka")]
 
-use hs_rustlib::transport::kafka::{
+use hyperi_rustlib::transport::kafka::{
     healthy_broker_count, total_consumer_lag, BrokerMetrics, KafkaAdmin, KafkaConfig, KafkaMetrics,
     KafkaProfile, KafkaToken, StatsContext, TopicInfo, DEVTEST_PROFILE, PRODUCTION_PROFILE,
 };
@@ -152,8 +152,8 @@ fn test_kafka_config_defaults() {
     let config = KafkaConfig::default();
 
     assert_eq!(config.brokers, vec!["localhost:9092"]);
-    assert_eq!(config.group, "hs-rustlib-consumer");
-    assert_eq!(config.client_id, "hs-rustlib");
+    assert_eq!(config.group, "hyperi-rustlib-consumer");
+    assert_eq!(config.client_id, "hyperi-rustlib");
     assert!(!config.enable_auto_commit);
     assert_eq!(config.auto_offset_reset, "earliest");
     assert_eq!(config.fetch_max_bytes, 52_428_800); // 50MB
@@ -554,9 +554,9 @@ fn get_test_config() -> Option<KafkaConfig> {
     Some(KafkaConfig {
         brokers: brokers.split(',').map(|s| s.to_string()).collect(),
         group: std::env::var("TEST_KAFKA_GROUP")
-            .unwrap_or_else(|_| "hs-rustlib-test-group".to_string()),
+            .unwrap_or_else(|_| "hyperi-rustlib-test-group".to_string()),
         topics: vec![
-            std::env::var("TEST_KAFKA_TOPIC").unwrap_or_else(|_| "hs-rustlib-test".to_string())
+            std::env::var("TEST_KAFKA_TOPIC").unwrap_or_else(|_| "hyperi-rustlib-test".to_string())
         ],
         ..Default::default()
     })
@@ -565,7 +565,7 @@ fn get_test_config() -> Option<KafkaConfig> {
 #[tokio::test]
 #[ignore = "requires Kafka broker - set TEST_KAFKA_BROKERS to run"]
 async fn test_kafka_transport_connection() {
-    use hs_rustlib::transport::kafka::KafkaTransport;
+    use hyperi_rustlib::transport::kafka::KafkaTransport;
 
     let Some(config) = get_test_config() else {
         eprintln!("Skipping: TEST_KAFKA_BROKERS not set");
@@ -622,7 +622,7 @@ async fn test_kafka_admin_describe_topic() {
 #[tokio::test]
 #[ignore = "requires Kafka broker - set TEST_KAFKA_BROKERS to run"]
 async fn test_kafka_send_receive_batch() {
-    use hs_rustlib::transport::{kafka::KafkaTransport, Transport};
+    use hyperi_rustlib::transport::{kafka::KafkaTransport, Transport};
 
     let Some(mut config) = get_test_config() else {
         eprintln!("Skipping: TEST_KAFKA_BROKERS not set");
@@ -630,7 +630,7 @@ async fn test_kafka_send_receive_batch() {
     };
 
     // Use unique group to avoid interference
-    config.group = format!("hs-rustlib-test-{}", std::process::id());
+    config.group = format!("hyperi-rustlib-test-{}", std::process::id());
 
     let transport = KafkaTransport::new(&config).await.unwrap();
     let topic = config.topics.first().unwrap();

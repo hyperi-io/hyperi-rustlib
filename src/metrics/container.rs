@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/metrics/container.rs
 // Purpose:   Container-level metrics from cgroups
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Container metrics from cgroups (v1 and v2).
 

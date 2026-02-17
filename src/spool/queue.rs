@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/spool/queue.rs
 // Purpose:   Disk-backed async FIFO queue implementation using yaque
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Disk-backed async FIFO queue implementation.
 

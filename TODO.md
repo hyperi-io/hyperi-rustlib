@@ -1,8 +1,8 @@
-# TODO - hs-rustlib
+# TODO - hyperi-rustlib
 
-**Project Goal:** Rust shared library equivalent to hs-lib (Python) and hs-golib (Go)
+**Project Goal:** Rust shared library equivalent to hyperi-pylib (Python) and hyperi-golib (Go)
 
-**Target:** Production-ready library for HyperSec Rust applications
+**Target:** Production-ready library for HyperI Rust applications
 
 ---
 
@@ -11,8 +11,8 @@
 ### High Priority
 
 - [x] Add integration tests for metrics HTTP server - 2025-01-19
-- [x] Implement parity tests against hs-pylib (config cascade behavior) - 2025-01-19
-- [x] Gap analysis hs-pylib - 2025-01-19 (see docs/GAP_ANALYSIS.md)
+- [x] Implement parity tests against hyperi-pylib (config cascade behavior) - 2025-01-19
+- [x] Gap analysis hyperi-pylib - 2025-01-19 (see docs/GAP_ANALYSIS.md)
 - [x] Add example application demonstrating all features - 2025-01-19
 - [x] Python bindings discussion for clickhouse - 2025-01-19 (see docs/CLICKHOUSE_PYTHON_BINDINGS.md)
 
@@ -46,7 +46,7 @@
 - [x] Integration tests for metrics server (14 tests) - 2025-01-19
 - [x] Parity tests for config cascade (19 tests) - 2025-01-19
 - [x] Parity tests for env detection (4 tests) - 2025-01-19
-- [x] Gap analysis vs hs-pylib documented - 2025-01-19
+- [x] Gap analysis vs hyperi-pylib documented - 2025-01-19
 - [x] Example applications (quickstart, full_demo) - 2025-01-19
 - [x] Python bindings proposal documented - 2025-01-19
 - [x] HTTP server module (axum-based) - 2025-01-19
@@ -92,7 +92,7 @@ None currently.
 - Use `CARGO_BUILD_JOBS=2` for all cargo commands
 - Feature flags: `config`, `logger`, `metrics`, `runtime`, `env`, `transport`, `clickhouse-arrow`, `http-server`, `spool`, `tiered-sink`
 - MVP complete - iterate based on usage feedback
-- See docs/GAP_ANALYSIS.md for detailed comparison with hs-pylib
+- See docs/GAP_ANALYSIS.md for detailed comparison with hyperi-pylib
 - See docs/CLICKHOUSE_PYTHON_BINDINGS.md for Python binding proposal
 
 ---

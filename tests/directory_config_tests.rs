@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use hs_rustlib::directory_config::{
+use hyperi_rustlib::directory_config::{
     ChangeOperation, DirectoryConfigError, DirectoryConfigStore, DirectoryConfigStoreConfig,
     WriteMode,
 };

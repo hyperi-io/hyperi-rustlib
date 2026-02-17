@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/transport/mod.rs
 // Purpose:   Transport abstraction layer for message delivery
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Transport Abstraction Layer
 //!
@@ -22,7 +22,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hs_rustlib::transport::{Transport, TransportConfig, TransportType};
+//! use hyperi_rustlib::transport::{Transport, TransportConfig, TransportType};
 //!
 //! // Create transport from config
 //! let config = TransportConfig {

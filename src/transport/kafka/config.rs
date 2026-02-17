@@ -1,16 +1,16 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/transport/kafka/config.rs
 // Purpose:   Kafka transport configuration with profiles and config-driven overrides
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Kafka configuration with profile-based defaults and config-driven overrides.
 //!
 //! ## Profile System
 //!
-//! HyperSec Kafka uses a profile-based configuration system where:
+//! HyperI Kafka uses a profile-based configuration system where:
 //! 1. A **profile** provides opinionated librdkafka defaults for a use case
 //! 2. **User config** can override any librdkafka setting via `librdkafka_overrides`
 //! 3. Overrides always win over profile defaults
@@ -454,11 +454,11 @@ fn default_brokers() -> Vec<String> {
 }
 
 fn default_group() -> String {
-    "hs-rustlib-consumer".to_string()
+    "hyperi-rustlib-consumer".to_string()
 }
 
 fn default_client_id() -> String {
-    "hs-rustlib".to_string()
+    "hyperi-rustlib".to_string()
 }
 
 fn default_security_protocol() -> String {

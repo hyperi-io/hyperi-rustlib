@@ -1,15 +1,15 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      tests/parity/config_parity.rs
-// Purpose:   Config parity tests against hs-pylib
+// Purpose:   Config parity tests against hyperi-pylib
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Configuration cascade parity tests.
 //!
 //! These tests verify that the 7-layer cascade behaves identically
-//! to hs-pylib's config package.
+//! to hyperi-pylib's config package.
 //!
 //! ## Cascade Priority (high to low)
 //!
@@ -21,7 +21,7 @@
 //! 6. defaults.yaml              → Safe fallback defaults
 //! 7. Hard-coded                 → Last resort in code
 
-use hs_rustlib::config::{Config, ConfigOptions};
+use hyperi_rustlib::config::{Config, ConfigOptions};
 use std::fs;
 use tempfile::TempDir;
 

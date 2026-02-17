@@ -1,8 +1,8 @@
-# Design Document - hs-rustlib
+# Design Document - hyperi-rustlib
 
 ## Overview
 
-`hs-rustlib` is a shared utility library for Rust applications, providing configuration management, structured logging, Prometheus metrics, and environment detection. It is the Rust equivalent of `hs-lib` (Python) and `hs-golib` (Go).
+`hyperi-rustlib` is a shared utility library for Rust applications, providing configuration management, structured logging, Prometheus metrics, and environment detection. It is the Rust equivalent of `hyperi-pylib` (Python) and `hyperi-golib` (Go).
 
 ---
 
@@ -11,7 +11,7 @@
 1. **Prefer existing crates over bespoke code** - Use well-maintained, performant Rust libraries
 2. **Zero-configuration defaults** - Works out of the box with sensible defaults
 3. **Container-aware** - Automatic detection and adaptation for K8s/Docker/bare metal
-4. **Parity with siblings** - Behaviour matches hs-lib and hs-golib where applicable
+4. **Parity with siblings** - Behaviour matches hyperi-pylib and hyperi-golib where applicable
 5. **Idiomatic Rust** - Follow Rust conventions (Result types, traits, builders)
 
 ---
@@ -40,7 +40,7 @@
 ## Module Structure
 
 ```text
-hs_rustlib/
+hyperi_rustlib/
 ├── Cargo.toml
 ├── src/
 │   ├── lib.rs              # Public API exports
@@ -456,7 +456,7 @@ Located in `tests/integration/`:
 ### Basic Setup
 
 ```rust
-use hs_rustlib::{config, logger, metrics, env};
+use hyperi_rustlib::{config, logger, metrics, env};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Detect environment
@@ -489,7 +489,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### With Metrics Server
 
 ```rust
-use hs_rustlib::metrics::MetricsManager;
+use hyperi_rustlib::metrics::MetricsManager;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -534,9 +534,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## API Compatibility
 
-The API is designed to match hs-golib patterns where possible:
+The API is designed to match hyperi-golib patterns where possible:
 
-| Go (hs-golib) | Rust (hs-rustlib) |
+| Go (hyperi-golib) | Rust (hyperi-rustlib) |
 | ------------- | ----------------- |
 | `config.New(opts)` | `Config::new(opts)` |
 | `config.Load()` | `config.load()` |

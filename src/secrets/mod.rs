@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/secrets/mod.rs
 // Purpose:   Secrets management with multi-provider support and caching
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Secrets management with multi-provider support and resilient caching.
 //!
@@ -28,7 +28,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hs_rustlib::secrets::{SecretsManager, SecretsConfig, SecretSource};
+//! use hyperi_rustlib::secrets::{SecretsManager, SecretsConfig, SecretSource};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {

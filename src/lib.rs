@@ -1,23 +1,23 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/lib.rs
 // Purpose:   Main library entry point and public API exports
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! # hs-rustlib
+//! # hyperi-rustlib
 //!
-//! Shared utility library for HyperSec Rust applications.
+//! Shared utility library for HyperI Rust applications.
 //!
 //! Provides configuration management, structured logging, Prometheus metrics,
-//! and environment detection - matching the functionality of hs-lib (Python)
-//! and hs-golib (Go).
+//! and environment detection - matching the functionality of hyperi-pylib (Python)
+//! and hyperi-golib (Go).
 //!
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use hs_rustlib::{env, config, logger, metrics};
+//! use hyperi_rustlib::{env, config, logger, metrics};
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Detect runtime environment

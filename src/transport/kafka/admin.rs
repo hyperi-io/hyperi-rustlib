@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/transport/kafka/admin.rs
 // Purpose:   Kafka administrative operations
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Kafka administrative operations.
 //!
@@ -15,7 +15,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hs_rustlib::transport::kafka::{KafkaAdmin, KafkaConfig};
+//! use hyperi_rustlib::transport::kafka::{KafkaAdmin, KafkaConfig};
 //!
 //! let config = KafkaConfig::default();
 //! let admin = KafkaAdmin::new(&config)?;

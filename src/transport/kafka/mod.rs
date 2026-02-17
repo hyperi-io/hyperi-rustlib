@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/transport/kafka/mod.rs
 // Purpose:   High-throughput Kafka transport for PB/day workloads
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Kafka Transport
 //!
@@ -22,7 +22,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hs_rustlib::transport::{KafkaTransport, KafkaConfig, Transport};
+//! use hyperi_rustlib::transport::{KafkaTransport, KafkaConfig, Transport};
 //!
 //! let config = KafkaConfig {
 //!     brokers: vec!["kafka:9092".to_string()],

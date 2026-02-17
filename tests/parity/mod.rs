@@ -1,12 +1,12 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      tests/parity/mod.rs
-// Purpose:   Parity tests against hs-golib
+// Purpose:   Parity tests against hyperi-golib
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Parity tests comparing hs-rustlib behaviour against hs-golib.
+//! Parity tests comparing hyperi-rustlib behaviour against hyperi-golib.
 //!
 //! These tests ensure that the Rust implementation produces
 //! equivalent output to the Go implementation.

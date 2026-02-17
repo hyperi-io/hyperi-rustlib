@@ -1,15 +1,15 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/config/mod.rs
 // Purpose:   7-layer configuration cascade
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Configuration management with 8-layer cascade.
 //!
-//! Provides a hierarchical configuration system matching hs-lib (Python)
-//! and hs-golib (Go). Configuration is loaded from multiple sources with
+//! Provides a hierarchical configuration system matching hyperi-pylib (Python)
+//! and hyperi-golib (Go). Configuration is loaded from multiple sources with
 //! clear priority ordering.
 //!
 //! ## Cascade Priority (highest to lowest)
@@ -62,7 +62,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hs_rustlib::config::{self, ConfigOptions};
+//! use hyperi_rustlib::config::{self, ConfigOptions};
 //!
 //! // Initialise with env prefix
 //! config::setup(ConfigOptions {

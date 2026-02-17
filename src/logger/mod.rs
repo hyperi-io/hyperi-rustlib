@@ -1,14 +1,14 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/logger/mod.rs
 // Purpose:   Structured logging with JSON output and sensitive data masking
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Structured logging with JSON output and sensitive data masking.
 //!
-//! Provides production-ready logging matching hs-lib (Python) and hs-golib (Go).
+//! Provides production-ready logging matching hyperi-pylib (Python) and hyperi-golib (Go).
 //! Automatically detects terminal vs container environment for format selection.
 //!
 //! ## Features
@@ -21,7 +21,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hs_rustlib::logger;
+//! use hyperi_rustlib::logger;
 //!
 //! // Initialise with defaults (auto-detects format)
 //! logger::setup_default().unwrap();

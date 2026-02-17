@@ -25,7 +25,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hs_rustlib::metrics::{MetricsManager, MetricsConfig};
+//! use hyperi_rustlib::metrics::{MetricsManager, MetricsConfig};
 //!
 //! #[tokio::main]
 //! async fn main() {

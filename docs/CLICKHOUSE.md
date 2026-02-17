@@ -2,13 +2,13 @@
 
 **Status:** Archived
 **Date:** 2026-01-20
-**Reason:** Moved from hs-rustlib to application layer
+**Reason:** Moved from hyperi-rustlib to application layer
 
 ---
 
 ## Overview
 
-This document captures the ClickHouse client wrapper and type parsing system that was originally implemented in `hs-rustlib`. After architectural review, this code was determined to be application-level logic rather than infrastructure, and should live in applications that perform data ingestion (e.g., logjam, pipeline-agent).
+This document captures the ClickHouse client wrapper and type parsing system that was originally implemented in `hyperi-rustlib`. After architectural review, this code was determined to be application-level logic rather than infrastructure, and should live in applications that perform data ingestion (e.g., logjam, pipeline-agent).
 
 ---
 
@@ -289,7 +289,7 @@ Arrow DataType to ClickHouse type name (for schema introspection):
 
 ---
 
-## Why This Was Removed from hs-rustlib
+## Why This Was Removed from hyperi-rustlib
 
 After architectural review, this code was identified as **application logic**, not **infrastructure**:
 
@@ -299,7 +299,7 @@ After architectural review, this code was identified as **application logic**, n
 
 3. **Not shared across all apps**: Only data ingestion applications (logjam, pipeline-agent) need this. Other apps just use `clickhouse-arrow` directly.
 
-4. **Maintenance burden**: Keeping this in hs-rustlib creates a sync point that adds friction without broad benefit.
+4. **Maintenance burden**: Keeping this in hyperi-rustlib creates a sync point that adds friction without broad benefit.
 
 ### Recommendation
 
@@ -309,7 +309,7 @@ For applications needing type parsing:
 2. **Copy the type parsing code** to your application if needed
 3. **Keep coercion logic local** to the ingestion pipeline
 
-The `clickhouse-arrow` crate (our fork at hypersec-io) handles:
+The `clickhouse-arrow` crate (our fork at hyperi-io) handles:
 
 - Native Arrow protocol
 - Connection management
@@ -326,7 +326,7 @@ Applications add their own:
 
 ## References
 
-- [clickhouse-arrow crate](https://github.com/hypersec-io/clickhouse-arrow)
+- [clickhouse-arrow crate](https://github.com/hyperi-io/clickhouse-arrow)
 - [ClickHouse Data Types](https://clickhouse.com/docs/en/sql-reference/data-types)
 - [Arrow Rust Documentation](https://docs.rs/arrow)
 - [CLICKHOUSE_PYTHON_BINDINGS.md](CLICKHOUSE_PYTHON_BINDINGS.md) - Python binding proposal (deprecated)

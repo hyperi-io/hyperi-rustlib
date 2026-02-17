@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/transport/zenoh/mod.rs
 // Purpose:   Zenoh transport implementation
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Zenoh Transport
 //!
@@ -27,7 +27,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hs_rustlib::transport::{ZenohTransport, ZenohConfig, Transport};
+//! use hyperi_rustlib::transport::{ZenohTransport, ZenohConfig, Transport};
 //!
 //! // Peer mode (no routers needed)
 //! let config = ZenohConfig::peer(vec!["events/**".to_string()]);

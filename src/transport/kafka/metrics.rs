@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/transport/kafka/metrics.rs
 // Purpose:   Kafka metrics collection via librdkafka statistics
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Kafka metrics collection via librdkafka statistics callback.
 //!
@@ -17,7 +17,7 @@
 //! Enable statistics by setting `statistics.interval.ms` in the Kafka config:
 //!
 //! ```rust,ignore
-//! use hs_rustlib::transport::kafka::{KafkaConfig, KafkaMetrics, StatsContext};
+//! use hyperi_rustlib::transport::kafka::{KafkaConfig, KafkaMetrics, StatsContext};
 //! use std::sync::Arc;
 //!
 //! let stats = Arc::new(StatsContext::new());
