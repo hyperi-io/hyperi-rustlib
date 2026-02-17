@@ -1,3 +1,10 @@
+## [1.4.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.4.2...v1.4.3) (2026-02-17)
+
+
+### Bug Fixes
+
+* rename package from hs-rustlib to hyperi-rustlib ([bbb797a](https://github.com/hyperi-io/hyperi-rustlib/commit/bbb797a2b2351eb241fb79a7cd3b26e2ba9a08b7))
+
 ## [1.4.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.4.1...v1.4.2) (2026-02-16)
 
 
