@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/spool/mod.rs
 // Purpose:   Disk-backed async FIFO queue with optional compression
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Disk-backed async FIFO queue with optional zstd compression.
 //!
@@ -26,7 +26,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hs_rustlib::spool::{Spool, SpoolConfig};
+//! use hyperi_rustlib::spool::{Spool, SpoolConfig};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = SpoolConfig {

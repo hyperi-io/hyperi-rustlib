@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      tests/env_integration.rs
 // Purpose:   Integration tests for environment variable loading
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Integration tests for environment variable loading and .env cascade.
 //!
@@ -49,7 +49,7 @@ impl Drop for EnvGuard {
 #[cfg(feature = "transport-kafka")]
 mod kafka_env {
     use super::*;
-    use hs_rustlib::transport::kafka::KafkaConfig;
+    use hyperi_rustlib::transport::kafka::KafkaConfig;
 
     #[test]
     fn test_kafka_from_env_standard_names() {
@@ -148,7 +148,7 @@ mod kafka_env {
 
         assert_eq!(
             config.profile,
-            hs_rustlib::transport::kafka::KafkaProfile::DevTest
+            hyperi_rustlib::transport::kafka::KafkaProfile::DevTest
         );
         // DevTest should auto-enable ssl_skip_verify
         assert!(config.ssl_skip_verify);
@@ -162,7 +162,7 @@ mod kafka_env {
 #[cfg(feature = "secrets-vault")]
 mod vault_env {
     use super::*;
-    use hs_rustlib::secrets::{OpenBaoAuth, OpenBaoConfig};
+    use hyperi_rustlib::secrets::{OpenBaoAuth, OpenBaoConfig};
 
     #[test]
     fn test_vault_from_env_token_auth() {
@@ -302,7 +302,7 @@ mod vault_env {
 #[cfg(feature = "secrets-aws")]
 mod aws_env {
     use super::*;
-    use hs_rustlib::secrets::AwsConfig;
+    use hyperi_rustlib::secrets::AwsConfig;
 
     #[test]
     fn test_aws_from_env_region() {
@@ -355,7 +355,7 @@ mod aws_env {
 #[cfg(feature = "config")]
 mod env_compat_tests {
     use super::*;
-    use hs_rustlib::config::env_compat::{self, EnvVar};
+    use hyperi_rustlib::config::env_compat::{self, EnvVar};
 
     #[test]
     fn test_postgres_standard_env() {

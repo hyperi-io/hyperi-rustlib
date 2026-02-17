@@ -1,15 +1,15 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/transport/payload.rs
 // Purpose:   Payload parsing and serialization (JSON/MsgPack)
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Payload Handling
 //!
 //! Unified JSON and MsgPack parsing with auto-detection.
-//! This module provides a common pattern for all HyperSec projects.
+//! This module provides a common pattern for all HyperI projects.
 //!
 //! ## Performance Notes
 //!
@@ -20,7 +20,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hs_rustlib::transport::payload::{parse_payload, PayloadValue};
+//! use hyperi_rustlib::transport::payload::{parse_payload, PayloadValue};
 //!
 //! let json_bytes = br#"{"event": "login", "user_id": 123}"#;
 //! let value = parse_payload(json_bytes)?;

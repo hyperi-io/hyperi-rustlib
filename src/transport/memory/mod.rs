@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/transport/memory/mod.rs
 // Purpose:   In-memory transport using tokio channels
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Memory Transport
 //!
@@ -14,7 +14,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hs_rustlib::transport::{MemoryTransport, MemoryConfig, Transport};
+//! use hyperi_rustlib::transport::{MemoryTransport, MemoryConfig, Transport};
 //!
 //! let config = MemoryConfig::default();
 //! let transport = MemoryTransport::new(&config);

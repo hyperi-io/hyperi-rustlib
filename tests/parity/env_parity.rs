@@ -1,17 +1,17 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      tests/parity/env_parity.rs
 // Purpose:   Environment detection parity tests
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Environment detection parity tests.
 //!
 //! These tests verify that environment detection behaves identically
-//! to hs-golib's env package.
+//! to hyperi-golib's env package.
 
-use hs_rustlib::env::{get_app_env, Environment};
+use hyperi_rustlib::env::{get_app_env, Environment};
 
 /// Test that Environment::detect() returns valid enum.
 #[test]

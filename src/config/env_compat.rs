@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/config/env_compat.rs
 // Purpose:   Environment variable compatibility layer with deprecation warnings
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Environment variable compatibility layer.
 //!
@@ -24,7 +24,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hs_rustlib::config::env_compat::EnvVar;
+//! use hyperi_rustlib::config::env_compat::EnvVar;
 //!
 //! // Define a variable with legacy aliases
 //! let host = EnvVar::new("PGHOST")

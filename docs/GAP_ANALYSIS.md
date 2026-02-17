@@ -1,14 +1,14 @@
-# Gap Analysis: hs-rustlib vs hs-pylib
+# Gap Analysis: hyperi-rustlib vs hyperi-pylib
 
 **Date:** 2025-01-19
-**hs-rustlib Version:** 0.3.0
-**hs-pylib Reference:** Latest main branch
+**hyperi-rustlib Version:** 0.3.0
+**hyperi-pylib Reference:** Latest main branch
 
 ---
 
 ## Summary
 
-| Metric | hs-pylib | hs-rustlib |
+| Metric | hyperi-pylib | hyperi-rustlib |
 |--------|----------|-----------|
 | Total LOC | ~15,400 | ~6,163 |
 | Major Modules | 11 | 7 |
@@ -18,7 +18,7 @@
 
 ## Module Comparison
 
-| Module | hs-pylib | hs-rustlib | Gap Notes |
+| Module | hyperi-pylib | hyperi-rustlib | Gap Notes |
 |--------|----------|-----------|-----------|
 | **env** | ✅ K8s/Docker/Container/BareMetal detection | ✅ Same detection methods | ✓ Parity |
 | **runtime** | ✅ XDG + container-aware paths | ✅ XDG + container-aware paths | ✓ Parity |
@@ -37,7 +37,7 @@
 
 ---
 
-## Features hs-rustlib Has That hs-pylib Doesn't
+## Features hyperi-rustlib Has That hyperi-pylib Doesn't
 
 ### 1. Transport Abstraction Layer (~1,000 LOC)
 
@@ -59,7 +59,7 @@ Native Arrow protocol client with:
 
 ---
 
-## Features hs-pylib Has That hs-rustlib Doesn't
+## Features hyperi-pylib Has That hyperi-rustlib Doesn't
 
 ### P0 - Critical for Enterprise Use
 
@@ -73,7 +73,7 @@ Full Kafka ecosystem that would require significant effort to port:
 - Sampling utilities (reservoir, time-bounded, partition)
 - Metrics collection with callback integration
 
-**Note:** hs-rustlib has Kafka via transport abstraction, but lacks standalone client.
+**Note:** hyperi-rustlib has Kafka via transport abstraction, but lacks standalone client.
 
 ### P1 - High Utility
 
@@ -136,7 +136,7 @@ CI/CD helpers:
 
 ---
 
-## Implementation Priority for hs-rustlib
+## Implementation Priority for hyperi-rustlib
 
 ### Phase 1 - Core Enterprise (Recommended)
 
@@ -170,7 +170,7 @@ CI/CD helpers:
 
 ## Architectural Differences
 
-| Aspect | hs-pylib | hs-rustlib |
+| Aspect | hyperi-pylib | hyperi-rustlib |
 |--------|----------|-----------|
 | Philosophy | "Zero-config batteries included" | "Minimal core + extensibility" |
 | Async | Full async/await throughout | Async-ready, primarily sync core |
@@ -182,7 +182,7 @@ CI/CD helpers:
 
 ## Conclusion
 
-**hs-rustlib** is well-positioned as a core infrastructure library with type safety and performance advantages. The transport and ClickHouse modules are unique capabilities.
+**hyperi-rustlib** is well-positioned as a core infrastructure library with type safety and performance advantages. The transport and ClickHouse modules are unique capabilities.
 
 **For full enterprise parity**, prioritise:
 
@@ -190,7 +190,7 @@ CI/CD helpers:
 2. HTTP client with retries (already partially scaffolded)
 3. Evaluate need for standalone Kafka vs using transport layer
 
-**Keep unique in hs-rustlib**:
+**Keep unique in hyperi-rustlib**:
 
 - Transport abstraction (better in Rust)
 - ClickHouse Arrow client (Rust-specific advantage)

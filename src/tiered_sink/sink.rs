@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/tiered_sink/sink.rs
 // Purpose:   Sink trait for async message delivery
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Sink trait for async message delivery.
 
@@ -19,7 +19,7 @@ use std::error::Error as StdError;
 /// # Example
 ///
 /// ```rust,ignore
-/// use hs_rustlib::tiered_sink::{Sink, SinkError};
+/// use hyperi_rustlib::tiered_sink::{Sink, SinkError};
 ///
 /// struct MyKafkaSink {
 ///     producer: KafkaProducer,

@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/secrets/cache.rs
 // Purpose:   Secret caching with disk persistence and stale fallback
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Secret caching with disk persistence and stale fallback.
 //!
@@ -69,7 +69,7 @@ impl SecretCache {
                 // Auto-detect cache directory
                 dirs::cache_dir()
                     .unwrap_or_else(|| PathBuf::from("/tmp"))
-                    .join("hs-rustlib")
+                    .join("hyperi-rustlib")
                     .join("secrets")
             });
 

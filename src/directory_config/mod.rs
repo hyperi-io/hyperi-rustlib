@@ -24,7 +24,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hs_rustlib::directory_config::{DirectoryConfigStore, DirectoryConfigStoreConfig};
+//! use hyperi_rustlib::directory_config::{DirectoryConfigStore, DirectoryConfigStoreConfig};
 //! use std::path::PathBuf;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

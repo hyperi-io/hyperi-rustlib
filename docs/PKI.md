@@ -1,8 +1,8 @@
-# hs-rustlib TLS/PKI Integration Guide
+# hyperi-rustlib TLS/PKI Integration Guide
 
 ## Overview
 
-This document covers TLS configuration for hs-rustlib components. All TLS settings follow the [PKI standards](../ai/standards/common/PKI.md) with profile-based security levels.
+This document covers TLS configuration for hyperi-rustlib components. All TLS settings follow the [PKI standards](../ai/standards/common/PKI.md) with profile-based security levels.
 
 ## Security Profiles
 
@@ -16,15 +16,15 @@ This document covers TLS configuration for hs-rustlib components. All TLS settin
 
 ---
 
-## Planned: `hs_rustlib::tls` Module
+## Planned: `hyperi_rustlib::tls` Module
 
 The following module will provide zero-config TLS with profile-based defaults.
 
 ### TLS Config Factory
 
 ```rust
-// Future API - hs_rustlib::tls module
-use hs_rustlib::tls::{create_tls_config, TlsProfile};
+// Future API - hyperi_rustlib::tls module
+use hyperi_rustlib::tls::{create_tls_config, TlsProfile};
 
 // Usage
 let config = create_tls_config(TlsProfile::Prod)?;      // Corporate default (P-384)
@@ -39,7 +39,7 @@ let config = create_tls_config(TlsProfile::Prod)
 ### Implementation Reference
 
 ```rust
-//! hs_rustlib/src/tls.rs - TLS configuration factory
+//! hyperi_rustlib/src/tls.rs - TLS configuration factory
 //!
 //! Implementation notes for contributors.
 
@@ -160,7 +160,7 @@ impl TlsConfigBuilder {
 /// # Example
 ///
 /// ```rust
-/// use hs_rustlib::tls::{create_tls_config, TlsProfile};
+/// use hyperi_rustlib::tls::{create_tls_config, TlsProfile};
 ///
 /// let config = create_tls_config(TlsProfile::Prod)?;
 /// ```
@@ -178,7 +178,7 @@ pub fn create_tls_config(profile: TlsProfile) -> TlsConfigBuilder {
 The existing Kafka transport supports SSL via config fields:
 
 ```rust
-use hs_rustlib::transport::kafka::KafkaConfig;
+use hyperi_rustlib::transport::kafka::KafkaConfig;
 
 let config = KafkaConfig {
     brokers: vec!["kafka:9093".into()],
@@ -197,8 +197,8 @@ Profile-based SSL configuration:
 
 ```rust
 // Future API
-use hs_rustlib::transport::kafka::KafkaConfig;
-use hs_rustlib::tls::TlsProfile;
+use hyperi_rustlib::transport::kafka::KafkaConfig;
+use hyperi_rustlib::tls::TlsProfile;
 
 // Auto-loads TLS config from settings
 let config = KafkaConfig::from_settings()?;
@@ -212,7 +212,7 @@ let config = KafkaConfig::with_profile(TlsProfile::Prod)
 ### Implementation Reference
 
 ```rust
-// Enhancement to hs_rustlib::transport::kafka::config
+// Enhancement to hyperi_rustlib::transport::kafka::config
 
 use crate::tls::TlsProfile;
 use std::collections::HashMap;
@@ -430,11 +430,11 @@ openssl ecparam -genkey -name secp384r1 -out server.key
 
 # CSR
 openssl req -new -key server.key -out server.csr \
-    -subj "/CN=app.example.com/O=HyperSec/C=AU"
+    -subj "/CN=app.example.com/O=HyperI/C=AU"
 
 # Self-signed (dev only)
 openssl req -x509 -new -key server.key -out server.crt -days 365 \
-    -subj "/CN=app.example.com/O=HyperSec/C=AU"
+    -subj "/CN=app.example.com/O=HyperI/C=AU"
 ```
 
 ### Generate P-256 Certificate (DevTest profile)
@@ -445,11 +445,11 @@ openssl ecparam -genkey -name prime256v1 -out server.key
 
 # CSR
 openssl req -new -key server.key -out server.csr \
-    -subj "/CN=dev.local/O=HyperSec/C=AU"
+    -subj "/CN=dev.local/O=HyperI/C=AU"
 
 # Self-signed
 openssl req -x509 -new -key server.key -out server.crt -days 365 \
-    -subj "/CN=dev.local/O=HyperSec/C=AU"
+    -subj "/CN=dev.local/O=HyperI/C=AU"
 ```
 
 ---

@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/http_server/mod.rs
 // Purpose:   High-performance HTTP server with axum
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! High-performance HTTP server built on axum.
 //!
@@ -24,7 +24,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hs_rustlib::http_server::{HttpServer, HttpServerConfig};
+//! use hyperi_rustlib::http_server::{HttpServer, HttpServerConfig};
 //! use axum::{Router, routing::get};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/tiered_sink/mod.rs
 // Purpose:   Tiered sink with disk spillover for resilient message delivery
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Tiered sink with automatic disk spillover for resilient message delivery.
 //!
@@ -47,7 +47,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hs_rustlib::tiered_sink::{TieredSink, TieredSinkConfig, Sink, SinkError};
+//! use hyperi_rustlib::tiered_sink::{TieredSink, TieredSinkConfig, Sink, SinkError};
 //!
 //! // Implement Sink for your backend
 //! struct MyKafkaSink { /* ... */ }

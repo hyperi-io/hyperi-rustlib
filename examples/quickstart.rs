@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      examples/quickstart.rs
 // Purpose:   Minimal quickstart example
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Quickstart example showing the most common usage patterns.
 //!
@@ -13,9 +13,9 @@
 //! cargo run --example quickstart
 //! ```
 
-use hs_rustlib::config::{Config, ConfigOptions};
-use hs_rustlib::env::Environment;
-use hs_rustlib::logger;
+use hyperi_rustlib::config::{Config, ConfigOptions};
+use hyperi_rustlib::env::Environment;
+use hyperi_rustlib::logger;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Detect environment

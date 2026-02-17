@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/config/postgres.rs
 // Purpose:   PostgreSQL configuration source for the config cascade
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! PostgreSQL configuration source.
 //!
@@ -25,7 +25,7 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use hs_rustlib::config::postgres::{PostgresConfigSource, PostgresConfig};
+//! use hyperi_rustlib::config::postgres::{PostgresConfigSource, PostgresConfig};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -50,7 +50,7 @@
 //! On successful load, the config is written to the fallback file for future use.
 //!
 //! ```rust,no_run
-//! use hs_rustlib::config::postgres::{PostgresConfigSource, FallbackMode};
+//! use hyperi_rustlib::config::postgres::{PostgresConfigSource, FallbackMode};
 //!
 //! let source = PostgresConfigSource {
 //!     enabled: true,

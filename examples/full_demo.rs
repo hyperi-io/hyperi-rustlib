@@ -1,12 +1,12 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      examples/full_demo.rs
-// Purpose:   Demonstrate all hs-rustlib core features
+// Purpose:   Demonstrate all hyperi-rustlib core features
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Full demonstration of hs-rustlib features.
+//! Full demonstration of hyperi-rustlib features.
 //!
 //! This example shows how to use:
 //! - Environment detection
@@ -27,11 +27,11 @@
 
 use std::time::Duration;
 
-use hs_rustlib::config::{Config, ConfigOptions};
-use hs_rustlib::env::{get_app_env, Environment};
-use hs_rustlib::logger;
-use hs_rustlib::metrics::{MetricsConfig, MetricsManager};
-use hs_rustlib::runtime::RuntimePaths;
+use hyperi_rustlib::config::{Config, ConfigOptions};
+use hyperi_rustlib::env::{get_app_env, Environment};
+use hyperi_rustlib::logger;
+use hyperi_rustlib::metrics::{MetricsConfig, MetricsManager};
+use hyperi_rustlib::runtime::RuntimePaths;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -1,7 +1,7 @@
 # Project State
 
-**Project:** hs-rustlib
-**Purpose:** Shared Rust utility library for HyperSec applications (port of hs-lib/hs-golib)
+**Project:** hyperi-rustlib
+**Purpose:** Shared Rust utility library for HyperI applications (port of hyperi-pylib/hyperi-golib)
 **Status:** v1.0.8 published, license module added
 
 ---
@@ -29,7 +29,7 @@ None - license module implementation complete, ready for commit.
 - **Earlier in session**:
   - Published v1.0.8 to Artifactory (fixed package excludes)
   - Created release workflow for cargo publish
-  - Transferred repo from catinspace-au to hypersec-io
+  - Transferred repo from catinspace-au to hyperi-io
 
 ### Key Files Modified
 
@@ -56,7 +56,7 @@ None - license module implementation complete, ready for commit.
 ### Blockers/Issues
 
 - clickhouse-arrow fork has new commits (Variant/Dynamic/Nested/BFloat16 support) but not yet published to Artifactory
-- **GitHub org migration:** Currently `hypersec-io`, will migrate to `hyperi-io` next week. CI submodule attach.sh already defaults to `hyperi-io` but submodule URLs must remain `hypersec-io` until the org is created. Update `.gitmodules` after migration.
+- **GitHub org migration:** Currently `hyperi-io`, will migrate to `hyperi-io` next week. CI submodule attach.sh already defaults to `hyperi-io` but submodule URLs must remain `hyperi-io` until the org is created. Update `.gitmodules` after migration.
 
 ### Dead Ends & Hypotheses
 
@@ -81,7 +81,7 @@ Implemented comprehensive license module with AES-256-GCM encryption, Ed25519 si
 
 ### Accomplished
 
-- Transferred repo from `catinspace-au/hs-rustlib` to `hypersec-io/hs-rustlib`
+- Transferred repo from `catinspace-au/hyperi-rustlib` to `hyperi-io/hyperi-rustlib`
 - Created `.github/workflows/release.yml` for Artifactory cargo publish
 - Fixed multiple CI issues (registry auth, doc tests, clippy, package excludes)
 - Published v1.0.7 and v1.0.8 to Artifactory

@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      tests/metrics_integration.rs
 // Purpose:   Integration tests for metrics HTTP server
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Integration tests for the metrics HTTP server.
 //!
@@ -14,7 +14,7 @@
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
-use hs_rustlib::metrics::{MetricsConfig, MetricsError, MetricsManager};
+use hyperi_rustlib::metrics::{MetricsConfig, MetricsError, MetricsManager};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::time::timeout;

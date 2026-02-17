@@ -1,10 +1,10 @@
-// Project:   hs-rustlib
+// Project:   hyperi-rustlib
 // File:      src/transport/kafka/producer.rs
 // Purpose:   High-throughput Kafka producer for PB/day workloads
 // Language:  Rust
 //
-// License:   LicenseRef-HyperSec-EULA
-// Copyright: (c) 2025 HyperSec
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! High-throughput Kafka producer optimized for PB/day workloads.
 //!
@@ -25,7 +25,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use hs_rustlib::transport::kafka::{KafkaProducer, KafkaConfig, ProducerProfile};
+//! use hyperi_rustlib::transport::kafka::{KafkaProducer, KafkaConfig, ProducerProfile};
 //!
 //! // High-throughput producer
 //! let config = KafkaConfig::production();
