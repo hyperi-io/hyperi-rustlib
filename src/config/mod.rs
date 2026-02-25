@@ -56,7 +56,7 @@
 //!
 //! ## Environment Variable Naming
 //!
-//! Use the `env_compat` module for standardized environment variable names
+//! Use the `env_compat` module for standardised environment variable names
 //! with legacy alias support and deprecation warnings.
 //!
 //! ## Example

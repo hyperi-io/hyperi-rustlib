@@ -340,11 +340,23 @@ mod aws_env {
     #[test]
     fn test_aws_from_env_default_region() {
         let _lock = ENV_LOCK.lock().unwrap();
-        // No region set, should use default
+        // Clear any region vars so we get the hard-coded default
+        let saved_default = std::env::var("AWS_DEFAULT_REGION").ok();
+        let saved_legacy = std::env::var("AWS_REGION").ok();
+        std::env::remove_var("AWS_DEFAULT_REGION");
+        std::env::remove_var("AWS_REGION");
 
         let config = AwsConfig::from_env();
 
         assert_eq!(config.region, "us-east-1");
+
+        // Restore
+        if let Some(v) = saved_default {
+            std::env::set_var("AWS_DEFAULT_REGION", v);
+        }
+        if let Some(v) = saved_legacy {
+            std::env::set_var("AWS_REGION", v);
+        }
     }
 }
 

@@ -1,0 +1,327 @@
+# Project:   hyperi-rustlib
+# File:      typos.toml
+# Purpose:   Spell checking configuration for typos-cli
+# Language:  TOML
+#
+# License:   FSL-1.1-ALv2
+# Copyright: (c) 2026 HYPERI PTY LIMITED
+#
+# Reference: https://github.com/crate-ci/typos
+#
+# Spelling policy (from ai/standards):
+#   Code:          American English (serialize, color, initialize)
+#   Docs/comments: Australian English (serialise, colour, initialise)
+#
+# typos cannot distinguish code from docs, so we use en-au locale
+# and allowlist the American spellings that appear in code.
+
+[default]
+# Use Australian English — flags American spellings in prose
+locale = "en-au"
+
+[default.extend-words]
+# ---------------------------------------------------------------------------
+# American spellings allowed in code (programming convention)
+# ---------------------------------------------------------------------------
+# typos uses case-insensitive matching for extend-words, so "serialize"
+# covers Serialize, SERIALIZE, serialize, etc.
+#
+# Format: american_spelling = "american_spelling"  (identity = don't flag)
+# ---------------------------------------------------------------------------
+
+# -ize/-ise variants (most common in code)
+serialize = "serialize"
+serializes = "serializes"
+serialized = "serialized"
+serializer = "serializer"
+serializers = "serializers"
+serializing = "serializing"
+serialization = "serialization"
+serializable = "serializable"
+deserialize = "deserialize"
+deserializes = "deserializes"
+deserialized = "deserialized"
+deserializer = "deserializer"
+deserializers = "deserializers"
+deserializing = "deserializing"
+deserialization = "deserialization"
+initialize = "initialize"
+initializes = "initializes"
+initialized = "initialized"
+initializer = "initializer"
+initializers = "initializers"
+initializing = "initializing"
+initialization = "initialization"
+optimize = "optimize"
+optimizes = "optimizes"
+optimized = "optimized"
+optimizer = "optimizer"
+optimizers = "optimizers"
+optimizing = "optimizing"
+optimization = "optimization"
+optimizations = "optimizations"
+finalize = "finalize"
+finalizes = "finalizes"
+finalized = "finalized"
+finalizer = "finalizer"
+finalizers = "finalizers"
+finalizing = "finalizing"
+finalization = "finalization"
+normalize = "normalize"
+normalizes = "normalizes"
+normalized = "normalized"
+normalizer = "normalizer"
+normalizing = "normalizing"
+normalization = "normalization"
+synchronize = "synchronize"
+synchronizes = "synchronizes"
+synchronized = "synchronized"
+synchronizing = "synchronizing"
+synchronization = "synchronization"
+authorize = "authorize"
+authorizes = "authorizes"
+authorized = "authorized"
+authorizing = "authorizing"
+authorization = "authorization"
+customize = "customize"
+customizes = "customizes"
+customized = "customized"
+customizing = "customizing"
+customizable = "customizable"
+customization = "customization"
+minimize = "minimize"
+minimizes = "minimizes"
+minimized = "minimized"
+minimizing = "minimizing"
+maximize = "maximize"
+maximizes = "maximizes"
+maximized = "maximized"
+maximizing = "maximizing"
+organize = "organize"
+organizes = "organizes"
+organized = "organized"
+organizer = "organizer"
+organizing = "organizing"
+recognize = "recognize"
+recognizes = "recognizes"
+recognized = "recognized"
+recognizing = "recognizing"
+analyze = "analyze"
+analyzes = "analyzes"
+analyzed = "analyzed"
+analyzer = "analyzer"
+analyzers = "analyzers"
+analyzing = "analyzing"
+tokenize = "tokenize"
+tokenizes = "tokenizes"
+tokenized = "tokenized"
+tokenizer = "tokenizer"
+tokenizers = "tokenizers"
+tokenizing = "tokenizing"
+randomize = "randomize"
+randomizes = "randomizes"
+randomized = "randomized"
+randomizing = "randomizing"
+parametrize = "parametrize"
+parametrized = "parametrized"
+memorize = "memorize"
+memorized = "memorized"
+prioritize = "prioritize"
+prioritized = "prioritized"
+prioritizing = "prioritizing"
+realize = "realize"
+realizes = "realizes"
+realized = "realized"
+realizing = "realizing"
+utilize = "utilize"
+utilizes = "utilizes"
+utilized = "utilized"
+utilizing = "utilizing"
+utilization = "utilization"
+summarize = "summarize"
+summarized = "summarized"
+summarizing = "summarizing"
+localize = "localize"
+localized = "localized"
+localizing = "localizing"
+localization = "localization"
+visualize = "visualize"
+visualized = "visualized"
+visualizing = "visualizing"
+visualization = "visualization"
+sanitize = "sanitize"
+sanitized = "sanitized"
+sanitizer = "sanitizer"
+sanitizing = "sanitizing"
+containerize = "containerize"
+containerized = "containerized"
+containerizing = "containerizing"
+stabilize = "stabilize"
+stabilized = "stabilized"
+stabilizer = "stabilizer"
+stabilizing = "stabilizing"
+stabilization = "stabilization"
+categorize = "categorize"
+categorized = "categorized"
+categorizing = "categorizing"
+categorization = "categorization"
+characterize = "characterize"
+characterized = "characterized"
+characterizing = "characterizing"
+characterization = "characterization"
+specialize = "specialize"
+specialized = "specialized"
+specializes = "specializes"
+specializing = "specializing"
+specialization = "specialization"
+generalize = "generalize"
+generalized = "generalized"
+generalizes = "generalizes"
+generalizing = "generalizing"
+generalization = "generalization"
+capitalize = "capitalize"
+capitalized = "capitalized"
+capitalizing = "capitalizing"
+capitalization = "capitalization"
+paralyze = "paralyze"
+paralyzed = "paralyzed"
+equalizer = "equalizer"
+equalize = "equalize"
+equalized = "equalized"
+equalizing = "equalizing"
+itemize = "itemize"
+itemized = "itemized"
+itemizing = "itemizing"
+apologize = "apologize"
+apologized = "apologized"
+apologizing = "apologizing"
+emphasize = "emphasize"
+emphasized = "emphasized"
+emphasizing = "emphasizing"
+symbolize = "symbolize"
+symbolized = "symbolized"
+symbolizing = "symbolizing"
+digitize = "digitize"
+digitized = "digitized"
+digitizing = "digitizing"
+digitization = "digitization"
+monetize = "monetize"
+monetized = "monetized"
+monetizing = "monetizing"
+monetization = "monetization"
+standardize = "standardize"
+standardized = "standardized"
+standardizing = "standardizing"
+standardization = "standardization"
+
+# -our/-or variants
+color = "color"
+colors = "colors"
+colored = "colored"
+colorful = "colorful"
+favor = "favor"
+favors = "favors"
+favored = "favored"
+favorable = "favorable"
+behavior = "behavior"
+behaviors = "behaviors"
+behavioral = "behavioral"
+neighbor = "neighbor"
+neighbors = "neighbors"
+neighboring = "neighboring"
+
+# -ence/-ense variants
+defense = "defense"
+defensive = "defensive"
+offense = "offense"
+offensive = "offensive"
+license = "license"
+licensed = "licensed"
+licenses = "licenses"
+licensing = "licensing"
+
+# -re/-er variants (less common in code but appear in libs)
+center = "center"
+centered = "centered"
+centering = "centering"
+fiber = "fiber"
+meter = "meter"
+
+# -log/-logue variants
+catalog = "catalog"
+catalogs = "catalogs"
+dialog = "dialog"
+dialogs = "dialogs"
+
+# Other American spellings common in code
+canceled = "canceled"
+canceling = "canceling"
+labeled = "labeled"
+labeling = "labeling"
+modeled = "modeled"
+modeling = "modeling"
+traveled = "traveled"
+traveling = "traveling"
+signaled = "signaled"
+signaling = "signaling"
+gray = "gray"
+artifact = "artifact"
+artifacts = "artifacts"
+
+# ---------------------------------------------------------------------------
+# Project-specific: proper nouns and external terms
+# ---------------------------------------------------------------------------
+# HashiCorp (typos splits this and flags "Hashi" -> "Hash")
+Hashi = "Hashi"
+
+# ClickHouse SQL keyword (MATERIALIZED VIEW)
+MATERIALIZED = "MATERIALIZED"
+
+# Kafka acknowledgment (librdkafka uses American spelling internally)
+acknowledgment = "acknowledgment"
+
+[default.extend-identifiers]
+# Project-specific identifiers that should not be flagged
+HashiCorp = "HashiCorp"
+
+[files]
+# Files/directories to ignore
+extend-exclude = [
+    # Lock files contain hashes
+    "*.lock",
+    "uv.lock",
+    "Cargo.lock",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+
+    # Binary/minified assets
+    "*.min.js",
+    "*.min.css",
+    "*.svg",
+    "*.ico",
+    "*.woff*",
+    "*.ttf",
+    "*.eot",
+
+    # Build/cache directories
+    ".git/",
+    ".venv/",
+    "node_modules/",
+    "target/",
+    "dist/",
+    "build/",
+    "vendor/",
+    "__pycache__/",
+    "*.pyc",
+
+    # Changelog contains git commit hashes that look like typos
+    "CHANGELOG.md",
+    "**/CHANGELOG.md",
+
+    # Git submodules (contain their own changelogs/commit hashes)
+    "ci/",
+    "ai/",
+
+    # FSL licence text — uses deliberate Australian spelling
+    "LICENSE",
+]
