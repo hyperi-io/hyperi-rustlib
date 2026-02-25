@@ -1,3 +1,10 @@
+## [1.5.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.5.2...v1.5.3) (2026-02-25)
+
+
+### Bug Fixes
+
+* add markdownlint-cli2 ignore config for generated/vendored files ([7fd0840](https://github.com/hyperi-io/hyperi-rustlib/commit/7fd0840e5a2d79c6b477ed3d87b5ef291f4296a2))
+
 ## [1.5.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.5.1...v1.5.2) (2026-02-25)
 
 
