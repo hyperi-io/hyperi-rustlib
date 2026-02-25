@@ -1,0 +1,13 @@
+# markdownlint-cli2 configuration
+# Ignores override the globs passed by CI action
+ignores:
+  - "node_modules/**"
+  - ".venv/**"
+  - "vendor/**"
+  - "target/**"
+  - "dist/**"
+  - "build/**"
+  - "CHANGELOG.md"
+  - "**/CHANGELOG.md"
+  - "ai/**"
+  - "ci/**"
