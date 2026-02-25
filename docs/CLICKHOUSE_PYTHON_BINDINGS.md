@@ -143,7 +143,7 @@ print(parsed.is_string())    # False (it's an array)
 
 Create a separate crate `hyperi-rustlib-python` that wraps the Rust types:
 
-```
+```text
 hyperi-rustlib/
 ├── Cargo.toml
 ├── src/           # Core Rust library

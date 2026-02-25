@@ -152,19 +152,19 @@ CI/CD helpers:
 
 ### Phase 2 - Enhanced Features
 
-3. **Cache module** (~300 LOC)
+1. **Cache module** (~300 LOC)
    - Disk-based cache with SQLite
    - Optional Redis support
 
-4. **CLI framework** (~200 LOC)
+2. **CLI framework** (~200 LOC)
    - Wrap Clap with reusable helpers
    - Output formatters
 
 ### Phase 3 - Advanced (As Needed)
 
-5. **Kafka standalone client** - Only if transport layer insufficient
-6. **Anonymizer** - Depends on external library availability
-7. **Harness utilities** - Lower priority
+1. **Kafka standalone client** - Only if transport layer insufficient
+2. **Anonymizer** - Depends on external library availability
+3. **Harness utilities** - Lower priority
 
 ---
 
