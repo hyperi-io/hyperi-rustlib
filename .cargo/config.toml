@@ -9,9 +9,6 @@
 [build]
 rustflags = ["-D", "warnings"]
 
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-D", "warnings", "-C", "target-cpu=native"]
-
 [alias]
 xtask = "run --package xtask --"
 
