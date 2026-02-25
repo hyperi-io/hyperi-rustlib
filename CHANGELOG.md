@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.5.0...v1.5.1) (2026-02-25)
+
+
+### Bug Fixes
+
+* resolve CI quality failures (typos, clippy, fmt, gitleaks, test) ([9c51c94](https://github.com/hyperi-io/hyperi-rustlib/commit/9c51c94943ee5cc7ee636722e731908d0daa98cd))
+
 ## [1.4.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.4.2...v1.4.3) (2026-02-17)
 
 
