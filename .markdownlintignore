@@ -1,0 +1,16 @@
+# Dependencies and third-party code
+node_modules/
+.venv/
+vendor/
+
+# Build outputs (Cargo creates target/ with third-party source)
+target/
+dist/
+build/
+
+# Generated files (semantic-release manages CHANGELOG)
+CHANGELOG.md
+
+# Git submodules (have their own linting)
+ai/
+ci/
