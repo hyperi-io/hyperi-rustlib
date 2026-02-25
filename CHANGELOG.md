@@ -1,3 +1,10 @@
+## [1.5.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.5.3...v1.5.4) (2026-02-25)
+
+
+### Bug Fixes
+
+* remove target-cpu=native to fix SIGILL in CI ([cd5df48](https://github.com/hyperi-io/hyperi-rustlib/commit/cd5df4860ba1373a2b30c18ab50c4d711b499709))
+
 ## [1.5.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.5.2...v1.5.3) (2026-02-25)
 
 
