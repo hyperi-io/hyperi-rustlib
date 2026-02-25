@@ -241,7 +241,7 @@ pub const PRODUCER_EXACTLY_ONCE: &[(&str, &str)] = &[
 /// Optimized for minimal end-to-end latency:
 /// - No batching (immediate send)
 /// - Small buffers
-/// - Fast acknowledgment (acks=1)
+/// - Fast acknowledgement (acks=1)
 pub const PRODUCER_LOW_LATENCY: &[(&str, &str)] = &[
     // --- Delivery guarantees (faster acks) ---
     ("acks", "1"), // Leader ack only for speed

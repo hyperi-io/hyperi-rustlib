@@ -143,6 +143,9 @@ use tracing::{debug, error, info, warn};
 
 use super::shared::SharedConfig;
 
+/// Boxed error type for reload/validate callbacks.
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
 /// Configuration for the reloader.
 #[derive(Debug, Clone)]
 pub struct ReloaderConfig {
@@ -190,8 +193,8 @@ impl Default for ReloaderConfig {
 pub struct ConfigReloader<T: Clone + Send + Sync + 'static> {
     config: ReloaderConfig,
     shared: SharedConfig<T>,
-    reload_fn: Arc<dyn Fn() -> Result<T, Box<dyn std::error::Error + Send + Sync>> + Send + Sync>,
-    validate_fn: Arc<dyn Fn(&T) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync>,
+    reload_fn: Arc<dyn Fn() -> Result<T, BoxError> + Send + Sync>,
+    validate_fn: Arc<dyn Fn(&T) -> Result<(), BoxError> + Send + Sync>,
 }
 
 impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
@@ -204,8 +207,8 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
     pub fn new(
         config: ReloaderConfig,
         shared: SharedConfig<T>,
-        reload_fn: impl Fn() -> Result<T, Box<dyn std::error::Error + Send + Sync>> + Send + Sync + 'static,
-        validate_fn: impl Fn(&T) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + Send + Sync + 'static,
+        reload_fn: impl Fn() -> Result<T, BoxError> + Send + Sync + 'static,
+        validate_fn: impl Fn(&T) -> Result<(), BoxError> + Send + Sync + 'static,
     ) -> Self {
         Self {
             config,
@@ -239,11 +242,8 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
     /// Main reload loop — waits for any trigger, then attempts reload.
     async fn run_loop(self) {
         // File polling state
-        let mut last_modified: Option<SystemTime> = self
-            .config
-            .config_path
-            .as_ref()
-            .and_then(|p| file_mtime(p));
+        let mut last_modified: Option<SystemTime> =
+            self.config.config_path.as_ref().and_then(|p| file_mtime(p));
         let mut last_reload = Instant::now();
 
         // Set up poll timer (for file watching)
@@ -272,13 +272,15 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
         };
 
         loop {
-            let trigger = self.wait_for_trigger(
-                &mut poll_timer,
-                &mut periodic_timer,
-                #[cfg(unix)]
-                &mut sighup,
-                &mut last_modified,
-            ).await;
+            let trigger = self
+                .wait_for_trigger(
+                    &mut poll_timer,
+                    &mut periodic_timer,
+                    #[cfg(unix)]
+                    &mut sighup,
+                    &mut last_modified,
+                )
+                .await;
 
             // Debounce check
             if last_reload.elapsed() < self.config.debounce {
@@ -317,12 +319,14 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
         last_modified: &mut Option<SystemTime>,
     ) -> ReloadTrigger {
         loop {
-            let trigger = self.select_trigger(
-                poll_timer,
-                periodic_timer,
-                #[cfg(unix)]
-                sighup,
-            ).await;
+            let trigger = self
+                .select_trigger(
+                    poll_timer,
+                    periodic_timer,
+                    #[cfg(unix)]
+                    sighup,
+                )
+                .await;
 
             match trigger {
                 ReloadTrigger::FileChanged => {
@@ -369,7 +373,7 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
                 }
             } => ReloadTrigger::Periodic,
 
-            _ = async {
+            () = async {
                 match sighup.as_mut() {
                     Some(sig) => { sig.recv().await; },
                     None => std::future::pending::<()>().await,

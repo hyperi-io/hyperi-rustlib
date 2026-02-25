@@ -16,7 +16,7 @@ Please include:
 
 ## What to Expect
 
-- **Acknowledgment**: We will acknowledge receipt of your report within
+- **Acknowledgement**: We will acknowledge receipt of your report within
   5 business days
 - **Investigation**: We will investigate and keep you informed of our progress
 - **Resolution**: We will work to resolve confirmed vulnerabilities promptly
