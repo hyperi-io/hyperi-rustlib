@@ -78,6 +78,12 @@
 
 pub mod env_compat;
 
+#[cfg(feature = "config-reload")]
+pub mod reloader;
+
+#[cfg(feature = "config-reload")]
+pub mod shared;
+
 #[cfg(feature = "config-postgres")]
 pub mod postgres;
 
