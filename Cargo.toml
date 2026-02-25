@@ -47,6 +47,9 @@ resilience = ["tower-resilience", "tower"]
 database = []
 cache = []
 
+# Config hot-reload (SharedConfig<T> + ConfigReloader<T>)
+config-reload = ["config", "parking_lot", "tokio", "tracing"]
+
 # PostgreSQL config source (optional)
 config-postgres = ["config", "sqlx", "tokio", "serde_json"]
 
@@ -64,7 +67,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "secrets-all", "directory-config", "directory-config-git"]
+full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "secrets-all", "directory-config", "directory-config-git"]
 
 [dependencies]
 # Serialisation (always needed)

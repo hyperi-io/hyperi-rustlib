@@ -105,6 +105,12 @@ pub use runtime::RuntimePaths;
 #[cfg(feature = "config")]
 pub use config::{Config, ConfigError, ConfigOptions};
 
+#[cfg(feature = "config-reload")]
+pub use config::reloader::{ConfigReloader, ReloaderConfig};
+
+#[cfg(feature = "config-reload")]
+pub use config::shared::SharedConfig;
+
 #[cfg(feature = "config-postgres")]
 pub use config::postgres::{
     FallbackMode, PostgresConfig, PostgresConfigError, PostgresConfigSource,
