@@ -96,6 +96,12 @@ pub mod secrets;
 #[cfg(feature = "directory-config")]
 pub mod directory_config;
 
+#[cfg(feature = "deployment")]
+pub mod deployment;
+
+#[cfg(feature = "version-check")]
+pub mod version_check;
+
 // Re-export common types at crate root
 pub use env::Environment;
 
@@ -160,6 +166,15 @@ pub use directory_config::{
     ChangeEvent, ChangeOperation, DirectoryConfigError, DirectoryConfigResult,
     DirectoryConfigStore, DirectoryConfigStoreConfig, WriteMode, WriteResult,
 };
+
+#[cfg(feature = "deployment")]
+pub use deployment::{
+    ContractMismatch, DeploymentContract, DeploymentError, HealthContract, KedaConfig,
+    KedaContract,
+};
+
+#[cfg(feature = "version-check")]
+pub use version_check::{VersionCheck, VersionCheckConfig, VersionCheckResponse};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
