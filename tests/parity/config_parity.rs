@@ -533,3 +533,61 @@ fn test_unmarshal_struct() {
     assert_eq!(db.port, 5432); // From defaults.yaml
     assert_eq!(db.username, "settings-user"); // From settings.yaml
 }
+
+// ============================================================================
+// app_name and file discovery tests
+// ============================================================================
+
+#[test]
+fn test_app_name_default_is_none() {
+    let opts = ConfigOptions::default();
+    assert!(opts.app_name.is_none());
+}
+
+#[test]
+fn test_load_home_dotenv_default_is_false() {
+    let opts = ConfigOptions::default();
+    assert!(!opts.load_home_dotenv);
+}
+
+#[test]
+fn test_config_with_app_name_extra_path() {
+    // Simulate user config dir via config_paths
+    let dir = TempDir::new().expect("failed to create temp dir");
+    let app_config = dir.path().to_path_buf();
+
+    fs::write(
+        app_config.join("settings.yaml"),
+        "user_setting: from_user_dir\n",
+    )
+    .expect("write");
+
+    let config = Config::new(ConfigOptions {
+        app_name: Some("testapp".to_string()),
+        config_paths: vec![app_config],
+        load_dotenv: false,
+        ..Default::default()
+    })
+    .expect("config should load");
+
+    assert_eq!(
+        config.get_string("user_setting"),
+        Some("from_user_dir".to_string())
+    );
+}
+
+#[test]
+fn test_app_name_from_env_does_not_panic() {
+    // When APP_NAME is set but the directory doesn't exist,
+    // config should load without error (directory is silently skipped)
+    let _env = EnvGuard::new(&[("APP_NAME", "nonexistent_app_12345")]);
+
+    let config = Config::new(ConfigOptions {
+        load_dotenv: false,
+        ..Default::default()
+    })
+    .expect("config should load even with non-existent app dir");
+
+    // Hardcoded defaults still work
+    assert_eq!(config.get_string("log_level"), Some("info".to_string()));
+}
