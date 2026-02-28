@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.7.0...v1.7.1) (2026-02-28)
+
+
+### Bug Fixes
+
+* clippy and fmt issues in version_check module ([ef5375e](https://github.com/hyperi-io/hyperi-rustlib/commit/ef5375e6d7c397c35a1db8059ffaf2dcba29c339))
+
 # [1.7.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.6.0...v1.7.0) (2026-02-28)
 
 
