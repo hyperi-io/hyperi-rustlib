@@ -1,3 +1,10 @@
+## [1.7.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.7.1...v1.7.2) (2026-02-28)
+
+
+### Bug Fixes
+
+* remove arc runner config, use github-hosted runners ([d161450](https://github.com/hyperi-io/hyperi-rustlib/commit/d16145037a25d795870f2e22c2d29e7baa25c4af))
+
 ## [1.7.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.7.0...v1.7.1) (2026-02-28)
 
 
