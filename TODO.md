@@ -10,60 +10,47 @@
 
 ### High Priority
 
-- [x] Add integration tests for metrics HTTP server - 2025-01-19
-- [x] Implement parity tests against hyperi-pylib (config cascade behavior) - 2025-01-19
-- [x] Gap analysis hyperi-pylib - 2025-01-19 (see docs/GAP_ANALYSIS.md)
-- [x] Add example application demonstrating all features - 2025-01-19
-- [x] Python bindings discussion for clickhouse - 2025-01-19 (see docs/CLICKHOUSE_PYTHON_BINDINGS.md)
+- [x] Rename package from hs-rustlib to hyperi-rustlib (v1.4.3 published)
+- [x] Update all downstream consumers (dfe-loader, dfe-archiver, dfe-receiver)
+- [x] Complete HyperSec -> HyperI rebrand across all references
+- [ ] Remove stale `hs-rustlib` crate from JFrog `hypersec-cargo-local` registry
 
 ### Medium Priority
 
-- [x] Add more comprehensive config cascade tests (YAML file loading) - 2025-01-19
 - [ ] Implement log output capturing for logger tests
 - [ ] Add metrics server graceful shutdown tests
 
 ### Low Priority
 
 - [ ] Benchmark config loading performance
-- [ ] Add colored log output for text format
-- [ ] Document environment variable naming conventions
+- [ ] Add coloured log output for text format
 
 ---
 
 ## Completed
 
-- [x] Project setup with feature flags - 2025-12-24
-- [x] Environment detection module (K8s/Docker/Container/BareMetal) - 2025-12-24
-- [x] Runtime paths module (XDG + container awareness) - 2025-12-24
-- [x] Configuration module (7-layer cascade with figment) - 2025-12-24
-- [x] Logger module (structured JSON, RFC3339, masking) - 2025-12-24
-- [x] Metrics module (Prometheus + process/container) - 2025-12-24
-- [x] All 36 unit tests passing - 2025-12-24
-- [x] Clippy passing with pedantic warnings - 2025-12-24
-- [x] Initial commit and push to GitHub - 2025-12-24
-- [x] Transport module (Kafka/Zenoh/Memory abstraction) - 2025-01-XX
-- [x] ClickHouse client (Arrow protocol) - 2025-01-XX
-- [x] Integration tests for metrics server (14 tests) - 2025-01-19
-- [x] Parity tests for config cascade (19 tests) - 2025-01-19
-- [x] Parity tests for env detection (4 tests) - 2025-01-19
-- [x] Gap analysis vs hyperi-pylib documented - 2025-01-19
-- [x] Example applications (quickstart, full_demo) - 2025-01-19
-- [x] Python bindings proposal documented - 2025-01-19
-- [x] HTTP server module (axum-based) - 2025-01-19
-- [x] Spool module (disk-backed queue) - 2025-01-19
-- [x] TieredSink module (disk spillover with circuit breaker) - 2025-01-19
-- [x] Dependency audit and migration to safer/maintained alternatives - 2025-01-19
-  - Replaced `serde_yml` with `serde-yaml-ng` (security fix)
-  - Migrated `queue-file` to `yaque` (async-native, maintained)
-  - Replaced `once_cell` with `std::sync::LazyLock` (MSRV 1.80)
-  - Added OpenTelemetry support (`otel`, `otel-metrics`, `otel-tracing` features)
-  - Added `tower-resilience` for circuit breaker patterns
-
----
-
-## Blocked
-
-None currently.
+- [x] Package rename: hs-rustlib -> hyperi-rustlib, published v1.4.3 to JFrog
+- [x] Rebrand: HyperSec -> HyperI across source, docs, configs, workflows
+- [x] Registry migration: hypersec registry -> hyperi registry
+- [x] Submodule URLs: hypersec-io -> hyperi-io
+- [x] CI config: .hypersec-ci.yaml -> .hyperi-ci.yaml
+- [x] Directory-config store with git2 integration (v1.4.0)
+- [x] OpenTelemetry metrics support (v1.4.0)
+- [x] Secrets management module (OpenBao/Vault, AWS) (v1.3.x)
+- [x] HTTP server module (axum-based) (v1.2.0)
+- [x] Transport module (Kafka/Zenoh/Memory abstraction)
+- [x] TieredSink module (disk spillover with circuit breaker)
+- [x] Spool module (disk-backed queue)
+- [x] Configuration module (7-layer cascade with figment)
+- [x] Logger module (structured JSON, RFC3339, masking)
+- [x] Metrics module (Prometheus + process/container)
+- [x] Environment detection module
+- [x] Runtime paths module (XDG + container awareness)
+- [x] Dependency audit (serde_yml -> serde-yaml-ng, queue-file -> yaque, once_cell -> LazyLock)
+- [x] Config cascade alignment with hyperi-pylib unified spec (v1.6.0)
+  - load_home_dotenv default false, app_name support, container/user config paths
+  - Created docs/CONFIG-CASCADE.md
+  - PG layer documented as built-for-not-with (YAML gitops covers current needs)
 
 ---
 
@@ -82,7 +69,7 @@ None currently.
 ### Phase 3 - Advanced
 
 - [ ] Standalone Kafka client (if transport layer insufficient)
-- [ ] PII anonymizer (evaluate Rust libraries)
+- [ ] PII anonymiser (evaluate Rust libraries)
 - [ ] Python bindings for ClickHouse client (PyO3)
 
 ---
@@ -90,11 +77,5 @@ None currently.
 ## Notes
 
 - Use `CARGO_BUILD_JOBS=2` for all cargo commands
-- Feature flags: `config`, `logger`, `metrics`, `runtime`, `env`, `transport`, `clickhouse-arrow`, `http-server`, `spool`, `tiered-sink`
-- MVP complete - iterate based on usage feedback
 - See docs/GAP_ANALYSIS.md for detailed comparison with hyperi-pylib
 - See docs/CLICKHOUSE_PYTHON_BINDINGS.md for Python binding proposal
-
----
-
-**Last Updated:** 2025-01-19

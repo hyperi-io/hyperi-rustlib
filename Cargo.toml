@@ -47,6 +47,12 @@ resilience = ["tower-resilience", "tower"]
 database = []
 cache = []
 
+# Deployment contract validation (Helm chart + Dockerfile sync)
+deployment = ["serde_yaml_ng", "serde_json"]
+
+# Startup version check (calls HyperI version API)
+version-check = ["reqwest", "tokio", "serde_json", "tracing", "uuid", "chrono"]
+
 # Config hot-reload (SharedConfig<T> + ConfigReloader<T>)
 config-reload = ["config", "parking_lot", "tokio", "tracing"]
 
@@ -67,7 +73,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "secrets-all", "directory-config", "directory-config-git"]
+full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -85,6 +91,9 @@ dotenvy = { version = ">=0.15.7, <0.16", optional = true }
 serde_yaml_ng = { version = ">=0.10.0, <0.11", optional = true }
 serde_json = { version = ">=1.0.149, <2", optional = true }
 toml = { version = ">=0.8, <0.10", optional = true }
+
+# UUID generation (for version-check instance ID)
+uuid = { version = ">=1.10, <2", features = ["v4"], optional = true }
 
 # Advisory file locking (for directory-config writes)
 fs2 = { version = ">=0.4.3, <0.5", optional = true }

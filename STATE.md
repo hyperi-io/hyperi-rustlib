@@ -2,96 +2,10 @@
 
 **Project:** hyperi-rustlib
 **Purpose:** Shared Rust utility library for HyperI applications (port of hyperi-pylib/hyperi-golib)
-**Status:** v1.0.8 published, license module added
 
 ---
 
-## Current Session (2026-01-19)
-
-### In Progress
-
-None - license module implementation complete, ready for commit.
-
-### Accomplished
-
-- **License Module Implementation** - Full encrypted license system with anti-tampering:
-  - `src/license/mod.rs` - Main module with file/URL/default loading, global singleton API
-  - `src/license/crypto.rs` - AES-256-GCM encryption/decryption with SHA-256 key derivation
-  - `src/license/defaults.rs` - Obfuscated compile-time defaults using `obfstr`
-  - `src/license/types.rs` - `LicenseSettings` struct with feature flags, expiration, limits
-  - `src/license/error.rs` - Error types for license operations
-  - `src/license/integrity.rs` - Ed25519 signature verification, hash integrity checks, debugger detection
-
-- **Features Added**:
-  - `license` - Core license functionality (aes-gcm, obfstr, ed25519-dalek, sha2, base64, rand)
-  - `license-http` - HTTP license fetching (adds reqwest blocking)
-
-- **Earlier in session**:
-  - Published v1.0.8 to Artifactory (fixed package excludes)
-  - Created release workflow for cargo publish
-  - Transferred repo from catinspace-au to hyperi-io
-
-### Key Files Modified
-
-- `Cargo.toml` - Added license feature and dependencies (aes-gcm, obfstr, ed25519-dalek, sha2, base64, rand)
-- `src/lib.rs` - Added license module export and re-exports
-- `src/license/` - NEW: Complete license module (6 files)
-
-### Decisions Made
-
-- **AES-256-GCM for encryption**: Audited crate, authenticated encryption
-- **obfstr for string obfuscation**: Compile-time XOR obfuscation, no proc-macro complexity
-- **Ed25519 for signatures**: Fast, secure, ed25519-dalek is well-maintained
-- **SHA-256 for key derivation**: Simple, deterministic key from secret
-- **Blocking reqwest for HTTP**: License loading happens at startup, simpler than async
-- **Fallback to compiled defaults**: Always have a working license, even if file missing
-
-### Next Steps
-
-1. Commit license module changes
-2. Bump version to 1.1.0 (new feature)
-3. Push and verify CI passes
-4. Update clickhouse-arrow dependency when new version published
-
-### Blockers/Issues
-
-- clickhouse-arrow fork has new commits (Variant/Dynamic/Nested/BFloat16 support) but not yet published to Artifactory
-- **GitHub org migration:** Currently `hyperi-io`, will migrate to `hyperi-io` next week. CI submodule attach.sh already defaults to `hyperi-io` but submodule URLs must remain `hyperi-io` until the org is created. Update `.gitmodules` after migration.
-
-### Dead Ends & Hypotheses
-
-- obfstr! macro returns a temporary - must convert to String immediately before using
-- Ed25519 SPKI format has 12-byte header before 32-byte key
-
-### Git State
-
-- **Branch:** main
-- **Upstream:** up to date with origin/main
-- **Uncommitted:** Cargo.toml, src/lib.rs modified
-- **Untracked:** src/license/ (new directory)
-- **Staged:** none
-
-### Session Context Summary
-
-Implemented comprehensive license module with AES-256-GCM encryption, Ed25519 signature verification, obfuscated compile-time defaults, and anti-tampering measures. The module supports loading encrypted license files from local paths, environment variables, standard locations, or HTTPS URLs, with automatic fallback to compiled defaults. 38 unit tests passing, clippy clean.
-
----
-
-## Previous Session (2025-01-19)
-
-### Accomplished
-
-- Transferred repo from `catinspace-au/hyperi-rustlib` to `hyperi-io/hyperi-rustlib`
-- Created `.github/workflows/release.yml` for Artifactory cargo publish
-- Fixed multiple CI issues (registry auth, doc tests, clippy, package excludes)
-- Published v1.0.7 and v1.0.8 to Artifactory
-- Comprehensive dependency audit and migration (serde_yml → serde-yaml-ng, queue-file → yaque, once_cell → LazyLock)
-
----
-
-## Project Overview
-
-### Architecture
+## Architecture
 
 Modular library with feature-gated components. Each module can be enabled/disabled independently via Cargo features.
 
@@ -99,25 +13,28 @@ Modular library with feature-gated components. Each module can be enabled/disabl
 
 1. **env** - Environment detection (K8s, Docker, Container, BareMetal)
 2. **runtime** - Runtime paths with XDG/container awareness
-3. **config** - 7-layer configuration cascade
-4. **logger** - Structured logging with JSON/text formats
+3. **config** - 7-layer configuration cascade (figment)
+4. **logger** - Structured logging with JSON/text formats (tracing)
 5. **metrics** - Prometheus metrics with process/container awareness
-6. **spool** - Disk-backed async FIFO queue (yaque)
-7. **tiered-sink** - Resilient message delivery with disk spillover
-8. **transport** - Kafka/Zenoh/Memory transport abstraction
-9. **clickhouse-arrow** - ClickHouse client with Arrow protocol
-10. **license** - Encrypted license files with anti-tampering (NEW)
+6. **otel-metrics** - OpenTelemetry metrics export (OTLP)
+7. **directory-config** - YAML directory-backed config store with optional git2 integration
+8. **spool** - Disk-backed async FIFO queue (yaque)
+9. **tiered-sink** - Resilient message delivery with disk spillover
+10. **transport** - Kafka/Zenoh/Memory transport abstraction
+11. **http-server** - Axum-based HTTP server with health endpoints
+12. **secrets** - Secrets management (OpenBao/Vault, AWS Secrets Manager)
 
 ### Tech Stack
 
 - **Language:** Rust 1.80+ (MSRV)
 - **Config:** figment (0.10)
 - **Logging:** tracing + tracing-subscriber (0.3)
-- **Metrics:** metrics + metrics-exporter-prometheus
+- **Metrics:** metrics + metrics-exporter-prometheus, OpenTelemetry
 - **Async:** tokio (1.0)
 - **Disk Queue:** yaque (0.6)
 - **YAML:** serde-yaml-ng (0.10)
-- **License Crypto:** aes-gcm, ed25519-dalek, obfstr
+- **HTTP Server:** axum (0.8)
+- **Secrets:** vaultrs, aws-sdk-secretsmanager
 
 ---
 
@@ -133,41 +50,49 @@ CARGO_BUILD_JOBS=2 cargo clippy
 
 ---
 
-## Resources
+## Registry
 
-**Documentation:**
+- **Package name:** `hyperi-rustlib` (renamed from `hs-rustlib` in v1.4.3)
+- **Registry:** `hyperi` (JFrog Artifactory at `hypersec.jfrog.io`)
+- **Virtual repo:** `hyperi-cargo-virtual`
+- **Local repo:** `hyperi-cargo-local`
 
-- [WBS.md](WBS.md) - Work breakdown structure
-- [DESIGN.md](DESIGN.md) - Architecture and API design
-- [TODO.md](TODO.md) - Task tracking
+### Downstream consumers
 
-**External Resources:**
-
-- [figment docs](https://docs.rs/figment)
-- [tracing docs](https://docs.rs/tracing)
-- [metrics docs](https://docs.rs/metrics)
-- [yaque docs](https://docs.rs/yaque)
-- [aes-gcm docs](https://docs.rs/aes-gcm)
-- [obfstr docs](https://docs.rs/obfstr)
+| Project | Dep version | Features |
+|---------|------------|----------|
+| dfe-loader | `>=1.2.2` | transport-kafka |
+| dfe-archiver | `>=1.3` | config, logger, metrics, transport-kafka, spool, tiered-sink |
+| dfe-receiver | `1.3` | config, logger, metrics, http-server, transport-kafka, spool, tiered-sink, runtime, secrets |
 
 ---
 
-**Last Updated:** 2026-01-19
-**Version:** 1.0.8 (published), 1.1.0 (pending with license module)
-**Status:** License module complete, ready for release
+## Decisions
+
+- **AES-256-GCM** for license encryption (audited crate, authenticated encryption)
+- **obfstr** for string obfuscation (compile-time XOR, no proc-macro complexity)
+- **Ed25519** for signatures (ed25519-dalek, well-maintained)
+- **serde-yaml-ng** replaced serde_yml (security fix)
+- **yaque** replaced queue-file (async-native, maintained)
+- **std::sync::LazyLock** replaced once_cell (MSRV 1.80)
+- **Package rename** from `hs-rustlib` to `hyperi-rustlib` to match org rebrand
+- **Config cascade unified spec** — rustlib and pylib must be identical. Both search `./`, `./config/`, `/config/`, `~/.config/{app_name}/`. Home `.env` opt-in. PG layer is built-for-not-with (YAML gitops already centralised). See [CONFIG-CASCADE.md](docs/CONFIG-CASCADE.md)
+
+---
+
+## Resources
+
+- [DESIGN.md](docs/DESIGN.md) - Architecture and API design
+- [CONFIG-CASCADE.md](docs/CONFIG-CASCADE.md) - Configuration cascade reference
+- [TODO.md](TODO.md) - Task tracking
+- [GAP_ANALYSIS.md](docs/GAP_ANALYSIS.md) - Comparison with hyperi-pylib
 
 ---
 
 ## Notes for AI Assistants
 
-This file maintains session state across conversations. Update this file when:
-
-- Completing significant milestones
-- Making architectural decisions
-- Identifying blockers or issues
-- Planning next steps
-
-Keep this file concise and focused on current project state.
+This file contains static project context only. For tasks and progress, see TODO.md.
+For version, use `git describe --tags`. For history, use `git log`.
 
 ### License Module Production Notes
 
