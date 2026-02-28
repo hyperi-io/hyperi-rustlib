@@ -11,9 +11,9 @@
 # Values: python, typescript, golang, rust, none
 language: rust
 
-# Runner settings (override GH_RUNNER_* variables)
-runners:
-  default: arc-runner-16cpu
+# Runner settings — use GitHub-hosted (ARC only for dfe-loader)
+# runners:
+#   default: arc-runner-16cpu
 
 # Quality checks
 quality:
