@@ -507,11 +507,7 @@ mod tests {
             "apiVersion: v2\nname: test-app\nversion: 0.1.0\n",
         )
         .unwrap();
-        std::fs::write(
-            chart_dir.join("values.yaml"),
-            "service:\n  port: 8080\n",
-        )
-        .unwrap();
+        std::fs::write(chart_dir.join("values.yaml"), "service:\n  port: 8080\n").unwrap();
 
         let contract = test_contract();
         let mismatches = validate_helm_values(&contract, chart_dir).unwrap();

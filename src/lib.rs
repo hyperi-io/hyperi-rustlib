@@ -169,8 +169,7 @@ pub use directory_config::{
 
 #[cfg(feature = "deployment")]
 pub use deployment::{
-    ContractMismatch, DeploymentContract, DeploymentError, HealthContract, KedaConfig,
-    KedaContract,
+    ContractMismatch, DeploymentContract, DeploymentError, HealthContract, KedaConfig, KedaContract,
 };
 
 #[cfg(feature = "version-check")]

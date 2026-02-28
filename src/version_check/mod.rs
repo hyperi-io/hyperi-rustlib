@@ -179,10 +179,7 @@ async fn do_version_check(
         .map_err(|e| VersionCheckError::Http(e.to_string()))?;
 
     if !resp.status().is_success() {
-        return Err(VersionCheckError::Http(format!(
-            "HTTP {}",
-            resp.status()
-        )));
+        return Err(VersionCheckError::Http(format!("HTTP {}", resp.status())));
     }
 
     resp.json::<VersionCheckResponse>()
@@ -276,9 +273,10 @@ fn format_age(published_at: &str) -> Option<String> {
 /// generates a new UUIDv4 and persists it. Falls back to an ephemeral UUID
 /// if the file can't be written.
 fn get_or_create_instance_id() -> String {
-    let config_dir = dirs::config_dir()
-        .map(|d| d.join("hyperi"))
-        .unwrap_or_else(|| std::path::PathBuf::from("/tmp/hyperi"));
+    let config_dir = dirs::config_dir().map_or_else(
+        || std::path::PathBuf::from("/tmp/hyperi"),
+        |d| d.join("hyperi"),
+    );
 
     let id_path = config_dir.join("instance_id");
 
