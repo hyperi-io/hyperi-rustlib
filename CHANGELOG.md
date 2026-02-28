@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.6.0...v1.7.0) (2026-02-28)
+
+
+### Features
+
+* deployment contract validation and startup version check ([822adba](https://github.com/hyperi-io/hyperi-rustlib/commit/822adbae940434c5e6de3561713860929c2ee11d))
+
 # [1.6.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.5.4...v1.6.0) (2026-02-28)
 
 
