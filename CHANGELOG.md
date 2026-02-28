@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.5.4...v1.6.0) (2026-02-28)
+
+
+### Features
+
+* align config cascade with hyperi-pylib unified spec ([398034c](https://github.com/hyperi-io/hyperi-rustlib/commit/398034c0a114e51c776841d06b2aa9e6b3a7ac93))
+
 ## [1.5.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.5.3...v1.5.4) (2026-02-25)
 
 
