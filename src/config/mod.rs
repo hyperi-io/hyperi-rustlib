@@ -146,6 +146,15 @@ pub struct ConfigOptions {
     /// Override the detected app environment (dev, staging, prod).
     pub app_env: Option<String>,
 
+    /// Application name for user-scoped config discovery.
+    ///
+    /// When set, enables searching `~/.config/{app_name}/` for config files.
+    /// Falls back to `APP_NAME` or `HYPERI_LIB_APP_NAME` environment variables
+    /// if not explicitly provided.
+    ///
+    /// Default: None (user config directory not searched)
+    pub app_name: Option<String>,
+
     /// Additional paths to search for config files.
     pub config_paths: Vec<PathBuf>,
 
@@ -162,7 +171,7 @@ pub struct ConfigOptions {
     /// Whether to load home directory `.env` file (`~/.env`).
     ///
     /// Only applies when `load_dotenv` is true.
-    /// Default: true
+    /// Default: false (opt-in, matching hyperi-pylib)
     pub load_home_dotenv: bool,
 
     /// PostgreSQL config source (optional, requires `config-postgres` feature).
@@ -175,9 +184,10 @@ impl Default for ConfigOptions {
         Self {
             env_prefix: String::new(),
             app_env: None,
+            app_name: None,
             config_paths: Vec::new(),
             load_dotenv: true,
-            load_home_dotenv: true,
+            load_home_dotenv: false,
             #[cfg(feature = "config-postgres")]
             postgres: None,
         }
@@ -192,6 +202,14 @@ pub struct Config {
 }
 
 impl Config {
+    /// Resolve the effective app name from explicit value or environment.
+    fn resolve_app_name(explicit: Option<&str>) -> Option<String> {
+        explicit
+            .map(String::from)
+            .or_else(|| std::env::var("APP_NAME").ok())
+            .or_else(|| std::env::var("HYPERI_LIB_APP_NAME").ok())
+    }
+
     /// Create a new configuration with the given options.
     ///
     /// # Errors
@@ -199,6 +217,8 @@ impl Config {
     /// Returns an error if configuration loading fails.
     pub fn new(opts: ConfigOptions) -> Result<Self, ConfigError> {
         let app_env = opts.app_env.unwrap_or_else(get_app_env);
+        let resolved_app_name = Self::resolve_app_name(opts.app_name.as_deref());
+        let app_name_ref = resolved_app_name.as_deref();
 
         // Load .env files in cascade order (lowest to highest priority)
         // Home directory .env provides global defaults
@@ -215,18 +235,18 @@ impl Config {
         figment = figment.merge(Serialized::defaults(HardcodedDefaults::default()));
 
         // 6. defaults.yaml
-        for path in Self::find_config_files("defaults", &opts.config_paths) {
+        for path in Self::find_config_files("defaults", &opts.config_paths, app_name_ref) {
             figment = figment.merge(Yaml::file(&path));
         }
 
         // 5. settings.yaml
-        for path in Self::find_config_files("settings", &opts.config_paths) {
+        for path in Self::find_config_files("settings", &opts.config_paths, app_name_ref) {
             figment = figment.merge(Yaml::file(&path));
         }
 
         // 4. settings.{env}.yaml
         let env_settings = format!("settings.{app_env}");
-        for path in Self::find_config_files(&env_settings, &opts.config_paths) {
+        for path in Self::find_config_files(&env_settings, &opts.config_paths, app_name_ref) {
             figment = figment.merge(Yaml::file(&path));
         }
 
@@ -259,6 +279,8 @@ impl Config {
     #[cfg(feature = "config-postgres")]
     pub async fn new_async(opts: ConfigOptions) -> Result<Self, ConfigError> {
         let app_env = opts.app_env.clone().unwrap_or_else(get_app_env);
+        let resolved_app_name = Self::resolve_app_name(opts.app_name.as_deref());
+        let app_name_ref = resolved_app_name.as_deref();
 
         // Load .env files in cascade order (lowest to highest priority)
         if opts.load_dotenv {
@@ -281,18 +303,18 @@ impl Config {
         figment = figment.merge(Serialized::defaults(HardcodedDefaults::default()));
 
         // 7. defaults.yaml
-        for path in Self::find_config_files("defaults", &opts.config_paths) {
+        for path in Self::find_config_files("defaults", &opts.config_paths, app_name_ref) {
             figment = figment.merge(Yaml::file(&path));
         }
 
         // 6. settings.yaml
-        for path in Self::find_config_files("settings", &opts.config_paths) {
+        for path in Self::find_config_files("settings", &opts.config_paths, app_name_ref) {
             figment = figment.merge(Yaml::file(&path));
         }
 
         // 5. settings.{env}.yaml
         let env_settings = format!("settings.{app_env}");
-        for path in Self::find_config_files(&env_settings, &opts.config_paths) {
+        for path in Self::find_config_files(&env_settings, &opts.config_paths, app_name_ref) {
             figment = figment.merge(Yaml::file(&path));
         }
 
@@ -369,11 +391,23 @@ impl Config {
     }
 
     /// Find config files with the given base name.
-    fn find_config_files(base_name: &str, extra_paths: &[PathBuf]) -> Vec<PathBuf> {
+    ///
+    /// Search order (all locations merged, later overrides earlier within
+    /// the same cascade layer):
+    /// 1. Current directory: `./{name}.yaml`
+    /// 2. Project config subdir: `./config/{name}.yaml`
+    /// 3. Container mount: `/config/{name}.yaml` (always checked)
+    /// 4. User config: `~/.config/{app_name}/{name}.yaml` (when app_name set)
+    /// 5. Extra paths from `ConfigOptions::config_paths`
+    fn find_config_files(
+        base_name: &str,
+        extra_paths: &[PathBuf],
+        app_name: Option<&str>,
+    ) -> Vec<PathBuf> {
         let mut files = Vec::new();
         let extensions = ["yaml", "yml"];
 
-        // Check current directory
+        // 1. Current directory
         for ext in &extensions {
             let path = PathBuf::from(format!("{base_name}.{ext}"));
             if path.exists() {
@@ -382,7 +416,7 @@ impl Config {
             }
         }
 
-        // Check config subdirectory
+        // 2. Project config subdirectory
         for ext in &extensions {
             let path = PathBuf::from(format!("config/{base_name}.{ext}"));
             if path.exists() {
@@ -391,7 +425,35 @@ impl Config {
             }
         }
 
-        // Check extra paths
+        // 3. Container config mount (/config/)
+        let container_config = PathBuf::from("/config");
+        if container_config.is_dir() {
+            for ext in &extensions {
+                let path = container_config.join(format!("{base_name}.{ext}"));
+                if path.exists() {
+                    files.push(path);
+                    break;
+                }
+            }
+        }
+
+        // 4. User config directory (~/.config/{app_name}/)
+        if let Some(name) = app_name {
+            if let Some(config_dir) = dirs::config_dir() {
+                let user_config = config_dir.join(name);
+                if user_config.is_dir() {
+                    for ext in &extensions {
+                        let path = user_config.join(format!("{base_name}.{ext}"));
+                        if path.exists() {
+                            files.push(path);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. Extra paths (from ConfigOptions::config_paths)
         for base in extra_paths {
             for ext in &extensions {
                 let path = base.join(format!("{base_name}.{ext}"));
@@ -605,9 +667,10 @@ mod tests {
         let opts = ConfigOptions::default();
         assert!(opts.env_prefix.is_empty());
         assert!(opts.app_env.is_none());
+        assert!(opts.app_name.is_none());
         assert!(opts.config_paths.is_empty());
         assert!(opts.load_dotenv);
-        assert!(opts.load_home_dotenv);
+        assert!(!opts.load_home_dotenv);
     }
 
     #[test]

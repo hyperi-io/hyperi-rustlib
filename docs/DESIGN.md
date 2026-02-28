@@ -149,8 +149,9 @@ pub struct Config {
 /// Configuration options
 #[derive(Default)]
 pub struct ConfigOptions {
-    pub env_prefix: String,        // e.g., "MYAPP"
-    pub app_env: Option<String>,   // Override APP_ENV detection
+    pub env_prefix: String,         // e.g., "MYAPP"
+    pub app_env: Option<String>,    // Override APP_ENV detection
+    pub app_name: Option<String>,   // For ~/.config/{app_name}/ discovery
     pub config_paths: Vec<PathBuf>, // Additional config paths
 }
 
