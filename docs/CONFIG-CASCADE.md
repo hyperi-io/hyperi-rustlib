@@ -98,11 +98,12 @@ Common environment names: `development`, `staging`, `production`
 
 **Feature flag:** `config-postgres`
 
-**Status:** The PostgreSQL config layer is implemented and tested but is
-**not currently used in production**. It exists so we can pivot to
-centralised config management if needed in the future without redesigning
-the cascade. File-based config + environment variables cover all current
-deployment scenarios.
+**Status:** The YAML file-based approach already provides centralised
+configuration management (gitops-optimised, stored on S3 for AWS
+deployments, used across all services). The PostgreSQL option exists for
+a more complex PG-over-YAML path if the ROI justifies it in the future.
+The cascade is designed so PG can be enabled without code changes — just
+set the `{PREFIX}_CONFIG_POSTGRES_ENABLED` env var.
 
 When enabled, configuration key-value pairs are loaded from a PostgreSQL
 table. This layer sits above file-based config but below environment
