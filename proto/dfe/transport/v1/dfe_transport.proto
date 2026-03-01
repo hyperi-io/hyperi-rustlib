@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: FSL-1.1-ALv2
+// Copyright (c) 2026 HYPERI PTY LIMITED
+//
+// DFE native transport protocol.
+// Lightweight bulk bytes transfer with format hints.
+
+syntax = "proto3";
+
+package dfe.transport.v1;
+
+// DFE inter-service transport.
+service DfeTransport {
+  // Push a batch of data to the receiver.
+  rpc Push(PushRequest) returns (PushResponse);
+
+  // Health check.
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// Data format hint for the receiver.
+enum Format {
+  FORMAT_AUTO = 0;
+  FORMAT_JSON = 1;
+  FORMAT_MSGPACK = 2;
+  FORMAT_ARROW_IPC = 3;
+}
+
+message PushRequest {
+  // Raw payload bytes (JSON lines, MsgPack, or Arrow IPC batch).
+  bytes payload = 1;
+
+  // Format hint so the receiver can skip detection.
+  Format format = 2;
+
+  // Routing metadata (e.g. topic, org_id, source).
+  map<string, string> metadata = 3;
+}
+
+message PushResponse {
+  // Number of events accepted by the receiver.
+  uint64 accepted = 1;
+}
+
+// Serving status.
+enum ServingStatus {
+  SERVING = 0;
+  NOT_SERVING = 1;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  ServingStatus status = 1;
+}
