@@ -63,8 +63,9 @@ config-postgres = ["config", "sqlx", "tokio", "serde_json"]
 transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait"]
 transport-memory = ["transport"]
 transport-kafka = ["transport", "rdkafka"]
-transport-zenoh = ["transport", "zenoh"]
-transport-all = ["transport-memory", "transport-kafka", "transport-zenoh"]
+transport-grpc = ["transport", "dep:tonic", "dep:prost", "dep:prost-types", "dep:tonic-build", "dep:prost-build"]
+transport-grpc-vector-compat = ["transport-grpc"]
+transport-all = ["transport-memory", "transport-kafka", "transport-grpc"]
 
 # Secrets management
 secrets = ["tokio", "serde_json", "async-trait", "parking_lot", "base64", "dirs", "tracing"]
@@ -73,7 +74,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check"]
+full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -145,8 +146,10 @@ rmp-serde = { version = ">=1.3.1, <2", optional = true }
 # Kafka transport
 rdkafka = { version = ">=0.38.0, <0.39", optional = true }
 
-# Zenoh transport
-zenoh = { version = ">=1.7.2, <2", optional = true }
+# gRPC transport (tonic + prost)
+tonic = { version = ">=0.12, <0.14", features = ["gzip"], optional = true }
+prost = { version = ">=0.13, <0.14", optional = true }
+prost-types = { version = ">=0.13, <0.14", optional = true }
 
 # Spool (disk-backed async queue) - yaque is async-native and maintained
 yaque = { version = ">=0.6.6, <0.7", optional = true }
@@ -172,6 +175,10 @@ vaultrs = { version = ">=0.7, <0.8", optional = true }
 # AWS (for secrets-aws)
 aws-config = { version = ">=1.6, <2", optional = true }
 aws-sdk-secretsmanager = { version = ">=1.72, <2", optional = true }
+
+[build-dependencies]
+tonic-build = { version = ">=0.12, <0.14", optional = true }
+prost-build = { version = ">=0.13, <0.14", optional = true }
 
 [dev-dependencies]
 tokio = { version = ">=1.49.0, <2", features = ["full", "test-util"] }

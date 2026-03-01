@@ -18,8 +18,8 @@ pub enum TransportType {
     /// Apache Kafka (production default).
     #[default]
     Kafka,
-    /// Eclipse Zenoh (dev/test, low-latency).
-    Zenoh,
+    /// DFE native gRPC (tonic, inter-service mesh).
+    Grpc,
     /// In-memory tokio channels (unit tests).
     Memory,
 }
@@ -28,7 +28,7 @@ impl std::fmt::Display for TransportType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Kafka => write!(f, "kafka"),
-            Self::Zenoh => write!(f, "zenoh"),
+            Self::Grpc => write!(f, "grpc"),
             Self::Memory => write!(f, "memory"),
         }
     }
@@ -72,7 +72,7 @@ impl PayloadFormat {
 /// A received message with transport metadata.
 #[derive(Debug, Clone)]
 pub struct Message<T: CommitToken> {
-    /// Routing key (Kafka topic, Zenoh key expression).
+    /// Routing key (Kafka topic, gRPC metadata topic).
     pub key: Option<Arc<str>>,
 
     /// Raw payload bytes - JSON or MsgPack, unchanged.
@@ -154,7 +154,7 @@ impl SendResult {
 /// Top-level transport configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TransportConfig {
-    /// Transport type (kafka, zenoh, memory).
+    /// Transport type (kafka, grpc, memory).
     #[serde(rename = "type", default)]
     pub transport_type: TransportType,
 
@@ -167,10 +167,10 @@ pub struct TransportConfig {
     #[serde(default)]
     pub kafka: Option<super::kafka::KafkaConfig>,
 
-    /// Zenoh-specific configuration.
-    #[cfg(feature = "transport-zenoh")]
+    /// gRPC transport configuration.
+    #[cfg(feature = "transport-grpc")]
     #[serde(default)]
-    pub zenoh: Option<super::zenoh::ZenohConfig>,
+    pub grpc: Option<super::grpc::GrpcConfig>,
 
     /// Memory transport configuration (for tests).
     #[cfg(feature = "transport-memory")]
@@ -182,9 +182,9 @@ pub struct TransportConfig {
     #[serde(default, skip)]
     pub kafka: Option<()>,
 
-    #[cfg(not(feature = "transport-zenoh"))]
+    #[cfg(not(feature = "transport-grpc"))]
     #[serde(default, skip)]
-    pub zenoh: Option<()>,
+    pub grpc: Option<()>,
 
     #[cfg(not(feature = "transport-memory"))]
     #[serde(default, skip)]

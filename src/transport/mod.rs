@@ -8,7 +8,7 @@
 
 //! # Transport Abstraction Layer
 //!
-//! Pluggable message transport supporting Kafka, Zenoh, and in-memory channels.
+//! Pluggable message transport supporting Kafka, gRPC, and in-memory channels.
 //! All transports deliver raw bytes (JSON or MsgPack) without any envelope format.
 //!
 //! ## Transport Selection
@@ -16,8 +16,14 @@
 //! | Transport | Use Case | Durability |
 //! |-----------|----------|------------|
 //! | **Kafka** | Production (default) | At-least-once with broker persistence |
-//! | **Zenoh** | Dev/test, low-latency | In-flight only, no persistence |
+//! | **gRPC** | DFE mesh, low-latency | In-flight only, sender-side WAL optional |
 //! | **Memory** | Unit tests | None, same-process only |
+//!
+//! ## Vector Wire Protocol Compatibility
+//!
+//! Enable `transport-grpc-vector-compat` to accept events from legacy Vector sinks.
+//! The Vector compat layer converts `vector.Vector/PushEvents` RPCs to native DFE
+//! messages, enabling component-by-component migration from Vector to DFE.
 //!
 //! ## Example
 //!
@@ -62,8 +68,11 @@ pub use detect::{detect_format, DetectedFormat, FormatDetector, FormatMode};
 #[cfg(feature = "transport-kafka")]
 pub mod kafka;
 
-#[cfg(feature = "transport-zenoh")]
-pub mod zenoh;
+#[cfg(feature = "transport-grpc")]
+pub mod grpc;
+
+#[cfg(feature = "transport-grpc-vector-compat")]
+pub mod vector_compat;
 
 #[cfg(feature = "transport-memory")]
 pub mod memory;
@@ -76,13 +85,16 @@ pub use types::{Message, SendResult, TransportConfig, TransportType};
 #[cfg(feature = "transport-kafka")]
 pub use kafka::{KafkaConfig, KafkaToken, KafkaTransport};
 
-#[cfg(feature = "transport-zenoh")]
-pub use zenoh::{ZenohConfig, ZenohToken, ZenohTransport};
+#[cfg(feature = "transport-grpc")]
+pub use grpc::{GrpcConfig, GrpcToken, GrpcTransport};
+
+#[cfg(feature = "transport-grpc-vector-compat")]
+pub use vector_compat::{VectorCompatClient, VectorCompatService};
 
 #[cfg(feature = "transport-memory")]
 pub use memory::{MemoryConfig, MemoryToken, MemoryTransport};
 
 // Note: Transport instances are created directly via their constructors
-// (e.g., KafkaTransport::new(), ZenohTransport::new(), MemoryTransport::new())
+// (e.g., KafkaTransport::new(), GrpcTransport::new(), MemoryTransport::new())
 // rather than through a factory function, because each transport has a
 // different Token associated type that can't be erased without losing type safety.
