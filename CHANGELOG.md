@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.7.2...v1.8.0) (2026-03-01)
+
+
+### Features
+
+* add gRPC transport with Vector wire protocol compatibility ([bb7985e](https://github.com/hyperi-io/hyperi-rustlib/commit/bb7985e5db132b9288973728293557c60d9fc477))
+
 ## [1.7.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.7.1...v1.7.2) (2026-02-28)
 
 
