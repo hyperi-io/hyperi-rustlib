@@ -160,9 +160,9 @@ mod tests {
     #[test]
     fn convert_float_value() {
         let v = event::Value {
-            kind: Some(event::value::Kind::Float(2.718)),
+            kind: Some(event::value::Kind::Float(1.234)),
         };
-        assert_eq!(vector_value_to_json(&v), serde_json::json!(2.718));
+        assert_eq!(vector_value_to_json(&v), serde_json::json!(1.234));
     }
 
     #[test]
