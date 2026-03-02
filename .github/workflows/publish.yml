@@ -1,6 +1,6 @@
 # Project:      hyperi-rustlib
 # File:         .github/workflows/publish.yml
-# Purpose:      Rust Publish pipeline - Build, Publish to Cargo registry
+# Purpose:      Rust Publish pipeline - Build, Publish crate and/or binaries
 # License:      FSL-1.1-ALv2
 # Copyright:    (c) 2026 HYPERI PTY LIMITED
 #
@@ -22,8 +22,19 @@ jobs:
     name: Detect Config
     runs-on: ${{ vars.GH_RUNNER_DEFAULT || 'ubuntu-latest' }}
     outputs:
+      build_type: ${{ steps.config.outputs.build_type }}
+      publish_binaries: ${{ steps.config.outputs.publish_binaries }}
+      binaries_repo: ${{ steps.config.outputs.binaries_repo }}
       rust_targets: ${{ steps.config.outputs.rust_targets }}
       rust_features: ${{ steps.config.outputs.rust_features }}
+      container_enabled: ${{ steps.config.outputs.container_enabled }}
+      container_registry: ${{ steps.config.outputs.container_registry }}
+      container_dockerfile: ${{ steps.config.outputs.container_dockerfile }}
+      container_context: ${{ steps.config.outputs.container_context }}
+      container_platforms: ${{ steps.config.outputs.container_platforms }}
+      helm_enabled: ${{ steps.config.outputs.helm_enabled }}
+      helm_chart_path: ${{ steps.config.outputs.helm_chart_path }}
+      helm_registry_url: ${{ steps.config.outputs.helm_registry_url }}
     steps:
       - name: Generate token
         id: token
@@ -67,6 +78,7 @@ jobs:
           artifactory-password: ${{ secrets.ARTIFACTORY_CI_TOKEN }}
           rust-targets: ${{ needs.detect.outputs.rust_targets }}
           rust-features: ${{ needs.detect.outputs.rust_features }}
+          build-type: ${{ needs.detect.outputs.build_type }}
 
   publish:
     name: Publish
@@ -74,6 +86,7 @@ jobs:
     runs-on: ${{ vars.GH_RUNNER_DEFAULT || 'ubuntu-latest' }}
     permissions:
       contents: write
+      packages: write   # Required for GHCR container/Helm push
     steps:
       - name: Generate token
         id: token
@@ -93,5 +106,19 @@ jobs:
           artifactory-url: ${{ vars.ARTIFACTORY_CARGO_URL }}
           artifactory-username: ${{ secrets.ARTIFACTORY_CI_USERNAME }}
           artifactory-password: ${{ secrets.ARTIFACTORY_CI_TOKEN }}
+          build-type: ${{ needs.detect.outputs.build_type }}
+          publish-binaries: ${{ needs.detect.outputs.publish_binaries }}
+          binaries-repo: ${{ needs.detect.outputs.binaries_repo }}
+          github-token: ${{ steps.token.outputs.token }}
+          # Container publishing (optional - enable in .hyperi-ci.yaml)
+          container-enabled: ${{ needs.detect.outputs.container_enabled }}
+          container-registry: ${{ needs.detect.outputs.container_registry }}
+          container-dockerfile: ${{ needs.detect.outputs.container_dockerfile }}
+          container-context: ${{ needs.detect.outputs.container_context }}
+          container-platforms: ${{ needs.detect.outputs.container_platforms }}
+          # Helm chart publishing (optional - enable in .hyperi-ci.yaml)
+          helm-enabled: ${{ needs.detect.outputs.helm_enabled }}
+          helm-chart-path: ${{ needs.detect.outputs.helm_chart_path }}
+          helm-registry-url: ${{ needs.detect.outputs.helm_registry_url }}
           linear-api-key: ${{ secrets.LINEAR_API_KEY }}
           linear-prefixes: ${{ vars.LINEAR_PREFIXES || 'DFE' }}
