@@ -1,3 +1,10 @@
+## [1.9.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.9.0...v1.9.1) (2026-03-02)
+
+
+### Bug Fixes
+
+* correct Cargo.toml version (CI version bump failed for v1.9.0) ([9f5ad2d](https://github.com/hyperi-io/hyperi-rustlib/commit/9f5ad2d243168f21fd685eba17581e3dc4cb8762))
+
 # [1.9.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.9...v1.9.0) (2026-03-02)
 
 
