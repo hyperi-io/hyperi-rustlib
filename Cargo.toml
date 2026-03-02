@@ -47,6 +47,9 @@ resilience = ["tower-resilience", "tower"]
 database = []
 cache = []
 
+# Scaling pressure calculation (KEDA autoscaling)
+scaling = ["parking_lot", "tracing"]
+
 # Deployment contract validation (Helm chart + Dockerfile sync)
 deployment = ["serde_yaml_ng", "serde_json"]
 
@@ -74,7 +77,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check"]
+full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling"]
 
 [dependencies]
 # Serialisation (always needed)
