@@ -96,6 +96,9 @@ pub mod secrets;
 #[cfg(feature = "directory-config")]
 pub mod directory_config;
 
+#[cfg(feature = "scaling")]
+pub mod scaling;
+
 #[cfg(feature = "deployment")]
 pub mod deployment;
 
@@ -165,6 +168,12 @@ pub use secrets::{AwsConfig, AwsProvider};
 pub use directory_config::{
     ChangeEvent, ChangeOperation, DirectoryConfigError, DirectoryConfigResult,
     DirectoryConfigStore, DirectoryConfigStoreConfig, WriteMode, WriteResult,
+};
+
+#[cfg(feature = "scaling")]
+pub use scaling::{
+    ComponentSnapshot, GateType, PressureSnapshot, RateWindow, ScalingComponent, ScalingPressure,
+    ScalingPressureConfig,
 };
 
 #[cfg(feature = "deployment")]
