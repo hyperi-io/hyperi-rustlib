@@ -1,3 +1,10 @@
+## [1.8.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.0...v1.8.1) (2026-03-02)
+
+
+### Bug Fixes
+
+* clippy approx_constant lint and standardise release runner ([a1a3258](https://github.com/hyperi-io/hyperi-rustlib/commit/a1a3258d8504a681e254ef645c64c2f9b5891701))
+
 # [1.8.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.7.2...v1.8.0) (2026-03-01)
 
 
