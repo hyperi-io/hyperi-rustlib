@@ -1,3 +1,15 @@
+# [1.10.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.9.2...v1.10.0) (2026-03-02)
+
+
+### Bug Fixes
+
+* serialise env_compat unit tests to prevent parallel env var races ([b603991](https://github.com/hyperi-io/hyperi-rustlib/commit/b603991623b335f68966efc7bb4fe53db837bc93))
+
+
+### Features
+
+* add unified DLQ module with file and Kafka backends ([f901918](https://github.com/hyperi-io/hyperi-rustlib/commit/f9019186cde6e7815108b0574ee3eb86c72e4040))
+
 ## [1.9.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.9.1...v1.9.2) (2026-03-02)
 
 
