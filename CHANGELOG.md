@@ -1,3 +1,10 @@
+## [1.8.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.2...v1.8.3) (2026-03-02)
+
+
+### Bug Fixes
+
+* dprint formatting for float match arm ([5913655](https://github.com/hyperi-io/hyperi-rustlib/commit/591365547a0493a9073bd68ac235714b610e8fa4))
+
 ## [1.8.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.1...v1.8.2) (2026-03-02)
 
 
