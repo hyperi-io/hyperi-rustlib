@@ -50,6 +50,10 @@ cache = []
 # Scaling pressure calculation (KEDA autoscaling)
 scaling = ["parking_lot", "tracing"]
 
+# Dead letter queue (file backend always available)
+dlq = ["file-rotate", "base64", "serde_json", "tokio", "async-trait", "parking_lot", "chrono", "tracing"]
+dlq-kafka = ["dlq", "transport-kafka"]
+
 # Deployment contract validation (Helm chart + Dockerfile sync)
 deployment = ["serde_yaml_ng", "serde_json"]
 
@@ -77,7 +81,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling"]
+full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "dlq", "dlq-kafka"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -154,6 +158,9 @@ tonic = { version = ">=0.14, <0.15", features = ["gzip"], optional = true }
 tonic-prost = { version = ">=0.14, <0.15", optional = true }
 prost = { version = ">=0.14, <0.15", optional = true }
 prost-types = { version = ">=0.14, <0.15", optional = true }
+
+# File rotation (for DLQ file backend)
+file-rotate = { version = ">=0.7, <0.9", optional = true }
 
 # Spool (disk-backed async queue) - yaque is async-native and maintained
 yaque = { version = ">=0.6.6, <0.7", optional = true }
