@@ -121,9 +121,9 @@ async fn run_vector_async(
         Ok(Err(e)) => {
             panic!("Failed to wait for vector process: {e}");
         }
-        Err(_) => {
+        Err(elapsed) => {
             panic!(
-                "Vector did not exit within {timeout_secs}s — likely stuck retrying failed deliveries"
+                "Vector did not exit within {timeout_secs}s ({elapsed}) — likely stuck retrying failed deliveries"
             );
         }
     }
