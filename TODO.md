@@ -10,27 +10,25 @@
 
 ### High Priority
 
-- [ ] Remove stale `hs-rustlib` crate from JFrog `hypersec-cargo-local` registry
 - [ ] Update downstream consumers to use `transport-grpc` / `transport-grpc-vector-compat`
   - dfe-loader, dfe-archiver, dfe-receiver
 
 ### Medium Priority
 
-- [ ] Fix MaskingLayer no-op bug (masking layer never actually redacts output)
 - [ ] Fix vault_env integration tests (EnvGuard doesn't clear conflicting VAULT_TOKEN)
-- [ ] Implement log output capturing for logger tests
-- [ ] Add metrics server graceful shutdown tests
-- [ ] Add gRPC transport integration tests (bidirectional client/server)
-- [ ] Add Vector compat source/sink integration tests
-
-### Low Priority
-
-- [ ] Add coloured log output for text format (custom FormatEvent with owo-colors)
+- [ ] Add Vector compat source/sink integration tests (use fetch-vector.sh from dfe-receiver)
 
 ---
 
 ## Completed
 
+- [x] Dependency update sweep — all crates to latest, tonic/prost 0.14 migration (v1.8.4)
+- [x] Stale hs-rustlib removed from JFrog hypersec-cargo-local and hyperi-cargo-local
+- [x] MaskingLayer fixed — writer-based redaction for both JSON and text formats (v1.8.4)
+- [x] Logger output capturing tests — 10 tests (JSON, text, filtering, masking)
+- [x] Coloured log output — custom FormatEvent with owo-colors colour scheme
+- [x] Metrics graceful shutdown tests — 4 tests (shutdown, rapid cycle, render after stop, concurrent)
+- [x] gRPC transport integration tests — 8 tests (send/recv, ordering, large payload, compression)
 - [x] gRPC transport with Vector wire protocol compatibility (v1.8.0)
   - tonic-based gRPC replacing Zenoh transport
   - DFE native proto (`dfe.transport.v1`) + vendored Vector proto

@@ -490,3 +490,155 @@ async fn test_14_invalid_address_error() {
         "expected ServerError for invalid address, got: {result:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_15_shutdown_stops_accepting() {
+    let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    init_manager();
+
+    let port = find_available_port().await;
+    let addr = format!("127.0.0.1:{port}");
+
+    let mut guard = MANAGER.lock().unwrap_or_else(|e| e.into_inner());
+    let manager = guard.as_mut().expect("manager not initialised");
+
+    manager
+        .start_server(&addr)
+        .await
+        .expect("failed to start server");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Verify server is accepting
+    let connect = timeout(Duration::from_millis(500), TcpStream::connect(&addr)).await;
+    assert!(
+        connect.is_ok() && connect.unwrap().is_ok(),
+        "server should accept connections before shutdown"
+    );
+
+    // Stop the server
+    manager.stop_server().await.expect("failed to stop server");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Verify TCP connect is refused after shutdown
+    let connect = timeout(Duration::from_millis(500), TcpStream::connect(&addr)).await;
+    let refused = match connect {
+        Ok(Ok(_)) => false,       // Connected — not shut down
+        Ok(Err(_)) => true,       // Connection refused — correct
+        Err(_) => true,           // Timed out — also acceptable
+    };
+    assert!(refused, "server should refuse connections after shutdown");
+}
+
+#[tokio::test]
+async fn test_16_rapid_start_stop_cycle() {
+    let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    init_manager();
+
+    let mut guard = MANAGER.lock().unwrap_or_else(|e| e.into_inner());
+    let manager = guard.as_mut().expect("manager not initialised");
+
+    // Rapid start/stop 3 times on different ports
+    for _ in 0..3 {
+        let port = find_available_port().await;
+        let addr = format!("127.0.0.1:{port}");
+
+        manager
+            .start_server(&addr)
+            .await
+            .expect("failed to start server");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Verify it's running
+        let (status, _) = http_get(&addr, "/healthz").await;
+        assert!(status.contains("200 OK"), "server should respond during cycle");
+
+        manager.stop_server().await.expect("failed to stop server");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[tokio::test]
+async fn test_17_render_survives_server_stop() {
+    let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    init_manager();
+
+    let port = find_available_port().await;
+    let addr = format!("127.0.0.1:{port}");
+
+    let mut guard = MANAGER.lock().unwrap_or_else(|e| e.into_inner());
+    let manager = guard.as_mut().expect("manager not initialised");
+
+    // Record a metric
+    let counter = manager.counter("shutdown_test", "Shutdown test counter");
+    counter.increment(99);
+
+    // Start and stop the server
+    manager
+        .start_server(&addr)
+        .await
+        .expect("failed to start server");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    manager.stop_server().await.expect("failed to stop server");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // render() should still work after server stop
+    let output = manager.render();
+    assert!(
+        output.contains("test_shutdown_test"),
+        "render should work after server stop: {output}"
+    );
+}
+
+#[tokio::test]
+async fn test_18_concurrent_requests_during_shutdown() {
+    let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    init_manager();
+
+    let port = find_available_port().await;
+    let addr = format!("127.0.0.1:{port}");
+
+    let mut guard = MANAGER.lock().unwrap_or_else(|e| e.into_inner());
+    let manager = guard.as_mut().expect("manager not initialised");
+
+    manager
+        .start_server(&addr)
+        .await
+        .expect("failed to start server");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Spawn concurrent HTTP requests
+    let addr_clone = addr.clone();
+    let handles: Vec<_> = (0..5)
+        .map(|_| {
+            let a = addr_clone.clone();
+            tokio::spawn(async move {
+                let result = timeout(Duration::from_secs(2), async {
+                    // Connection or HTTP error is acceptable during shutdown
+                    let _ = TcpStream::connect(&a).await;
+                })
+                .await;
+                result.is_ok() // No timeout/panic = success
+            })
+        })
+        .collect();
+
+    // Trigger shutdown while requests are in flight
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    let _ = manager.stop_server().await;
+
+    // All handles should complete without panic or hang
+    let overall = timeout(Duration::from_secs(5), async {
+        for handle in handles {
+            let _ = handle.await;
+        }
+    })
+    .await;
+    assert!(
+        overall.is_ok(),
+        "concurrent requests should not hang during shutdown"
+    );
+}

@@ -31,6 +31,7 @@
 //! tracing::error!(error = "connection failed", "Database error");
 //! ```
 
+pub mod format;
 mod masking;
 
 use std::io;
@@ -44,7 +45,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
-pub use masking::{default_sensitive_fields, MaskingLayer};
+pub use masking::{default_sensitive_fields, mask_sensitive_string, MaskingLayer, MaskingWriter};
 
 /// Global flag to track initialisation.
 static LOGGER_INIT: OnceLock<()> = OnceLock::new();
@@ -162,8 +163,19 @@ pub fn setup(opts: LoggerOptions) -> Result<(), LoggerError> {
         FmtSpan::NONE
     };
 
+    // Build sensitive fields set for masking writer
+    let sensitive: std::collections::HashSet<String> = if opts.enable_masking {
+        opts.sensitive_fields
+            .iter()
+            .map(|s| s.to_lowercase())
+            .collect()
+    } else {
+        std::collections::HashSet::new()
+    };
+
     match format {
         LogFormat::Json => {
+            let writer = masking::make_masking_writer(sensitive, true);
             let layer = tracing_subscriber::fmt::layer()
                 .json()
                 .with_timer(timer)
@@ -171,7 +183,7 @@ pub fn setup(opts: LoggerOptions) -> Result<(), LoggerError> {
                 .with_line_number(opts.add_source)
                 .with_target(true)
                 .with_span_events(span_events)
-                .with_writer(io::stderr);
+                .with_writer(writer);
 
             tracing_subscriber::registry()
                 .with(filter)
@@ -180,14 +192,16 @@ pub fn setup(opts: LoggerOptions) -> Result<(), LoggerError> {
                 .map_err(|e| LoggerError::SetGlobalError(e.to_string()))?;
         }
         LogFormat::Text => {
-            let layer = tracing_subscriber::fmt::layer()
-                .with_timer(timer)
+            let writer = masking::make_masking_writer(sensitive, false);
+            let ansi = !is_no_color();
+            let formatter = format::ColouredFormatter::new(ansi)
                 .with_file(opts.add_source)
-                .with_line_number(opts.add_source)
-                .with_target(true)
-                .with_ansi(!is_no_color())
+                .with_line_number(opts.add_source);
+            let layer = tracing_subscriber::fmt::layer()
+                .with_ansi(ansi)
                 .with_span_events(span_events)
-                .with_writer(io::stderr);
+                .event_format(formatter)
+                .with_writer(writer);
 
             tracing_subscriber::registry()
                 .with(filter)
