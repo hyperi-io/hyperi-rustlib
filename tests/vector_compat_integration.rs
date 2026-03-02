@@ -169,12 +169,9 @@ fn assert_no_vector_errors(stderr: &str) {
 /// VectorCompatService → message channel → recv().
 #[tokio::test]
 async fn test_vector_grpc_sink_to_transport() {
-    let vector_bin = match vector_binary_path() {
-        Some(path) => path,
-        None => {
-            eprintln!("Skipping test: vector binary not available");
-            return;
-        }
+    let vector_bin = if let Some(path) = vector_binary_path() { path } else {
+        eprintln!("Skipping test: vector binary not available");
+        return;
     };
 
     let port = find_available_port().await;
@@ -251,12 +248,9 @@ sinks:
 /// Test: Vector sends multiple events and all are received with correct count.
 #[tokio::test]
 async fn test_vector_grpc_multiple_events() {
-    let vector_bin = match vector_binary_path() {
-        Some(path) => path,
-        None => {
-            eprintln!("Skipping test: vector binary not available");
-            return;
-        }
+    let vector_bin = if let Some(path) = vector_binary_path() { path } else {
+        eprintln!("Skipping test: vector binary not available");
+        return;
     };
 
     let port = find_available_port().await;
@@ -335,12 +329,9 @@ sinks:
 /// DFE native proto and the Vector proto simultaneously.
 #[tokio::test]
 async fn test_vector_and_native_coexist() {
-    let vector_bin = match vector_binary_path() {
-        Some(path) => path,
-        None => {
-            eprintln!("Skipping test: vector binary not available");
-            return;
-        }
+    let vector_bin = if let Some(path) = vector_binary_path() { path } else {
+        eprintln!("Skipping test: vector binary not available");
+        return;
     };
 
     let port = find_available_port().await;
@@ -497,12 +488,9 @@ async fn test_vector_compat_client_send() {
 /// receives and writes the events to the output file.
 #[tokio::test]
 async fn test_vector_compat_client_to_vector_source() {
-    let vector_bin = match vector_binary_path() {
-        Some(path) => path,
-        None => {
-            eprintln!("Skipping test: vector binary not available");
-            return;
-        }
+    let vector_bin = if let Some(path) = vector_binary_path() { path } else {
+        eprintln!("Skipping test: vector binary not available");
+        return;
     };
 
     let port = find_available_port().await;
