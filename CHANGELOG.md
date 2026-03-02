@@ -1,3 +1,11 @@
+## [1.8.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.4...v1.8.5) (2026-03-02)
+
+
+### Bug Fixes
+
+* masking layer, coloured output, integration tests ([5817bc0](https://github.com/hyperi-io/hyperi-rustlib/commit/5817bc0c526473440f22324bf19408f836b9eb9b))
+* vector compat integration tests, vault_env env leak fix ([ce0294a](https://github.com/hyperi-io/hyperi-rustlib/commit/ce0294ad55ed86ca53db6e2a161a045e16258358))
+
 ## [1.8.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.3...v1.8.4) (2026-03-02)
 
 
