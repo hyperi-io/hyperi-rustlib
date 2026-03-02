@@ -1,3 +1,10 @@
+## [1.8.7](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.6...v1.8.7) (2026-03-02)
+
+
+### Bug Fixes
+
+* clippy manual_let_else in vector compat tests ([56d7ecc](https://github.com/hyperi-io/hyperi-rustlib/commit/56d7ecce080d0210caa20a65038d4e30352ed119))
+
 ## [1.8.6](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.5...v1.8.6) (2026-03-02)
 
 
