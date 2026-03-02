@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.9...v1.9.0) (2026-03-02)
+
+
+### Features
+
+* add scaling pressure module for KEDA autoscaling ([031e210](https://github.com/hyperi-io/hyperi-rustlib/commit/031e210a95e0f0d04e972b7b9c975b705aab1794))
+
 ## [1.8.9](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.8...v1.8.9) (2026-03-02)
 
 
