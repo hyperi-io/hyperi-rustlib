@@ -169,7 +169,7 @@ fn assert_no_vector_errors(stderr: &str) {
 /// VectorCompatService → message channel → recv().
 #[tokio::test]
 async fn test_vector_grpc_sink_to_transport() {
-    let vector_bin = if let Some(path) = vector_binary_path() { path } else {
+    let Some(vector_bin) = vector_binary_path() else {
         eprintln!("Skipping test: vector binary not available");
         return;
     };
@@ -248,7 +248,7 @@ sinks:
 /// Test: Vector sends multiple events and all are received with correct count.
 #[tokio::test]
 async fn test_vector_grpc_multiple_events() {
-    let vector_bin = if let Some(path) = vector_binary_path() { path } else {
+    let Some(vector_bin) = vector_binary_path() else {
         eprintln!("Skipping test: vector binary not available");
         return;
     };
@@ -329,7 +329,7 @@ sinks:
 /// DFE native proto and the Vector proto simultaneously.
 #[tokio::test]
 async fn test_vector_and_native_coexist() {
-    let vector_bin = if let Some(path) = vector_binary_path() { path } else {
+    let Some(vector_bin) = vector_binary_path() else {
         eprintln!("Skipping test: vector binary not available");
         return;
     };
@@ -488,7 +488,7 @@ async fn test_vector_compat_client_send() {
 /// receives and writes the events to the output file.
 #[tokio::test]
 async fn test_vector_compat_client_to_vector_source() {
-    let vector_bin = if let Some(path) = vector_binary_path() { path } else {
+    let Some(vector_bin) = vector_binary_path() else {
         eprintln!("Skipping test: vector binary not available");
         return;
     };
