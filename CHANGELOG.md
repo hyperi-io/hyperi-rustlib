@@ -1,3 +1,10 @@
+## [1.8.6](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.5...v1.8.6) (2026-03-02)
+
+
+### Bug Fixes
+
+* clippy single_match_else and match_same_arms ([5782670](https://github.com/hyperi-io/hyperi-rustlib/commit/578267080954520c34a9b0b4fd322d37481f3b21))
+
 ## [1.8.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.4...v1.8.5) (2026-03-02)
 
 
