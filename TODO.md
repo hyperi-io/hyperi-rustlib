@@ -10,25 +10,37 @@
 
 ### High Priority
 
-- [x] Rename package from hs-rustlib to hyperi-rustlib (v1.4.3 published)
-- [x] Update all downstream consumers (dfe-loader, dfe-archiver, dfe-receiver)
-- [x] Complete HyperSec -> HyperI rebrand across all references
 - [ ] Remove stale `hs-rustlib` crate from JFrog `hypersec-cargo-local` registry
+- [ ] Update downstream consumers to use `transport-grpc` / `transport-grpc-vector-compat`
+  - dfe-loader, dfe-archiver, dfe-receiver
 
 ### Medium Priority
 
+- [ ] Fix MaskingLayer no-op bug (masking layer never actually redacts output)
+- [ ] Fix vault_env integration tests (EnvGuard doesn't clear conflicting VAULT_TOKEN)
 - [ ] Implement log output capturing for logger tests
 - [ ] Add metrics server graceful shutdown tests
+- [ ] Add gRPC transport integration tests (bidirectional client/server)
+- [ ] Add Vector compat source/sink integration tests
 
 ### Low Priority
 
-- [ ] Benchmark config loading performance
-- [ ] Add coloured log output for text format
+- [ ] Add coloured log output for text format (custom FormatEvent with owo-colors)
 
 ---
 
 ## Completed
 
+- [x] gRPC transport with Vector wire protocol compatibility (v1.8.0)
+  - tonic-based gRPC replacing Zenoh transport
+  - DFE native proto (`dfe.transport.v1`) + vendored Vector proto
+  - Vector compat source/sink for migration from Vector pipelines
+  - build.rs for conditional proto code generation
+- [x] Zenoh transport removed — replaced by gRPC (v1.8.0)
+- [x] Version check module — startup check against releases.hyperi.io (v1.7.0)
+- [x] Deployment validation module — Helm chart and Dockerfile contract checks (v1.7.0)
+- [x] CI: ARC self-hosted runners enabled (v1.7.1–v1.8.3)
+- [x] Clippy/formatting fixes — approx_constant lint, dprint float formatting (v1.8.1–v1.8.3)
 - [x] Package rename: hs-rustlib -> hyperi-rustlib, published v1.4.3 to JFrog
 - [x] Rebrand: HyperSec -> HyperI across source, docs, configs, workflows
 - [x] Registry migration: hypersec registry -> hyperi registry
@@ -38,7 +50,7 @@
 - [x] OpenTelemetry metrics support (v1.4.0)
 - [x] Secrets management module (OpenBao/Vault, AWS) (v1.3.x)
 - [x] HTTP server module (axum-based) (v1.2.0)
-- [x] Transport module (Kafka/Zenoh/Memory abstraction)
+- [x] Transport module (Kafka/Memory abstraction)
 - [x] TieredSink module (disk spillover with circuit breaker)
 - [x] Spool module (disk-backed queue)
 - [x] Configuration module (7-layer cascade with figment)
@@ -61,6 +73,11 @@
 - [ ] Database URL builders module (PostgreSQL, Redis)
 - [ ] HTTP client module with retry middleware (reqwest-retry)
 
+### Secrets Providers
+
+- [ ] GCP Secret Manager provider (`secrets-gcp` feature, `google-cloud-secretmanager` crate)
+- [ ] Azure Key Vault provider (`secrets-azure` feature, `azure_security_keyvault` crate)
+
 ### Phase 2 - Enhanced Features
 
 - [ ] Cache module with disk/Redis backing
@@ -77,5 +94,6 @@
 ## Notes
 
 - Use `CARGO_BUILD_JOBS=2` for all cargo commands
+- Transport backends: Kafka, gRPC (native + Vector compat), Memory (Zenoh removed in v1.8.0)
 - See docs/GAP_ANALYSIS.md for detailed comparison with hyperi-pylib
 - See docs/CLICKHOUSE_PYTHON_BINDINGS.md for Python binding proposal

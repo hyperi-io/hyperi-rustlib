@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // DFE native transport proto
     #[cfg(feature = "transport-grpc")]
     {
-        tonic_build::configure()
+        tonic_prost_build::configure()
             .build_server(true)
             .build_client(true)
             .compile_protos(&["proto/dfe/transport/v1/dfe_transport.proto"], &["proto"])?;
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Compile vector.proto (service + request/response types)
         // extern_path tells prost the event types live in the sibling module
-        tonic_build::configure()
+        tonic_prost_build::configure()
             .build_server(true)
             .build_client(true)
             .extern_path(".event", "crate::transport::vector_compat::proto::event")
