@@ -23,6 +23,9 @@ out/
 test-results/
 coverage/
 
+# Temporary/cache
+.tmp/
+
 # Rust
 target/
 Cargo.lock

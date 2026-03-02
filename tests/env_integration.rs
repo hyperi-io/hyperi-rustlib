@@ -164,9 +164,35 @@ mod vault_env {
     use super::*;
     use hyperi_rustlib::secrets::{OpenBaoAuth, OpenBaoConfig};
 
+    /// All vault/openbao env vars that could interfere with tests.
+    /// Must be cleared before each test to prevent leakage from the host.
+    const VAULT_ENV_VARS: &[&str] = &[
+        "VAULT_ADDR",
+        "VAULT_TOKEN",
+        "VAULT_SKIP_VERIFY",
+        "VAULT_NAMESPACE",
+        "VAULT_ROLE_ID",
+        "VAULT_SECRET_ID",
+        "VAULT_K8S_ROLE",
+        "VAULT_K8S_MOUNT",
+        "OPENBAO_ADDR",
+        "OPENBAO_TOKEN",
+        "BAO_ADDR",
+        "BAO_TOKEN",
+        "OPENBAO_ROOT_TOKEN",
+    ];
+
+    /// Clear all vault-related env vars so tests start from a clean slate.
+    fn clear_vault_env() {
+        for var in VAULT_ENV_VARS {
+            std::env::remove_var(var);
+        }
+    }
+
     #[test]
     fn test_vault_from_env_token_auth() {
         let _lock = ENV_LOCK.lock().unwrap();
+        clear_vault_env();
         let _guard = EnvGuard::new(&[
             ("VAULT_ADDR", "https://vault.example.com:8200"),
             ("VAULT_TOKEN", "s.test-token"),
@@ -181,6 +207,7 @@ mod vault_env {
     #[test]
     fn test_vault_from_env_approle_auth() {
         let _lock = ENV_LOCK.lock().unwrap();
+        clear_vault_env();
         let _guard = EnvGuard::new(&[
             ("VAULT_ADDR", "https://vault.example.com:8200"),
             ("VAULT_ROLE_ID", "role-123"),
@@ -202,6 +229,7 @@ mod vault_env {
     #[test]
     fn test_vault_from_env_k8s_auth() {
         let _lock = ENV_LOCK.lock().unwrap();
+        clear_vault_env();
         let _guard = EnvGuard::new(&[
             ("VAULT_ADDR", "https://vault.example.com:8200"),
             ("VAULT_K8S_ROLE", "my-k8s-role"),
@@ -218,6 +246,7 @@ mod vault_env {
     #[test]
     fn test_vault_from_env_openbao_fallback() {
         let _lock = ENV_LOCK.lock().unwrap();
+        clear_vault_env();
         let _guard = EnvGuard::new(&[
             ("OPENBAO_ADDR", "https://openbao:8200"), // Legacy name
             ("OPENBAO_TOKEN", "s.openbao-token"),     // Legacy name
@@ -232,6 +261,7 @@ mod vault_env {
     #[test]
     fn test_vault_from_env_vault_wins_over_openbao() {
         let _lock = ENV_LOCK.lock().unwrap();
+        clear_vault_env();
         let _guard = EnvGuard::new(&[
             ("VAULT_ADDR", "https://vault-wins:8200"),
             ("OPENBAO_ADDR", "https://openbao-loses:8200"),
@@ -249,6 +279,7 @@ mod vault_env {
     #[test]
     fn test_vault_from_env_skip_verify() {
         let _lock = ENV_LOCK.lock().unwrap();
+        clear_vault_env();
         let _guard = EnvGuard::new(&[
             ("VAULT_ADDR", "https://vault:8200"),
             ("VAULT_TOKEN", "test"),
@@ -263,6 +294,7 @@ mod vault_env {
     #[test]
     fn test_vault_from_env_namespace() {
         let _lock = ENV_LOCK.lock().unwrap();
+        clear_vault_env();
         let _guard = EnvGuard::new(&[
             ("VAULT_ADDR", "https://vault:8200"),
             ("VAULT_TOKEN", "test"),
@@ -277,6 +309,7 @@ mod vault_env {
     #[test]
     fn test_vault_from_env_missing_addr() {
         let _lock = ENV_LOCK.lock().unwrap();
+        clear_vault_env();
         let _guard = EnvGuard::new(&[("VAULT_TOKEN", "test")]); // No VAULT_ADDR
 
         let config = OpenBaoConfig::from_env();
@@ -287,6 +320,7 @@ mod vault_env {
     #[test]
     fn test_vault_from_env_missing_auth() {
         let _lock = ENV_LOCK.lock().unwrap();
+        clear_vault_env();
         let _guard = EnvGuard::new(&[("VAULT_ADDR", "https://vault:8200")]); // No auth
 
         let config = OpenBaoConfig::from_env();

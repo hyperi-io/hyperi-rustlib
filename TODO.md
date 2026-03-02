@@ -8,20 +8,14 @@
 
 ## Current Tasks
 
-### High Priority
-
-- [ ] Update downstream consumers to use `transport-grpc` / `transport-grpc-vector-compat`
-  - dfe-loader, dfe-archiver, dfe-receiver
-
-### Medium Priority
-
-- [ ] Fix vault_env integration tests (EnvGuard doesn't clear conflicting VAULT_TOKEN)
-- [ ] Add Vector compat source/sink integration tests (use fetch-vector.sh from dfe-receiver)
+(none)
 
 ---
 
 ## Completed
 
+- [x] Vector compat integration tests — 6 tests using real Vector binary + VectorCompatClient (fetch-vector.sh + YAML)
+- [x] vault_env integration tests fixed — clear_vault_env() prevents VAULT_TOKEN leakage
 - [x] Dependency update sweep — all crates to latest, tonic/prost 0.14 migration (v1.8.4)
 - [x] Stale hs-rustlib removed from JFrog hypersec-cargo-local and hyperi-cargo-local
 - [x] MaskingLayer fixed — writer-based redaction for both JSON and text formats (v1.8.4)
