@@ -526,9 +526,8 @@ async fn test_15_shutdown_stops_accepting() {
     // Verify TCP connect is refused after shutdown
     let connect = timeout(Duration::from_millis(500), TcpStream::connect(&addr)).await;
     let refused = match connect {
-        Ok(Ok(_)) => false,       // Connected — not shut down
-        Ok(Err(_)) => true,       // Connection refused — correct
-        Err(_) => true,           // Timed out — also acceptable
+        Ok(Ok(_)) => false,                // Connected — not shut down
+        Ok(Err(_)) | Err(_) => true,       // Connection refused or timed out
     };
     assert!(refused, "server should refuse connections after shutdown");
 }
