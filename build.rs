@@ -4,6 +4,7 @@
 // Protobuf code generation for gRPC transport.
 // Only runs when transport-grpc or transport-grpc-vector-compat features are enabled.
 
+#[allow(clippy::unnecessary_wraps)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // DFE native transport proto
     #[cfg(feature = "transport-grpc")]

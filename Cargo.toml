@@ -26,7 +26,7 @@ default = ["config", "logger", "metrics", "env", "runtime"]
 env = []
 runtime = ["dirs"]
 config = ["figment", "dotenvy", "serde_yaml_ng", "serde_json", "toml", "dirs", "tracing"]
-logger = ["tracing", "tracing-subscriber", "owo-colors"]
+logger = ["tracing", "tracing-subscriber", "owo-colors", "serde_json"]
 metrics = ["dep:metrics", "metrics-exporter-prometheus", "sysinfo", "tokio"]
 
 # OpenTelemetry support (modern observability)
