@@ -1,3 +1,10 @@
+## [1.9.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.9.1...v1.9.2) (2026-03-02)
+
+
+### Bug Fixes
+
+* update ci submodule with mawk compat fix for cargo version bump ([7ced55d](https://github.com/hyperi-io/hyperi-rustlib/commit/7ced55dca58a583bdcb7bbfd2b04fdfd6e97edd7))
+
 ## [1.9.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.9.0...v1.9.1) (2026-03-02)
 
 
