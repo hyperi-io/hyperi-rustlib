@@ -99,6 +99,9 @@ pub mod directory_config;
 #[cfg(feature = "scaling")]
 pub mod scaling;
 
+#[cfg(feature = "dlq")]
+pub mod dlq;
+
 #[cfg(feature = "deployment")]
 pub mod deployment;
 
@@ -175,6 +178,14 @@ pub use scaling::{
     ComponentSnapshot, GateType, PressureSnapshot, RateWindow, ScalingComponent, ScalingPressure,
     ScalingPressureConfig,
 };
+
+#[cfg(feature = "dlq")]
+pub use dlq::{
+    Dlq, DlqBackend, DlqConfig, DlqEntry, DlqError, DlqMode, DlqSource, FileDlq, FileDlqConfig,
+};
+
+#[cfg(feature = "dlq-kafka")]
+pub use dlq::{DlqRouting, KafkaDlq, KafkaDlqConfig};
 
 #[cfg(feature = "deployment")]
 pub use deployment::{
