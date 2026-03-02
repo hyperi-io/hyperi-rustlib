@@ -77,10 +77,8 @@ fn vector_value_to_json(value: &event::Value) -> serde_json::Value {
             serde_json::Value::Number(serde_json::Number::from(millis))
         }
         Some(Kind::Integer(i)) => serde_json::json!(*i),
-        Some(Kind::Float(f)) => {
-            serde_json::Number::from_f64(*f)
-                .map_or(serde_json::Value::Null, serde_json::Value::Number)
-        }
+        Some(Kind::Float(f)) => serde_json::Number::from_f64(*f)
+            .map_or(serde_json::Value::Null, serde_json::Value::Number),
         Some(Kind::Boolean(b)) => serde_json::Value::Bool(*b),
         Some(Kind::Map(map)) => {
             let mut obj = serde_json::Map::with_capacity(map.fields.len());
