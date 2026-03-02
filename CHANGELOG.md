@@ -1,3 +1,10 @@
+## [1.8.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.3...v1.8.4) (2026-03-02)
+
+
+### Bug Fixes
+
+* update deps to latest versions, migrate tonic/prost to 0.14 ([c11aca0](https://github.com/hyperi-io/hyperi-rustlib/commit/c11aca05526c52ca8219e8d2167e64a921c3e93a))
+
 ## [1.8.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.2...v1.8.3) (2026-03-02)
 
 
