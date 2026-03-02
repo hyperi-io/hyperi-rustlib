@@ -530,6 +530,11 @@ pub fn load_all_standard() -> HashMap<String, Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Env var mutations are not thread-safe. Serialise all tests that
+    // call set_var/remove_var to prevent parallel test interference.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn setup() {
         reset_deprecation_warnings();
@@ -537,6 +542,7 @@ mod tests {
 
     #[test]
     fn test_env_var_standard_name() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
         std::env::set_var("TEST_STANDARD_VAR", "standard_value");
 
@@ -548,6 +554,7 @@ mod tests {
 
     #[test]
     fn test_env_var_legacy_fallback() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
         std::env::set_var("TEST_LEGACY_VAR2", "legacy_value");
 
@@ -559,6 +566,7 @@ mod tests {
 
     #[test]
     fn test_env_var_standard_takes_precedence() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
         std::env::set_var("TEST_STANDARD_VAR3", "standard");
         std::env::set_var("TEST_LEGACY_VAR3", "legacy");
@@ -572,6 +580,7 @@ mod tests {
 
     #[test]
     fn test_env_var_missing() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
         let var = EnvVar::new("NONEXISTENT_VAR").with_legacy("ALSO_NONEXISTENT");
         assert_eq!(var.get(), None);
@@ -579,6 +588,7 @@ mod tests {
 
     #[test]
     fn test_env_var_get_bool() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
         std::env::set_var("TEST_BOOL_TRUE", "true");
         std::env::set_var("TEST_BOOL_ONE", "1");
@@ -598,6 +608,7 @@ mod tests {
 
     #[test]
     fn test_env_var_get_list() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
         std::env::set_var("TEST_LIST", "a, b, c");
 
@@ -612,6 +623,7 @@ mod tests {
 
     #[test]
     fn test_postgres_env_vars() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
         std::env::set_var("PGHOST", "localhost");
 
@@ -622,7 +634,10 @@ mod tests {
 
     #[test]
     fn test_postgres_legacy_fallback() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
+        // Ensure primary name is clear so legacy fallback is actually tested
+        std::env::remove_var("PGHOST");
         std::env::set_var("POSTGRESQL_HOST", "legacy-host");
 
         assert_eq!(postgres::host().get(), Some("legacy-host".to_string()));
@@ -632,6 +647,7 @@ mod tests {
 
     #[test]
     fn test_kafka_env_vars() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
         std::env::set_var("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092");
 
@@ -645,6 +661,7 @@ mod tests {
 
     #[test]
     fn test_vault_env_vars() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
         std::env::set_var("VAULT_ADDR", "https://vault:8200");
 
@@ -655,6 +672,7 @@ mod tests {
 
     #[test]
     fn test_vault_openbao_fallback() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
         // Ensure VAULT_ADDR is not set so fallback is tested
         std::env::remove_var("VAULT_ADDR");
@@ -670,6 +688,7 @@ mod tests {
 
     #[test]
     fn test_which_name_used() {
+        let _lock = ENV_LOCK.lock().unwrap();
         setup();
         std::env::set_var("TEST_WHICH_LEGACY", "value");
 
