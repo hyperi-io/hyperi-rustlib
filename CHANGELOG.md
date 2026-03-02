@@ -1,3 +1,10 @@
+## [1.8.9](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.8...v1.8.9) (2026-03-02)
+
+
+### Bug Fixes
+
+* rustfmt and dprint formatting alignment ([8e86117](https://github.com/hyperi-io/hyperi-rustlib/commit/8e8611773e968a0a916580253b7f0bbcac8ab75f))
+
 ## [1.8.8](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.7...v1.8.8) (2026-03-02)
 
 
