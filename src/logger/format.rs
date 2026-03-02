@@ -118,9 +118,7 @@ where
                     write!(writer, "{}", span.name())?;
                 }
                 let ext = span.extensions();
-                if let Some(fields) =
-                    ext.get::<tracing_subscriber::fmt::FormattedFields<N>>()
-                {
+                if let Some(fields) = ext.get::<tracing_subscriber::fmt::FormattedFields<N>>() {
                     if !fields.is_empty() {
                         write!(writer, "{{{fields}}}")?;
                     }

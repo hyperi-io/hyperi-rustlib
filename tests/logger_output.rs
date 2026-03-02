@@ -125,7 +125,10 @@ fn test_json_timestamp_is_rfc3339() {
         ts.ends_with('Z') || ts.contains('+') || ts.contains('-'),
         "timestamp should be RFC 3339: {ts}"
     );
-    assert!(ts.contains('T'), "timestamp should contain T separator: {ts}");
+    assert!(
+        ts.contains('T'),
+        "timestamp should contain T separator: {ts}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -198,10 +201,7 @@ fn test_log_level_filtering() {
         !output.contains("should be filtered"),
         "info should be filtered at warn level"
     );
-    assert!(
-        output.contains("should appear"),
-        "warn should pass through"
-    );
+    assert!(output.contains("should appear"), "warn should pass through");
 }
 
 // ---------------------------------------------------------------------------

@@ -526,8 +526,8 @@ async fn test_15_shutdown_stops_accepting() {
     // Verify TCP connect is refused after shutdown
     let connect = timeout(Duration::from_millis(500), TcpStream::connect(&addr)).await;
     let refused = match connect {
-        Ok(Ok(_)) => false,                // Connected — not shut down
-        Ok(Err(_)) | Err(_) => true,       // Connection refused or timed out
+        Ok(Ok(_)) => false,          // Connected — not shut down
+        Ok(Err(_)) | Err(_) => true, // Connection refused or timed out
     };
     assert!(refused, "server should refuse connections after shutdown");
 }
@@ -553,7 +553,10 @@ async fn test_16_rapid_start_stop_cycle() {
 
         // Verify it's running
         let (status, _) = http_get(&addr, "/healthz").await;
-        assert!(status.contains("200 OK"), "server should respond during cycle");
+        assert!(
+            status.contains("200 OK"),
+            "server should respond during cycle"
+        );
 
         manager.stop_server().await.expect("failed to stop server");
         tokio::time::sleep(Duration::from_millis(50)).await;

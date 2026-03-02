@@ -214,8 +214,7 @@ fn redact_json_line(line: &str, sensitive: &HashSet<String>) -> String {
     let trimmed = line.trim_end_matches('\n');
     if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(trimmed) {
         redact_json_value(&mut value, sensitive);
-        let mut result =
-            serde_json::to_string(&value).unwrap_or_else(|_| trimmed.to_string());
+        let mut result = serde_json::to_string(&value).unwrap_or_else(|_| trimmed.to_string());
         if line.ends_with('\n') {
             result.push('\n');
         }
@@ -422,7 +421,8 @@ mod tests {
     #[test]
     fn test_redact_json_line_sensitive_field() {
         let sensitive: HashSet<String> = ["password".to_string()].into_iter().collect();
-        let input = "{\"level\":\"INFO\",\"fields\":{\"message\":\"hello\",\"password\":\"secret123\"}}\n";
+        let input =
+            "{\"level\":\"INFO\",\"fields\":{\"message\":\"hello\",\"password\":\"secret123\"}}\n";
         let result = redact_json_line(input, &sensitive);
         assert!(result.contains("[REDACTED]"));
         assert!(!result.contains("secret123"));

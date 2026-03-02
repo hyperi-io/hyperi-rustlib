@@ -30,8 +30,8 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use hyperi_rustlib::transport::grpc::{GrpcConfig, GrpcTransport};
-use hyperi_rustlib::transport::{SendResult, Transport};
 use hyperi_rustlib::transport::VectorCompatClient;
+use hyperi_rustlib::transport::{SendResult, Transport};
 
 /// Resolve the path to the Vector binary (cached via fetch-vector.sh or system PATH).
 ///
@@ -566,24 +566,23 @@ sinks:
 
     // Verify output file has our events
     // Vector file sink may split across lines or use a single NDJSON file
-    let output = std::fs::read_to_string(&output_path)
-        .unwrap_or_else(|_| {
-            // Vector may append a timestamp suffix to the path
-            let entries: Vec<_> = std::fs::read_dir(tmp_dir.path())
-                .unwrap()
-                .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.file_name()
-                        .to_str()
-                        .is_some_and(|s| s.starts_with("output"))
-                })
-                .collect();
-            if let Some(entry) = entries.first() {
-                std::fs::read_to_string(entry.path()).unwrap_or_default()
-            } else {
-                String::new()
-            }
-        });
+    let output = std::fs::read_to_string(&output_path).unwrap_or_else(|_| {
+        // Vector may append a timestamp suffix to the path
+        let entries: Vec<_> = std::fs::read_dir(tmp_dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .is_some_and(|s| s.starts_with("output"))
+            })
+            .collect();
+        if let Some(entry) = entries.first() {
+            std::fs::read_to_string(entry.path()).unwrap_or_default()
+        } else {
+            String::new()
+        }
+    });
 
     assert!(
         !output.is_empty(),
