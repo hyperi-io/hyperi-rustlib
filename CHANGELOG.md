@@ -1,3 +1,10 @@
+## [1.8.8](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.7...v1.8.8) (2026-03-02)
+
+
+### Bug Fixes
+
+* clippy match_wild_err_arm in vector compat tests ([7faa406](https://github.com/hyperi-io/hyperi-rustlib/commit/7faa4063984f8dd76a979bc8e8ae64bc9cdb37a9))
+
 ## [1.8.7](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.6...v1.8.7) (2026-03-02)
 
 
