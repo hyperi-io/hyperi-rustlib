@@ -1,3 +1,10 @@
+## [1.8.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.1...v1.8.2) (2026-03-02)
+
+
+### Bug Fixes
+
+* use non-constant float in clippy test ([2cefd58](https://github.com/hyperi-io/hyperi-rustlib/commit/2cefd5834c31b44d152cd08e5720320ba264c0e4))
+
 ## [1.8.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.8.0...v1.8.1) (2026-03-02)
 
 
