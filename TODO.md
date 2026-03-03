@@ -8,30 +8,25 @@
 
 ## Current Tasks
 
-### Local File Output Sink
+### CEL Expression Module — CI Fix Required `[IN PROGRESS]`
 
-**Goal:** Extract shared NDJSON writer from DLQ, add file output sink module
+**Goal:** Publish v1.13.0 with `expression` feature to JFrog
 
-1. [x] Create `src/io/` shared module (NdjsonWriter, FileWriterConfig, RotationPeriod)
-2. [x] Refactor `dlq/file.rs` to use NdjsonWriter (no regressions)
-3. [x] Create `src/output/` module (FileOutput, FileOutputConfig)
-4. [x] Add `output-file` feature flag to Cargo.toml
-5. [x] Tests + clippy clean for all feature combinations
+Code is committed (`83713e6`), 425/426 tests pass. CI fails on pre-existing flaky test.
 
-### TUI Metrics Dashboard (like `vector top`)
+1. [x] Create `src/expression/` module (evaluator, profile, error)
+2. [x] Add `expression` feature flag with `cel-interpreter` dependency
+3. [x] 70 integration tests + 7 unit tests passing
+4. [x] Clippy pedantic clean (`#[must_use]`, `implicit_hasher`)
+5. [ ] Fix `test_instance_id_stable` flaky test (race condition on `~/.config/hyperi/instance_id`)
+6. [ ] CI green → Semantic Release → v1.13.0 → Publish to JFrog
 
-**Goal:** Local real-time metrics viewer for DFE services — equivalent to `vector top`
+### Completed Recent
 
-Challenges:
-- Metrics are nested/treed (e.g. loader: data in from multiple topics, multiple table buffer buckets)
-- Need to consume existing Prometheus metrics endpoint (`/metrics`)
-- Should work for all rustlib-based services by default (loader, receiver, etc.)
-- Consider ratatui + crossterm stack (see STATE.md library research)
-
-1. [ ] Spike: prototype ratatui dashboard consuming `/metrics` endpoint
-2. [ ] Tree/nested view for per-topic and per-table-buffer metrics
-3. [ ] Sparkline widgets for throughput rates
-4. [ ] Feature-gated module in rustlib (`tui` or `top` feature)
+- [x] **File output sink** — `src/io/`, `src/output/`, `output-file` feature
+- [x] **CLI module** — CommonArgs, StandardCommand, DfeApp trait (`cli` feature)
+- [x] **Top module** — ratatui TUI dashboard, Prometheus parser, oneshot mode (`top` feature)
+- [x] **CI gating fix** — Semantic Release now gated on CI success via workflow_run
 
 ---
 
