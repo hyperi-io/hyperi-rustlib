@@ -1,3 +1,15 @@
+# [1.11.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.10.0...v1.11.0) (2026-03-03)
+
+
+### Bug Fixes
+
+* correct Helm template brace escaping in generate.rs ([c0bc194](https://github.com/hyperi-io/hyperi-rustlib/commit/c0bc1946e7b400b61f0f0efe2570cfab6a964a25))
+
+
+### Features
+
+* add deployment artifact generation (Dockerfile, Helm chart, Compose) ([f7d20a2](https://github.com/hyperi-io/hyperi-rustlib/commit/f7d20a2ccba91d61d5c4bf057667f69929857c3c))
+
 # [1.10.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.9.2...v1.10.0) (2026-03-02)
 
 
