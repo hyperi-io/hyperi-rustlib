@@ -114,6 +114,9 @@ pub mod dlq;
 #[cfg(feature = "output-file")]
 pub mod output;
 
+#[cfg(feature = "expression")]
+pub mod expression;
+
 #[cfg(feature = "deployment")]
 pub mod deployment;
 
@@ -207,6 +210,12 @@ pub use dlq::{DlqRouting, KafkaDlq, KafkaDlqConfig};
 
 #[cfg(feature = "output-file")]
 pub use output::{FileOutput, FileOutputConfig, OutputError};
+
+#[cfg(feature = "expression")]
+pub use expression::{
+    build_context, compile, evaluate, evaluate_condition, validate, ExpressionError,
+    ExpressionResult, ALLOWED_FUNCTIONS, DISALLOWED_FUNCTIONS,
+};
 
 #[cfg(feature = "deployment")]
 pub use deployment::{

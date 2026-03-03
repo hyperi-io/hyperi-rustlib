@@ -65,6 +65,9 @@ dlq-kafka = ["dlq", "transport-kafka"]
 # File output sink (local NDJSON file output)
 output-file = ["io", "serde_json", "tracing"]
 
+# CEL expression evaluation (DFE expression profile)
+expression = ["cel-interpreter", "serde_json"]
+
 # Deployment contract validation (Helm chart + Dockerfile sync)
 deployment = ["serde_yaml_ng", "serde_json"]
 
@@ -92,7 +95,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "cli", "io", "dlq", "dlq-kafka", "output-file"]
+full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "cli", "io", "dlq", "dlq-kafka", "output-file", "expression"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -119,6 +122,9 @@ fs2 = { version = ">=0.4.3, <0.5", optional = true }
 
 # Git operations (for directory-config-git)
 git2 = { version = ">=0.20.0, <0.21", optional = true }
+
+# CEL expression evaluation
+cel-interpreter = { version = ">=0.10.0, <0.11", features = ["json"], optional = true }
 
 # CLI framework
 clap = { version = ">=4.5, <5", features = ["derive", "env"], optional = true }
