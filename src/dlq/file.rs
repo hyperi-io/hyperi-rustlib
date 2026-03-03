@@ -188,7 +188,7 @@ mod tests {
         let dlq = FileDlq::new(&config, "batch-svc").expect("create");
 
         let entries: Vec<DlqEntry> = (0..5)
-            .map(|i| DlqEntry::new("batch-svc", format!("error_{}", i), vec![i as u8]))
+            .map(|i| DlqEntry::new("batch-svc", format!("error_{i}"), vec![i as u8]))
             .collect();
 
         dlq.send_batch(&entries).await.expect("batch send");
@@ -201,7 +201,7 @@ mod tests {
         assert_eq!(lines.len(), 5);
         for (i, line) in lines.iter().enumerate() {
             let parsed: DlqEntry = serde_json::from_str(line).expect("parse line");
-            assert_eq!(parsed.reason, format!("error_{}", i));
+            assert_eq!(parsed.reason, format!("error_{i}"));
         }
     }
 

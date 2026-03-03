@@ -42,7 +42,7 @@ pub fn generate_dockerfile(contract: &DeploymentContract) -> String {
         let args: Vec<String> = contract
             .entrypoint_args
             .iter()
-            .map(|a| format!("\"{}\"", a))
+            .map(|a| format!("\"{a}\""))
             .collect();
         format!("\nCMD [{}]", args.join(", "))
     };
@@ -110,8 +110,7 @@ pub fn generate_compose_fragment(contract: &DeploymentContract) -> String {
         out.push_str("    depends_on:\n");
         for dep in &contract.depends_on {
             out.push_str(&format!(
-                "      {}:\n        condition: service_healthy\n",
-                dep
+                "      {dep}:\n        condition: service_healthy\n"
             ));
         }
     }
@@ -148,7 +147,7 @@ pub fn generate_compose_fragment(contract: &DeploymentContract) -> String {
     if !contract.entrypoint_args.is_empty() {
         out.push_str(&format!("    command: [\"{binary}\""));
         for arg in &contract.entrypoint_args {
-            out.push_str(&format!(", \"{}\"", arg));
+            out.push_str(&format!(", \"{arg}\""));
         }
         out.push_str("]\n");
     }
@@ -345,7 +344,7 @@ fn gen_values_yaml(c: &DeploymentContract) -> String {
                 if line == "---" {
                     continue;
                 }
-                out.push_str(&format!("  {}\n", line));
+                out.push_str(&format!("  {line}\n"));
             }
         }
     } else {
@@ -492,7 +491,6 @@ Service account name.
 {{{{- end }}}}
 {{{{- end }}}}
 "#,
-        app = app,
     ));
 
     // Secret name helpers — one per secret group
@@ -562,24 +560,24 @@ spec:
           image: "{{{{ .Values.image.repository }}}}:{{{{ .Values.image.tag | default .Chart.AppVersion }}}}"
           imagePullPolicy: {{{{ .Values.image.pullPolicy }}}}
 "#,
-        app = app,
     ));
 
     // Args
     if !c.entrypoint_args.is_empty() {
         out.push_str("          args:\n");
         for arg in &c.entrypoint_args {
-            out.push_str(&format!("            - \"{}\"\n", arg));
+            out.push_str(&format!("            - \"{arg}\"\n"));
         }
     }
 
     // Ports
-    out.push_str(&format!(
-        "          ports:\n\
+    out.push_str(
+        &"          ports:\n\
          \x20           - name: metrics\n\
-         \x20             containerPort: {{{{ .Values.service.port }}}}\n\
+         \x20             containerPort: {{ .Values.service.port }}\n\
          \x20             protocol: TCP\n"
-    ));
+            .to_string(),
+    );
     for port in &c.extra_ports {
         out.push_str(&format!(
             "            - name: {name}\n\
@@ -666,24 +664,24 @@ spec:
          \x20       - name: config\n\
          \x20         configMap:\n\
          \x20           name: {{{{ include \"{app}.fullname\" . }}}}-config\n",
-        app = app,
     ));
 
     // Node selector, affinity, tolerations
-    out.push_str(&format!(
-        "      {{{{- with .Values.nodeSelector }}}}\n\
+    out.push_str(
+        &"      {{- with .Values.nodeSelector }}\n\
          \x20     nodeSelector:\n\
-         \x20       {{{{- toYaml . | nindent 8 }}}}\n\
-         \x20     {{{{- end }}}}\n\
-         \x20     {{{{- with .Values.affinity }}}}\n\
+         \x20       {{- toYaml . | nindent 8 }}\n\
+         \x20     {{- end }}\n\
+         \x20     {{- with .Values.affinity }}\n\
          \x20     affinity:\n\
-         \x20       {{{{- toYaml . | nindent 8 }}}}\n\
-         \x20     {{{{- end }}}}\n\
-         \x20     {{{{- with .Values.tolerations }}}}\n\
+         \x20       {{- toYaml . | nindent 8 }}\n\
+         \x20     {{- end }}\n\
+         \x20     {{- with .Values.tolerations }}\n\
          \x20     tolerations:\n\
-         \x20       {{{{- toYaml . | nindent 8 }}}}\n\
-         \x20     {{{{- end }}}}\n"
-    ));
+         \x20       {{- toYaml . | nindent 8 }}\n\
+         \x20     {{- end }}\n"
+            .to_string(),
+    );
 
     out
 }
@@ -705,7 +703,6 @@ spec:
       protocol: TCP
       name: metrics
 "#,
-        app = app,
     );
 
     // Extra ports
@@ -724,7 +721,6 @@ spec:
     out.push_str(&format!(
         "  selector:\n\
          \x20   {{{{- include \"{app}.selectorLabels\" . | nindent 4 }}}}\n",
-        app = app,
     ));
 
     out
@@ -747,7 +743,6 @@ metadata:
 automountServiceAccountToken: false
 {{{{- end }}}}
 "#,
-        app = app,
     )
 }
 
@@ -847,7 +842,6 @@ spec:
           averageUtilization: {{{{ .Values.autoscaling.targetCPUUtilizationPercentage }}}}
 {{{{- end }}}}
 "#,
-        app = app,
     )
 }
 
@@ -860,8 +854,7 @@ fn gen_keda_scaledobject_yaml(c: &DeploymentContract) -> String {
     let auth_ref = if has_kafka_secret {
         format!(
             "      authenticationRef:\n\
-             \x20       name: {{{{ include \"{app}.fullname\" . }}}}-kafka-auth\n",
-            app = app
+             \x20       name: {{{{ include \"{app}.fullname\" . }}}}-kafka-auth\n"
         )
     } else {
         String::new()
@@ -902,8 +895,6 @@ spec:
     {{{{- end }}}}
 {{{{- end }}}}
 "#,
-        app = app,
-        auth_ref = auth_ref,
     )
 }
 
@@ -914,7 +905,7 @@ fn gen_keda_triggerauth_yaml(c: &DeploymentContract) -> String {
     let kafka_group = c.secrets.iter().find(|g| g.group_name == "kafka");
 
     if kafka_group.is_none() {
-        return format!("# No kafka secret group — KEDA TriggerAuthentication not generated\n");
+        return "# No kafka secret group — KEDA TriggerAuthentication not generated\n".to_string();
     }
 
     let helper_name = format!("{}SecretName", to_camel_suffix("kafka"));
@@ -930,15 +921,13 @@ metadata:
 spec:
   secretTargetRef:
     - parameter: sasl
-      name: {{{{ include "{app}.{helper}" . }}}}
+      name: {{{{ include "{app}.{helper_name}" . }}}}
       key: {{{{ .Values.kafka.secretKeys.username }}}}
     - parameter: password
-      name: {{{{ include "{app}.{helper}" . }}}}
+      name: {{{{ include "{app}.{helper_name}" . }}}}
       key: {{{{ .Values.kafka.secretKeys.password }}}}
 {{{{- end }}}}
 "#,
-        app = app,
-        helper = helper_name,
     )
 }
 
