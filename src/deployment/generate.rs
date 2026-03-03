@@ -56,7 +56,7 @@ pub fn generate_dockerfile(contract: &DeploymentContract) -> String {
 # License:   FSL-1.1-ALv2
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 
-FROM debian:bookworm-slim
+FROM {base_image}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl netcat-openbsd iputils-ping \
@@ -75,6 +75,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 ENTRYPOINT ["{binary}"]{cmd}
 "#,
+        base_image = contract.base_image,
         binary = binary,
         expose_ports = expose_ports,
         metrics_port = contract.metrics_port,
@@ -1040,6 +1041,7 @@ mod tests {
             default_config: None,
             depends_on: vec!["kafka".into(), "clickhouse".into()],
             keda: Some(KedaContract::default()),
+            base_image: "ubuntu:24.04".into(),
         }
     }
 
@@ -1048,7 +1050,7 @@ mod tests {
         let contract = test_contract();
         let dockerfile = generate_dockerfile(&contract);
 
-        assert!(dockerfile.contains("FROM debian:bookworm-slim"));
+        assert!(dockerfile.contains("FROM ubuntu:24.04"));
         assert!(dockerfile.contains("COPY dfe-loader /usr/local/bin/dfe-loader"));
         assert!(dockerfile.contains("EXPOSE 9090"));
         assert!(dockerfile.contains("localhost:9090/healthz"));

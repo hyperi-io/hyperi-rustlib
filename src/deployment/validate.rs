@@ -406,6 +406,7 @@ mod tests {
             default_config: None,
             depends_on: vec![],
             keda: Some(KedaContract::default()),
+            base_image: "ubuntu:24.04".into(),
         }
     }
 
@@ -429,7 +430,7 @@ mod tests {
         let dockerfile = dir.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            "FROM debian:bookworm-slim\n\
+            "FROM ubuntu:24.04\n\
              EXPOSE 9090\n\
              HEALTHCHECK CMD curl -sf http://localhost:9090/healthz\n\
              CMD [\"--config\", \"/etc/test/config.yaml\"]\n",
@@ -450,7 +451,7 @@ mod tests {
         let dockerfile = dir.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            "FROM debian:bookworm-slim\n\
+            "FROM ubuntu:24.04\n\
              EXPOSE 8080\n\
              HEALTHCHECK CMD curl -sf http://localhost:8080/healthz\n\
              CMD [\"--config\", \"/etc/test/config.yaml\"]\n",
