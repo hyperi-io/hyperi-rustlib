@@ -1,3 +1,11 @@
+# [1.12.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.11.0...v1.12.0) (2026-03-03)
+
+
+### Features
+
+* add shared io module and file output sink ([be188c6](https://github.com/hyperi-io/hyperi-rustlib/commit/be188c6d627998e67708ecaac548f04b9a11124d))
+* add standard CLI framework and TUI metrics dashboard ([dc9e909](https://github.com/hyperi-io/hyperi-rustlib/commit/dc9e9095efc1a57234beaeab10d59c7b47ebdde4))
+
 # [1.11.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.10.0...v1.11.0) (2026-03-03)
 
 
