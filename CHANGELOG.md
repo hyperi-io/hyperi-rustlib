@@ -1,3 +1,10 @@
+## [1.12.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.12.1...v1.12.2) (2026-03-03)
+
+
+### Bug Fixes
+
+* resolve remaining clippy pedantic and typos errors ([a399cb2](https://github.com/hyperi-io/hyperi-rustlib/commit/a399cb2a994c1015cc12bda92b7709668713c979))
+
 ## [1.12.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.12.0...v1.12.1) (2026-03-03)
 
 
