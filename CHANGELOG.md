@@ -1,3 +1,10 @@
+## [1.12.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.12.0...v1.12.1) (2026-03-03)
+
+
+### Bug Fixes
+
+* resolve clippy uninlined_format_args warnings ([e0df71b](https://github.com/hyperi-io/hyperi-rustlib/commit/e0df71b253c191db7dd79f5e7fdbaa0e52d1289e))
+
 # [1.12.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.11.0...v1.12.0) (2026-03-03)
 
 
