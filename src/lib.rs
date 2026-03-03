@@ -99,8 +99,14 @@ pub mod directory_config;
 #[cfg(feature = "scaling")]
 pub mod scaling;
 
+#[cfg(feature = "io")]
+pub mod io;
+
 #[cfg(feature = "dlq")]
 pub mod dlq;
+
+#[cfg(feature = "output-file")]
+pub mod output;
 
 #[cfg(feature = "deployment")]
 pub mod deployment;
@@ -179,6 +185,9 @@ pub use scaling::{
     ScalingPressureConfig,
 };
 
+#[cfg(feature = "io")]
+pub use io::{FileWriterConfig, NdjsonWriter, RotationPeriod};
+
 #[cfg(feature = "dlq")]
 pub use dlq::{
     Dlq, DlqBackend, DlqConfig, DlqEntry, DlqError, DlqMode, DlqSource, FileDlq, FileDlqConfig,
@@ -186,6 +195,9 @@ pub use dlq::{
 
 #[cfg(feature = "dlq-kafka")]
 pub use dlq::{DlqRouting, KafkaDlq, KafkaDlqConfig};
+
+#[cfg(feature = "output-file")]
+pub use output::{FileOutput, FileOutputConfig, OutputError};
 
 #[cfg(feature = "deployment")]
 pub use deployment::{

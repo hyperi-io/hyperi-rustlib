@@ -32,6 +32,11 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+// Re-export RotationPeriod from the shared io module so existing consumers
+// of `dlq::RotationPeriod` continue to work without changes.
+use crate::io::FileWriterConfig;
+pub use crate::io::RotationPeriod;
+
 /// How backends are used when multiple are enabled.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -116,15 +121,17 @@ impl Default for FileDlqConfig {
     }
 }
 
-/// File rotation period.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RotationPeriod {
-    /// Rotate files every hour.
-    #[default]
-    Hourly,
-    /// Rotate files every day.
-    Daily,
+impl FileDlqConfig {
+    /// Convert to the shared `FileWriterConfig` for use with `NdjsonWriter`.
+    #[must_use]
+    pub fn to_writer_config(&self) -> FileWriterConfig {
+        FileWriterConfig {
+            path: self.path.clone(),
+            rotation: self.rotation,
+            max_age_days: self.max_age_days,
+            compress_rotated: self.compress_rotated,
+        }
+    }
 }
 
 /// Kafka-based DLQ configuration.

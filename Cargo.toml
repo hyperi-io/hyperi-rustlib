@@ -50,9 +50,15 @@ cache = []
 # Scaling pressure calculation (KEDA autoscaling)
 scaling = ["parking_lot", "tracing"]
 
+# Shared NDJSON file I/O (used by dlq + output-file)
+io = ["file-rotate", "parking_lot", "chrono", "tracing"]
+
 # Dead letter queue (file backend always available)
-dlq = ["file-rotate", "base64", "serde_json", "tokio", "async-trait", "parking_lot", "chrono", "tracing"]
+dlq = ["io", "base64", "serde_json", "tokio", "async-trait", "tracing"]
 dlq-kafka = ["dlq", "transport-kafka"]
+
+# File output sink (local NDJSON file output)
+output-file = ["io", "serde_json", "tracing"]
 
 # Deployment contract validation (Helm chart + Dockerfile sync)
 deployment = ["serde_yaml_ng", "serde_json"]
@@ -81,7 +87,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "dlq", "dlq-kafka"]
+full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "io", "dlq", "dlq-kafka", "output-file"]
 
 [dependencies]
 # Serialisation (always needed)
