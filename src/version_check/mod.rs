@@ -272,31 +272,40 @@ fn format_age(published_at: &str) -> Option<String> {
 /// Tries to read from `~/.config/hyperi/instance_id`. If it doesn't exist,
 /// generates a new UUIDv4 and persists it. Falls back to an ephemeral UUID
 /// if the file can't be written.
+///
+/// The result is cached in-process via `OnceLock` — the file is read at most
+/// once per process, eliminating TOCTOU races between parallel callers.
 fn get_or_create_instance_id() -> String {
-    let config_dir = dirs::config_dir().map_or_else(
-        || std::path::PathBuf::from("/tmp/hyperi"),
-        |d| d.join("hyperi"),
-    );
+    static INSTANCE_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-    let id_path = config_dir.join("instance_id");
+    INSTANCE_ID
+        .get_or_init(|| {
+            let config_dir = dirs::config_dir().map_or_else(
+                || std::path::PathBuf::from("/tmp/hyperi"),
+                |d| d.join("hyperi"),
+            );
 
-    // Try to read existing
-    if let Ok(id) = std::fs::read_to_string(&id_path) {
-        let id = id.trim().to_string();
-        if !id.is_empty() {
-            return id;
-        }
-    }
+            let id_path = config_dir.join("instance_id");
 
-    // Generate new
-    let id = uuid::Uuid::new_v4().to_string();
+            // Try to read existing
+            if let Ok(id) = std::fs::read_to_string(&id_path) {
+                let id = id.trim().to_string();
+                if !id.is_empty() {
+                    return id;
+                }
+            }
 
-    // Try to persist (best-effort)
-    if std::fs::create_dir_all(&config_dir).is_ok() {
-        let _ = std::fs::write(&id_path, &id);
-    }
+            // Generate new
+            let id = uuid::Uuid::new_v4().to_string();
 
-    id
+            // Try to persist (best-effort)
+            if std::fs::create_dir_all(&config_dir).is_ok() {
+                let _ = std::fs::write(&id_path, &id);
+            }
+
+            id
+        })
+        .clone()
 }
 
 /// Errors during version check (internal, never exposed to caller).
