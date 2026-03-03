@@ -1,3 +1,10 @@
+## [1.12.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.12.2...v1.12.3) (2026-03-03)
+
+
+### Bug Fixes
+
+* gate semantic-release on CI success ([72f20a3](https://github.com/hyperi-io/hyperi-rustlib/commit/72f20a349f322be311f67edbc332485abbab2151))
+
 ## [1.12.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.12.1...v1.12.2) (2026-03-03)
 
 
