@@ -465,20 +465,20 @@ Create chart name and version as used by the chart label.
 Common labels.
 */}}}}
 {{{{- define "{app}.labels" -}}}}
-helm.sh/chart: {{{{{{ include "{app}.chart" . }}}}}}
-{{{{{{ include "{app}.selectorLabels" . }}}}}}
+helm.sh/chart: {{{{ include "{app}.chart" . }}}}
+{{{{ include "{app}.selectorLabels" . }}}}
 {{{{- if .Chart.AppVersion }}}}
-app.kubernetes.io/version: {{{{{{ .Chart.AppVersion | quote }}}}}}
+app.kubernetes.io/version: {{{{ .Chart.AppVersion | quote }}}}
 {{{{- end }}}}
-app.kubernetes.io/managed-by: {{{{{{ .Release.Service }}}}}}
+app.kubernetes.io/managed-by: {{{{ .Release.Service }}}}
 {{{{- end }}}}
 
 {{{{/*
 Selector labels.
 */}}}}
 {{{{- define "{app}.selectorLabels" -}}}}
-app.kubernetes.io/name: {{{{{{ include "{app}.name" . }}}}}}
-app.kubernetes.io/instance: {{{{{{ .Release.Name }}}}}}
+app.kubernetes.io/name: {{{{ include "{app}.name" . }}}}
+app.kubernetes.io/instance: {{{{ .Release.Name }}}}
 {{{{- end }}}}
 
 {{{{/*
@@ -529,12 +529,12 @@ fn gen_deployment_yaml(c: &DeploymentContract) -> String {
         r#"apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{{{{{ include "{app}.fullname" . }}}}}}
+  name: {{{{ include "{app}.fullname" . }}}}
   labels:
     {{{{- include "{app}.labels" . | nindent 4 }}}}
 spec:
   {{{{- if not (or .Values.keda.enabled .Values.autoscaling.enabled) }}}}
-  replicas: {{{{{{ .Values.replicaCount }}}}}}
+  replicas: {{{{ .Values.replicaCount }}}}
   {{{{- end }}}}
   selector:
     matchLabels:
@@ -542,7 +542,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: {{{{{{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}}}}}
+        checksum/config: {{{{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}}}
         {{{{- with .Values.podAnnotations }}}}
         {{{{- toYaml . | nindent 8 }}}}
         {{{{- end }}}}
@@ -556,11 +556,11 @@ spec:
       imagePullSecrets:
         {{{{- toYaml . | nindent 8 }}}}
       {{{{- end }}}}
-      serviceAccountName: {{{{{{ include "{app}.serviceAccountName" . }}}}}}
+      serviceAccountName: {{{{ include "{app}.serviceAccountName" . }}}}
       containers:
-        - name: {{{{{{ .Chart.Name }}}}}}
-          image: "{{{{{{ .Values.image.repository }}}}}}:{{{{{{ .Values.image.tag | default .Chart.AppVersion }}}}}}"
-          imagePullPolicy: {{{{{{ .Values.image.pullPolicy }}}}}}
+        - name: {{{{ .Chart.Name }}}}
+          image: "{{{{ .Values.image.repository }}}}:{{{{ .Values.image.tag | default .Chart.AppVersion }}}}"
+          imagePullPolicy: {{{{ .Values.image.pullPolicy }}}}
 "#,
         app = app,
     ));
@@ -577,7 +577,7 @@ spec:
     out.push_str(&format!(
         "          ports:\n\
          \x20           - name: metrics\n\
-         \x20             containerPort: {{{{{{ .Values.service.port }}}}}}\n\
+         \x20             containerPort: {{{{ .Values.service.port }}}}\n\
          \x20             protocol: TCP\n"
     ));
     for port in &c.extra_ports {
@@ -605,8 +605,8 @@ spec:
                     "            - name: {env_var}\n\
                      \x20             valueFrom:\n\
                      \x20               secretKeyRef:\n\
-                     \x20                 name: {{{{{{ include \"{app}.{helper}\" . }}}}}}\n\
-                     \x20                 key: {{{{{{ .Values.{group}.secretKeys.{key} }}}}}}\n",
+                     \x20                 name: {{{{ include \"{app}.{helper}\" . }}}}\n\
+                     \x20                 key: {{{{ .Values.{group}.secretKeys.{key} }}}}\n",
                     env_var = env.env_var,
                     app = app,
                     helper = helper_name,
@@ -665,7 +665,7 @@ spec:
         "      volumes:\n\
          \x20       - name: config\n\
          \x20         configMap:\n\
-         \x20           name: {{{{{{ include \"{app}.fullname\" . }}}}}}-config\n",
+         \x20           name: {{{{ include \"{app}.fullname\" . }}}}-config\n",
         app = app,
     ));
 
@@ -694,13 +694,13 @@ fn gen_service_yaml(c: &DeploymentContract) -> String {
         r#"apiVersion: v1
 kind: Service
 metadata:
-  name: {{{{{{ include "{app}.fullname" . }}}}}}
+  name: {{{{ include "{app}.fullname" . }}}}
   labels:
     {{{{- include "{app}.labels" . | nindent 4 }}}}
 spec:
-  type: {{{{{{ .Values.service.type }}}}}}
+  type: {{{{ .Values.service.type }}}}
   ports:
-    - port: {{{{{{ .Values.service.port }}}}}}
+    - port: {{{{ .Values.service.port }}}}
       targetPort: metrics
       protocol: TCP
       name: metrics
@@ -737,7 +737,7 @@ fn gen_serviceaccount_yaml(c: &DeploymentContract) -> String {
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{{{{{ include "{app}.serviceAccountName" . }}}}}}
+  name: {{{{ include "{app}.serviceAccountName" . }}}}
   labels:
     {{{{- include "{app}.labels" . | nindent 4 }}}}
   {{{{- with .Values.serviceAccount.annotations }}}}
@@ -758,7 +758,7 @@ fn gen_configmap_yaml(c: &DeploymentContract) -> String {
         r#"apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{{{{{ include "{app}.fullname" . }}}}}}-config
+  name: {{{{ include "{app}.fullname" . }}}}-config
   labels:
     {{{{- include "{app}.labels" . | nindent 4 }}}}
 data:
@@ -791,7 +791,7 @@ fn gen_secret_yaml(c: &DeploymentContract) -> String {
              apiVersion: v1\n\
              kind: Secret\n\
              metadata:\n\
-             \x20 name: {{{{{{ include \"{app}.{helper}\" . }}}}}}\n\
+             \x20 name: {{{{ include \"{app}.{helper}\" . }}}}\n\
              \x20 labels:\n\
              \x20   {{{{- include \"{app}.labels\" . | nindent 4 }}}}\n\
              type: Opaque\n\
@@ -803,7 +803,7 @@ fn gen_secret_yaml(c: &DeploymentContract) -> String {
 
         for env in &group.env_vars {
             out.push_str(&format!(
-                "  {{{{{{ .Values.{group}.secretKeys.{key} }}}}}}: {{{{{{ .Values.{group}.{key} | b64enc | quote }}}}}}\n",
+                "  {{{{ .Values.{group}.secretKeys.{key} }}}}: {{{{ .Values.{group}.{key} | b64enc | quote }}}}\n",
                 group = group.group_name,
                 key = env.key_name,
             ));
@@ -828,23 +828,23 @@ fn gen_hpa_yaml(c: &DeploymentContract) -> String {
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{{{{{ include "{app}.fullname" . }}}}}}
+  name: {{{{ include "{app}.fullname" . }}}}
   labels:
     {{{{- include "{app}.labels" . | nindent 4 }}}}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{{{{{ include "{app}.fullname" . }}}}}}
-  minReplicas: {{{{{{ .Values.autoscaling.minReplicas }}}}}}
-  maxReplicas: {{{{{{ .Values.autoscaling.maxReplicas }}}}}}
+    name: {{{{ include "{app}.fullname" . }}}}
+  minReplicas: {{{{ .Values.autoscaling.minReplicas }}}}
+  maxReplicas: {{{{ .Values.autoscaling.maxReplicas }}}}
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{{{{{ .Values.autoscaling.targetCPUUtilizationPercentage }}}}}}
+          averageUtilization: {{{{ .Values.autoscaling.targetCPUUtilizationPercentage }}}}
 {{{{- end }}}}
 "#,
         app = app,
@@ -860,7 +860,7 @@ fn gen_keda_scaledobject_yaml(c: &DeploymentContract) -> String {
     let auth_ref = if has_kafka_secret {
         format!(
             "      authenticationRef:\n\
-             \x20       name: {{{{{{ include \"{app}.fullname\" . }}}}}}-kafka-auth\n",
+             \x20       name: {{{{ include \"{app}.fullname\" . }}}}-kafka-auth\n",
             app = app
         )
     } else {
@@ -872,25 +872,25 @@ fn gen_keda_scaledobject_yaml(c: &DeploymentContract) -> String {
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: {{{{{{ include "{app}.fullname" . }}}}}}
+  name: {{{{ include "{app}.fullname" . }}}}
   labels:
     {{{{- include "{app}.labels" . | nindent 4 }}}}
 spec:
   scaleTargetRef:
-    name: {{{{{{ include "{app}.fullname" . }}}}}}
-  minReplicaCount: {{{{{{ .Values.keda.minReplicaCount }}}}}}
-  maxReplicaCount: {{{{{{ .Values.keda.maxReplicaCount }}}}}}
-  pollingInterval: {{{{{{ .Values.keda.pollingInterval }}}}}}
-  cooldownPeriod: {{{{{{ .Values.keda.cooldownPeriod }}}}}}
+    name: {{{{ include "{app}.fullname" . }}}}
+  minReplicaCount: {{{{ .Values.keda.minReplicaCount }}}}
+  maxReplicaCount: {{{{ .Values.keda.maxReplicaCount }}}}
+  pollingInterval: {{{{ .Values.keda.pollingInterval }}}}
+  cooldownPeriod: {{{{ .Values.keda.cooldownPeriod }}}}
   triggers:
     # Kafka consumer group lag (primary scaler)
     - type: kafka
 {auth_ref}      metadata:
-        bootstrapServers: {{{{{{ .Values.config.kafka.brokers | quote }}}}}}
-        consumerGroup: {{{{{{ .Values.keda.kafka.consumerGroup | default .Values.config.kafka.group_id | quote }}}}}}
-        topic: {{{{{{ .Values.keda.kafka.topic | default (index .Values.config.kafka.topics 0) | quote }}}}}}
-        lagThreshold: {{{{{{ .Values.keda.kafka.lagThreshold | quote }}}}}}
-        activationLagThreshold: {{{{{{ .Values.keda.kafka.activationLagThreshold | quote }}}}}}
+        bootstrapServers: {{{{ .Values.config.kafka.brokers | quote }}}}
+        consumerGroup: {{{{ .Values.keda.kafka.consumerGroup | default .Values.config.kafka.group_id | quote }}}}
+        topic: {{{{ .Values.keda.kafka.topic | default (index .Values.config.kafka.topics 0) | quote }}}}
+        lagThreshold: {{{{ .Values.keda.kafka.lagThreshold | quote }}}}
+        activationLagThreshold: {{{{ .Values.keda.kafka.activationLagThreshold | quote }}}}
         saslType: scram_sha512
         tls: disable
     {{{{- if .Values.keda.cpu.enabled }}}}
@@ -898,7 +898,7 @@ spec:
     - type: cpu
       metricType: Utilization
       metadata:
-        value: {{{{{{ .Values.keda.cpu.threshold | quote }}}}}}
+        value: {{{{ .Values.keda.cpu.threshold | quote }}}}
     {{{{- end }}}}
 {{{{- end }}}}
 "#,
@@ -924,17 +924,17 @@ fn gen_keda_triggerauth_yaml(c: &DeploymentContract) -> String {
 apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
 metadata:
-  name: {{{{{{ include "{app}.fullname" . }}}}}}-kafka-auth
+  name: {{{{ include "{app}.fullname" . }}}}-kafka-auth
   labels:
     {{{{- include "{app}.labels" . | nindent 4 }}}}
 spec:
   secretTargetRef:
     - parameter: sasl
-      name: {{{{{{ include "{app}.{helper}" . }}}}}}
-      key: {{{{{{ .Values.kafka.secretKeys.username }}}}}}
+      name: {{{{ include "{app}.{helper}" . }}}}
+      key: {{{{ .Values.kafka.secretKeys.username }}}}
     - parameter: password
-      name: {{{{{{ include "{app}.{helper}" . }}}}}}
-      key: {{{{{{ .Values.kafka.secretKeys.password }}}}}}
+      name: {{{{ include "{app}.{helper}" . }}}}
+      key: {{{{ .Values.kafka.secretKeys.password }}}}
 {{{{- end }}}}
 "#,
         app = app,
@@ -949,19 +949,19 @@ fn gen_notes_txt(c: &DeploymentContract) -> String {
         r#"{app} has been deployed.
 
 1. Get the metrics/health endpoint:
-   kubectl port-forward svc/{{{{{{ include "{app}.fullname" . }}}}}} {{{{{{ .Values.service.port }}}}}}:{{{{{{ .Values.service.port }}}}}}
-   curl http://localhost:{{{{{{ .Values.service.port }}}}}}{liveness}
-   curl http://localhost:{{{{{{ .Values.service.port }}}}}}{metrics}
+   kubectl port-forward svc/{{{{ include "{app}.fullname" . }}}} {{{{ .Values.service.port }}}}:{{{{ .Values.service.port }}}}
+   curl http://localhost:{{{{ .Values.service.port }}}}{liveness}
+   curl http://localhost:{{{{ .Values.service.port }}}}{metrics}
 
 {{{{- if .Values.keda.enabled }}}}
 
 2. Check KEDA autoscaling status:
-   kubectl get scaledobject {{{{{{ include "{app}.fullname" . }}}}}}
+   kubectl get scaledobject {{{{ include "{app}.fullname" . }}}}
    kubectl get hpa
 {{{{- end }}}}
 
 3. View logs:
-   kubectl logs -l app.kubernetes.io/name={{{{{{ include "{app}.name" . }}}}}} -f
+   kubectl logs -l app.kubernetes.io/name={{{{ include "{app}.name" . }}}} -f
 "#,
         app = app,
         liveness = c.health.liveness_path,
