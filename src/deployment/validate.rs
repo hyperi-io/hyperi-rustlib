@@ -392,11 +392,19 @@ mod tests {
     fn test_contract() -> DeploymentContract {
         DeploymentContract {
             app_name: "test-app".into(),
+            binary_name: "test-app".into(),
+            description: "Test application".into(),
             metrics_port: 9090,
             health: super::super::HealthContract::default(),
             env_prefix: "TEST_APP".into(),
             metric_prefix: "test".into(),
             config_mount_path: "/etc/test/config.yaml".into(),
+            image_registry: "ghcr.io/hyperi-io".into(),
+            extra_ports: vec![],
+            entrypoint_args: vec!["--config".into(), "/etc/test/config.yaml".into()],
+            secrets: vec![],
+            default_config: None,
+            depends_on: vec![],
             keda: Some(KedaContract::default()),
         }
     }

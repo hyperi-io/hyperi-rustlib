@@ -31,12 +31,28 @@ impl std::fmt::Display for ContractMismatch {
     }
 }
 
-/// Errors from deployment validation.
+/// Errors from deployment validation and generation.
 #[derive(Debug, Error)]
 pub enum DeploymentError {
     /// Failed to read a deployment artifact file.
     #[error("failed to read {path}: {source}")]
     ReadFile {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// Failed to write a deployment artifact file.
+    #[error("failed to write {path}: {source}")]
+    WriteFile {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// Failed to create a directory.
+    #[error("failed to create directory {path}: {source}")]
+    CreateDir {
         path: String,
         #[source]
         source: std::io::Error,
