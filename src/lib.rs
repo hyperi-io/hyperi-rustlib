@@ -99,6 +99,12 @@ pub mod directory_config;
 #[cfg(feature = "scaling")]
 pub mod scaling;
 
+#[cfg(feature = "cli")]
+pub mod cli;
+
+#[cfg(feature = "top")]
+pub mod top;
+
 #[cfg(feature = "io")]
 pub mod io;
 
@@ -184,6 +190,9 @@ pub use scaling::{
     ComponentSnapshot, GateType, PressureSnapshot, RateWindow, ScalingComponent, ScalingPressure,
     ScalingPressureConfig,
 };
+
+#[cfg(feature = "cli")]
+pub use cli::{CliError, CommonArgs, DfeApp, StandardCommand, VersionInfo};
 
 #[cfg(feature = "io")]
 pub use io::{FileWriterConfig, NdjsonWriter, RotationPeriod};
