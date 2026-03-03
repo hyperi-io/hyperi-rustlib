@@ -83,7 +83,7 @@ impl RateWindow {
     #[cfg(test)]
     fn record_at(&self, at: Instant, counter_value: u64) {
         let mut inner = self.inner.write();
-        let cutoff = at - inner.window_size;
+        let cutoff = at.checked_sub(inner.window_size).unwrap_or(at);
         inner.samples.retain(|&(t, _)| t >= cutoff);
         inner.samples.push((at, counter_value));
     }
@@ -172,9 +172,9 @@ mod tests {
         let now = Instant::now();
 
         // Old sample (before window)
-        w.record_at(now - Duration::from_secs(10), 0);
+        w.record_at(now.checked_sub(Duration::from_secs(10)).unwrap(), 0);
         // Recent samples (within window)
-        w.record_at(now - Duration::from_secs(2), 800);
+        w.record_at(now.checked_sub(Duration::from_secs(2)).unwrap(), 800);
         w.record_at(now, 1000);
 
         // Old sample should be pruned, leaving 2

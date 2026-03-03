@@ -280,6 +280,9 @@ MATERIALIZED = "MATERIALIZED"
 # Kafka acknowledgment (librdkafka uses American spelling internally)
 acknowledgment = "acknowledgment"
 
+# Crate names (not misspellings)
+ratatui = "ratatui"
+
 [default.extend-identifiers]
 # Project-specific identifiers that should not be flagged
 HashiCorp = "HashiCorp"

@@ -55,7 +55,7 @@ pub struct DeploymentContract {
     #[serde(default)]
     pub extra_ports: Vec<PortContract>,
 
-    /// Default ENTRYPOINT args (e.g., ["--config", "/etc/dfe/loader.yaml"]).
+    /// Default ENTRYPOINT args (e.g., `["--config", "/etc/dfe/loader.yaml"]`).
     #[serde(default)]
     pub entrypoint_args: Vec<String>,
 
@@ -67,7 +67,7 @@ pub struct DeploymentContract {
     #[serde(default)]
     pub default_config: Option<serde_json::Value>,
 
-    /// Docker Compose service dependencies (e.g., ["kafka", "clickhouse"]).
+    /// Docker Compose service dependencies (e.g., `["kafka", "clickhouse"]`).
     #[serde(default)]
     pub depends_on: Vec<String>,
 

@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn test_standard_command_default_is_run() {
         // When command() returns None, run_app defaults to Run
-        let cmd = None::<StandardCommand>.unwrap_or(StandardCommand::Run);
+        let cmd = StandardCommand::Run;
         assert!(matches!(cmd, StandardCommand::Run));
     }
 }
