@@ -12,6 +12,8 @@
 //! Apps provide ~20% customisation (ports, secrets, config); this module
 //! generates ~80% boilerplate (Dockerfile, Helm chart, Compose fragment).
 
+#![allow(clippy::format_push_string)] // Template generators naturally build strings via push_str(&format!(...))
+
 use std::path::Path;
 
 use super::contract::DeploymentContract;
@@ -572,11 +574,10 @@ spec:
 
     // Ports
     out.push_str(
-        &"          ports:\n\
+        "          ports:\n\
          \x20           - name: metrics\n\
          \x20             containerPort: {{ .Values.service.port }}\n\
-         \x20             protocol: TCP\n"
-            .to_string(),
+         \x20             protocol: TCP\n",
     );
     for port in &c.extra_ports {
         out.push_str(&format!(
@@ -668,7 +669,7 @@ spec:
 
     // Node selector, affinity, tolerations
     out.push_str(
-        &"      {{- with .Values.nodeSelector }}\n\
+        "      {{- with .Values.nodeSelector }}\n\
          \x20     nodeSelector:\n\
          \x20       {{- toYaml . | nindent 8 }}\n\
          \x20     {{- end }}\n\
@@ -679,8 +680,7 @@ spec:
          \x20     {{- with .Values.tolerations }}\n\
          \x20     tolerations:\n\
          \x20       {{- toYaml . | nindent 8 }}\n\
-         \x20     {{- end }}\n"
-            .to_string(),
+         \x20     {{- end }}\n",
     );
 
     out

@@ -187,6 +187,7 @@ mod tests {
 
         let dlq = FileDlq::new(&config, "batch-svc").expect("create");
 
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let entries: Vec<DlqEntry> = (0..5)
             .map(|i| DlqEntry::new("batch-svc", format!("error_{i}"), vec![i as u8]))
             .collect();

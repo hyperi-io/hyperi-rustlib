@@ -433,13 +433,15 @@ fn run_loop(terminal: &mut DefaultTerminal, config: &TopConfig) -> Result<(), To
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
     fn test_format_value_integer() {
         let sample = MetricSample {
             name: "test".into(),
-            labels: Default::default(),
+            labels: HashMap::default(),
             value: 42.0,
             metric_type: MetricType::Counter,
         };
@@ -447,10 +449,11 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_format_value_float() {
         let sample = MetricSample {
             name: "test".into(),
-            labels: Default::default(),
+            labels: HashMap::default(),
             value: 3.14159,
             metric_type: MetricType::Gauge,
         };
@@ -461,7 +464,7 @@ mod tests {
     fn test_format_value_small() {
         let sample = MetricSample {
             name: "test".into(),
-            labels: Default::default(),
+            labels: HashMap::default(),
             value: 0.000_123,
             metric_type: MetricType::Gauge,
         };
@@ -472,7 +475,7 @@ mod tests {
     fn test_format_value_nan() {
         let sample = MetricSample {
             name: "test".into(),
-            labels: Default::default(),
+            labels: HashMap::default(),
             value: f64::NAN,
             metric_type: MetricType::Untyped,
         };

@@ -340,6 +340,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_format_value_float() {
         let sample = make_sample("test", 3.14, MetricType::Gauge);
         assert_eq!(format_value(&sample), "3.14");
@@ -368,6 +369,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_format_value_json_float() {
         assert_eq!(format_value_json(3.14), "3.14");
     }
