@@ -8,7 +8,30 @@
 
 ## Current Tasks
 
-(none)
+### Local File Output Sink
+
+**Goal:** Extract shared NDJSON writer from DLQ, add file output sink module
+
+1. [x] Create `src/io/` shared module (NdjsonWriter, FileWriterConfig, RotationPeriod)
+2. [x] Refactor `dlq/file.rs` to use NdjsonWriter (no regressions)
+3. [x] Create `src/output/` module (FileOutput, FileOutputConfig)
+4. [x] Add `output-file` feature flag to Cargo.toml
+5. [x] Tests + clippy clean for all feature combinations
+
+### TUI Metrics Dashboard (like `vector top`)
+
+**Goal:** Local real-time metrics viewer for DFE services — equivalent to `vector top`
+
+Challenges:
+- Metrics are nested/treed (e.g. loader: data in from multiple topics, multiple table buffer buckets)
+- Need to consume existing Prometheus metrics endpoint (`/metrics`)
+- Should work for all rustlib-based services by default (loader, receiver, etc.)
+- Consider ratatui + crossterm stack (see STATE.md library research)
+
+1. [ ] Spike: prototype ratatui dashboard consuming `/metrics` endpoint
+2. [ ] Tree/nested view for per-topic and per-table-buffer metrics
+3. [ ] Sparkline widgets for throughput rates
+4. [ ] Feature-gated module in rustlib (`tui` or `top` feature)
 
 ---
 

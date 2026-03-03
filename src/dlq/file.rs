@@ -23,41 +23,31 @@
 //!
 //! ## Thread Safety
 //!
-//! `FileDlq` uses a `Mutex<FileRotate>` for safe concurrent writes.
-//! The write path uses `spawn_blocking` to avoid blocking the async runtime.
-
-use std::io::Write;
-use std::sync::atomic::{AtomicU64, Ordering};
+//! Delegates to [`NdjsonWriter`] which uses `Mutex<FileRotate>` for safe
+//! concurrent writes.
 
 use async_trait::async_trait;
-use file_rotate::suffix::AppendTimestamp;
-use file_rotate::suffix::FileLimit;
-use file_rotate::{compression::Compression, ContentLimit, FileRotate};
-use parking_lot::Mutex;
 use tracing::debug;
 
+use crate::io::NdjsonWriter;
+
 use super::backend::DlqBackend;
-use super::config::{FileDlqConfig, RotationPeriod};
+use super::config::FileDlqConfig;
 use super::entry::DlqEntry;
 use super::error::DlqError;
 
 /// File-based DLQ backend using NDJSON format.
 pub struct FileDlq {
-    writer: Mutex<FileRotate<AppendTimestamp>>,
+    writer: NdjsonWriter,
     service_name: String,
-    entries_written: AtomicU64,
-    write_errors: AtomicU64,
 }
 
 impl std::fmt::Debug for FileDlq {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FileDlq")
             .field("service_name", &self.service_name)
-            .field(
-                "entries_written",
-                &self.entries_written.load(Ordering::Relaxed),
-            )
-            .field("write_errors", &self.write_errors.load(Ordering::Relaxed))
+            .field("entries_written", &self.writer.lines_written())
+            .field("write_errors", &self.writer.write_errors())
             .finish_non_exhaustive()
     }
 }
@@ -71,56 +61,28 @@ impl FileDlq {
     ///
     /// Returns an error if the output directory cannot be created.
     pub fn new(config: &FileDlqConfig, service_name: &str) -> Result<Self, DlqError> {
-        let dir = config.path.join(service_name);
-        std::fs::create_dir_all(&dir).map_err(|e| {
-            DlqError::File(format!(
-                "failed to create DLQ directory {}: {}",
-                dir.display(),
-                e
-            ))
-        })?;
-
-        let file_path = dir.join("dlq.ndjson");
-
-        let content_limit = match config.rotation {
-            RotationPeriod::Hourly => ContentLimit::Time(file_rotate::TimeFrequency::Hourly),
-            RotationPeriod::Daily => ContentLimit::Time(file_rotate::TimeFrequency::Daily),
-        };
-
-        let max_age = chrono::Duration::days(i64::from(config.max_age_days));
-        let suffix_scheme = AppendTimestamp::default(FileLimit::Age(max_age));
-
-        let compression = if config.compress_rotated {
-            Compression::OnRotate(6)
-        } else {
-            Compression::None
-        };
-
-        let writer = FileRotate::new(file_path, suffix_scheme, content_limit, compression, None);
-
-        debug!(
-            service = service_name,
-            path = %dir.display(),
-            rotation = ?config.rotation,
-            "File DLQ initialised"
-        );
+        let writer_config = config.to_writer_config();
+        let writer =
+            NdjsonWriter::new(&writer_config, service_name, "dlq.ndjson", "dlq").map_err(|e| {
+                DlqError::File(format!(
+                    "failed to create DLQ writer for {service_name}: {e}"
+                ))
+            })?;
 
         Ok(Self {
-            writer: Mutex::new(writer),
+            writer,
             service_name: service_name.to_string(),
-            entries_written: AtomicU64::new(0),
-            write_errors: AtomicU64::new(0),
         })
     }
 
     /// Number of entries successfully written.
     pub fn entries_written(&self) -> u64 {
-        self.entries_written.load(Ordering::Relaxed)
+        self.writer.lines_written()
     }
 
     /// Number of write errors.
     pub fn write_errors(&self) -> u64 {
-        self.write_errors.load(Ordering::Relaxed)
+        self.writer.write_errors()
     }
 }
 
@@ -132,14 +94,8 @@ impl DlqBackend for FileDlq {
             .map_err(|e| DlqError::Serialization(format!("failed to serialise DLQ entry: {e}")))?;
         line.push(b'\n');
 
-        // Write under lock (sync I/O, but DLQ volume is low)
-        {
-            let mut writer = self.writer.lock();
-            writer.write_all(&line)?;
-            writer.flush()?;
-        }
+        self.writer.write_line(&line)?;
 
-        self.entries_written.fetch_add(1, Ordering::Relaxed);
         debug!(
             service = %self.service_name,
             reason = %entry.reason,
@@ -164,15 +120,9 @@ impl DlqBackend for FileDlq {
             buf.push(b'\n');
         }
 
-        // Single write under lock
-        {
-            let mut writer = self.writer.lock();
-            writer.write_all(&buf)?;
-            writer.flush()?;
-        }
-
         let count = entries.len() as u64;
-        self.entries_written.fetch_add(count, Ordering::Relaxed);
+        self.writer.write_buf(&buf, count)?;
+
         debug!(
             service = %self.service_name,
             count = entries.len(),
@@ -190,6 +140,7 @@ impl DlqBackend for FileDlq {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dlq::config::RotationPeriod;
     use crate::dlq::entry::DlqSource;
 
     #[tokio::test]
