@@ -50,6 +50,11 @@ cache = []
 # Scaling pressure calculation (KEDA autoscaling)
 scaling = ["parking_lot", "tracing"]
 
+# Standard CLI framework (clap-based)
+cli = ["clap", "tracing"]
+# TUI metrics dashboard (ratatui + crossterm via ratatui re-export)
+top = ["cli", "ratatui"]
+
 # Shared NDJSON file I/O (used by dlq + output-file)
 io = ["file-rotate", "parking_lot", "chrono", "tracing"]
 
@@ -87,7 +92,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "io", "dlq", "dlq-kafka", "output-file"]
+full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "cli", "io", "dlq", "dlq-kafka", "output-file"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -114,6 +119,9 @@ fs2 = { version = ">=0.4.3, <0.5", optional = true }
 
 # Git operations (for directory-config-git)
 git2 = { version = ">=0.20.0, <0.21", optional = true }
+
+# CLI framework
+clap = { version = ">=4.5, <5", features = ["derive", "env"], optional = true }
 
 # Logging
 tracing = { version = ">=0.1.44, <0.2", optional = true }
@@ -164,6 +172,9 @@ tonic = { version = ">=0.14, <0.15", features = ["gzip"], optional = true }
 tonic-prost = { version = ">=0.14, <0.15", optional = true }
 prost = { version = ">=0.14, <0.15", optional = true }
 prost-types = { version = ">=0.14, <0.15", optional = true }
+
+# TUI dashboard (ratatui re-exports crossterm)
+ratatui = { version = ">=0.29, <0.32", optional = true }
 
 # File rotation (for DLQ file backend)
 file-rotate = { version = ">=0.7, <0.9", optional = true }
