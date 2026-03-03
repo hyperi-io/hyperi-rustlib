@@ -1,3 +1,15 @@
+# [1.13.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.12.3...v1.13.0) (2026-03-03)
+
+
+### Bug Fixes
+
+* cache instance_id with OnceLock to fix race condition in tests ([3981a65](https://github.com/hyperi-io/hyperi-rustlib/commit/3981a6546e4a6354fc7e63ecd076af50de0db2a8))
+
+
+### Features
+
+* add CEL expression evaluation module ([83713e6](https://github.com/hyperi-io/hyperi-rustlib/commit/83713e6bfcfc6f07823a83b91d30bc33dafe2ce7))
+
 ## [1.12.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.12.2...v1.12.3) (2026-03-03)
 
 
