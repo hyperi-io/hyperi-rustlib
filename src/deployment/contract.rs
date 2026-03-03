@@ -73,6 +73,11 @@ pub struct DeploymentContract {
 
     /// KEDA autoscaling contract (None if KEDA not used).
     pub keda: Option<KedaContract>,
+
+    /// Base container image for the runtime stage.
+    // I don't like doing it this way but it's the best compromise option
+    #[serde(default = "default_base_image")]
+    pub base_image: String,
 }
 
 /// Health probe endpoint paths.
@@ -123,6 +128,10 @@ pub struct SecretEnvContract {
 
     /// Default K8s secret key name (e.g., "kafka-password").
     pub secret_key: String,
+}
+
+fn default_base_image() -> String {
+    "ubuntu:24.04".to_string()
 }
 
 fn default_image_registry() -> String {
@@ -214,6 +223,7 @@ mod tests {
             secrets: vec![],
             default_config: None,
             depends_on: vec![],
+            base_image: "ubuntu:24.04".into(),
         };
         let json = contract.to_json();
         assert!(json.contains("test-app"));
@@ -238,6 +248,7 @@ mod tests {
             secrets: vec![],
             default_config: None,
             depends_on: vec![],
+            base_image: "ubuntu:24.04".into(),
         };
         let json = contract.to_json();
         let parsed: DeploymentContract = serde_json::from_str(&json).unwrap();
@@ -263,6 +274,7 @@ mod tests {
             secrets: vec![],
             default_config: None,
             depends_on: vec![],
+            base_image: "ubuntu:24.04".into(),
         };
         assert_eq!(contract.binary(), "my-app");
     }
@@ -285,6 +297,7 @@ mod tests {
             secrets: vec![],
             default_config: None,
             depends_on: vec![],
+            base_image: "ubuntu:24.04".into(),
         };
         assert_eq!(contract.config_filename(), "loader.yaml");
         assert_eq!(contract.config_dir(), "/etc/dfe");

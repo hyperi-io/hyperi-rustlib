@@ -50,6 +50,7 @@
 //!     default_config: None,
 //!     depends_on: vec!["kafka".into(), "clickhouse".into()],
 //!     keda: Some(KedaContract::default()),
+//!     base_image: "ubuntu:24.04".into(),
 //! };
 //!
 //! // Generate Dockerfile
