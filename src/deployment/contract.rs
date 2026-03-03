@@ -158,8 +158,7 @@ impl DeploymentContract {
     pub fn config_dir(&self) -> &str {
         self.config_mount_path
             .rsplit_once('/')
-            .map(|(dir, _)| dir)
-            .unwrap_or("/etc")
+            .map_or("/etc", |(dir, _)| dir)
     }
 
     /// Serialise the contract to JSON for `--emit-contract` CLI support.

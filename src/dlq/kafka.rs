@@ -168,7 +168,7 @@ mod tests {
         let topic = match routing {
             DlqRouting::PerTable => {
                 if let Some(ref dest) = entry.destination {
-                    format!("{}{}", dest, suffix)
+                    format!("{dest}{suffix}")
                 } else {
                     common.to_string()
                 }
@@ -182,7 +182,7 @@ mod tests {
         let topic = match routing {
             DlqRouting::PerTable => {
                 if let Some(ref dest) = entry_no_dest.destination {
-                    format!("{}{}", dest, suffix)
+                    format!("{dest}{suffix}")
                 } else {
                     common.to_string()
                 }
