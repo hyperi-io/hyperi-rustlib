@@ -1,3 +1,10 @@
+## [1.13.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.13.0...v1.13.1) (2026-03-03)
+
+
+### Bug Fixes
+
+* use configurable base_image in deployment contract instead of hardcoded debian ([a4d659e](https://github.com/hyperi-io/hyperi-rustlib/commit/a4d659e96b2375405a106d3083fb142c2a7b6a23))
+
 # [1.13.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.12.3...v1.13.0) (2026-03-03)
 
 
