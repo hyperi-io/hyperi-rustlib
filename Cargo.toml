@@ -17,7 +17,7 @@ repository = "https://github.com/hyperi-io/hyperi-rustlib"
 publish = ["hyperi"]
 keywords = ["config", "logging", "metrics", "prometheus", "opentelemetry"]
 categories = ["development-tools"]
-exclude = [".claude/", ".github/", "ci/", "ai/", "docs/", "examples/"]
+exclude = [".claude/", ".github/", "ci/", "ai/", "docs/", "examples/", "benches/", "scripts/"]
 
 [features]
 default = ["config", "logger", "metrics", "env", "runtime"]
