@@ -1,3 +1,13 @@
+## CI UNAVAILABLE — Commit with [skip ci]
+
+The CI system is being completely rewritten. Until migration instructions are provided:
+
+- **All commits MUST include `[skip ci]` in the commit message**
+- Do not trigger CI runs or rely on CI for validation
+- Run `./ci/local-build.sh` for local validation if it exists
+
+---
+
 # Project State
 
 **Project:** hyperi-rustlib
