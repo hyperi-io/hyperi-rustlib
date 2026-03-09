@@ -18,22 +18,29 @@
 
 ## Crate Selection
 
-| Component | Crate | Version | Rationale |
-| --------- | ----- | ------- | --------- |
-| Config | `figment` | 0.10 | Hierarchical config with serde, supports CLI/ENV/files |
-| Config (env) | `dotenvy` | 0.15 | `.env` file loading |
-| Logger | `tracing` | 0.1 | Industry standard, async-friendly |
-| Logger (subscriber) | `tracing-subscriber` | 0.3 | JSON/text formatters, filtering |
-| Metrics | `metrics` | 0.23 | Simple API, widely adopted |
-| Metrics (exporter) | `metrics-exporter-prometheus` | 0.15 | Built-in Prometheus exporter |
-| HTTP (P2) | `reqwest` | 0.12 | De facto standard HTTP client |
-| HTTP retry (P2) | `reqwest-middleware` + `reqwest-retry` | 0.3 | Retry middleware |
-| Serialisation | `serde` + `serde_json` + `serde_yaml` | 1.0 | Universal serialisation |
-| CLI integration | `clap` | 4.5 | For config CLI arg layer |
-| Async runtime | `tokio` | 1.0 | For metrics server, async features |
-| Process info | `sysinfo` | 0.32 | Process metrics (CPU, memory) |
-| TTY detection | `atty` | 0.2 | Logger format auto-detection |
-| Colours | `owo-colors` | 4.0 | Terminal colours (Solarised) |
+| Component | Crate | Rationale |
+| --------- | ----- | --------- |
+| Config | `figment` | Hierarchical config with serde, supports CLI/ENV/files |
+| Config (env) | `dotenvy` | `.env` file loading |
+| Logger | `tracing` + `tracing-subscriber` | Industry standard, async-friendly, JSON/text formatters |
+| Metrics | `metrics` + `metrics-exporter-prometheus` | Simple API, built-in Prometheus exporter |
+| OTel metrics | `opentelemetry` + `metrics-exporter-opentelemetry` | OTLP export for OTel pipelines |
+| HTTP server | `axum` + `tower` | Async HTTP server with health endpoints |
+| HTTP client (P2) | `reqwest` + `reqwest-middleware` | Retry middleware, async HTTP client (backlog) |
+| Serialisation | `serde` + `serde_json` + `serde-yaml-ng` | Universal serialisation; `serde-yaml-ng` replaces unmaintained `serde_yaml` |
+| CLI | `clap` | Arg parsing for `cli` and `top` features |
+| Async runtime | `tokio` | Used by most features |
+| Process info | `sysinfo` | Process metrics (CPU, memory) |
+| TTY detection | `std::io::IsTerminal` | Stdlib since Rust 1.70 — no external crate needed |
+| Colours | `owo-colors` | Terminal colours (Solarised scheme) |
+| Disk queue | `yaque` | Async-native disk-backed FIFO queue (spool + tiered-sink) |
+| Compression | `lz4_flex` + `snap` + `zstd` | Tiered-sink and spool compression codecs |
+| Secrets (Vault) | `vaultrs` | OpenBao/Vault API client |
+| Secrets (AWS) | `aws-sdk-secretsmanager` | AWS Secrets Manager client |
+| Kafka | `rdkafka` | librdkafka bindings |
+| gRPC | `tonic` + `prost` | gRPC transport (DFE native + Vector wire compat) |
+| TUI | `ratatui` | Terminal dashboard (`top` feature) |
+| Git | `git2` | Directory-config git integration (optional) |
 
 ---
 
@@ -43,29 +50,54 @@
 hyperi_rustlib/
 ├── Cargo.toml
 ├── src/
-│   ├── lib.rs              # Public API exports
-│   ├── env.rs              # Environment detection
-│   ├── runtime.rs          # Runtime paths (XDG/container)
+│   ├── lib.rs                      # Public API exports
+│   ├── env.rs                      # Environment detection
+│   ├── runtime.rs                  # Runtime paths (XDG/container)
+│   ├── kafka_config.rs             # Librdkafka profiles + config_from_file
 │   ├── config/
-│   │   ├── mod.rs          # Config cascade
-│   │   └── merge.rs        # File merging utilities
+│   │   ├── mod.rs                  # Config cascade (figment)
+│   │   ├── env_compat.rs           # Legacy env var aliases with deprecation warnings
+│   │   ├── shared.rs               # SharedConfig<T> thread-safe holder
+│   │   ├── reloader.rs             # ConfigReloader hot-reload
+│   │   └── postgres.rs             # PostgreSQL config source (feature-gated)
 │   ├── logger/
-│   │   ├── mod.rs          # Logger setup
-│   │   ├── format.rs       # JSON/Text formatters
-│   │   └── masking.rs      # Sensitive data filter
+│   │   ├── mod.rs                  # Logger setup, JSON/text formatters
+│   │   └── masking.rs              # Sensitive field redaction layer
 │   ├── metrics/
-│   │   ├── mod.rs          # MetricsManager
-│   │   ├── process.rs      # Process metrics
-│   │   └── container.rs    # Container/cgroup metrics
-│   ├── http.rs             # HTTP client (P2)
-│   ├── database.rs         # DB URL builders (P2)
-│   └── cache.rs            # Disk cache (P2)
+│   │   ├── mod.rs                  # MetricsManager, Prometheus exporter
+│   │   ├── process.rs              # Process metrics (CPU, memory, fds)
+│   │   ├── container.rs            # Container/cgroup metrics
+│   │   ├── otel.rs                 # OpenTelemetry metrics bridge
+│   │   └── otel_types.rs           # OtelMetricsConfig, OtelProtocol
+│   ├── http_server/
+│   │   ├── mod.rs                  # HttpServer, HttpServerConfig
+│   │   └── server.rs               # axum router, /health/live, /health/ready
+│   ├── transport/
+│   │   ├── mod.rs                  # Transport trait, re-exports
+│   │   ├── traits.rs               # Transport/Message/CommitToken traits
+│   │   ├── types.rs                # PayloadFormat, SendResult, etc.
+│   │   ├── payload.rs              # Payload serialisation utilities
+│   │   ├── detect.rs               # Format auto-detection
+│   │   ├── kafka/                  # Kafka transport backend
+│   │   ├── memory/                 # In-memory transport (testing/dev)
+│   │   ├── grpc/                   # gRPC transport (DFE native proto)
+│   │   └── vector_compat/          # Vector wire-protocol compatibility
+│   ├── spool/                      # Disk-backed async FIFO queue (yaque)
+│   ├── tiered_sink/                # Resilient delivery with disk spillover
+│   ├── secrets/                    # Secrets management (OpenBao, AWS)
+│   ├── directory_config/           # YAML directory-backed config store
+│   ├── scaling/                    # Back-pressure / scaling primitives
+│   ├── cli/                        # CommonArgs, StandardCommand, DfeApp trait
+│   ├── top/                        # ratatui TUI dashboard, Prometheus scraper
+│   ├── io/                         # File rotation, NDJSON writer
+│   ├── output/                     # File output sink
+│   ├── dlq/                        # Dead-letter queue (file + Kafka backends)
+│   ├── expression/                 # CEL expression evaluation
+│   ├── deployment/                 # Deployment contract validation
+│   └── version_check/              # Startup version check against releases API
 ├── tests/
-│   ├── common/             # Shared test fixtures and utilities
-│   ├── parity/             # Cross-implementation tests (vs Go/Python)
-│   ├── integration/        # Docker/K8s/external service tests
-│   └── e2e/                # Full pipeline tests
-└── benches/                # Criterion benchmarks
+│   └── kafka_integration.rs        # Kafka integration tests (real broker)
+└── benches/                        # Criterion benchmarks
 ```
 
 ---
@@ -141,7 +173,7 @@ impl RuntimePaths {
 ### 3. Configuration (`config` module)
 
 ```rust
-/// Configuration manager with 7-layer cascade
+/// Configuration manager with 8-layer cascade
 pub struct Config {
     inner: Figment,
 }
@@ -183,25 +215,28 @@ pub fn setup(opts: ConfigOptions) -> Result<(), ConfigError> { ... }
 pub fn get() -> &'static Config { ... }
 ```
 
-**7-Layer Cascade (highest priority first):**
+**8-Layer Cascade (highest priority first):**
 
 ```rust
 Figment::new()
-    // 7. Hard-coded defaults (lowest)
+    // 8. Hard-coded defaults (lowest)
     .merge(Serialized::defaults(defaults))
-    // 6. defaults.yaml
+    // 7. defaults.yaml
     .merge(Yaml::file("defaults.yaml"))
-    // 5. settings.yaml
+    // 6. settings.yaml
     .merge(Yaml::file("settings.yaml"))
-    // 4. settings.{env}.yaml
+    // 5. settings.{env}.yaml
     .merge(Yaml::file(format!("settings.{}.yaml", app_env)))
-    // 3. .env file
-    .merge(Env::prefixed("").only(&dotenv_keys))
-    // 2. Environment variables
-    .merge(Env::prefixed(&env_prefix).split("_"))
+    // 4. PostgreSQL (optional, feature-gated)
+    // 3. .env file (loaded into env by dotenvy before figment build)
+    // 2. Environment variables (double-underscore nesting)
+    .merge(Env::prefixed(&env_prefix).split("__"))
     // 1. CLI args (highest)
-    .merge(Serialized::defaults(cli_args))
+    .merge(Serialized::globals(cli_args))
 ```
+
+See [CONFIG-CASCADE.md](CONFIG-CASCADE.md) for full details including file
+discovery paths, merge semantics, and the PostgreSQL layer.
 
 ### 4. Logger (`logger` module)
 
@@ -354,31 +389,52 @@ pub fn size_buckets() -> Vec<f64> {
 **Standalone Server Endpoints:**
 
 - `GET /metrics` - Prometheus metrics
-- `GET /healthz` - Liveness probe (always 200)
-- `GET /readyz` - Readiness probe (200 if healthy)
+- `GET /health/live` - Liveness probe (always 200)
+- `GET /health/ready` - Readiness probe (200 if healthy)
 
 ---
 
 ## Feature Flags
 
-```toml
-[features]
-default = ["config", "logger", "metrics", "env"]
+| Feature | Enables |
+|---------|---------|
+| `env` | Environment detection (`Environment::detect()`) |
+| `runtime` | Runtime path resolution (XDG/container-aware) |
+| `config` | 8-layer config cascade (figment) |
+| `config-reload` | `SharedConfig<T>` + `ConfigReloader` hot-reload |
+| `config-postgres` | PostgreSQL config layer |
+| `logger` | Structured logging with JSON/text + masking |
+| `metrics` | Prometheus metrics + process/container metrics |
+| `otel-metrics` | OpenTelemetry metrics export (OTLP) |
+| `http-server` | axum HTTP server with `/health/live`, `/health/ready` |
+| `transport` | Transport trait + payload utilities |
+| `transport-memory` | In-memory transport backend |
+| `transport-kafka` | Kafka transport backend (rdkafka) |
+| `transport-grpc` | gRPC transport (DFE native proto, tonic/prost) |
+| `transport-grpc-vector-compat` | Vector wire-protocol compatibility layer |
+| `transport-all` | All transport backends |
+| `spool` | Disk-backed async FIFO queue (yaque) |
+| `tiered-sink` | Resilient sink with circuit breaker + disk spillover |
+| `secrets` | Secrets management core (file provider + cache) |
+| `secrets-vault` | OpenBao/Vault provider (vaultrs) |
+| `secrets-aws` | AWS Secrets Manager provider |
+| `directory-config` | YAML directory-backed config store |
+| `directory-config-git` | git2 integration for directory-config |
+| `scaling` | Back-pressure / scaling pressure primitives |
+| `cli` | `CommonArgs`, `StandardCommand`, `DfeApp` trait (clap) |
+| `top` | ratatui TUI metrics dashboard |
+| `io` | File rotation, NDJSON writer |
+| `output-file` | File output sink |
+| `dlq` | Dead-letter queue (file backend) |
+| `dlq-kafka` | DLQ Kafka backend |
+| `expression` | CEL expression evaluation |
+| `deployment` | Deployment contract validation |
+| `version-check` | Startup version check against releases API |
+| `http` | HTTP client with retry (backlog — P2) |
 
-# Core features
-config = ["figment", "dotenvy", "serde_yaml"]
-logger = ["tracing", "tracing-subscriber"]
-metrics = ["metrics", "metrics-exporter-prometheus", "sysinfo"]
-env = []
+**Default features:** `config`, `logger`, `metrics`, `env`, `runtime`
 
-# Extended features (P2)
-http = ["reqwest", "reqwest-middleware", "reqwest-retry"]
-database = []
-cache = ["cached"]
-
-# Optional integrations
-tokio = ["tokio/full"]  # For metrics server
-```
+**Full features:** `cargo build --features full`
 
 ---
 
@@ -589,6 +645,3 @@ pub fn build_database_url(db_type: DatabaseType) -> Result<String, DatabaseError
 }
 ```
 
----
-
-**Last Updated:** 2025-12-24

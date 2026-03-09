@@ -35,7 +35,7 @@ Modular library with feature-gated components. Each module can be enabled/disabl
 7. **directory-config** - YAML directory-backed config store with optional git2 integration
 8. **spool** - Disk-backed async FIFO queue (yaque)
 9. **tiered-sink** - Resilient message delivery with disk spillover
-10. **transport** - Kafka/Zenoh/Memory transport abstraction
+10. **transport** - Kafka/gRPC/Memory transport abstraction (Zenoh removed v1.8.0)
 11. **http-server** - Axum-based HTTP server with health endpoints
 12. **secrets** - Secrets management (OpenBao/Vault, AWS Secrets Manager)
 
