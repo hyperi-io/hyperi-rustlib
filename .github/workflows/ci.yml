@@ -7,7 +7,7 @@
 
 name: CI
 
-on:
+"on":
   push:
     branches: ["**"]
     paths-ignore:
