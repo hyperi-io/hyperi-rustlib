@@ -25,9 +25,9 @@
 
 use std::collections::HashMap;
 
+use super::TopError;
 use super::config::{TopConfig, TopOutputMode};
 use super::metrics::{self, MetricSample, MetricType};
-use super::TopError;
 
 /// Run a single scrape and print results to stdout.
 ///

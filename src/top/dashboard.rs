@@ -20,9 +20,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState};
 use ratatui::{DefaultTerminal, Frame};
 
+use super::TopError;
 use super::config::TopConfig;
 use super::metrics::{self, MetricSample, MetricType, ScrapeResult};
-use super::TopError;
 
 /// Column definitions for the metrics table.
 const COLUMNS: &[(&str, usize)] = &[("Metric", 0), ("Type", 1), ("Value", 2), ("Labels", 3)];
@@ -143,11 +143,7 @@ impl DashboardApp {
                 3 => a.labels.cmp(&b.labels),
                 _ => std::cmp::Ordering::Equal,
             };
-            if asc {
-                cmp
-            } else {
-                cmp.reverse()
-            }
+            if asc { cmp } else { cmp.reverse() }
         });
     }
 
@@ -289,11 +285,7 @@ fn render_table(frame: &mut Frame, app: &DashboardApp, area: ratatui::layout::Re
         .enumerate()
         .map(|(i, (name, _))| {
             let indicator = if i == app.sort_column {
-                if app.sort_ascending {
-                    " ▲"
-                } else {
-                    " ▼"
-                }
+                if app.sort_ascending { " ▲" } else { " ▼" }
             } else {
                 ""
             };

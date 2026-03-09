@@ -32,7 +32,7 @@
 
 use super::error::{TransportError, TransportResult};
 use super::types::PayloadFormat;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 /// Parsed payload value.
 #[derive(Debug, Clone)]

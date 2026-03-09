@@ -91,8 +91,8 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use figment::providers::{Env, Format, Serialized, Yaml};
 use figment::Figment;
+use figment::providers::{Env, Format, Serialized, Yaml};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 

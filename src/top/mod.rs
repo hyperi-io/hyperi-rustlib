@@ -43,7 +43,7 @@ mod oneshot;
 
 pub use config::{TopConfig, TopOutputMode};
 pub use dashboard::run_dashboard;
-pub use metrics::{fetch_metrics_http, parse_prometheus, MetricSample, MetricType, ScrapeResult};
+pub use metrics::{MetricSample, MetricType, ScrapeResult, fetch_metrics_http, parse_prometheus};
 pub use oneshot::run_oneshot;
 
 /// Errors from the TUI dashboard.

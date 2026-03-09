@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use tokio::sync::{broadcast, oneshot};
 
-use crate::directory_config::store::{load_all_tables, TableCache, TimestampCache};
+use crate::directory_config::store::{TableCache, TimestampCache, load_all_tables};
 use crate::directory_config::types::{ChangeEvent, ChangeOperation};
 
 /// Background polling loop that detects file changes and refreshes the cache.

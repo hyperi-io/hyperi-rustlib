@@ -17,8 +17,8 @@ use std::time::Duration;
 
 use opentelemetry_otlp::WithExportConfig;
 
-use super::otel_types::{OtelMetricsConfig, OtelProtocol};
 use super::MetricsError;
+use super::otel_types::{OtelMetricsConfig, OtelProtocol};
 
 /// Resolved OTLP configuration after applying env var overrides.
 struct ResolvedOtelConfig {

@@ -9,10 +9,10 @@
 //! HTTP server implementation using axum.
 
 use crate::http_server::{HttpServerConfig, HttpServerError, Result};
-use axum::{http::StatusCode, response::IntoResponse, routing::get, Router};
+use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio::sync::watch;

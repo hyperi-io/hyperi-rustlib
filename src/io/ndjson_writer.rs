@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use file_rotate::suffix::AppendTimestamp;
 use file_rotate::suffix::FileLimit;
-use file_rotate::{compression::Compression, ContentLimit, FileRotate};
+use file_rotate::{ContentLimit, FileRotate, compression::Compression};
 use parking_lot::Mutex;
 use tracing::debug;
 

@@ -59,13 +59,12 @@ mod token;
 pub use admin::{KafkaAdmin, TopicInfo};
 #[allow(deprecated)]
 pub use config::{
-    merge_with_overrides, KafkaConfig, KafkaProfile, DEVTEST_PROFILE,
-    HIGH_THROUGHPUT_CONSUMER_DEFAULTS, LOW_LATENCY_CONSUMER_DEFAULTS, PRODUCER_DEFAULTS,
-    PRODUCER_DEVTEST, PRODUCER_EXACTLY_ONCE, PRODUCER_HIGH_THROUGHPUT, PRODUCER_LOW_LATENCY,
-    PRODUCTION_PROFILE,
+    DEVTEST_PROFILE, HIGH_THROUGHPUT_CONSUMER_DEFAULTS, KafkaConfig, KafkaProfile,
+    LOW_LATENCY_CONSUMER_DEFAULTS, PRODUCER_DEFAULTS, PRODUCER_DEVTEST, PRODUCER_EXACTLY_ONCE,
+    PRODUCER_HIGH_THROUGHPUT, PRODUCER_LOW_LATENCY, PRODUCTION_PROFILE, merge_with_overrides,
 };
 pub use metrics::{
-    healthy_broker_count, total_consumer_lag, BrokerMetrics, KafkaMetrics, StatsContext,
+    BrokerMetrics, KafkaMetrics, StatsContext, healthy_broker_count, total_consumer_lag,
 };
 pub use producer::{KafkaProducer, ProducerMetrics, ProducerProfile};
 pub use token::KafkaToken;
@@ -80,8 +79,8 @@ use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
 use rdkafka::util::Timeout;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// High-throughput tuning defaults.

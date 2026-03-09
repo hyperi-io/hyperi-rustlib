@@ -8,9 +8,8 @@
 
 //! Secret provider trait and implementations.
 
-use std::path::Path;
 use std::future::Future;
-
+use std::path::Path;
 
 use super::error::{SecretsError, SecretsResult};
 use super::types::{SecretMetadata, SecretValue};

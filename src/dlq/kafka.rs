@@ -22,8 +22,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use async_trait::async_trait;
 use tracing::{debug, error, info};
 
-use crate::transport::kafka::{KafkaProducer, ProducerProfile};
 use crate::transport::KafkaConfig;
+use crate::transport::kafka::{KafkaProducer, ProducerProfile};
 
 use super::backend::DlqBackend;
 use super::config::{DlqRouting, KafkaDlqConfig};

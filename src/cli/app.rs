@@ -37,7 +37,7 @@ use serde::de::DeserializeOwned;
 
 use super::error::CliError;
 use super::version::VersionInfo;
-use super::{output, CommonArgs, StandardCommand};
+use super::{CommonArgs, StandardCommand, output};
 
 /// Trait for DFE service applications.
 ///
