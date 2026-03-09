@@ -291,11 +291,7 @@ mod tests {
 
     #[test]
     fn test_is_no_color() {
-        std::env::remove_var("NO_COLOR");
-        assert!(!is_no_color());
-
-        std::env::set_var("NO_COLOR", "1");
-        assert!(is_no_color());
-        std::env::remove_var("NO_COLOR");
+        temp_env::with_var("NO_COLOR", None::<&str>, || assert!(!is_no_color()));
+        temp_env::with_var("NO_COLOR", Some("1"), || assert!(is_no_color()));
     }
 }

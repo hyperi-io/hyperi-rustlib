@@ -10,7 +10,6 @@
 //!
 //! Uses the AWS SDK with automatic credential chain detection.
 
-use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_sdk_secretsmanager::Client;
 use serde::{Deserialize, Serialize};
@@ -199,7 +198,6 @@ impl AwsProvider {
     }
 }
 
-#[async_trait]
 impl SecretProvider for AwsProvider {
     async fn get(&self, path: &str, key: Option<&str>) -> SecretsResult<SecretValue> {
         self.get(path, key).await

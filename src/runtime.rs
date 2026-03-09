@@ -176,10 +176,9 @@ mod tests {
 
     #[test]
     fn test_custom_container_base_path() {
-        std::env::set_var("CONTAINER_BASE_PATH", "/custom");
-        let paths = RuntimePaths::discover_for(Environment::Docker);
-        std::env::remove_var("CONTAINER_BASE_PATH");
-
-        assert_eq!(paths.config_dir, PathBuf::from("/custom/config"));
+        temp_env::with_var("CONTAINER_BASE_PATH", Some("/custom"), || {
+            let paths = RuntimePaths::discover_for(Environment::Docker);
+            assert_eq!(paths.config_dir, PathBuf::from("/custom/config"));
+        });
     }
 }

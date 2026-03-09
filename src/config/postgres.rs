@@ -87,8 +87,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use sqlx::postgres::{PgPool, PgPoolOptions};
 use sqlx::Row;
+use sqlx::postgres::{PgPool, PgPoolOptions};
 use thiserror::Error;
 
 #[cfg(feature = "tracing")]
@@ -629,46 +629,40 @@ mod tests {
 
     #[test]
     fn test_postgres_source_from_env() {
-        std::env::set_var("TESTAPP_CONFIG_POSTGRES_ENABLED", "true");
-        std::env::set_var(
-            "TESTAPP_CONFIG_POSTGRES_URL",
-            "postgres://user:pass@localhost/db",
+        temp_env::with_vars(
+            [
+                ("TESTAPP_CONFIG_POSTGRES_ENABLED", Some("true")),
+                (
+                    "TESTAPP_CONFIG_POSTGRES_URL",
+                    Some("postgres://user:pass@localhost/db"),
+                ),
+                ("TESTAPP_CONFIG_POSTGRES_NAMESPACE", Some("my-app")),
+                ("TESTAPP_CONFIG_POSTGRES_CONNECT_TIMEOUT", Some("10")),
+                ("TESTAPP_CONFIG_POSTGRES_RETRY_ATTEMPTS", Some("5")),
+                ("TESTAPP_CONFIG_POSTGRES_OPTIONAL", Some("false")),
+                ("TESTAPP_CONFIG_FALLBACK_ENABLED", Some("true")),
+                ("TESTAPP_CONFIG_FALLBACK_FILE", Some("/tmp/fallback.json")),
+                ("TESTAPP_CONFIG_FALLBACK_MODE", Some("merge")),
+            ],
+            || {
+                let source = PostgresConfigSource::from_env("TESTAPP");
+                assert!(source.enabled);
+                assert_eq!(
+                    source.url,
+                    Some("postgres://user:pass@localhost/db".to_string())
+                );
+                assert_eq!(source.namespace, "my-app");
+                assert_eq!(source.connect_timeout_secs, 10);
+                assert_eq!(source.retry_attempts, 5);
+                assert!(!source.optional);
+                assert!(source.fallback_enabled);
+                assert_eq!(
+                    source.fallback_file,
+                    Some(PathBuf::from("/tmp/fallback.json"))
+                );
+                assert_eq!(source.fallback_mode, FallbackMode::Merge);
+            },
         );
-        std::env::set_var("TESTAPP_CONFIG_POSTGRES_NAMESPACE", "my-app");
-        std::env::set_var("TESTAPP_CONFIG_POSTGRES_CONNECT_TIMEOUT", "10");
-        std::env::set_var("TESTAPP_CONFIG_POSTGRES_RETRY_ATTEMPTS", "5");
-        std::env::set_var("TESTAPP_CONFIG_POSTGRES_OPTIONAL", "false");
-        std::env::set_var("TESTAPP_CONFIG_FALLBACK_ENABLED", "true");
-        std::env::set_var("TESTAPP_CONFIG_FALLBACK_FILE", "/tmp/fallback.json");
-        std::env::set_var("TESTAPP_CONFIG_FALLBACK_MODE", "merge");
-
-        let source = PostgresConfigSource::from_env("TESTAPP");
-
-        assert!(source.enabled);
-        assert_eq!(
-            source.url,
-            Some("postgres://user:pass@localhost/db".to_string())
-        );
-        assert_eq!(source.namespace, "my-app");
-        assert_eq!(source.connect_timeout_secs, 10);
-        assert_eq!(source.retry_attempts, 5);
-        assert!(!source.optional);
-        assert!(source.fallback_enabled);
-        assert_eq!(
-            source.fallback_file,
-            Some(PathBuf::from("/tmp/fallback.json"))
-        );
-        assert_eq!(source.fallback_mode, FallbackMode::Merge);
-
-        std::env::remove_var("TESTAPP_CONFIG_POSTGRES_ENABLED");
-        std::env::remove_var("TESTAPP_CONFIG_POSTGRES_URL");
-        std::env::remove_var("TESTAPP_CONFIG_POSTGRES_NAMESPACE");
-        std::env::remove_var("TESTAPP_CONFIG_POSTGRES_CONNECT_TIMEOUT");
-        std::env::remove_var("TESTAPP_CONFIG_POSTGRES_RETRY_ATTEMPTS");
-        std::env::remove_var("TESTAPP_CONFIG_POSTGRES_OPTIONAL");
-        std::env::remove_var("TESTAPP_CONFIG_FALLBACK_ENABLED");
-        std::env::remove_var("TESTAPP_CONFIG_FALLBACK_FILE");
-        std::env::remove_var("TESTAPP_CONFIG_FALLBACK_MODE");
     }
 
     #[test]

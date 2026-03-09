@@ -41,7 +41,6 @@ pub use token::GrpcToken;
 use super::error::{TransportError, TransportResult};
 use super::traits::Transport;
 use super::types::{Message, PayloadFormat, SendResult};
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -178,7 +177,6 @@ impl GrpcTransport {
     }
 }
 
-#[async_trait]
 impl Transport for GrpcTransport {
     type Token = GrpcToken;
 

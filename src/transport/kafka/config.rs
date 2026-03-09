@@ -54,25 +54,17 @@ use std::str::FromStr;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum KafkaProfile {
-    /// Production profile: High-throughput, PB/day workloads.
+    /// Production profile: lean baseline for all DFE services.
     ///
-    /// Optimizations:
-    /// - Large pre-fetch queues (100K messages, 1GB per partition)
-    /// - Cooperative sticky rebalancing (minimal disruption)
-    /// - Disabled CRC checks (trust network/TLS)
-    /// - Optimized fetch parameters (1MB min, 10MB max per partition)
-    /// - 1MB socket buffers
+    /// Only sets values that differ from librdkafka defaults.
+    /// Services add overrides via `librdkafka_overrides`.
     #[default]
     Production,
 
-    /// Development/Test profile: Relaxed settings for local development.
+    /// Development/test profile: fast iteration, low memory.
     ///
-    /// Features:
-    /// - Smaller queues (lower memory usage)
-    /// - SSL certificate verification disabled by default
-    /// - Faster reconnection for quick iteration
-    /// - Debug-friendly log settings
-    /// - Cooperative rebalancing still enabled
+    /// Cooperative rebalancing, fast reconnects, debug logging.
+    /// SSL certificate verification disabled by default.
     DevTest,
 }
 
@@ -100,224 +92,211 @@ impl std::fmt::Display for KafkaProfile {
 }
 
 // ============================================================================
+// Merge Helper
+// ============================================================================
+
+/// Merge profile defaults with user overrides.
+///
+/// Starts with `profile` defaults, then applies `overrides` on top.
+/// User overrides always win. Returns the final merged map.
+///
+/// # Example
+///
+/// ```
+/// use std::collections::HashMap;
+/// use hyperi_rustlib::transport::kafka::config::{merge_with_overrides, PRODUCTION_PROFILE};
+///
+/// let mut overrides = HashMap::new();
+/// overrides.insert("fetch.min.bytes".to_string(), "2097152".to_string());
+///
+/// let merged = merge_with_overrides(PRODUCTION_PROFILE, &overrides);
+/// assert_eq!(merged.get("fetch.min.bytes").unwrap(), "2097152");
+/// assert_eq!(merged.get("partition.assignment.strategy").unwrap(), "cooperative-sticky");
+/// ```
+#[must_use]
+pub fn merge_with_overrides(
+    profile: &[(&str, &str)],
+    overrides: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut config = HashMap::with_capacity(profile.len() + overrides.len());
+
+    for (key, value) in profile {
+        config.insert((*key).to_string(), (*value).to_string());
+    }
+    for (key, value) in overrides {
+        config.insert(key.clone(), value.clone());
+    }
+
+    config
+}
+
+// ============================================================================
 // Profile Defaults
 // ============================================================================
 
-/// Production profile librdkafka settings.
+/// Production consumer profile — lean baseline.
 ///
-/// Optimized for PB/day batch workloads with maximum throughput.
+/// Only settings that differ from librdkafka defaults with clear justification.
+/// Services override on an exception basis via `librdkafka_overrides`.
+///
+/// | Setting | Value | librdkafka default | Why |
+/// |---|---|---|---|
+/// | `partition.assignment.strategy` | `cooperative-sticky` | `range,roundrobin` | KIP-429: avoids stop-the-world rebalances |
+/// | `fetch.min.bytes` | 1 MiB | 1 byte | Batch fetches for throughput |
+/// | `fetch.wait.max.ms` | 100 ms | 500 ms | Bound latency when fetch.min.bytes not met |
+/// | `queued.min.messages` | 20000 | 100000 | 10-20K batches are most efficient |
+/// | `enable.auto.commit` | false | true | DFE services manage offset commits |
+/// | `statistics.interval.ms` | 1000 ms | 0 (disabled) | Enable Prometheus metrics |
 pub const PRODUCTION_PROFILE: &[(&str, &str)] = &[
-    // --- Pre-fetch queue tuning (large queues for continuous data flow) ---
-    ("queued.min.messages", "100000"), // 100K messages per partition
-    ("queued.max.messages.kbytes", "1048576"), // 1GB max queue size
-    // --- Fetch tuning (batch larger requests, fewer round-trips) ---
-    ("fetch.wait.max.ms", "100"),   // Max wait for fetch response
-    ("fetch.min.bytes", "1048576"), // 1MB minimum fetch
-    ("fetch.message.max.bytes", "10485760"), // 10MB max message size
-    ("max.partition.fetch.bytes", "10485760"), // 10MB per partition fetch
-    ("receive.message.max.bytes", "104857600"), // 100MB max response size
-    // --- Socket tuning ---
-    ("socket.receive.buffer.bytes", "1048576"), // 1MB socket buffer
-    ("socket.nagle.disable", "true"),           // Disable Nagle for lower latency
-    ("socket.keepalive.enable", "true"),        // Keep connections alive
-    // --- Rebalancing optimization ---
-    ("partition.assignment.strategy", "cooperative-sticky"), // Incremental rebalancing
-    // --- Disable unnecessary overhead ---
-    ("check.crcs", "false"),           // Skip CRC verification (trust TLS)
-    ("enable.partition.eof", "false"), // Don't emit EOF events
-    ("fetch.error.backoff.ms", "100"), // Fast retry on fetch errors
-    // --- Connection tuning ---
-    ("reconnect.backoff.ms", "50"),        // Fast initial reconnect
-    ("reconnect.backoff.max.ms", "1000"),  // Cap reconnect backoff at 1s
-    ("connections.max.idle.ms", "540000"), // 9 minutes idle timeout
-    ("metadata.max.age.ms", "180000"),     // Refresh metadata every 3 minutes
+    ("partition.assignment.strategy", "cooperative-sticky"),
+    ("fetch.min.bytes", "1048576"),
+    ("fetch.wait.max.ms", "100"),
+    ("queued.min.messages", "20000"),
+    ("enable.auto.commit", "false"),
+    ("statistics.interval.ms", "1000"),
 ];
 
-/// Development/Test profile librdkafka settings.
+/// Development/test consumer profile — minimal latency, low memory.
 ///
-/// Relaxed settings for local development and testing environments.
+/// Inherits the same "only non-defaults" philosophy. Optimised for fast
+/// iteration on developer machines: no fetch batching, smaller queues,
+/// fast reconnects, debug logging.
+///
+/// | Setting | Value | librdkafka default | Why |
+/// |---|---|---|---|
+/// | `partition.assignment.strategy` | `cooperative-sticky` | `range,roundrobin` | Consistent across all environments |
+/// | `queued.min.messages` | 1000 | 100000 | Lower memory for dev machines |
+/// | `enable.auto.commit` | false | true | DFE services manage commits |
+/// | `reconnect.backoff.ms` | 10 ms | 100 ms | Fast reconnect for quick iteration |
+/// | `reconnect.backoff.max.ms` | 100 ms | 10000 ms | Cap quickly |
+/// | `log.connection.close` | true | false | Debug-friendly |
+/// | `statistics.interval.ms` | 1000 ms | 0 (disabled) | Enable metrics even in dev |
 pub const DEVTEST_PROFILE: &[(&str, &str)] = &[
-    // --- Smaller queues (lower memory for dev machines) ---
-    ("queued.min.messages", "1000"), // 1K messages per partition
-    ("queued.max.messages.kbytes", "65536"), // 64MB max queue size
-    // --- Standard fetch (no aggressive batching) ---
-    ("fetch.wait.max.ms", "500"),             // Standard wait
-    ("fetch.min.bytes", "1"),                 // Return immediately with any data
-    ("fetch.message.max.bytes", "1048576"),   // 1MB max message
-    ("max.partition.fetch.bytes", "1048576"), // 1MB per partition
-    // --- Socket tuning ---
-    ("socket.nagle.disable", "true"), // Still disable Nagle
-    // --- Rebalancing (cooperative for all environments) ---
     ("partition.assignment.strategy", "cooperative-sticky"),
-    // --- Keep CRC checks in dev for safety ---
-    ("check.crcs", "true"),            // Verify message integrity
-    ("enable.partition.eof", "false"), // Don't emit EOF events
-    // --- Fast reconnection for quick iteration ---
-    ("reconnect.backoff.ms", "10"),      // Very fast reconnect
-    ("reconnect.backoff.max.ms", "100"), // Cap quickly
-    ("fetch.error.backoff.ms", "50"),    // Fast retry
-    // --- Debug-friendly ---
-    ("log.connection.close", "true"), // Log connection closes
+    ("queued.min.messages", "1000"),
+    ("enable.auto.commit", "false"),
+    ("reconnect.backoff.ms", "10"),
+    ("reconnect.backoff.max.ms", "100"),
+    ("log.connection.close", "true"),
+    ("statistics.interval.ms", "1000"),
 ];
 
 // ============================================================================
 // Producer Profile Defaults
 // ============================================================================
 
-/// High-throughput producer settings for PB/day workloads.
+/// High-throughput producer — lean baseline.
 ///
-/// Optimized for maximum throughput with at-least-once delivery:
-/// - Large batches (256KB) with 100ms linger for batch accumulation
-/// - 1GB producer queue (1M messages)
-/// - LZ4 compression (best throughput/ratio tradeoff)
-/// - High in-flight requests for parallel sends
-/// - Sticky partitioner for better batching
+/// Only settings that differ from librdkafka defaults.
+/// Services override via `librdkafka_overrides`.
+///
+/// | Setting | Value | librdkafka default | Why |
+/// |---|---|---|---|
+/// | `linger.ms` | 100 ms | 5 ms | Accumulate larger batches |
+/// | `compression.type` | zstd | none | Best ratio with good CPU |
+/// | `socket.nagle.disable` | true | false | Kafka batches at app level |
+/// | `statistics.interval.ms` | 1000 ms | 0 (disabled) | Enable Prometheus metrics |
 pub const PRODUCER_HIGH_THROUGHPUT: &[(&str, &str)] = &[
-    // --- Delivery guarantees (at-least-once) ---
-    ("acks", "all"),                 // Wait for all replicas
-    ("enable.idempotence", "false"), // Disabled for max throughput
-    // --- Batching (maximize batch size) ---
-    ("linger.ms", "100"),            // 100ms to accumulate batches
-    ("batch.size", "262144"),        // 256KB batch size
-    ("batch.num.messages", "10000"), // Max 10K messages per batch
-    // --- Queue sizing (1GB buffer) ---
-    ("queue.buffering.max.messages", "1000000"), // 1M messages
-    ("queue.buffering.max.kbytes", "1048576"),   // 1GB max queue
-    ("queue.buffering.max.ms", "100"),           // Alias for linger.ms
-    // --- Compression (LZ4 = best throughput) ---
-    ("compression.type", "lz4"), // Fast compression
-    ("compression.level", "1"),  // Fastest compression level
-    // --- Parallelism (high in-flight for throughput) ---
-    ("max.in.flight.requests.per.connection", "10"), // Parallel sends (ordering not guaranteed)
-    // --- Timeouts ---
-    ("delivery.timeout.ms", "120000"), // 2 minutes max delivery
-    ("request.timeout.ms", "30000"),   // 30s per request
-    ("message.timeout.ms", "120000"),  // Match delivery timeout
-    // --- Retries ---
-    ("retries", "5"),                 // Retry transient failures
-    ("retry.backoff.ms", "100"),      // 100ms backoff
-    ("retry.backoff.max.ms", "1000"), // Cap at 1s
-    // --- Socket tuning ---
-    ("socket.send.buffer.bytes", "1048576"), // 1MB send buffer
-    ("socket.nagle.disable", "true"),        // Disable Nagle
-    ("socket.keepalive.enable", "true"),     // Keep connections alive
-    // --- Partitioner ---
-    ("partitioner", "consistent_random"), // Sticky-like for no-key messages
+    ("linger.ms", "100"),
+    ("compression.type", "zstd"),
+    ("socket.nagle.disable", "true"),
+    ("statistics.interval.ms", "1000"),
 ];
 
-/// Producer settings optimized for exactly-once semantics.
+/// Exactly-once producer — idempotence + ordering.
 ///
-/// Use when you need strong ordering guarantees and no duplicates:
-/// - Idempotence enabled (exactly-once within partition)
-/// - Limited in-flight requests (ordering preserved)
-/// - Smaller batches for lower latency
+/// Only settings that differ from librdkafka defaults.
+/// `acks=all` and `max.in.flight=5` are already defaults but explicit
+/// here because they are *invariants* for exactly-once correctness.
+///
+/// | Setting | Value | librdkafka default | Why |
+/// |---|---|---|---|
+/// | `enable.idempotence` | true | false | Exactly-once within partition |
+/// | `acks` | all | all (-1) | Invariant for EOS (explicit) |
+/// | `max.in.flight.requests.per.connection` | 5 | 1000000 | Max for idempotent producer |
+/// | `linger.ms` | 20 ms | 5 ms | Moderate batching |
+/// | `compression.type` | zstd | none | Best ratio |
+/// | `socket.nagle.disable` | true | false | Kafka batches at app level |
+/// | `statistics.interval.ms` | 1000 ms | 0 | Enable metrics |
 pub const PRODUCER_EXACTLY_ONCE: &[(&str, &str)] = &[
-    // --- Delivery guarantees (exactly-once) ---
-    ("acks", "all"),                // Wait for all replicas
-    ("enable.idempotence", "true"), // Exactly-once semantics
-    // --- Ordering (limited in-flight) ---
-    ("max.in.flight.requests.per.connection", "5"), // Max for idempotence
-    // --- Batching (moderate) ---
-    ("linger.ms", "20"),     // Smaller linger for latency
-    ("batch.size", "65536"), // 64KB batch
-    // --- Queue sizing ---
-    ("queue.buffering.max.messages", "100000"), // 100K messages
-    ("queue.buffering.max.kbytes", "262144"),   // 256MB max queue
-    // --- Compression ---
-    ("compression.type", "lz4"),
-    // --- Timeouts ---
-    ("delivery.timeout.ms", "120000"),
-    ("request.timeout.ms", "30000"),
-    // --- Retries (high for idempotence) ---
-    ("retries", "2147483647"), // Infinite retries (limited by timeout)
-    ("retry.backoff.ms", "100"),
-    // --- Socket tuning ---
-    ("socket.send.buffer.bytes", "262144"), // 256KB send buffer
-    ("socket.nagle.disable", "true"),
-];
-
-/// Low-latency producer settings for real-time use cases.
-///
-/// Optimized for minimal end-to-end latency:
-/// - No batching (immediate send)
-/// - Small buffers
-/// - Fast acknowledgement (acks=1)
-pub const PRODUCER_LOW_LATENCY: &[(&str, &str)] = &[
-    // --- Delivery guarantees (faster acks) ---
-    ("acks", "1"), // Leader ack only for speed
-    ("enable.idempotence", "false"),
-    // --- No batching ---
-    ("linger.ms", "0"),      // Send immediately
-    ("batch.size", "16384"), // Small batch (16KB)
-    // --- Queue sizing (smaller) ---
-    ("queue.buffering.max.messages", "10000"),
-    ("queue.buffering.max.kbytes", "65536"), // 64MB
-    // --- Compression (optional, can disable) ---
-    ("compression.type", "lz4"), // Still use LZ4 (fast)
-    // --- Parallelism ---
-    ("max.in.flight.requests.per.connection", "5"),
-    // --- Timeouts (shorter) ---
-    ("delivery.timeout.ms", "30000"), // 30s max
-    ("request.timeout.ms", "10000"),  // 10s per request
-    // --- Retries ---
-    ("retries", "3"),
-    ("retry.backoff.ms", "50"),
-    // --- Socket ---
-    ("socket.nagle.disable", "true"),
-];
-
-/// DevTest producer settings.
-///
-/// Relaxed settings for local development.
-pub const PRODUCER_DEVTEST: &[(&str, &str)] = &[
-    ("acks", "1"), // Faster for dev
-    ("enable.idempotence", "false"),
-    ("linger.ms", "10"),
-    ("batch.size", "32768"), // 32KB
-    ("queue.buffering.max.messages", "10000"),
-    ("queue.buffering.max.kbytes", "65536"),
-    ("compression.type", "none"), // No compression in dev
-    ("max.in.flight.requests.per.connection", "5"),
-    ("delivery.timeout.ms", "30000"),
-    ("request.timeout.ms", "10000"),
-    ("retries", "3"),
-    ("retry.backoff.ms", "50"),
-    ("socket.nagle.disable", "true"),
-];
-
-/// Legacy producer defaults (backward compatibility).
-pub const PRODUCER_DEFAULTS: &[(&str, &str)] = &[
+    ("enable.idempotence", "true"),
     ("acks", "all"),
-    ("retries", "5"),
-    ("retry.backoff.ms", "100"),
-    ("delivery.timeout.ms", "120000"),
-    ("request.timeout.ms", "30000"),
-    ("linger.ms", "50"),
-    ("compression.type", "lz4"),
-    ("batch.size", "65536"),
-    ("queue.buffering.max.messages", "100000"),
+    ("max.in.flight.requests.per.connection", "5"),
+    ("linger.ms", "20"),
+    ("compression.type", "zstd"),
+    ("socket.nagle.disable", "true"),
+    ("statistics.interval.ms", "1000"),
 ];
+
+/// Low-latency producer — minimal delay, leader-ack only.
+///
+/// Only settings that differ from librdkafka defaults.
+///
+/// | Setting | Value | librdkafka default | Why |
+/// |---|---|---|---|
+/// | `acks` | 1 | all (-1) | Leader ack only for speed |
+/// | `linger.ms` | 0 ms | 5 ms | Send immediately |
+/// | `compression.type` | lz4 | none | LZ4 is fastest codec |
+/// | `socket.nagle.disable` | true | false | No TCP coalescing |
+/// | `statistics.interval.ms` | 1000 ms | 0 | Enable metrics |
+pub const PRODUCER_LOW_LATENCY: &[(&str, &str)] = &[
+    ("acks", "1"),
+    ("linger.ms", "0"),
+    ("compression.type", "lz4"),
+    ("socket.nagle.disable", "true"),
+    ("statistics.interval.ms", "1000"),
+];
+
+/// DevTest producer — fast acks, no compression.
+///
+/// Only settings that differ from librdkafka defaults.
+///
+/// | Setting | Value | librdkafka default | Why |
+/// |---|---|---|---|
+/// | `acks` | 1 | all (-1) | Faster for dev |
+/// | `linger.ms` | 5 ms | 5 ms | Default is fine for dev |
+/// | `compression.type` | none | none | No overhead in dev |
+/// | `socket.nagle.disable` | true | false | No TCP coalescing |
+/// | `statistics.interval.ms` | 1000 ms | 0 | Enable metrics in dev |
+pub const PRODUCER_DEVTEST: &[(&str, &str)] = &[
+    ("acks", "1"),
+    ("socket.nagle.disable", "true"),
+    ("statistics.interval.ms", "1000"),
+];
+
+/// Legacy producer defaults — now aliases `PRODUCER_HIGH_THROUGHPUT`.
+#[deprecated(since = "2.0.0", note = "Use PRODUCER_HIGH_THROUGHPUT instead")]
+pub const PRODUCER_DEFAULTS: &[(&str, &str)] = PRODUCER_HIGH_THROUGHPUT;
 
 // ============================================================================
 // Legacy Constants (for backward compatibility)
 // ============================================================================
 
 /// Alias for `PRODUCTION_PROFILE` (backward compatibility).
+#[deprecated(since = "2.0.0", note = "Use PRODUCTION_PROFILE instead")]
 pub const HIGH_THROUGHPUT_CONSUMER_DEFAULTS: &[(&str, &str)] = PRODUCTION_PROFILE;
 
-/// Low-latency consumer defaults (for real-time workloads).
+/// Low-latency consumer — minimal fetch delay.
 ///
-/// Use this for real-time alerting, trading signals, etc.
+/// Only settings that differ from librdkafka defaults.
+///
+/// | Setting | Value | librdkafka default | Why |
+/// |---|---|---|---|
+/// | `partition.assignment.strategy` | `cooperative-sticky` | `range,roundrobin` | Consistent across envs |
+/// | `fetch.wait.max.ms` | 10 ms | 500 ms | Return quickly |
+/// | `queued.min.messages` | 1000 | 100000 | Smaller pre-fetch queue |
+/// | `enable.auto.commit` | false | true | DFE manages commits |
+/// | `reconnect.backoff.ms` | 10 ms | 100 ms | Fast reconnect |
+/// | `reconnect.backoff.max.ms` | 100 ms | 10000 ms | Cap quickly |
+/// | `statistics.interval.ms` | 1000 ms | 0 | Enable metrics |
 pub const LOW_LATENCY_CONSUMER_DEFAULTS: &[(&str, &str)] = &[
-    ("fetch.wait.max.ms", "10"),             // Return quickly
-    ("fetch.min.bytes", "1"),                // No batching wait
-    ("reconnect.backoff.ms", "10"),          // Very fast reconnect
-    ("reconnect.backoff.max.ms", "100"),     // Cap backoff quickly
-    ("socket.nagle.disable", "true"),        // Disable Nagle
-    ("queued.min.messages", "1000"),         // Smaller queue
-    ("queued.max.messages.kbytes", "65536"), // 64MB max queue
     ("partition.assignment.strategy", "cooperative-sticky"),
-    ("fetch.error.backoff.ms", "10"), // Very fast retry
+    ("fetch.wait.max.ms", "10"),
+    ("queued.min.messages", "1000"),
+    ("enable.auto.commit", "false"),
+    ("reconnect.backoff.ms", "10"),
+    ("reconnect.backoff.max.ms", "100"),
+    ("statistics.interval.ms", "1000"),
 ];
 
 // ============================================================================
@@ -710,9 +689,10 @@ impl KafkaConfig {
 
     /// Apply producer defaults.
     #[must_use]
+    #[deprecated(since = "2.0.0", note = "Use producer profile constants directly")]
     #[allow(deprecated)]
     pub fn with_producer_defaults(mut self) -> Self {
-        for (key, value) in PRODUCER_DEFAULTS {
+        for (key, value) in PRODUCER_HIGH_THROUGHPUT {
             self.extra_config
                 .entry((*key).to_string())
                 .or_insert_with(|| (*value).to_string());
@@ -721,12 +701,11 @@ impl KafkaConfig {
     }
 
     /// Apply high-throughput consumer defaults.
-    ///
-    /// **Deprecated**: Use `KafkaConfig::production()` or `.with_profile(KafkaProfile::Production)` instead.
     #[must_use]
+    #[deprecated(since = "2.0.0", note = "Use KafkaConfig::production() instead")]
     #[allow(deprecated)]
     pub fn with_high_throughput(mut self) -> Self {
-        for (key, value) in HIGH_THROUGHPUT_CONSUMER_DEFAULTS {
+        for (key, value) in PRODUCTION_PROFILE {
             self.extra_config
                 .entry((*key).to_string())
                 .or_insert_with(|| (*value).to_string());
@@ -736,6 +715,7 @@ impl KafkaConfig {
 
     /// Apply low-latency consumer defaults.
     #[must_use]
+    #[deprecated(since = "2.0.0", note = "Use LOW_LATENCY_CONSUMER_DEFAULTS directly")]
     #[allow(deprecated)]
     pub fn with_low_latency(mut self) -> Self {
         for (key, value) in LOW_LATENCY_CONSUMER_DEFAULTS {

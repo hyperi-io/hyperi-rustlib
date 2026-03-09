@@ -57,10 +57,12 @@ mod producer;
 mod token;
 
 pub use admin::{KafkaAdmin, TopicInfo};
+#[allow(deprecated)]
 pub use config::{
-    KafkaConfig, KafkaProfile, DEVTEST_PROFILE, HIGH_THROUGHPUT_CONSUMER_DEFAULTS,
-    LOW_LATENCY_CONSUMER_DEFAULTS, PRODUCER_DEFAULTS, PRODUCER_DEVTEST, PRODUCER_EXACTLY_ONCE,
-    PRODUCER_HIGH_THROUGHPUT, PRODUCER_LOW_LATENCY, PRODUCTION_PROFILE,
+    merge_with_overrides, KafkaConfig, KafkaProfile, DEVTEST_PROFILE,
+    HIGH_THROUGHPUT_CONSUMER_DEFAULTS, LOW_LATENCY_CONSUMER_DEFAULTS, PRODUCER_DEFAULTS,
+    PRODUCER_DEVTEST, PRODUCER_EXACTLY_ONCE, PRODUCER_HIGH_THROUGHPUT, PRODUCER_LOW_LATENCY,
+    PRODUCTION_PROFILE,
 };
 pub use metrics::{
     healthy_broker_count, total_consumer_lag, BrokerMetrics, KafkaMetrics, StatsContext,
@@ -71,7 +73,6 @@ pub use token::KafkaToken;
 use super::error::{TransportError, TransportResult};
 use super::traits::Transport;
 use super::types::{Message, PayloadFormat, SendResult};
-use async_trait::async_trait;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{BaseConsumer, CommitMode, Consumer, DefaultConsumerContext};
 use rdkafka::message::Message as KafkaMessage;
@@ -246,7 +247,6 @@ impl KafkaTransport {
     }
 }
 
-#[async_trait]
 impl Transport for KafkaTransport {
     type Token = KafkaToken;
 

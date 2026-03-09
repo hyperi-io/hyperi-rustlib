@@ -13,7 +13,6 @@
 //! - AppRole authentication
 //! - Kubernetes authentication
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 use vaultrs::client::{Client, VaultClient, VaultClientSettingsBuilder};
@@ -384,7 +383,6 @@ impl OpenBaoProvider {
     }
 }
 
-#[async_trait]
 impl SecretProvider for OpenBaoProvider {
     async fn get(&self, path: &str, key: Option<&str>) -> SecretsResult<SecretValue> {
         let key = key.ok_or_else(|| {

@@ -8,13 +8,16 @@
 
 //! Sink trait for async message delivery.
 
-use async_trait::async_trait;
 use std::error::Error as StdError;
+use std::future::Future;
 
 /// A sink that can receive messages asynchronously.
 ///
 /// Implement this trait for your message backend (Kafka, S3, HTTP, etc.)
 /// to use with `TieredSink`.
+///
+/// Async methods return `impl Future + Send` to ensure compatibility with
+/// `tokio::spawn`.
 ///
 /// # Example
 ///
@@ -25,7 +28,6 @@ use std::error::Error as StdError;
 ///     producer: KafkaProducer,
 /// }
 ///
-/// #[async_trait::async_trait]
 /// impl Sink for MyKafkaSink {
 ///     type Error = KafkaError;
 ///
@@ -39,7 +41,6 @@ use std::error::Error as StdError;
 ///     }
 /// }
 /// ```
-#[async_trait]
 pub trait Sink: Send + Sync + 'static {
     /// The error type returned by this sink.
     type Error: StdError + Send + Sync + 'static;
@@ -52,14 +53,17 @@ pub trait Sink: Send + Sync + 'static {
     /// - `SinkError::Full` - Sink is backpressuring, try again later
     /// - `SinkError::Unavailable` - Sink is down, circuit break
     /// - `SinkError::Fatal(e)` - Unrecoverable error, don't spool
-    async fn try_send(&self, data: &[u8]) -> Result<(), SinkError<Self::Error>>;
+    fn try_send(
+        &self,
+        data: &[u8],
+    ) -> impl Future<Output = Result<(), SinkError<Self::Error>>> + Send;
 
     /// Check if the sink is healthy.
     ///
     /// Used by circuit breaker to probe if sink has recovered.
     /// Default implementation returns Ok (assumes healthy).
-    async fn health_check(&self) -> Result<(), Self::Error> {
-        Ok(())
+    fn health_check(&self) -> impl Future<Output = Result<(), Self::Error>> + Send {
+        async { Ok(()) }
     }
 }
 
@@ -144,7 +148,6 @@ mod tests {
         fail_after: Option<usize>,
     }
 
-    #[async_trait]
     impl Sink for CountingSink {
         type Error = TestError;
 

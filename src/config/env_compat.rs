@@ -544,38 +544,33 @@ mod tests {
     fn test_env_var_standard_name() {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
-        std::env::set_var("TEST_STANDARD_VAR", "standard_value");
-
-        let var = EnvVar::new("TEST_STANDARD_VAR").with_legacy("TEST_LEGACY_VAR");
-        assert_eq!(var.get(), Some("standard_value".to_string()));
-
-        std::env::remove_var("TEST_STANDARD_VAR");
+        temp_env::with_var("TEST_STANDARD_VAR", Some("standard_value"), || {
+            let var = EnvVar::new("TEST_STANDARD_VAR").with_legacy("TEST_LEGACY_VAR");
+            assert_eq!(var.get(), Some("standard_value".to_string()));
+        });
     }
 
     #[test]
     fn test_env_var_legacy_fallback() {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
-        std::env::set_var("TEST_LEGACY_VAR2", "legacy_value");
-
-        let var = EnvVar::new("TEST_STANDARD_VAR2").with_legacy("TEST_LEGACY_VAR2");
-        assert_eq!(var.get(), Some("legacy_value".to_string()));
-
-        std::env::remove_var("TEST_LEGACY_VAR2");
+        temp_env::with_var("TEST_LEGACY_VAR2", Some("legacy_value"), || {
+            let var = EnvVar::new("TEST_STANDARD_VAR2").with_legacy("TEST_LEGACY_VAR2");
+            assert_eq!(var.get(), Some("legacy_value".to_string()));
+        });
     }
 
     #[test]
     fn test_env_var_standard_takes_precedence() {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
-        std::env::set_var("TEST_STANDARD_VAR3", "standard");
-        std::env::set_var("TEST_LEGACY_VAR3", "legacy");
-
-        let var = EnvVar::new("TEST_STANDARD_VAR3").with_legacy("TEST_LEGACY_VAR3");
-        assert_eq!(var.get(), Some("standard".to_string()));
-
-        std::env::remove_var("TEST_STANDARD_VAR3");
-        std::env::remove_var("TEST_LEGACY_VAR3");
+        temp_env::with_vars(
+            [("TEST_STANDARD_VAR3", Some("standard")), ("TEST_LEGACY_VAR3", Some("legacy"))],
+            || {
+                let var = EnvVar::new("TEST_STANDARD_VAR3").with_legacy("TEST_LEGACY_VAR3");
+                assert_eq!(var.get(), Some("standard".to_string()));
+            },
+        );
     }
 
     #[test]
@@ -590,111 +585,89 @@ mod tests {
     fn test_env_var_get_bool() {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
-        std::env::set_var("TEST_BOOL_TRUE", "true");
-        std::env::set_var("TEST_BOOL_ONE", "1");
-        std::env::set_var("TEST_BOOL_YES", "YES");
-        std::env::set_var("TEST_BOOL_FALSE", "false");
-
-        assert_eq!(EnvVar::new("TEST_BOOL_TRUE").get_bool(), Some(true));
-        assert_eq!(EnvVar::new("TEST_BOOL_ONE").get_bool(), Some(true));
-        assert_eq!(EnvVar::new("TEST_BOOL_YES").get_bool(), Some(true));
-        assert_eq!(EnvVar::new("TEST_BOOL_FALSE").get_bool(), Some(false));
-
-        std::env::remove_var("TEST_BOOL_TRUE");
-        std::env::remove_var("TEST_BOOL_ONE");
-        std::env::remove_var("TEST_BOOL_YES");
-        std::env::remove_var("TEST_BOOL_FALSE");
+        temp_env::with_vars(
+            [
+                ("TEST_BOOL_TRUE", Some("true")),
+                ("TEST_BOOL_ONE", Some("1")),
+                ("TEST_BOOL_YES", Some("YES")),
+                ("TEST_BOOL_FALSE", Some("false")),
+            ],
+            || {
+                assert_eq!(EnvVar::new("TEST_BOOL_TRUE").get_bool(), Some(true));
+                assert_eq!(EnvVar::new("TEST_BOOL_ONE").get_bool(), Some(true));
+                assert_eq!(EnvVar::new("TEST_BOOL_YES").get_bool(), Some(true));
+                assert_eq!(EnvVar::new("TEST_BOOL_FALSE").get_bool(), Some(false));
+            },
+        );
     }
 
     #[test]
     fn test_env_var_get_list() {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
-        std::env::set_var("TEST_LIST", "a, b, c");
-
-        let var = EnvVar::new("TEST_LIST");
-        assert_eq!(
-            var.get_list(),
-            Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
-        );
-
-        std::env::remove_var("TEST_LIST");
+        temp_env::with_var("TEST_LIST", Some("a, b, c"), || {
+            let var = EnvVar::new("TEST_LIST");
+            assert_eq!(
+                var.get_list(),
+                Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
+            );
+        });
     }
 
     #[test]
     fn test_postgres_env_vars() {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
-        std::env::set_var("PGHOST", "localhost");
-
-        assert_eq!(postgres::host().get(), Some("localhost".to_string()));
-
-        std::env::remove_var("PGHOST");
+        temp_env::with_var("PGHOST", Some("localhost"), || {
+            assert_eq!(postgres::host().get(), Some("localhost".to_string()));
+        });
     }
 
     #[test]
     fn test_postgres_legacy_fallback() {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
-        // Ensure primary name is clear so legacy fallback is actually tested
-        std::env::remove_var("PGHOST");
-        std::env::set_var("POSTGRESQL_HOST", "legacy-host");
-
-        assert_eq!(postgres::host().get(), Some("legacy-host".to_string()));
-
-        std::env::remove_var("POSTGRESQL_HOST");
+        temp_env::with_vars(
+            [("PGHOST", None::<&str>), ("POSTGRESQL_HOST", Some("legacy-host"))],
+            || assert_eq!(postgres::host().get(), Some("legacy-host".to_string())),
+        );
     }
 
     #[test]
     fn test_kafka_env_vars() {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
-        std::env::set_var("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092");
-
-        assert_eq!(
-            kafka::bootstrap_servers().get(),
-            Some("kafka:9092".to_string())
-        );
-
-        std::env::remove_var("KAFKA_BOOTSTRAP_SERVERS");
+        temp_env::with_var("KAFKA_BOOTSTRAP_SERVERS", Some("kafka:9092"), || {
+            assert_eq!(kafka::bootstrap_servers().get(), Some("kafka:9092".to_string()));
+        });
     }
 
     #[test]
     fn test_vault_env_vars() {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
-        std::env::set_var("VAULT_ADDR", "https://vault:8200");
-
-        assert_eq!(vault::addr().get(), Some("https://vault:8200".to_string()));
-
-        std::env::remove_var("VAULT_ADDR");
+        temp_env::with_var("VAULT_ADDR", Some("https://vault:8200"), || {
+            assert_eq!(vault::addr().get(), Some("https://vault:8200".to_string()));
+        });
     }
 
     #[test]
     fn test_vault_openbao_fallback() {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
-        // Ensure VAULT_ADDR is not set so fallback is tested
-        std::env::remove_var("VAULT_ADDR");
-        std::env::set_var("OPENBAO_ADDR", "https://openbao:8200");
-
-        assert_eq!(
-            vault::addr().get(),
-            Some("https://openbao:8200".to_string())
+        temp_env::with_vars(
+            [("VAULT_ADDR", None::<&str>), ("OPENBAO_ADDR", Some("https://openbao:8200"))],
+            || assert_eq!(vault::addr().get(), Some("https://openbao:8200".to_string())),
         );
-
-        std::env::remove_var("OPENBAO_ADDR");
     }
 
     #[test]
     fn test_which_name_used() {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
-        std::env::set_var("TEST_WHICH_LEGACY", "value");
-
-        let var = EnvVar::new("TEST_WHICH_STANDARD").with_legacy("TEST_WHICH_LEGACY");
-        assert_eq!(var.which_name_used(), Some("TEST_WHICH_LEGACY"));
-
-        std::env::remove_var("TEST_WHICH_LEGACY");
+        temp_env::with_var("TEST_WHICH_LEGACY", Some("value"), || {
+            let var = EnvVar::new("TEST_WHICH_STANDARD").with_legacy("TEST_WHICH_LEGACY");
+            assert_eq!(var.which_name_used(), Some("TEST_WHICH_LEGACY"));
+        });
     }
 }

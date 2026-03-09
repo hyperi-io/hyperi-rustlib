@@ -34,7 +34,6 @@ pub use token::MemoryToken;
 use super::error::{TransportError, TransportResult};
 use super::traits::Transport;
 use super::types::{Message, PayloadFormat, SendResult};
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -175,7 +174,6 @@ impl MemorySender<'_> {
     }
 }
 
-#[async_trait]
 impl Transport for MemoryTransport {
     type Token = MemoryToken;
 

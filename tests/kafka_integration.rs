@@ -243,37 +243,41 @@ fn test_kafka_config_with_ssl_insecure_upgrades_sasl() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_kafka_config_with_producer_defaults() {
     let config = KafkaConfig::default().with_producer_defaults();
     let built = config.build_librdkafka_config();
 
-    assert_eq!(built.get("acks"), Some(&"all".to_string()));
-    assert_eq!(built.get("retries"), Some(&"5".to_string()));
-    assert_eq!(built.get("compression.type"), Some(&"lz4".to_string()));
-    assert_eq!(built.get("linger.ms"), Some(&"50".to_string()));
+    assert_eq!(built.get("compression.type"), Some(&"zstd".to_string()));
+    assert_eq!(built.get("linger.ms"), Some(&"100".to_string()));
+    assert_eq!(built.get("socket.nagle.disable"), Some(&"true".to_string()));
+    assert_eq!(
+        built.get("statistics.interval.ms"),
+        Some(&"1000".to_string())
+    );
 }
 
 #[test]
 fn test_kafka_production_profile_settings() {
-    // Production profile is the default
     let config = KafkaConfig::production();
     let built = config.build_librdkafka_config();
 
-    // Verify production profile settings
-    assert_eq!(
-        built.get("queued.min.messages"),
-        Some(&"100000".to_string())
-    );
-    assert_eq!(
-        built.get("queued.max.messages.kbytes"),
-        Some(&"1048576".to_string())
-    );
     assert_eq!(
         built.get("partition.assignment.strategy"),
         Some(&"cooperative-sticky".to_string())
     );
-    assert_eq!(built.get("check.crcs"), Some(&"false".to_string()));
-    assert_eq!(built.get("socket.nagle.disable"), Some(&"true".to_string()));
+    assert_eq!(built.get("fetch.min.bytes"), Some(&"1048576".to_string()));
+    assert_eq!(built.get("fetch.wait.max.ms"), Some(&"100".to_string()));
+    assert_eq!(built.get("queued.min.messages"), Some(&"20000".to_string()));
+    assert_eq!(built.get("enable.auto.commit"), Some(&"false".to_string()));
+    assert_eq!(
+        built.get("statistics.interval.ms"),
+        Some(&"1000".to_string())
+    );
+    // Verify removed settings are gone
+    assert_eq!(built.get("check.crcs"), None);
+    assert_eq!(built.get("socket.nagle.disable"), None);
+    assert_eq!(built.get("queued.max.messages.kbytes"), None);
 }
 
 #[test]
@@ -281,29 +285,36 @@ fn test_kafka_devtest_profile_settings() {
     let config = KafkaConfig::devtest();
     let built = config.build_librdkafka_config();
 
-    // Verify devtest profile settings
     assert_eq!(built.get("queued.min.messages"), Some(&"1000".to_string()));
     assert_eq!(
-        built.get("queued.max.messages.kbytes"),
-        Some(&"65536".to_string())
+        built.get("partition.assignment.strategy"),
+        Some(&"cooperative-sticky".to_string())
     );
-    assert_eq!(built.get("check.crcs"), Some(&"true".to_string())); // CRC enabled in devtest
-    assert_eq!(built.get("reconnect.backoff.ms"), Some(&"10".to_string()));
-    assert_eq!(built.get("log.connection.close"), Some(&"true".to_string()));
-}
-
-#[test]
-fn test_kafka_config_with_low_latency() {
-    let config = KafkaConfig::default().with_low_latency();
-    let built = config.build_librdkafka_config();
-
-    assert_eq!(built.get("fetch.wait.max.ms"), Some(&"10".to_string()));
-    assert_eq!(built.get("fetch.min.bytes"), Some(&"1".to_string()));
+    assert_eq!(built.get("enable.auto.commit"), Some(&"false".to_string()));
     assert_eq!(built.get("reconnect.backoff.ms"), Some(&"10".to_string()));
     assert_eq!(
         built.get("reconnect.backoff.max.ms"),
         Some(&"100".to_string())
     );
+    assert_eq!(built.get("log.connection.close"), Some(&"true".to_string()));
+    // Verify removed settings are gone
+    assert_eq!(built.get("check.crcs"), None);
+    assert_eq!(built.get("queued.max.messages.kbytes"), None);
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_kafka_config_with_low_latency() {
+    let config = KafkaConfig::default().with_low_latency();
+    let built = config.build_librdkafka_config();
+
+    assert_eq!(built.get("fetch.wait.max.ms"), Some(&"10".to_string()));
+    assert_eq!(built.get("reconnect.backoff.ms"), Some(&"10".to_string()));
+    assert_eq!(
+        built.get("reconnect.backoff.max.ms"),
+        Some(&"100".to_string())
+    );
+    assert_eq!(built.get("queued.min.messages"), Some(&"1000".to_string()));
 }
 
 #[test]
@@ -360,10 +371,7 @@ fn test_kafka_config_chained_builders() {
     assert_eq!(config.sasl_mechanism, Some("SCRAM-SHA-512".to_string()));
 
     // Verify production profile defaults are present
-    assert_eq!(
-        built.get("queued.min.messages"),
-        Some(&"100000".to_string())
-    );
+    assert_eq!(built.get("queued.min.messages"), Some(&"20000".to_string()));
 
     // Verify statistics override
     assert_eq!(

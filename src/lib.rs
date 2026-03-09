@@ -65,6 +65,7 @@
 
 // Core modules (always available)
 pub mod env;
+pub mod kafka_config;
 
 #[cfg(feature = "runtime")]
 pub mod runtime;

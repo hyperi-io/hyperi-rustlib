@@ -208,19 +208,21 @@ mod tests {
 
     #[test]
     fn test_get_app_env_default() {
-        // Clear any existing env vars for this test
-        std::env::remove_var("APP_ENV");
-        std::env::remove_var("ENVIRONMENT");
-        std::env::remove_var("ENV");
-
-        assert_eq!(get_app_env(), "development");
+        temp_env::with_vars(
+            [
+                ("APP_ENV", None::<&str>),
+                ("ENVIRONMENT", None),
+                ("ENV", None),
+            ],
+            || assert_eq!(get_app_env(), "development"),
+        );
     }
 
     #[test]
     fn test_get_app_env_from_app_env() {
-        std::env::set_var("APP_ENV", "production");
-        assert_eq!(get_app_env(), "production");
-        std::env::remove_var("APP_ENV");
+        temp_env::with_var("APP_ENV", Some("production"), || {
+            assert_eq!(get_app_env(), "production");
+        });
     }
 
     #[test]

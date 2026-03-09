@@ -9,20 +9,23 @@
 //! Secret provider trait and implementations.
 
 use std::path::Path;
+use std::future::Future;
 
-use async_trait::async_trait;
 
 use super::error::{SecretsError, SecretsResult};
 use super::types::{SecretMetadata, SecretValue};
 
 /// Trait for secret providers.
-#[async_trait]
 pub trait SecretProvider: Send + Sync {
     /// Get a secret by path/key.
-    async fn get(&self, path: &str, key: Option<&str>) -> SecretsResult<SecretValue>;
+    fn get(
+        &self,
+        path: &str,
+        key: Option<&str>,
+    ) -> impl Future<Output = SecretsResult<SecretValue>> + Send;
 
     /// Check if the provider is healthy/reachable.
-    async fn health_check(&self) -> SecretsResult<()>;
+    fn health_check(&self) -> impl Future<Output = SecretsResult<()>> + Send;
 
     /// Provider name for logging.
     fn name(&self) -> &'static str;
@@ -82,7 +85,6 @@ impl FileProvider {
     }
 }
 
-#[async_trait]
 impl SecretProvider for FileProvider {
     async fn get(&self, path: &str, _key: Option<&str>) -> SecretsResult<SecretValue> {
         self.get(path).await

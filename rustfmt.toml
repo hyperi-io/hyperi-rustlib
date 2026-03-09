@@ -6,7 +6,7 @@
 # License:   FSL-1.1-ALv2
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 
-edition = "2021"
+edition = "2024"
 max_width = 100
 tab_spaces = 4
 use_small_heuristics = "Default"

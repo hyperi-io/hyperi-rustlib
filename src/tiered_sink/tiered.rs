@@ -265,7 +265,6 @@ impl<S: Sink> Drop for TieredSink<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use std::sync::atomic::AtomicBool;
     use tempfile::tempdir;
 
@@ -302,7 +301,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl Sink for TestSink {
         type Error = TestError;
 
