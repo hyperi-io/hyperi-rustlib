@@ -409,6 +409,58 @@ The reloader:
 
 ---
 
+## Librdkafka Settings — Cascade Exception
+
+The `kafka_config` module (`src/kafka_config.rs`) is the **only sanctioned
+exception** to the config cascade. It loads librdkafka connection settings
+directly from a git-managed config file rather than through the 8-layer cascade.
+
+**Why it's an exception:**
+
+Librdkafka settings are deployment-wide infrastructure configuration — broker
+addresses, TLS settings, SASL credentials. These are managed centrally in a
+config git repository (gitops) and applied consistently across all services in
+a deployment. They are not application-specific and should not vary per-service
+via env vars or `settings.yaml`.
+
+**API:**
+
+```rust
+use hyperi_rustlib::{config_from_file, config_from_properties_str, merge_with_overrides};
+use hyperi_rustlib::{CONSUMER_PRODUCTION, PRODUCER_PRODUCTION};
+
+// Load broker/TLS settings from the config git directory
+let infra = config_from_file("/config/kafka/kafka.properties")?;
+
+// Merge with a named profile; infra settings take precedence
+let final_config = merge_with_overrides(CONSUMER_PRODUCTION, &infra);
+```
+
+**Supported file formats:**
+
+| Extension | Requires feature |
+|-----------|-----------------|
+| `.properties` | always available |
+| `.yaml` / `.yml` | `directory-config` |
+| `.json` | `config` |
+
+**Profiles available:**
+
+| Constant | Use case |
+|----------|----------|
+| `CONSUMER_PRODUCTION` | Default production consumer |
+| `CONSUMER_DEVTEST` | Local/CI development consumer |
+| `CONSUMER_LOW_LATENCY` | Low-latency consumer tuning |
+| `PRODUCER_PRODUCTION` | Default production producer (at-least-once) |
+| `PRODUCER_EXACTLY_ONCE` | Exactly-once semantics with idempotency |
+| `PRODUCER_LOW_LATENCY` | Low-latency producer (reduced batching) |
+| `PRODUCER_DEVTEST` | Local/CI development producer |
+
+**Source file:** [src/kafka_config.rs](../src/kafka_config.rs) — core module,
+always available (no feature flag required).
+
+---
+
 ## Feature Flags
 
 | Feature | Enables | Dependencies |
