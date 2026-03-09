@@ -19,8 +19,9 @@
 #![cfg(feature = "transport-kafka")]
 
 use hyperi_rustlib::transport::kafka::{
-    healthy_broker_count, total_consumer_lag, BrokerMetrics, KafkaAdmin, KafkaConfig, KafkaMetrics,
-    KafkaProfile, KafkaToken, StatsContext, TopicInfo, DEVTEST_PROFILE, PRODUCTION_PROFILE,
+    BrokerMetrics, DEVTEST_PROFILE, KafkaAdmin, KafkaConfig, KafkaMetrics, KafkaProfile,
+    KafkaToken, PRODUCTION_PROFILE, StatsContext, TopicInfo, healthy_broker_count,
+    total_consumer_lag,
 };
 use std::sync::Arc;
 
@@ -564,7 +565,7 @@ fn get_test_config() -> Option<KafkaConfig> {
         group: std::env::var("TEST_KAFKA_GROUP")
             .unwrap_or_else(|_| "hyperi-rustlib-test-group".to_string()),
         topics: vec![
-            std::env::var("TEST_KAFKA_TOPIC").unwrap_or_else(|_| "hyperi-rustlib-test".to_string())
+            std::env::var("TEST_KAFKA_TOPIC").unwrap_or_else(|_| "hyperi-rustlib-test".to_string()),
         ],
         ..Default::default()
     })
@@ -630,7 +631,7 @@ async fn test_kafka_admin_describe_topic() {
 #[tokio::test]
 #[ignore = "requires Kafka broker - set TEST_KAFKA_BROKERS to run"]
 async fn test_kafka_send_receive_batch() {
-    use hyperi_rustlib::transport::{kafka::KafkaTransport, Transport};
+    use hyperi_rustlib::transport::{Transport, kafka::KafkaTransport};
 
     let Some(mut config) = get_test_config() else {
         eprintln!("Skipping: TEST_KAFKA_BROKERS not set");

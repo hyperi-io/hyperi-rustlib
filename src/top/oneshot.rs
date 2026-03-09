@@ -129,10 +129,11 @@ fn regex_match(name: &str, pattern: &str) -> bool {
     }
 
     // If anchored at end, the last non-empty part must reach the end
-    if anchored_end && !remaining.is_empty() {
-        if let Some(last) = parts.iter().rev().find(|p| !p.is_empty()) {
-            return name.ends_with(last);
-        }
+    if anchored_end
+        && !remaining.is_empty()
+        && let Some(last) = parts.iter().rev().find(|p| !p.is_empty())
+    {
+        return name.ends_with(last);
     }
 
     true

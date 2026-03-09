@@ -103,21 +103,21 @@ impl SecretCache {
     /// Returns `None` if not cached or expired.
     pub fn get(&self, key: &str) -> Option<SecretValue> {
         // Check memory cache
-        if let Some(value) = self.memory.get(key) {
-            if !value.is_expired(self.config.ttl_secs) {
-                self.hits.fetch_add(1, Ordering::Relaxed);
-                debug!(key = %key, "Cache hit (memory)");
-                return Some(value.clone());
-            }
+        if let Some(value) = self.memory.get(key)
+            && !value.is_expired(self.config.ttl_secs)
+        {
+            self.hits.fetch_add(1, Ordering::Relaxed);
+            debug!(key = %key, "Cache hit (memory)");
+            return Some(value.clone());
         }
 
         // Check disk cache
-        if let Some(value) = self.load_from_disk(key) {
-            if !value.is_expired(self.config.ttl_secs) {
-                self.hits.fetch_add(1, Ordering::Relaxed);
-                debug!(key = %key, "Cache hit (disk)");
-                return Some(value);
-            }
+        if let Some(value) = self.load_from_disk(key)
+            && !value.is_expired(self.config.ttl_secs)
+        {
+            self.hits.fetch_add(1, Ordering::Relaxed);
+            debug!(key = %key, "Cache hit (disk)");
+            return Some(value);
         }
 
         self.misses.fetch_add(1, Ordering::Relaxed);
@@ -129,21 +129,21 @@ impl SecretCache {
     /// Returns a cached value even if expired, as long as it's within the grace period.
     pub fn get_stale(&self, key: &str) -> Option<SecretValue> {
         // Check memory cache
-        if let Some(value) = self.memory.get(key) {
-            if value.is_within_grace(self.config.ttl_secs, self.config.stale_grace_secs) {
-                self.stale_hits.fetch_add(1, Ordering::Relaxed);
-                debug!(key = %key, "Stale cache hit (memory)");
-                return Some(value.clone());
-            }
+        if let Some(value) = self.memory.get(key)
+            && value.is_within_grace(self.config.ttl_secs, self.config.stale_grace_secs)
+        {
+            self.stale_hits.fetch_add(1, Ordering::Relaxed);
+            debug!(key = %key, "Stale cache hit (memory)");
+            return Some(value.clone());
         }
 
         // Check disk cache
-        if let Some(value) = self.load_from_disk(key) {
-            if value.is_within_grace(self.config.ttl_secs, self.config.stale_grace_secs) {
-                self.stale_hits.fetch_add(1, Ordering::Relaxed);
-                debug!(key = %key, "Stale cache hit (disk)");
-                return Some(value);
-            }
+        if let Some(value) = self.load_from_disk(key)
+            && value.is_within_grace(self.config.ttl_secs, self.config.stale_grace_secs)
+        {
+            self.stale_hits.fetch_add(1, Ordering::Relaxed);
+            debug!(key = %key, "Stale cache hit (disk)");
+            return Some(value);
         }
 
         None

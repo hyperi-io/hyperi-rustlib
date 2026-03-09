@@ -224,7 +224,7 @@ async-trait = ">=0.1.88, <0.2"
 git2 = ">=0.20.0, <0.21"
 
 [lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

@@ -15,8 +15,8 @@ use std::collections::HashMap;
 use serde_json::json;
 
 use hyperi_rustlib::expression::{
-    compile, evaluate, evaluate_condition, validate, ExpressionError, ALLOWED_FUNCTIONS,
-    DISALLOWED_FUNCTIONS,
+    ALLOWED_FUNCTIONS, DISALLOWED_FUNCTIONS, ExpressionError, compile, evaluate,
+    evaluate_condition, validate,
 };
 
 // ── validate() ────────────────────────────────────────────────

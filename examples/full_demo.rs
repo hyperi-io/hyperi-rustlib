@@ -28,7 +28,7 @@
 use std::time::Duration;
 
 use hyperi_rustlib::config::{Config, ConfigOptions};
-use hyperi_rustlib::env::{get_app_env, Environment};
+use hyperi_rustlib::env::{Environment, get_app_env};
 use hyperi_rustlib::logger;
 use hyperi_rustlib::metrics::{MetricsConfig, MetricsManager};
 use hyperi_rustlib::runtime::RuntimePaths;

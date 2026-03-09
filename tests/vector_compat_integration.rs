@@ -29,8 +29,8 @@ use std::process::Command;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use hyperi_rustlib::transport::grpc::{GrpcConfig, GrpcTransport};
 use hyperi_rustlib::transport::VectorCompatClient;
+use hyperi_rustlib::transport::grpc::{GrpcConfig, GrpcTransport};
 use hyperi_rustlib::transport::{SendResult, Transport};
 
 /// Resolve the path to the Vector binary (cached via fetch-vector.sh or system PATH).
@@ -45,23 +45,23 @@ fn vector_binary_path() -> Option<&'static PathBuf> {
             let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"));
             let fetch_script = repo_root.join("scripts/fetch-vector.sh");
 
-            if fetch_script.exists() {
-                if let Ok(output) = Command::new("bash").arg(&fetch_script).output() {
-                    if output.status.success() {
-                        let path = String::from_utf8_lossy(&output.stdout)
-                            .trim()
-                            .lines()
-                            .last()
-                            .unwrap_or("")
-                            .to_string();
-                        let binary = PathBuf::from(&path);
-                        if binary.exists() {
-                            return Some(binary);
-                        }
-                    } else {
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        eprintln!("fetch-vector.sh failed: {stderr}");
+            if fetch_script.exists()
+                && let Ok(output) = Command::new("bash").arg(&fetch_script).output()
+            {
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout)
+                        .trim()
+                        .lines()
+                        .last()
+                        .unwrap_or("")
+                        .to_string();
+                    let binary = PathBuf::from(&path);
+                    if binary.exists() {
+                        return Some(binary);
                     }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    eprintln!("fetch-vector.sh failed: {stderr}");
                 }
             }
 

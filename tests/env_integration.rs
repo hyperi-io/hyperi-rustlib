@@ -6,6 +6,8 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
+#![allow(unsafe_code)]
+
 //! Integration tests for environment variable loading and .env cascade.
 //!
 //! These tests verify that:
@@ -26,7 +28,8 @@ struct EnvGuard {
 impl EnvGuard {
     fn new(vars: &[(&str, &str)]) -> Self {
         for (name, value) in vars {
-            std::env::set_var(name, value);
+            // SAFETY: single-threaded test setup, ENV_LOCK held by caller
+            unsafe { std::env::set_var(name, value) };
         }
         Self {
             vars: vars.iter().map(|(name, _)| name.to_string()).collect(),
@@ -37,7 +40,8 @@ impl EnvGuard {
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         for var in &self.vars {
-            std::env::remove_var(var);
+            // SAFETY: single-threaded test teardown, ENV_LOCK held by caller
+            unsafe { std::env::remove_var(var) };
         }
     }
 }
@@ -185,7 +189,8 @@ mod vault_env {
     /// Clear all vault-related env vars so tests start from a clean slate.
     fn clear_vault_env() {
         for var in VAULT_ENV_VARS {
-            std::env::remove_var(var);
+            // SAFETY: single-threaded test teardown, ENV_LOCK held by caller
+            unsafe { std::env::remove_var(var) };
         }
     }
 
@@ -377,19 +382,25 @@ mod aws_env {
         // Clear any region vars so we get the hard-coded default
         let saved_default = std::env::var("AWS_DEFAULT_REGION").ok();
         let saved_legacy = std::env::var("AWS_REGION").ok();
-        std::env::remove_var("AWS_DEFAULT_REGION");
-        std::env::remove_var("AWS_REGION");
+        // SAFETY: ENV_LOCK held, single-threaded test
+        unsafe {
+            std::env::remove_var("AWS_DEFAULT_REGION");
+            std::env::remove_var("AWS_REGION");
+        }
 
         let config = AwsConfig::from_env();
 
         assert_eq!(config.region, "us-east-1");
 
         // Restore
-        if let Some(v) = saved_default {
-            std::env::set_var("AWS_DEFAULT_REGION", v);
-        }
-        if let Some(v) = saved_legacy {
-            std::env::set_var("AWS_REGION", v);
+        // SAFETY: ENV_LOCK held, single-threaded test
+        unsafe {
+            if let Some(v) = saved_default {
+                std::env::set_var("AWS_DEFAULT_REGION", v);
+            }
+            if let Some(v) = saved_legacy {
+                std::env::set_var("AWS_REGION", v);
+            }
         }
     }
 }
@@ -465,29 +476,32 @@ mod env_compat_tests {
     fn test_env_var_get_bool_variants() {
         let _lock = ENV_LOCK.lock().unwrap();
 
-        // Test "true"
-        std::env::set_var("TEST_BOOL_1", "true");
-        assert_eq!(EnvVar::new("TEST_BOOL_1").get_bool(), Some(true));
+        // SAFETY: ENV_LOCK held, single-threaded test
+        unsafe {
+            // Test "true"
+            std::env::set_var("TEST_BOOL_1", "true");
+            assert_eq!(EnvVar::new("TEST_BOOL_1").get_bool(), Some(true));
 
-        // Test "1"
-        std::env::set_var("TEST_BOOL_2", "1");
-        assert_eq!(EnvVar::new("TEST_BOOL_2").get_bool(), Some(true));
+            // Test "1"
+            std::env::set_var("TEST_BOOL_2", "1");
+            assert_eq!(EnvVar::new("TEST_BOOL_2").get_bool(), Some(true));
 
-        // Test "yes"
-        std::env::set_var("TEST_BOOL_3", "YES");
-        assert_eq!(EnvVar::new("TEST_BOOL_3").get_bool(), Some(true));
+            // Test "yes"
+            std::env::set_var("TEST_BOOL_3", "YES");
+            assert_eq!(EnvVar::new("TEST_BOOL_3").get_bool(), Some(true));
 
-        // Test "on"
-        std::env::set_var("TEST_BOOL_4", "on");
-        assert_eq!(EnvVar::new("TEST_BOOL_4").get_bool(), Some(true));
+            // Test "on"
+            std::env::set_var("TEST_BOOL_4", "on");
+            assert_eq!(EnvVar::new("TEST_BOOL_4").get_bool(), Some(true));
 
-        // Test "false"
-        std::env::set_var("TEST_BOOL_5", "false");
-        assert_eq!(EnvVar::new("TEST_BOOL_5").get_bool(), Some(false));
+            // Test "false"
+            std::env::set_var("TEST_BOOL_5", "false");
+            assert_eq!(EnvVar::new("TEST_BOOL_5").get_bool(), Some(false));
 
-        // Cleanup
-        for i in 1..=5 {
-            std::env::remove_var(format!("TEST_BOOL_{i}"));
+            // Cleanup
+            for i in 1..=5 {
+                std::env::remove_var(format!("TEST_BOOL_{i}"));
+            }
         }
     }
 
@@ -512,16 +526,19 @@ mod env_compat_tests {
     fn test_env_var_which_name_used() {
         let _lock = ENV_LOCK.lock().unwrap();
 
-        // Set only legacy
-        std::env::set_var("LEGACY_VAR_TEST", "value");
-        let var = EnvVar::new("STANDARD_VAR_TEST").with_legacy("LEGACY_VAR_TEST");
-        assert_eq!(var.which_name_used(), Some("LEGACY_VAR_TEST"));
-        std::env::remove_var("LEGACY_VAR_TEST");
+        // SAFETY: ENV_LOCK held, single-threaded test
+        unsafe {
+            // Set only legacy
+            std::env::set_var("LEGACY_VAR_TEST", "value");
+            let var = EnvVar::new("STANDARD_VAR_TEST").with_legacy("LEGACY_VAR_TEST");
+            assert_eq!(var.which_name_used(), Some("LEGACY_VAR_TEST"));
+            std::env::remove_var("LEGACY_VAR_TEST");
 
-        // Set standard
-        std::env::set_var("STANDARD_VAR_TEST", "value");
-        let var = EnvVar::new("STANDARD_VAR_TEST").with_legacy("LEGACY_VAR_TEST");
-        assert_eq!(var.which_name_used(), Some("STANDARD_VAR_TEST"));
-        std::env::remove_var("STANDARD_VAR_TEST");
+            // Set standard
+            std::env::set_var("STANDARD_VAR_TEST", "value");
+            let var = EnvVar::new("STANDARD_VAR_TEST").with_legacy("LEGACY_VAR_TEST");
+            assert_eq!(var.which_name_used(), Some("STANDARD_VAR_TEST"));
+            std::env::remove_var("STANDARD_VAR_TEST");
+        }
     }
 }

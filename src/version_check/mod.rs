@@ -214,10 +214,10 @@ fn log_version_response(config: &VersionCheckConfig, resp: &VersionCheckResponse
         );
     }
 
-    if let Some(ref msg) = resp.message {
-        if !msg.is_empty() {
-            tracing::info!(product = %config.product, "{msg}");
-        }
+    if let Some(ref msg) = resp.message
+        && !msg.is_empty()
+    {
+        tracing::info!(product = %config.product, "{msg}");
     }
 }
 

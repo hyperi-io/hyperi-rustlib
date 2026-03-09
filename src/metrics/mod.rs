@@ -394,10 +394,10 @@ impl MetricsManager {
     /// Call this before application exit to ensure all metrics are exported.
     #[cfg(feature = "otel-metrics")]
     pub fn shutdown_otel(&mut self) {
-        if let Some(provider) = self.otel_provider.take() {
-            if let Err(e) = provider.shutdown() {
-                tracing::warn!(error = %e, "OTel provider shutdown error");
-            }
+        if let Some(provider) = self.otel_provider.take()
+            && let Err(e) = provider.shutdown()
+        {
+            tracing::warn!(error = %e, "OTel provider shutdown error");
         }
     }
 
