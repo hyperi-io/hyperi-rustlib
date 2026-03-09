@@ -1,0 +1,65 @@
+# Project:   hyperi-rustlib
+# File:      .releaserc.yaml
+# Purpose:   Semantic release configuration
+#
+# License:   FSL-1.1-ALv2
+# Copyright: (c) 2026 HYPERI PTY LIMITED
+
+branches:
+  - main
+
+tagFormat: "v${version}"
+
+plugins:
+  - - "@semantic-release/commit-analyzer"
+    - preset: conventionalcommits
+      releaseRules:
+        - type: feat
+          release: minor
+        - type: fix
+          release: patch
+        - type: perf
+          release: patch
+        - type: sec
+          release: patch
+        - type: hotfix
+          release: patch
+        - type: security
+          release: patch
+        - type: docs
+          release: false
+        - type: test
+          release: false
+        - type: refactor
+          release: false
+        - type: style
+          release: false
+        - type: build
+          release: false
+        - type: ci
+          release: false
+        - type: chore
+          release: false
+        - type: deps
+          release: false
+        - type: revert
+          release: false
+        - type: wip
+          release: false
+
+  - "@semantic-release/release-notes-generator"
+
+  - - "@semantic-release/changelog"
+    - changelogFile: CHANGELOG.md
+
+  - - "@semantic-release/exec"
+    - prepareCmd: "python3 scripts/set-version.py ${nextRelease.version}"
+
+  - - "@semantic-release/git"
+    - assets:
+        - CHANGELOG.md
+        - VERSION
+        - Cargo.toml
+      message: "chore: version ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+
+  - "@semantic-release/github"
