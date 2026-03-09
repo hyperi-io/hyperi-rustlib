@@ -6,6 +6,8 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
+#![allow(unsafe_code)]
+
 //! Configuration cascade parity tests.
 //!
 //! These tests verify that the 7-layer cascade behaves identically
@@ -33,7 +35,8 @@ struct EnvGuard {
 impl EnvGuard {
     fn new(vars: &[(&str, &str)]) -> Self {
         for (k, v) in vars {
-            std::env::set_var(k, v);
+            // SAFETY: single-threaded test setup
+            unsafe { std::env::set_var(k, v) };
         }
         Self {
             vars: vars.iter().map(|(k, _)| k.to_string()).collect(),
@@ -44,7 +47,8 @@ impl EnvGuard {
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         for var in &self.vars {
-            std::env::remove_var(var);
+            // SAFETY: single-threaded test teardown
+            unsafe { std::env::remove_var(var) };
         }
     }
 }
@@ -285,7 +289,8 @@ fn test_dotenv_file_loaded() {
     assert_eq!(config.get_string("var"), Some("from_dotenv".to_string()));
 
     // Cleanup
-    std::env::remove_var("DOTENV_TEST_VAR");
+    // SAFETY: single-threaded test
+    unsafe { std::env::remove_var("DOTENV_TEST_VAR") };
 }
 
 // ============================================================================

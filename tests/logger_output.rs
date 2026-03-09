@@ -13,9 +13,9 @@ use std::collections::HashSet;
 use std::io;
 use std::sync::{Arc, Mutex};
 
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::EnvFilter;
 
 use hyperi_rustlib::logger::MaskingWriter;
 

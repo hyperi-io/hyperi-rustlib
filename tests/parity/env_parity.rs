@@ -6,12 +6,14 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
+#![allow(unsafe_code)]
+
 //! Environment detection parity tests.
 //!
 //! These tests verify that environment detection behaves identically
 //! to hyperi-golib's env package.
 
-use hyperi_rustlib::env::{get_app_env, Environment};
+use hyperi_rustlib::env::{Environment, get_app_env};
 
 /// Test that Environment::detect() returns valid enum.
 #[test]
@@ -41,30 +43,33 @@ fn test_is_container_parity() {
 /// Test get_app_env() priority: APP_ENV > ENVIRONMENT > ENV > "development".
 #[test]
 fn test_get_app_env_priority() {
-    // Clear all
-    std::env::remove_var("APP_ENV");
-    std::env::remove_var("ENVIRONMENT");
-    std::env::remove_var("ENV");
+    // SAFETY: single-threaded test, no concurrent env access
+    unsafe {
+        // Clear all
+        std::env::remove_var("APP_ENV");
+        std::env::remove_var("ENVIRONMENT");
+        std::env::remove_var("ENV");
 
-    // Default should be "development"
-    assert_eq!(get_app_env(), "development");
+        // Default should be "development"
+        assert_eq!(get_app_env(), "development");
 
-    // ENV should override default
-    std::env::set_var("ENV", "staging");
-    assert_eq!(get_app_env(), "staging");
+        // ENV should override default
+        std::env::set_var("ENV", "staging");
+        assert_eq!(get_app_env(), "staging");
 
-    // ENVIRONMENT should override ENV
-    std::env::set_var("ENVIRONMENT", "production");
-    assert_eq!(get_app_env(), "production");
+        // ENVIRONMENT should override ENV
+        std::env::set_var("ENVIRONMENT", "production");
+        assert_eq!(get_app_env(), "production");
 
-    // APP_ENV should override all
-    std::env::set_var("APP_ENV", "testing");
-    assert_eq!(get_app_env(), "testing");
+        // APP_ENV should override all
+        std::env::set_var("APP_ENV", "testing");
+        assert_eq!(get_app_env(), "testing");
 
-    // Cleanup
-    std::env::remove_var("APP_ENV");
-    std::env::remove_var("ENVIRONMENT");
-    std::env::remove_var("ENV");
+        // Cleanup
+        std::env::remove_var("APP_ENV");
+        std::env::remove_var("ENVIRONMENT");
+        std::env::remove_var("ENV");
+    }
 }
 
 /// Test Display implementation matches Go string output.

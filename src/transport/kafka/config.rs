@@ -114,9 +114,9 @@ impl std::fmt::Display for KafkaProfile {
 /// assert_eq!(merged.get("partition.assignment.strategy").unwrap(), "cooperative-sticky");
 /// ```
 #[must_use]
-pub fn merge_with_overrides(
+pub fn merge_with_overrides<S: std::hash::BuildHasher>(
     profile: &[(&str, &str)],
-    overrides: &HashMap<String, String>,
+    overrides: &HashMap<String, String, S>,
 ) -> HashMap<String, String> {
     let mut config = HashMap::with_capacity(profile.len() + overrides.len());
 
@@ -790,12 +790,12 @@ impl KafkaConfig {
         };
 
         // Profile
-        if let Some(val) = prefixed("PROFILE", &[]).get() {
-            if let Ok(profile) = val.parse() {
-                config.profile = profile;
-                if config.profile == KafkaProfile::DevTest {
-                    config.ssl_skip_verify = true;
-                }
+        if let Some(val) = prefixed("PROFILE", &[]).get()
+            && let Ok(profile) = val.parse()
+        {
+            config.profile = profile;
+            if config.profile == KafkaProfile::DevTest {
+                config.ssl_skip_verify = true;
             }
         }
 

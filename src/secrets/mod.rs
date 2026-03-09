@@ -273,17 +273,17 @@ impl SecretsManager {
             match self.get_from_source(name, source).await {
                 Ok(new_value) => {
                     // Check for rotation
-                    if let Some(ref new_version) = new_value.metadata.version {
-                        if old_version.as_ref() != Some(new_version) {
-                            let event = RotationEvent {
-                                name: name.clone(),
-                                old_version,
-                                new_version: new_version.clone(),
-                                rotated_at: std::time::SystemTime::now(),
-                            };
-                            let _ = self.rotation_tx.send(event);
-                            info!(name = %name, new_version = %new_version, "Secret rotated");
-                        }
+                    if let Some(ref new_version) = new_value.metadata.version
+                        && old_version.as_ref() != Some(new_version)
+                    {
+                        let event = RotationEvent {
+                            name: name.clone(),
+                            old_version,
+                            new_version: new_version.clone(),
+                            rotated_at: std::time::SystemTime::now(),
+                        };
+                        let _ = self.rotation_tx.send(event);
+                        info!(name = %name, new_version = %new_version, "Secret rotated");
                     }
                 }
                 Err(e) => {

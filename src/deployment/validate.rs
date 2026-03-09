@@ -42,25 +42,25 @@ pub fn validate_helm_values(
     let chart_yaml = read_yaml(&chart_yaml_path)?;
 
     // Chart name
-    if let Some(name) = chart_yaml["name"].as_str() {
-        if name != contract.app_name {
-            mismatches.push(ContractMismatch {
-                field: "Chart.yaml name".into(),
-                expected: contract.app_name.clone(),
-                actual: name.into(),
-            });
-        }
+    if let Some(name) = chart_yaml["name"].as_str()
+        && name != contract.app_name
+    {
+        mismatches.push(ContractMismatch {
+            field: "Chart.yaml name".into(),
+            expected: contract.app_name.clone(),
+            actual: name.into(),
+        });
     }
 
     // Service port
-    if let Some(port) = values["service"]["port"].as_u64() {
-        if port != u64::from(contract.metrics_port) {
-            mismatches.push(ContractMismatch {
-                field: "service.port".into(),
-                expected: contract.metrics_port.to_string(),
-                actual: port.to_string(),
-            });
-        }
+    if let Some(port) = values["service"]["port"].as_u64()
+        && port != u64::from(contract.metrics_port)
+    {
+        mismatches.push(ContractMismatch {
+            field: "service.port".into(),
+            expected: contract.metrics_port.to_string(),
+            actual: port.to_string(),
+        });
     }
 
     // Metrics address
@@ -162,24 +162,24 @@ fn validate_prometheus_annotations(
 ) {
     let annotations = &values["podAnnotations"];
 
-    if let Some(port) = annotations["prometheus.io/port"].as_str() {
-        if port != contract.metrics_port.to_string() {
-            mismatches.push(ContractMismatch {
-                field: "podAnnotations prometheus.io/port".into(),
-                expected: contract.metrics_port.to_string(),
-                actual: port.into(),
-            });
-        }
+    if let Some(port) = annotations["prometheus.io/port"].as_str()
+        && port != contract.metrics_port.to_string()
+    {
+        mismatches.push(ContractMismatch {
+            field: "podAnnotations prometheus.io/port".into(),
+            expected: contract.metrics_port.to_string(),
+            actual: port.into(),
+        });
     }
 
-    if let Some(path) = annotations["prometheus.io/path"].as_str() {
-        if path != contract.health.metrics_path {
-            mismatches.push(ContractMismatch {
-                field: "podAnnotations prometheus.io/path".into(),
-                expected: contract.health.metrics_path.clone(),
-                actual: path.into(),
-            });
-        }
+    if let Some(path) = annotations["prometheus.io/path"].as_str()
+        && path != contract.health.metrics_path
+    {
+        mismatches.push(ContractMismatch {
+            field: "podAnnotations prometheus.io/path".into(),
+            expected: contract.health.metrics_path.clone(),
+            actual: path.into(),
+        });
     }
 }
 
@@ -246,14 +246,14 @@ fn validate_keda_values(
         mismatches,
     );
 
-    if let Some(enabled) = cpu["enabled"].as_bool() {
-        if enabled != keda.cpu_enabled {
-            mismatches.push(ContractMismatch {
-                field: "keda.cpu.enabled".into(),
-                expected: keda.cpu_enabled.to_string(),
-                actual: enabled.to_string(),
-            });
-        }
+    if let Some(enabled) = cpu["enabled"].as_bool()
+        && enabled != keda.cpu_enabled
+    {
+        mismatches.push(ContractMismatch {
+            field: "keda.cpu.enabled".into(),
+            expected: keda.cpu_enabled.to_string(),
+            actual: enabled.to_string(),
+        });
     }
 }
 
@@ -317,14 +317,14 @@ fn check_u64(
     label: &str,
     mismatches: &mut Vec<ContractMismatch>,
 ) {
-    if let Some(val) = parent[key].as_u64() {
-        if val != expected {
-            mismatches.push(ContractMismatch {
-                field: label.into(),
-                expected: expected.to_string(),
-                actual: val.to_string(),
-            });
-        }
+    if let Some(val) = parent[key].as_u64()
+        && val != expected
+    {
+        mismatches.push(ContractMismatch {
+            field: label.into(),
+            expected: expected.to_string(),
+            actual: val.to_string(),
+        });
     }
 }
 
@@ -336,14 +336,14 @@ fn check_str_num(
     label: &str,
     mismatches: &mut Vec<ContractMismatch>,
 ) {
-    if let Some(val) = parent[key].as_str() {
-        if val != expected.to_string() {
-            mismatches.push(ContractMismatch {
-                field: label.into(),
-                expected: expected.to_string(),
-                actual: val.into(),
-            });
-        }
+    if let Some(val) = parent[key].as_str()
+        && val != expected.to_string()
+    {
+        mismatches.push(ContractMismatch {
+            field: label.into(),
+            expected: expected.to_string(),
+            actual: val.into(),
+        });
     }
 }
 

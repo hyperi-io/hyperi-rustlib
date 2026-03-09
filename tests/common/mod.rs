@@ -6,6 +6,8 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
+#![allow(unsafe_code)]
+
 //! Shared test fixtures and utilities.
 
 use std::path::PathBuf;
@@ -65,7 +67,8 @@ impl EnvGuard {
         let var_names: Vec<String> = vars
             .iter()
             .map(|(k, v)| {
-                std::env::set_var(k, v);
+                // SAFETY: single-threaded test setup, ENV_LOCK held by caller
+                unsafe { std::env::set_var(k, v) };
                 k.to_string()
             })
             .collect();
@@ -77,7 +80,8 @@ impl EnvGuard {
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         for var in &self.vars {
-            std::env::remove_var(var);
+            // SAFETY: single-threaded test teardown, ENV_LOCK held by caller
+            unsafe { std::env::remove_var(var) };
         }
     }
 }

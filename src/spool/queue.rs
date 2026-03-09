@@ -83,17 +83,17 @@ impl Spool {
     /// - I/O error occurs
     pub async fn push(&mut self, data: &[u8]) -> Result<()> {
         // Check item limit
-        if let Some(max) = self.config.max_items {
-            if self.len >= max {
-                return Err(SpoolError::MaxItemsReached { max });
-            }
+        if let Some(max) = self.config.max_items
+            && self.len >= max
+        {
+            return Err(SpoolError::MaxItemsReached { max });
         }
 
         // Check size limit (approximate - check before write)
-        if let Some(max_bytes) = self.config.max_size_bytes {
-            if self.file_size()? >= max_bytes {
-                return Err(SpoolError::MaxSizeReached { max_bytes });
-            }
+        if let Some(max_bytes) = self.config.max_size_bytes
+            && self.file_size()? >= max_bytes
+        {
+            return Err(SpoolError::MaxSizeReached { max_bytes });
         }
 
         let to_write = if self.config.compress {

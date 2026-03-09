@@ -298,15 +298,15 @@ impl PostgresConfig {
             }
             Err(e) => {
                 // Try loading from fallback file on connection error
-                if source.optional {
-                    if let Some(config) = Self::load_fallback_file(source)? {
-                        #[cfg(feature = "tracing")]
-                        info!(
-                            keys = config.values.len(),
-                            "Loaded configuration from fallback file (connection error)"
-                        );
-                        return Ok(Some(config));
-                    }
+                if source.optional
+                    && let Some(config) = Self::load_fallback_file(source)?
+                {
+                    #[cfg(feature = "tracing")]
+                    info!(
+                        keys = config.values.len(),
+                        "Loaded configuration from fallback file (connection error)"
+                    );
+                    return Ok(Some(config));
                 }
                 return Err(e);
             }
@@ -451,11 +451,11 @@ impl PostgresConfig {
         };
 
         // Create parent directory if needed
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| PostgresConfigError::Fallback(format!("mkdir error: {e}")))?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| PostgresConfigError::Fallback(format!("mkdir error: {e}")))?;
         }
 
         let content = serde_json::to_string_pretty(&self.values)

@@ -177,9 +177,9 @@ fn parse_json(content: &str, path: String) -> KafkaConfigResult<HashMap<String, 
 /// Starts with `profile` defaults, then applies `overrides` on top.
 /// User overrides always win.
 #[must_use]
-pub fn merge_with_overrides(
+pub fn merge_with_overrides<S: std::hash::BuildHasher>(
     profile: &[(&str, &str)],
-    overrides: &HashMap<String, String>,
+    overrides: &HashMap<String, String, S>,
 ) -> HashMap<String, String> {
     let mut config = HashMap::with_capacity(profile.len() + overrides.len());
 

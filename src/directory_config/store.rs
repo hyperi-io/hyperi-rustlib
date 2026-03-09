@@ -199,10 +199,10 @@ impl DirectoryConfigStore {
         let file_path = self.table_path(table);
 
         // Auto-create parent directories for subdirectory tables
-        if let Some(parent) = file_path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = file_path.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent)?;
         }
 
         // Load current content or start with empty mapping

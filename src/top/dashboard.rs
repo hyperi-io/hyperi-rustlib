@@ -408,14 +408,13 @@ fn run_loop(terminal: &mut DefaultTerminal, config: &TopConfig) -> Result<(), To
             .map_err(|e| TopError::Terminal(e.to_string()))?;
 
         // Handle events (100ms poll timeout for responsive input + timer checks)
-        if event::poll(Duration::from_millis(100)).map_err(|e| TopError::Terminal(e.to_string()))? {
-            if let Event::Key(key) = event::read().map_err(|e| TopError::Terminal(e.to_string()))? {
-                if key.kind == KeyEventKind::Press {
-                    app.handle_key(key.code);
-                    if app.should_quit {
-                        break;
-                    }
-                }
+        if event::poll(Duration::from_millis(100)).map_err(|e| TopError::Terminal(e.to_string()))?
+            && let Event::Key(key) = event::read().map_err(|e| TopError::Terminal(e.to_string()))?
+            && key.kind == KeyEventKind::Press
+        {
+            app.handle_key(key.code);
+            if app.should_quit {
+                break;
             }
         }
     }

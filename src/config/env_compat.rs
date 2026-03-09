@@ -673,7 +673,7 @@ mod tests {
                 assert_eq!(
                     vault::addr().get(),
                     Some("https://openbao:8200".to_string())
-                )
+                );
             },
         );
     }

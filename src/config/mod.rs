@@ -373,17 +373,15 @@ impl Config {
         }
 
         // Load home directory .env (only fills in missing values)
-        if load_home {
-            if let Some(home) = dirs::home_dir() {
-                let home_env = home.join(".env");
-                if home_env.exists() {
-                    match dotenvy::from_path(&home_env) {
-                        Ok(()) => {
-                            debug!(path = %home_env.display(), "Loaded home .env file");
-                        }
-                        Err(e) => {
-                            debug!(path = %home_env.display(), error = %e, "Failed to load home .env file");
-                        }
+        if load_home && let Some(home) = dirs::home_dir() {
+            let home_env = home.join(".env");
+            if home_env.exists() {
+                match dotenvy::from_path(&home_env) {
+                    Ok(()) => {
+                        debug!(path = %home_env.display(), "Loaded home .env file");
+                    }
+                    Err(e) => {
+                        debug!(path = %home_env.display(), error = %e, "Failed to load home .env file");
                     }
                 }
             }
@@ -438,16 +436,16 @@ impl Config {
         }
 
         // 4. User config directory (~/.config/{app_name}/)
-        if let Some(name) = app_name {
-            if let Some(config_dir) = dirs::config_dir() {
-                let user_config = config_dir.join(name);
-                if user_config.is_dir() {
-                    for ext in &extensions {
-                        let path = user_config.join(format!("{base_name}.{ext}"));
-                        if path.exists() {
-                            files.push(path);
-                            break;
-                        }
+        if let Some(name) = app_name
+            && let Some(config_dir) = dirs::config_dir()
+        {
+            let user_config = config_dir.join(name);
+            if user_config.is_dir() {
+                for ext in &extensions {
+                    let path = user_config.join(format!("{base_name}.{ext}"));
+                    if path.exists() {
+                        files.push(path);
+                        break;
                     }
                 }
             }

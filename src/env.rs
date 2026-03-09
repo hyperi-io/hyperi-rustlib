@@ -96,24 +96,22 @@ impl Environment {
 
     fn is_container_by_cgroups() -> bool {
         // Check cgroup v1
-        if let Ok(content) = std::fs::read_to_string("/proc/1/cgroup") {
-            if content.contains("/docker/")
+        if let Ok(content) = std::fs::read_to_string("/proc/1/cgroup")
+            && (content.contains("/docker/")
                 || content.contains("/kubepods/")
                 || content.contains("/lxc/")
-                || content.contains("/containerd/")
-            {
-                return true;
-            }
+                || content.contains("/containerd/"))
+        {
+            return true;
         }
 
         // Check cgroup v2 (unified hierarchy)
-        if let Ok(content) = std::fs::read_to_string("/proc/1/mountinfo") {
-            if content.contains("/docker/")
+        if let Ok(content) = std::fs::read_to_string("/proc/1/mountinfo")
+            && (content.contains("/docker/")
                 || content.contains("/kubepods/")
-                || content.contains("/containerd/")
-            {
-                return true;
-            }
+                || content.contains("/containerd/"))
+        {
+            return true;
         }
 
         false
@@ -149,11 +147,11 @@ pub fn is_helm() -> bool {
 
     // Check for Helm labels via downward API
     let labels_path = Path::new("/etc/podinfo/labels");
-    if labels_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(labels_path) {
-            return content.contains("helm.sh/chart")
-                || content.contains("app.kubernetes.io/managed-by=\"Helm\"");
-        }
+    if labels_path.exists()
+        && let Ok(content) = std::fs::read_to_string(labels_path)
+    {
+        return content.contains("helm.sh/chart")
+            || content.contains("app.kubernetes.io/managed-by=\"Helm\"");
     }
 
     false

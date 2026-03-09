@@ -153,10 +153,10 @@ mod tests {
 
         async fn try_send(&self, _data: &[u8]) -> Result<(), SinkError<Self::Error>> {
             let n = self.count.fetch_add(1, Ordering::SeqCst);
-            if let Some(fail_after) = self.fail_after {
-                if n >= fail_after {
-                    return Err(SinkError::Unavailable);
-                }
+            if let Some(fail_after) = self.fail_after
+                && n >= fail_after
+            {
+                return Err(SinkError::Unavailable);
             }
             Ok(())
         }
