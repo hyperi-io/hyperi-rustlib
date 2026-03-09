@@ -126,6 +126,9 @@ pub mod version_check;
 
 // Re-export common types at crate root
 pub use env::Environment;
+pub use kafka_config::{
+    KafkaConfigError, KafkaConfigResult, config_from_file, config_from_properties_str,
+};
 
 #[cfg(feature = "runtime")]
 pub use runtime::RuntimePaths;
@@ -214,8 +217,8 @@ pub use output::{FileOutput, FileOutputConfig, OutputError};
 
 #[cfg(feature = "expression")]
 pub use expression::{
-    build_context, compile, evaluate, evaluate_condition, validate, ExpressionError,
-    ExpressionResult, ALLOWED_FUNCTIONS, DISALLOWED_FUNCTIONS,
+    ALLOWED_FUNCTIONS, DISALLOWED_FUNCTIONS, ExpressionError, ExpressionResult, build_context,
+    compile, evaluate, evaluate_condition, validate,
 };
 
 #[cfg(feature = "deployment")]
