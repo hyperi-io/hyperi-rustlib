@@ -23,6 +23,9 @@ Code is committed (`83713e6`), 425/426 tests pass. CI fails on pre-existing flak
 
 ### Completed Recent
 
+- [x] **Rust edition 2024** — migrated from 2021; `temp-env` replaces unsafe `set_var`/`remove_var` in tests across 6 files
+- [x] **async-trait removal** — public traits (`Sink`, `Transport`, `SecretProvider`) now use `fn ... -> impl Future + Send` (Rust 1.75+ native)
+- [x] **kafka_config module** — `config_from_file`, 7 named profiles, `merge_with_overrides`; librdkafka settings loaded from config git dir (only cascade exception)
 - [x] **File output sink** — `src/io/`, `src/output/`, `output-file` feature
 - [x] **CLI module** — CommonArgs, StandardCommand, DfeApp trait (`cli` feature)
 - [x] **Top module** — ratatui TUI dashboard, Prometheus parser, oneshot mode (`top` feature)
