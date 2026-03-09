@@ -6,6 +6,11 @@ The CI system is being completely rewritten. Until migration instructions are pr
 - Do not trigger CI runs or rely on CI for validation
 - Run `./ci/local-build.sh` for local validation if it exists
 
+**This project is the first Rust project to onboard the new CI.** It is a
+transitive dependency of every downstream HyperI Rust service (dfe-loader,
+dfe-archiver, dfe-receiver, etc.), so getting CI green here unblocks the
+entire Rust ecosystem. Prioritise it when CI migration instructions arrive.
+
 ---
 
 # Project State
