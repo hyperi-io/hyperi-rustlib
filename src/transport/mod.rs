@@ -57,13 +57,13 @@ mod types;
 
 // Re-export payload utilities
 pub use payload::{
-    extract_field, extract_nested_field, parse_payload, parse_payload_typed,
-    parse_payload_with_format, serialize_json, serialize_msgpack, serialize_payload, PayloadValue,
+    PayloadValue, extract_field, extract_nested_field, parse_payload, parse_payload_typed,
+    parse_payload_with_format, serialize_json, serialize_msgpack, serialize_payload,
 };
 pub use types::PayloadFormat;
 
 // Re-export stateful format detection
-pub use detect::{detect_format, DetectedFormat, FormatDetector, FormatMode};
+pub use detect::{DetectedFormat, FormatDetector, FormatMode, detect_format};
 
 #[cfg(feature = "transport-kafka")]
 pub mod kafka;

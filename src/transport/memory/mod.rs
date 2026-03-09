@@ -35,8 +35,8 @@ use super::error::{TransportError, TransportResult};
 use super::traits::Transport;
 use super::types::{Message, PayloadFormat, SendResult};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::mpsc;
 
 /// Configuration for memory transport.

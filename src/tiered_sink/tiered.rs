@@ -9,11 +9,11 @@
 //! TieredSink implementation.
 
 use crate::tiered_sink::{
-    drainer, CircuitBreaker, CircuitState, CompressionCodec, OrderingMode, Result, Sink, SinkError,
-    TieredSinkConfig, TieredSinkError,
+    CircuitBreaker, CircuitState, CompressionCodec, OrderingMode, Result, Sink, SinkError,
+    TieredSinkConfig, TieredSinkError, drainer,
 };
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;

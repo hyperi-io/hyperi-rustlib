@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use fs4::fs_std::FileExt;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 
 use crate::directory_config::error::{DirectoryConfigError, DirectoryConfigResult};
 use crate::directory_config::refresh::refresh_loop;

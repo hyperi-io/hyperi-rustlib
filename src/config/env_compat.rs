@@ -565,7 +565,10 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
         temp_env::with_vars(
-            [("TEST_STANDARD_VAR3", Some("standard")), ("TEST_LEGACY_VAR3", Some("legacy"))],
+            [
+                ("TEST_STANDARD_VAR3", Some("standard")),
+                ("TEST_LEGACY_VAR3", Some("legacy")),
+            ],
             || {
                 let var = EnvVar::new("TEST_STANDARD_VAR3").with_legacy("TEST_LEGACY_VAR3");
                 assert_eq!(var.get(), Some("standard".to_string()));
@@ -628,7 +631,10 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
         temp_env::with_vars(
-            [("PGHOST", None::<&str>), ("POSTGRESQL_HOST", Some("legacy-host"))],
+            [
+                ("PGHOST", None::<&str>),
+                ("POSTGRESQL_HOST", Some("legacy-host")),
+            ],
             || assert_eq!(postgres::host().get(), Some("legacy-host".to_string())),
         );
     }
@@ -638,7 +644,10 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
         temp_env::with_var("KAFKA_BOOTSTRAP_SERVERS", Some("kafka:9092"), || {
-            assert_eq!(kafka::bootstrap_servers().get(), Some("kafka:9092".to_string()));
+            assert_eq!(
+                kafka::bootstrap_servers().get(),
+                Some("kafka:9092".to_string())
+            );
         });
     }
 
@@ -656,8 +665,16 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         setup();
         temp_env::with_vars(
-            [("VAULT_ADDR", None::<&str>), ("OPENBAO_ADDR", Some("https://openbao:8200"))],
-            || assert_eq!(vault::addr().get(), Some("https://openbao:8200".to_string())),
+            [
+                ("VAULT_ADDR", None::<&str>),
+                ("OPENBAO_ADDR", Some("https://openbao:8200")),
+            ],
+            || {
+                assert_eq!(
+                    vault::addr().get(),
+                    Some("https://openbao:8200".to_string())
+                )
+            },
         );
     }
 

@@ -39,13 +39,13 @@ use std::sync::OnceLock;
 
 use thiserror::Error;
 use tracing::Level;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
-pub use masking::{default_sensitive_fields, mask_sensitive_string, MaskingLayer, MaskingWriter};
+pub use masking::{MaskingLayer, MaskingWriter, default_sensitive_fields, mask_sensitive_string};
 
 /// Global flag to track initialisation.
 static LOGGER_INIT: OnceLock<()> = OnceLock::new();

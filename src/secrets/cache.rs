@@ -36,9 +36,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use tracing::{debug, warn};
 
+use super::CacheStats;
 use super::error::{SecretsError, SecretsResult};
 use super::types::{CacheConfig, CacheEntry, SecretValue};
-use super::CacheStats;
 
 /// Secret cache with memory and disk tiers.
 pub struct SecretCache {
@@ -382,9 +382,11 @@ mod tests {
     #[test]
     fn test_key_to_filename() {
         let filename = SecretCache::key_to_filename("test/key:with/special");
-        assert!(std::path::Path::new(&filename)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("json")));
+        assert!(
+            std::path::Path::new(&filename)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        );
         assert!(!filename.contains('/'));
         assert!(!filename.contains(':'));
     }

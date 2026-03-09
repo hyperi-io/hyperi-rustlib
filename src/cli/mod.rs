@@ -59,7 +59,7 @@ mod error;
 pub mod output;
 mod version;
 
-pub use app::{run_app, DfeApp};
+pub use app::{DfeApp, run_app};
 pub use args::CommonArgs;
 pub use commands::StandardCommand;
 pub use error::CliError;

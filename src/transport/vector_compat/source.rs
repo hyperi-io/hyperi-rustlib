@@ -11,8 +11,8 @@ use super::convert::event_wrapper_to_json;
 use super::proto::vector;
 use crate::transport::grpc::GrpcToken;
 use crate::transport::types::{Message, PayloadFormat};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::mpsc;
 use tonic::{Request, Response, Status};
 

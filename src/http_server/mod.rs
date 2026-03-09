@@ -52,10 +52,10 @@ pub use server::HttpServer;
 
 // Re-export axum types users commonly need
 pub use axum::{
+    Extension, Router,
     extract::{Path, Query, State},
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post, put},
-    Extension, Router,
 };
 
 /// Result type for HTTP server operations.

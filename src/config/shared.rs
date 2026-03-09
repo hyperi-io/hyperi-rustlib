@@ -75,8 +75,8 @@
 //! | `subscribe()` | `subscribe()` | `watch::Receiver<u64>` |
 //! | `clone_inner()` | Removed | Use `Clone` on `SharedConfig` instead |
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::RwLock;
 use tokio::sync::watch;
