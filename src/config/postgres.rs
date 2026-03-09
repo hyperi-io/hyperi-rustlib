@@ -536,7 +536,7 @@ fn insert_nested(
         .entry(first.to_string())
         .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
 
-    if let serde_json::Value::Object(ref mut obj) = entry {
+    if let serde_json::Value::Object(obj) = entry {
         let mut inner: HashMap<String, serde_json::Value> =
             obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         insert_nested(&mut inner, &rest, value);
