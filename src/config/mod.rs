@@ -692,16 +692,13 @@ mod tests {
     fn test_config_env_override() {
         // Env vars use double underscore for nesting: PREFIX_KEY__SUBKEY -> key.subkey
         // For flat keys, just use PREFIX_KEY -> key
-        std::env::set_var("TEST_HOST", "testhost");
-
-        let config = Config::new(ConfigOptions {
-            env_prefix: "TEST".into(),
-            ..Default::default()
-        })
-        .unwrap();
-
-        assert_eq!(config.get_string("host"), Some("testhost".to_string()));
-
-        std::env::remove_var("TEST_HOST");
+        temp_env::with_var("TEST_HOST", Some("testhost"), || {
+            let config = Config::new(ConfigOptions {
+                env_prefix: "TEST".into(),
+                ..Default::default()
+            })
+            .unwrap();
+            assert_eq!(config.get_string("host"), Some("testhost".to_string()));
+        });
     }
 }

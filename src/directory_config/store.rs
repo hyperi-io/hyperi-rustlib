@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use fs2::FileExt;
+use fs4::fs_std::FileExt;
 use tokio::sync::{broadcast, RwLock};
 
 use crate::directory_config::error::{DirectoryConfigError, DirectoryConfigResult};

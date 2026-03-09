@@ -36,7 +36,7 @@ Modular library with feature-gated components. Each module can be enabled/disabl
 
 ### Tech Stack
 
-- **Language:** Rust 1.80+ (MSRV)
+- **Language:** Rust (pinned to latest stable, currently 1.94)
 - **Config:** figment (0.10)
 - **Logging:** tracing + tracing-subscriber (0.3)
 - **Metrics:** metrics + metrics-exporter-prometheus, OpenTelemetry
@@ -57,6 +57,8 @@ CARGO_BUILD_JOBS=2 cargo build
 CARGO_BUILD_JOBS=2 cargo test
 CARGO_BUILD_JOBS=2 cargo clippy
 ```
+
+**NEVER kill cargo processes.** Cargo holds a file lock on the build directory. Killing a process leaves the lock held, causing subsequent `cargo` invocations to block indefinitely on "Blocking waiting for file lock on build directory". If a build seems stuck, wait for it to finish or check for orphaned processes first.
 
 ---
 
@@ -84,7 +86,8 @@ CARGO_BUILD_JOBS=2 cargo clippy
 - **Ed25519** for signatures (ed25519-dalek, well-maintained)
 - **serde-yaml-ng** replaced serde_yml (security fix)
 - **yaque** replaced queue-file (async-native, maintained)
-- **std::sync::LazyLock** replaced once_cell (MSRV 1.80)
+- **std::sync::LazyLock** replaced once_cell
+- **fs4** replaced fs2 (unmaintained, fs4 is the maintained pure-Rust successor)
 - **Package rename** from `hs-rustlib` to `hyperi-rustlib` to match org rebrand
 - **Config cascade unified spec** — rustlib and pylib must be identical. Both search `./`, `./config/`, `/config/`, `~/.config/{app_name}/`. Home `.env` opt-in. PG layer is built-for-not-with (YAML gitops already centralised). See [CONFIG-CASCADE.md](docs/CONFIG-CASCADE.md)
 
