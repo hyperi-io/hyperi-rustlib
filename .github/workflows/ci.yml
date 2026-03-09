@@ -7,7 +7,7 @@
 
 name: CI
 
-"on":
+on:
   push:
     branches: ["**"]
     paths-ignore:
@@ -21,11 +21,14 @@ name: CI
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 jobs:
   ci:
     uses: hyperi-io/hyperi-ci/.github/workflows/rust-ci.yml@main
     with:
       publish-target: oss
-    secrets:
-      CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
-      GITLEAKS_GH_ACTIONS_KEY: ${{ secrets.GITLEAKS_GH_ACTIONS_KEY }}
+    secrets: inherit
