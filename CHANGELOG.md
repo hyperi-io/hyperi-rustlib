@@ -1,3 +1,17 @@
+## [1.13.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.13.1...v1.13.2) (2026-03-10)
+
+
+### Bug Fixes
+
+* add benches, scripts to cargo publish exclude list [skip ci] ([e305716](https://github.com/hyperi-io/hyperi-rustlib/commit/e3057161c90fb45fc70d1032a17469c4a0a0f310))
+* add kafka_config module with config_from_file and file-based overrides [skip ci] ([1de187a](https://github.com/hyperi-io/hyperi-rustlib/commit/1de187a67b1414a1c16eaf94383006a546bd81cc))
+* modernise to Rust edition 2024 and drop async-trait from traits [skip ci] ([aac49af](https://github.com/hyperi-io/hyperi-rustlib/commit/aac49af0958e44a051b8d7ec4dbfb84967430d08))
+* quote on key in workflow to prevent YAML boolean parse ([02e38f8](https://github.com/hyperi-io/hyperi-rustlib/commit/02e38f8285c6cde6778ac1ef4e0bf53b60aa92c2))
+* remove explicit ref mut in match ergonomics for Rust stable ([7781de7](https://github.com/hyperi-io/hyperi-rustlib/commit/7781de749c4474e5fcb4844c037f72b93beac180))
+* resolve Rust 2024 edition clippy and fmt errors ([fd8b2ab](https://github.com/hyperi-io/hyperi-rustlib/commit/fd8b2abfc649f8b7eeda07c6c07ea14e302f210a))
+* sort criterion imports to match rustfmt ordering ([8c0300d](https://github.com/hyperi-io/hyperi-rustlib/commit/8c0300d9bf860581afb1aa987ae2d3eafc055add))
+* use secrets inherit and add permissions block ([513d180](https://github.com/hyperi-io/hyperi-rustlib/commit/513d18019755b26362a7589db02e8190c878d565))
+
 ## [1.13.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.13.0...v1.13.1) (2026-03-03)
 
 
