@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.13.2...v1.14.0) (2026-03-11)
+
+
+### Features
+
+* dynamic-link C deps, bump versions, drop cmake builds ([926d2fe](https://github.com/hyperi-io/hyperi-rustlib/commit/926d2fee601ba49234e4e490cb1df671f97f72ee))
+
 ## [1.13.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.13.1...v1.13.2) (2026-03-10)
 
 
