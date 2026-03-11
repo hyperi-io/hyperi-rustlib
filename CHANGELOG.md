@@ -1,3 +1,15 @@
+# [1.15.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.14.0...v1.15.0) (2026-03-11)
+
+
+### Bug Fixes
+
+* resolve clippy bool_comparison in native_deps test ([8bc941d](https://github.com/hyperi-io/hyperi-rustlib/commit/8bc941de300a042f5683023706eabac0e2622849))
+
+
+### Features
+
+* auto-generate native deps in Dockerfile from feature flags ([9e86810](https://github.com/hyperi-io/hyperi-rustlib/commit/9e86810e741e01254f3cb7a1436d5ab88db0bada))
+
 # [1.14.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.13.2...v1.14.0) (2026-03-11)
 
 
