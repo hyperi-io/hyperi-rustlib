@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.15.0...v1.16.0) (2026-03-11)
+
+
+### Features
+
+* add ImageProfile for production vs development container images ([870a52c](https://github.com/hyperi-io/hyperi-rustlib/commit/870a52c3444616d5ad8b4d3e34aa343a8824b3b9))
+
 # [1.15.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.14.0...v1.15.0) (2026-03-11)
 
 
