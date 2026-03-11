@@ -37,7 +37,7 @@
 | Compression | `lz4_flex` + `snap` + `zstd` | Tiered-sink and spool compression codecs |
 | Secrets (Vault) | `vaultrs` | OpenBao/Vault API client |
 | Secrets (AWS) | `aws-sdk-secretsmanager` | AWS Secrets Manager client |
-| Kafka | `rdkafka` | librdkafka bindings |
+| Kafka | `rdkafka` (dynamic-linking) | System librdkafka via pkg-config (Confluent APT repo for >= 2.12.1) |
 | gRPC | `tonic` + `prost` | gRPC transport (DFE native + Vector wire compat) |
 | TUI | `ratatui` | Terminal dashboard (`top` feature) |
 | Git | `git2` | Directory-config git integration (optional) |
@@ -99,6 +99,32 @@ hyperi_rustlib/
 │   └── kafka_integration.rs        # Kafka integration tests (real broker)
 └── benches/                        # Criterion benchmarks
 ```
+
+---
+
+## Kafka Authentication
+
+### Design Decision: SASL-SCRAM as Default
+
+SASL-SCRAM-SHA-512 is the standard mechanism for all production Kafka deployments.
+The `transport-kafka` feature builds `TransportKafkaConfig` with `security_protocol`,
+`sasl_mechanism`, `sasl_username`, `sasl_password`, and `ssl_*` fields so callers
+can configure any Kafka platform without code changes:
+
+| Platform | Mechanism | Protocol |
+|----------|-----------|----------|
+| Apache Kafka (self-managed) | SCRAM-SHA-512 | SASL_PLAINTEXT (internal) or SASL_SSL (external) |
+| AutoMQ | SCRAM-SHA-512 | Same as Apache Kafka — drop-in replacement |
+| AWS MSK | SCRAM-SHA-512 | SASL_SSL |
+| Confluent Cloud | SCRAM-SHA-512 | SASL_SSL |
+| Redpanda | SCRAM-SHA-512 | SASL_PLAINTEXT or SASL_SSL |
+| Strimzi (K8s) | SCRAM-SHA-512 | SASL_PLAINTEXT (internal), SASL_SSL (NodePort) |
+
+Certificate-based (mTLS) and AWS IAM auth have high variance between platforms and
+require platform-specific code paths — not used in core transport.
+
+`ssl_ca_location = None` uses the system trust store. Set `ssl_ca_location` only
+when the CA is not installed system-wide.
 
 ---
 
@@ -409,7 +435,7 @@ pub fn size_buckets() -> Vec<f64> {
 | `http-server` | axum HTTP server with `/health/live`, `/health/ready` |
 | `transport` | Transport trait + payload utilities |
 | `transport-memory` | In-memory transport backend |
-| `transport-kafka` | Kafka transport backend (rdkafka) |
+| `transport-kafka` | Kafka transport backend (rdkafka) — SASL-SCRAM-SHA-512 default |
 | `transport-grpc` | gRPC transport (DFE native proto, tonic/prost) |
 | `transport-grpc-vector-compat` | Vector wire-protocol compatibility layer |
 | `transport-all` | All transport backends |
