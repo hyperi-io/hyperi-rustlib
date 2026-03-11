@@ -102,6 +102,13 @@ Code is committed (`83713e6`), 425/426 tests pass. CI fails on pre-existing flak
 - [ ] PII anonymiser (evaluate Rust libraries)
 - [ ] Python bindings for ClickHouse client (PyO3)
 
+### Kafka — Opinionated SASL-SCRAM Named Constructors
+
+- [ ] Add `KafkaConfig::external_sasl_scram(brokers, username, password)` — SASL_SSL + SCRAM-SHA-512
+- [ ] Add `KafkaConfig::internal_sasl_scram(brokers, username, password)` — SASL_PLAINTEXT + SCRAM-SHA-512
+- [ ] Encodes the decision once: SCRAM works unchanged on Apache Kafka, AutoMQ, MSK, Confluent Cloud
+- [ ] Remove per-project manual assembly of protocol + sasl + tls fields in dfe-loader, dfe-receiver
+
 ---
 
 ## Notes

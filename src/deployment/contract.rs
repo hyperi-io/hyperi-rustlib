@@ -11,6 +11,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::keda::KedaContract;
+use super::native_deps::NativeDepsContract;
 
 /// Deployment-facing contract points derived from the app config cascade.
 ///
@@ -78,6 +79,14 @@ pub struct DeploymentContract {
     // I don't like doing it this way but it's the best compromise option
     #[serde(default = "default_base_image")]
     pub base_image: String,
+
+    /// Runtime native dependencies for the container image.
+    ///
+    /// Use [`NativeDepsContract::for_rustlib_features`] to auto-populate from
+    /// hyperi-rustlib feature flags. The Dockerfile generator emits the correct
+    /// APT repo setup and package installation commands.
+    #[serde(default)]
+    pub native_deps: NativeDepsContract,
 }
 
 /// Health probe endpoint paths.
@@ -224,6 +233,7 @@ mod tests {
             default_config: None,
             depends_on: vec![],
             base_image: "ubuntu:24.04".into(),
+            native_deps: NativeDepsContract::default(),
         };
         let json = contract.to_json();
         assert!(json.contains("test-app"));
@@ -249,6 +259,7 @@ mod tests {
             default_config: None,
             depends_on: vec![],
             base_image: "ubuntu:24.04".into(),
+            native_deps: NativeDepsContract::default(),
         };
         let json = contract.to_json();
         let parsed: DeploymentContract = serde_json::from_str(&json).unwrap();
@@ -275,6 +286,7 @@ mod tests {
             default_config: None,
             depends_on: vec![],
             base_image: "ubuntu:24.04".into(),
+            native_deps: NativeDepsContract::default(),
         };
         assert_eq!(contract.binary(), "my-app");
     }
@@ -298,6 +310,7 @@ mod tests {
             default_config: None,
             depends_on: vec![],
             base_image: "ubuntu:24.04".into(),
+            native_deps: NativeDepsContract::default(),
         };
         assert_eq!(contract.config_filename(), "loader.yaml");
         assert_eq!(contract.config_dir(), "/etc/dfe");
