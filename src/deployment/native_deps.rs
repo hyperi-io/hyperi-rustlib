@@ -255,7 +255,7 @@ mod tests {
             "ubuntu:24.04",
         );
         assert_eq!(deps.apt_repos.len(), 1); // confluent only
-        assert!(deps.apt_packages.contains(&"librdkafka1".to_string()) == false); // in repo packages
+        assert!(!deps.apt_packages.contains(&"librdkafka1".to_string())); // in repo packages
         assert!(deps.apt_repos[0].packages.contains(&"librdkafka1".into()));
         assert!(deps.apt_packages.contains(&"libssl3".into()));
         assert!(deps.apt_packages.contains(&"libzstd1".into()));
