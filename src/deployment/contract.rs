@@ -13,6 +13,28 @@ use serde::{Deserialize, Serialize};
 use super::keda::KedaContract;
 use super::native_deps::NativeDepsContract;
 
+/// Container image profile — controls what goes into the generated Dockerfile.
+///
+/// Both profiles use the same linking strategy (dynamic). The difference is
+/// optimisation level, debug tooling, and image metadata.
+///
+/// # Image tagging convention
+///
+/// | Profile | Tag | Example |
+/// |---------|-----|---------|
+/// | `Production` | `:<version>`, `:latest` | `dfe-loader:1.15.0` |
+/// | `Development` | `:<version>-dev`, `:latest-dev` | `dfe-loader:1.15.0-dev` |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageProfile {
+    /// Minimal production image — stripped binary, no debug tools.
+    #[default]
+    Production,
+    /// Development image — includes diagnostic tools (bash, strace, tcpdump,
+    /// procps, dnsutils, net-tools). Same binary, same linking.
+    Development,
+}
+
 /// Deployment-facing contract points derived from the app config cascade.
 ///
 /// Apps build this from their `Config::default()`. Validation functions
@@ -87,6 +109,13 @@ pub struct DeploymentContract {
     /// APT repo setup and package installation commands.
     #[serde(default)]
     pub native_deps: NativeDepsContract,
+
+    /// Image profile — production (minimal) or development (debug tools).
+    ///
+    /// Defaults to [`ImageProfile::Production`]. Use [`with_dev_profile`](Self::with_dev_profile)
+    /// to derive a development variant from an existing contract.
+    #[serde(default)]
+    pub image_profile: ImageProfile,
 }
 
 /// Health probe endpoint paths.
@@ -190,6 +219,17 @@ impl DeploymentContract {
     pub fn to_yaml(&self) -> String {
         serde_yaml_ng::to_string(self).unwrap_or_default()
     }
+
+    /// Return a clone with [`ImageProfile::Development`] set.
+    ///
+    /// Useful for generating both production and dev Dockerfiles from a single
+    /// contract definition.
+    #[must_use]
+    pub fn with_dev_profile(&self) -> Self {
+        let mut dev = self.clone();
+        dev.image_profile = ImageProfile::Development;
+        dev
+    }
 }
 
 impl Default for HealthContract {
@@ -234,6 +274,7 @@ mod tests {
             depends_on: vec![],
             base_image: "ubuntu:24.04".into(),
             native_deps: NativeDepsContract::default(),
+            image_profile: ImageProfile::default(),
         };
         let json = contract.to_json();
         assert!(json.contains("test-app"));
@@ -260,6 +301,7 @@ mod tests {
             depends_on: vec![],
             base_image: "ubuntu:24.04".into(),
             native_deps: NativeDepsContract::default(),
+            image_profile: ImageProfile::default(),
         };
         let json = contract.to_json();
         let parsed: DeploymentContract = serde_json::from_str(&json).unwrap();
@@ -287,6 +329,7 @@ mod tests {
             depends_on: vec![],
             base_image: "ubuntu:24.04".into(),
             native_deps: NativeDepsContract::default(),
+            image_profile: ImageProfile::default(),
         };
         assert_eq!(contract.binary(), "my-app");
     }
@@ -311,6 +354,7 @@ mod tests {
             depends_on: vec![],
             base_image: "ubuntu:24.04".into(),
             native_deps: NativeDepsContract::default(),
+            image_profile: ImageProfile::default(),
         };
         assert_eq!(contract.config_filename(), "loader.yaml");
         assert_eq!(contract.config_dir(), "/etc/dfe");
