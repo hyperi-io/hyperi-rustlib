@@ -30,7 +30,7 @@
 //!
 //! ```rust,no_run
 //! use hyperi_rustlib::deployment::{
-//!     DeploymentContract, HealthContract, KedaContract,
+//!     DeploymentContract, HealthContract, KedaContract, NativeDepsContract,
 //!     generate_dockerfile, generate_chart, generate_compose_fragment,
 //! };
 //!
@@ -51,6 +51,10 @@
 //!     depends_on: vec!["kafka".into(), "clickhouse".into()],
 //!     keda: Some(KedaContract::default()),
 //!     base_image: "ubuntu:24.04".into(),
+//!     native_deps: NativeDepsContract::for_rustlib_features(
+//!         &["transport-kafka", "spool", "tiered-sink"],
+//!         "ubuntu:24.04",
+//!     ),
 //! };
 //!
 //! // Generate Dockerfile
@@ -67,6 +71,7 @@ mod contract;
 mod error;
 mod generate;
 mod keda;
+mod native_deps;
 mod validate;
 
 pub use contract::{
@@ -75,4 +80,5 @@ pub use contract::{
 pub use error::{ContractMismatch, DeploymentError};
 pub use generate::{generate_chart, generate_compose_fragment, generate_dockerfile};
 pub use keda::{KedaConfig, KedaContract};
+pub use native_deps::{AptRepoContract, NativeDepsContract};
 pub use validate::{validate_dockerfile, validate_helm_values};
