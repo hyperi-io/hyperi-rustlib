@@ -30,7 +30,7 @@
 //!
 //! ```rust,no_run
 //! use hyperi_rustlib::deployment::{
-//!     DeploymentContract, HealthContract, KedaContract, NativeDepsContract,
+//!     DeploymentContract, HealthContract, ImageProfile, KedaContract, NativeDepsContract,
 //!     generate_dockerfile, generate_chart, generate_compose_fragment,
 //! };
 //!
@@ -55,10 +55,14 @@
 //!         &["transport-kafka", "spool", "tiered-sink"],
 //!         "ubuntu:24.04",
 //!     ),
+//!     image_profile: ImageProfile::Production,
 //! };
 //!
-//! // Generate Dockerfile
+//! // Generate production Dockerfile
 //! let dockerfile = generate_dockerfile(&contract);
+//!
+//! // Generate development Dockerfile (same binary, adds debug tools)
+//! let dev_dockerfile = generate_dockerfile(&contract.with_dev_profile());
 //!
 //! // Generate Helm chart directory
 //! // generate_chart(&contract, "chart/").unwrap();
@@ -75,7 +79,8 @@ mod native_deps;
 mod validate;
 
 pub use contract::{
-    DeploymentContract, HealthContract, PortContract, SecretEnvContract, SecretGroupContract,
+    DeploymentContract, HealthContract, ImageProfile, PortContract, SecretEnvContract,
+    SecretGroupContract,
 };
 pub use error::{ContractMismatch, DeploymentError};
 pub use generate::{generate_chart, generate_compose_fragment, generate_dockerfile};

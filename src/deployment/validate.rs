@@ -408,6 +408,7 @@ mod tests {
             keda: Some(KedaContract::default()),
             base_image: "ubuntu:24.04".into(),
             native_deps: super::super::NativeDepsContract::default(),
+            image_profile: super::super::ImageProfile::default(),
         }
     }
 
