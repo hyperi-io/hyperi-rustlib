@@ -6,7 +6,9 @@
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 
 branches:
-  - main
+  - name: main
+    prerelease: dev
+  - release
 
 tagFormat: "v${version}"
 
