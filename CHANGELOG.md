@@ -1,3 +1,10 @@
+## [1.16.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.0...v1.16.1) (2026-03-12)
+
+
+### Bug Fixes
+
+* update crates.io keywords for discoverability ([ad924cd](https://github.com/hyperi-io/hyperi-rustlib/commit/ad924cd9abc8391c7595886622a4f797f966726b))
+
 # [1.16.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.15.0...v1.16.0) (2026-03-11)
 
 
