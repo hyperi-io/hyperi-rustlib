@@ -1,1 +1,1 @@
-../../../ai/standards/code-assistant/AI-GUIDELINES.md
+../../../hyperi-ai/standards/code-assistant/AI-GUIDELINES.md

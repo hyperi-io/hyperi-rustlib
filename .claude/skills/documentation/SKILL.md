@@ -1,0 +1,1 @@
+../../../hyperi-ai/skills/documentation/SKILL.md

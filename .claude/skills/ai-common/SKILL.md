@@ -1,1 +1,1 @@
-../../../ai/standards/code-assistant/COMMON.md
+../../../hyperi-ai/standards/code-assistant/COMMON.md

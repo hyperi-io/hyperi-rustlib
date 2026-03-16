@@ -1,1 +1,1 @@
-../../../ai/standards/languages/RUST.md
+../../../hyperi-ai/standards/languages/RUST.md

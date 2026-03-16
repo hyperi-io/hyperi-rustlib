@@ -1,1 +1,1 @@
-../../../ai/standards/STANDARDS.md
+../../../hyperi-ai/standards/STANDARDS.md
