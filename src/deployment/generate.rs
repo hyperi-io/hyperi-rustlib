@@ -1219,7 +1219,7 @@ mod tests {
         let contract = test_contract();
         let dockerfile = generate_dockerfile(&contract);
 
-        assert!(dockerfile.contains("Profile: production"));
+        assert!(dockerfile.contains("Purpose:   production container image"));
         assert!(dockerfile.contains("io.hyperi.profile=\"production\""));
         assert!(!dockerfile.contains("strace"));
         assert!(!dockerfile.contains("tcpdump"));
@@ -1230,7 +1230,7 @@ mod tests {
         let contract = test_contract().with_dev_profile();
         let dockerfile = generate_dockerfile(&contract);
 
-        assert!(dockerfile.contains("Profile: development"));
+        assert!(dockerfile.contains("Purpose:   development container image"));
         assert!(dockerfile.contains("io.hyperi.profile=\"development\""));
         assert!(dockerfile.contains("strace"));
         assert!(dockerfile.contains("tcpdump"));
