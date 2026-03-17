@@ -1,11 +1,9 @@
-## [1.16.1-dev.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.0...v1.16.1-dev.1) (2026-03-17)
+## [1.16.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.0...v1.16.1) (2026-03-12)
 
 
 ### Bug Fixes
 
-* correct Dockerfile profile assertions in deployment tests ([2cfee48](https://github.com/hyperi-io/hyperi-rustlib/commit/2cfee484a30af9b557da456472db9880100b23e2))
-* Dockerfile generator header and Ubuntu 24.04 UID fix ([d8c3c69](https://github.com/hyperi-io/hyperi-rustlib/commit/d8c3c698083c9478d23b4887205f25af526df6e5))
-* downgrade rdkafka INFO/Notice logs to debug level ([c58c17f](https://github.com/hyperi-io/hyperi-rustlib/commit/c58c17fa73e2b6290815dcbd9f14e1ff5946a911)), closes [hyperi-io/dfe-loader#5](https://github.com/hyperi-io/dfe-loader/issues/5)
+* update crates.io keywords for discoverability ([ad924cd](https://github.com/hyperi-io/hyperi-rustlib/commit/ad924cd9abc8391c7595886622a4f797f966726b))
 
 # [1.16.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.15.0...v1.16.0) (2026-03-11)
 
