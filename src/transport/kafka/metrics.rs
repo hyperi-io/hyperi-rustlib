@@ -261,10 +261,12 @@ impl ClientContext for StatsContext {
                 eprintln!("WARN librdkafka: {} {}", fac, log_message);
             }
             RDKafkaLogLevel::Notice | RDKafkaLogLevel::Info => {
+                // rdkafka INFO/Notice is too verbose for application-level INFO
+                // (statistics JSON every statistics.interval.ms, connection lifecycle, etc.)
                 #[cfg(feature = "logger")]
-                tracing::info!(target: "librdkafka", facility = fac, "{}", log_message);
+                tracing::debug!(target: "librdkafka", facility = fac, "{}", log_message);
                 #[cfg(not(feature = "logger"))]
-                eprintln!("INFO librdkafka: {} {}", fac, log_message);
+                {}
             }
             RDKafkaLogLevel::Debug => {
                 #[cfg(feature = "logger")]
