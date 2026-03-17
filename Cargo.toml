@@ -15,7 +15,7 @@ description = "Shared utility library for HyperI Rust applications"
 license = "FSL-1.1-ALv2"
 repository = "https://github.com/hyperi-io/hyperi-rustlib"
 publish = true
-keywords = ["hyperi", "config", "logging", "metrics", "opentelemetry"]
+keywords = ["config", "logging", "metrics", "prometheus", "opentelemetry"]
 categories = ["development-tools"]
 exclude = [".claude/", ".github/", "ci/", "ai/", "docs/", "examples/", "benches/", "scripts/"]
 
