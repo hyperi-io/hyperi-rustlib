@@ -52,7 +52,7 @@ pub fn log_state_change(flag: &AtomicBool, new_state: bool) -> bool {
 #[inline]
 pub fn log_sampled(counter: &AtomicU64, sample_rate: u64) -> bool {
     let count = counter.fetch_add(1, Ordering::Relaxed) + 1;
-    count == 1 || count % sample_rate == 0
+    count == 1 || count.is_multiple_of(sample_rate)
 }
 
 /// Log at most once per interval. Returns true if enough time has passed.
@@ -71,10 +71,13 @@ pub fn log_sampled(counter: &AtomicU64, sample_rate: u64) -> bool {
 /// ```
 #[inline]
 pub fn log_debounced(last_epoch_ms: &AtomicU64, min_interval_ms: u64) -> bool {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
+    let now = u64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+    )
+    .unwrap_or(u64::MAX);
     let last = last_epoch_ms.load(Ordering::Relaxed);
     if now.saturating_sub(last) >= min_interval_ms {
         last_epoch_ms.store(now, Ordering::Relaxed);
