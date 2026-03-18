@@ -32,6 +32,7 @@
 //! ```
 
 pub mod format;
+pub mod helpers;
 mod masking;
 
 use std::io;
@@ -45,6 +46,7 @@ use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+pub use helpers::{log_debounced, log_sampled, log_state_change};
 pub use masking::{MaskingLayer, MaskingWriter, default_sensitive_fields, mask_sensitive_string};
 
 /// Global flag to track initialisation.
