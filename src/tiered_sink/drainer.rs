@@ -141,6 +141,7 @@ pub async fn drain_loop<S: Sink>(
     sink: Arc<S>,
     spool_receiver: Arc<Mutex<Receiver>>,
     spool_count: Arc<AtomicU64>,
+    spool_bytes: Arc<AtomicU64>,
     circuit: Arc<CircuitBreaker>,
     codec: crate::tiered_sink::CompressionCodec,
     strategy: DrainStrategy,
@@ -175,6 +176,7 @@ pub async fn drain_loop<S: Sink>(
                 Ok(guard) => {
                     // Copy the compressed data
                     let compressed = guard.to_vec();
+                    let compressed_len = compressed.len() as u64;
 
                     // Decompress
                     let decompress_result = codec.decompress(&compressed);
@@ -190,6 +192,7 @@ pub async fn drain_loop<S: Sink>(
                                         tracing::error!(error = %e, "Failed to commit after successful send");
                                     }
                                     spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
+                                    spool_bytes.fetch_sub(compressed_len, AtomicOrdering::Relaxed);
                                     DrainResult::Success
                                 }
                                 Err(SinkError::Full) => {
@@ -209,6 +212,7 @@ pub async fn drain_loop<S: Sink>(
                                         tracing::error!(error = %commit_err, "Failed to commit after fatal error");
                                     }
                                     spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
+                                    spool_bytes.fetch_sub(compressed_len, AtomicOrdering::Relaxed);
                                     DrainResult::Fatal(e.to_string())
                                 }
                             }
@@ -220,6 +224,7 @@ pub async fn drain_loop<S: Sink>(
                                 tracing::error!(error = %commit_err, "Failed to commit after decompression error");
                             }
                             spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
+                            spool_bytes.fetch_sub(compressed_len, AtomicOrdering::Relaxed);
                             DrainResult::DecompressError(e.to_string())
                         }
                     }

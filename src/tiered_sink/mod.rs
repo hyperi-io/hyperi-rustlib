@@ -81,7 +81,7 @@ mod tiered;
 
 pub use circuit::{CircuitBreaker, CircuitState};
 pub use codec::CompressionCodec;
-pub use config::{DrainStrategy, OrderingMode, TieredSinkConfig};
+pub use config::{DiskAwareConfig, DrainStrategy, OrderingMode, TieredSinkConfig};
 pub use error::TieredSinkError;
 pub use sink::{Sink, SinkError};
 pub use tiered::TieredSink;
