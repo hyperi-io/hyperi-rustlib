@@ -148,7 +148,7 @@ pub use config::postgres::{
 };
 
 #[cfg(feature = "logger")]
-pub use logger::{LogFormat, LoggerError, LoggerOptions};
+pub use logger::{LogFormat, LoggerError, LoggerOptions, ThrottleConfig};
 
 #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
 pub use metrics::{MetricsConfig, MetricsError, MetricsManager};
