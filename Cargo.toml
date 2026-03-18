@@ -42,7 +42,7 @@ directory-config-git = ["directory-config", "git2"]
 http = ["reqwest", "reqwest-middleware", "reqwest-retry"]
 http-server = ["axum", "tower", "tower-http", "tokio"]
 spool = ["yaque", "zstd"]
-tiered-sink = ["yaque", "zstd", "lz4_flex", "snap", "tokio", "tower-resilience"]
+tiered-sink = ["yaque", "zstd", "lz4_flex", "snap", "tokio", "tower-resilience", "libc"]
 resilience = ["tower-resilience", "tower"]
 database = []
 cache = []
@@ -184,6 +184,9 @@ ratatui = { version = ">=0.29, <0.32", optional = true }
 
 # File rotation (for DLQ file backend)
 file-rotate = { version = ">=0.7, <0.9", optional = true }
+
+# Filesystem stats (disk-aware capacity management for tiered-sink)
+libc = { version = ">=0.2, <0.3", optional = true }
 
 # Spool (disk-backed async queue) - yaque is async-native and maintained
 yaque = { version = ">=0.6.6, <0.7", optional = true }
