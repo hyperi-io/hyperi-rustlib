@@ -136,6 +136,9 @@ pub use runtime::RuntimePaths;
 #[cfg(feature = "config")]
 pub use config::{Config, ConfigError, ConfigOptions};
 
+#[cfg(feature = "config")]
+pub use config::flat_env::{ApplyFlatEnv, EnvVarDoc, Normalize};
+
 #[cfg(feature = "config-reload")]
 pub use config::reloader::{ConfigReloader, ReloaderConfig};
 
