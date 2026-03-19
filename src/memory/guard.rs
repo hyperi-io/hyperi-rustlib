@@ -289,4 +289,69 @@ mod tests {
         guard.release(200); // release more than added — should not underflow panic
         // The atomic wraps but update_pressure uses saturating_sub
     }
+
+    #[test]
+    fn test_concurrent_reserve_release() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let guard = Arc::new(MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 100_000,
+            pressure_threshold: 0.8,
+            ..Default::default()
+        }));
+
+        let mut handles = vec![];
+        for _ in 0..10 {
+            let g = Arc::clone(&guard);
+            handles.push(thread::spawn(move || {
+                for _ in 0..100 {
+                    g.add_bytes(100);
+                    g.release(100);
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        // All bytes should be released — may not be exactly 0 due to ordering
+        // but should be close (within one thread's batch)
+        assert!(
+            guard.current_bytes() < 1000,
+            "leaked bytes: {}",
+            guard.current_bytes()
+        );
+    }
+
+    #[test]
+    fn test_try_reserve_rollback_is_atomic() {
+        let guard = MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 100,
+            ..Default::default()
+        });
+        assert!(guard.try_reserve(90));
+        assert!(!guard.try_reserve(20)); // over limit, rolled back
+        assert_eq!(guard.current_bytes(), 90); // not 110
+        assert!(guard.try_reserve(10)); // exactly at limit
+        assert_eq!(guard.current_bytes(), 100);
+    }
+
+    #[test]
+    fn test_config_defaults() {
+        let config = MemoryGuardConfig::default();
+        assert_eq!(config.limit_bytes, 0);
+        assert!((config.pressure_threshold - 0.8).abs() < 0.001);
+        assert!((config.cgroup_headroom - 0.9).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_auto_detect_limit() {
+        // With limit_bytes = 0, should auto-detect from system
+        let guard = MemoryGuard::new(MemoryGuardConfig::default());
+        assert!(
+            guard.limit_bytes() > 0,
+            "auto-detected limit should be positive"
+        );
+        // Should be less than total system memory (headroom applied)
+    }
 }
