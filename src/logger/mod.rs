@@ -167,6 +167,12 @@ pub struct LoggerOptions {
     pub span_events: bool,
     /// Log throttle configuration (deduplicate identical events).
     pub throttle: ThrottleConfig,
+    /// Service name injected into JSON log output.
+    /// Auto-populated by DfeApp. Falls back to SERVICE_NAME env var.
+    pub service_name: Option<String>,
+    /// Service version injected into JSON log output.
+    /// Auto-populated by DfeApp. Falls back to SERVICE_VERSION env var.
+    pub service_version: Option<String>,
 }
 
 impl Default for LoggerOptions {
@@ -179,6 +185,8 @@ impl Default for LoggerOptions {
             sensitive_fields: default_sensitive_fields(),
             span_events: false,
             throttle: ThrottleConfig::default(),
+            service_name: None,
+            service_version: None,
         }
     }
 }
@@ -223,7 +231,12 @@ pub fn setup(opts: LoggerOptions) -> Result<(), LoggerError> {
 
     match format {
         LogFormat::Json => {
-            let writer = masking::make_masking_writer(sensitive, true);
+            let writer = masking::make_masking_writer(
+                sensitive,
+                true,
+                opts.service_name.clone(),
+                opts.service_version.clone(),
+            );
             let layer = tracing_subscriber::fmt::layer()
                 .json()
                 .with_timer(timer)
@@ -248,7 +261,7 @@ pub fn setup(opts: LoggerOptions) -> Result<(), LoggerError> {
             }
         }
         LogFormat::Text => {
-            let writer = masking::make_masking_writer(sensitive, false);
+            let writer = masking::make_masking_writer(sensitive, false, None, None);
             let ansi = !is_no_color();
             let formatter = format::ColouredFormatter::new(ansi)
                 .with_file(opts.add_source)
@@ -319,6 +332,9 @@ pub fn setup_default() -> Result<(), LoggerError> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1.0);
 
+    let service_name = std::env::var("SERVICE_NAME").ok();
+    let service_version = std::env::var("SERVICE_VERSION").ok();
+
     setup(LoggerOptions {
         level,
         format,
@@ -328,6 +344,8 @@ pub fn setup_default() -> Result<(), LoggerError> {
             rate: throttle_rate,
             ..Default::default()
         },
+        service_name,
+        service_version,
         ..Default::default()
     })
 }

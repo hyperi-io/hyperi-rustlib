@@ -136,11 +136,12 @@ pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
         }
 
         StandardCommand::Run => {
-            init_logger(args)?;
+            let version_info = app.version_info();
+            init_logger_for_service(args, app.name(), &version_info.version)?;
 
             tracing::info!(
                 service = app.name(),
-                version = app.version_info().version,
+                version = version_info.version,
                 "starting service"
             );
 
@@ -168,9 +169,35 @@ fn init_logger(args: &CommonArgs) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Initialise the logger with service name and version injected into JSON output.
+#[cfg(feature = "logger")]
+fn init_logger_for_service(
+    args: &CommonArgs,
+    service_name: &str,
+    service_version: &str,
+) -> Result<(), CliError> {
+    let opts = args.to_logger_options()?;
+    crate::logger::setup(crate::logger::LoggerOptions {
+        service_name: Some(service_name.to_string()),
+        service_version: Some(service_version.to_string()),
+        ..opts
+    })?;
+    Ok(())
+}
+
 /// Initialise the logger from CLI arguments (no-op without logger feature).
 #[cfg(not(feature = "logger"))]
 fn init_logger(_args: &CommonArgs) -> Result<(), CliError> {
+    Ok(())
+}
+
+/// Initialise the logger with service name and version (no-op without logger feature).
+#[cfg(not(feature = "logger"))]
+fn init_logger_for_service(
+    _args: &CommonArgs,
+    _service_name: &str,
+    _service_version: &str,
+) -> Result<(), CliError> {
     Ok(())
 }
 
