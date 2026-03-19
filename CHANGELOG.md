@@ -1,3 +1,10 @@
+## [1.16.2-dev.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2-dev.3...v1.16.2-dev.4) (2026-03-19)
+
+
+### Bug Fixes
+
+* add DfeSource convention for topic naming and consumer groups ([3b0c7da](https://github.com/hyperi-io/hyperi-rustlib/commit/3b0c7daceb9aa091093bad6b9f05f3366757dc0c))
+
 ## [1.16.2-dev.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2-dev.2...v1.16.2-dev.3) (2026-03-19)
 
 
