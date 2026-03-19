@@ -3,11 +3,13 @@
 
 ### Bug Fixes
 
+* add concurrent and edge-case tests for MemoryGuard ([b411d1c](https://github.com/hyperi-io/hyperi-rustlib/commit/b411d1c))
 * add data quality event helpers (DLQ routing, quality alerts) ([2a6eeb6](https://github.com/hyperi-io/hyperi-rustlib/commit/2a6eeb67109c4fbb59eb77f22622100dc64f3091))
 * add DfeMetrics standard metric set with transport labels ([d66d9b3](https://github.com/hyperi-io/hyperi-rustlib/commit/d66d9b3ea9b490ef7057a39c72e4d60a4fd724c6))
 * add flat env override helpers, ApplyFlatEnv and Normalize traits ([e583ecf](https://github.com/hyperi-io/hyperi-rustlib/commit/e583ecf650e0b1d8142e6f63a7fd233c88071192))
 * add libc dependency for disk-aware capacity management ([7e47351](https://github.com/hyperi-io/hyperi-rustlib/commit/7e47351b1fe3bda50075342fcef8fae91bf97ddf))
 * add log spam helper functions (state, sampled, debounced) ([f38296d](https://github.com/hyperi-io/hyperi-rustlib/commit/f38296d6530829422c055f70c15c0f7f016718eb))
+* add MemoryGuard — cgroup-aware memory backpressure for OOM prevention ([fba690f](https://github.com/hyperi-io/hyperi-rustlib/commit/fba690f))
 * add security event logging framework (OWASP-aligned) ([f08819b](https://github.com/hyperi-io/hyperi-rustlib/commit/f08819b18b01924bceee7f6e30460cbc78366eb0))
 * add tracing-throttle layer to logger (opt-in via LOG_THROTTLE_ENABLED) ([842914a](https://github.com/hyperi-io/hyperi-rustlib/commit/842914a34de03a3d84d51dcdf21784474242dcc9))
 * address clippy warnings in log helpers (is_multiple_of, cast) ([cc73e5d](https://github.com/hyperi-io/hyperi-rustlib/commit/cc73e5dd936545ef57f9c7335d8986c1ee58fd3d))
