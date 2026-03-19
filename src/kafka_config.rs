@@ -329,6 +329,200 @@ pub const PRODUCER_DEVTEST: &[(&str, &str)] = &[
 ];
 
 // ============================================================================
+// DFE Source Convention
+// ============================================================================
+
+/// Default topic suffix for landing zone (raw ingest).
+pub const TOPIC_SUFFIX_LAND: &str = "_land";
+
+/// Default topic suffix for load-ready data (post-transform).
+pub const TOPIC_SUFFIX_LOAD: &str = "_load";
+
+/// DFE service role — determines consumer group naming convention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServiceRole {
+    /// Transform services (middleware): CG = `dfe-{service}-{source}`.
+    ///
+    /// Transforms sit between `_land` and `_load` topics. Each source gets
+    /// its own consumer group so multiple transform pipelines don't compete.
+    Transform,
+
+    /// Universal consumers (loader, archiver): CG = `dfe-{service}`.
+    ///
+    /// Universal services consume from whatever topics are configured or
+    /// auto-discovered. The source name is not part of the consumer group.
+    Universal,
+}
+
+/// DFE source-aware topic naming for transform services.
+///
+/// All DFE data flows follow the same topology:
+///
+/// ```text
+/// receiver -> {source}_land -> transform -> {source}_load -> loader -> ClickHouse
+/// ```
+///
+/// `DfeSource` is for **transform services** (middleware) that sit between
+/// `_land` and `_load`. It derives input/output topic names and source-scoped
+/// consumer group IDs from a source name.
+///
+/// Terminal consumers (loader, archiver) do not use `DfeSource` — they
+/// consume from whatever topics are configured or auto-discovered, and their
+/// consumer group is simply `dfe-{service}` without a source component.
+///
+/// # Examples
+///
+/// ```
+/// use hyperi_rustlib::kafka_config::{DfeSource, ServiceRole};
+///
+/// let source = DfeSource::new("syslog");
+/// assert_eq!(source.input_topic(), "syslog_land");
+/// assert_eq!(source.output_topic(), "syslog_load");
+///
+/// // Transform: CG includes source name
+/// assert_eq!(
+///     source.consumer_group("transform-vector", ServiceRole::Transform, None, None).unwrap(),
+///     "dfe-transform-vector-syslog"
+/// );
+///
+/// // Terminal: CG is just the service name
+/// assert_eq!(
+///     source.consumer_group("loader", ServiceRole::Universal, None, None).unwrap(),
+///     "dfe-loader"
+/// );
+///
+/// // Override always wins
+/// assert_eq!(
+///     source.consumer_group("transform-vector", ServiceRole::Transform, None, Some("custom")).unwrap(),
+///     "custom"
+/// );
+///
+/// // Transform without source is an error
+/// let empty = DfeSource::new("");
+/// assert!(empty.consumer_group("transform-vector", ServiceRole::Transform, None, None).is_err());
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DfeSource {
+    name: String,
+    land_suffix: String,
+    load_suffix: String,
+}
+
+impl DfeSource {
+    /// Create a new source with default suffixes (`_land`, `_load`).
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            land_suffix: TOPIC_SUFFIX_LAND.to_string(),
+            load_suffix: TOPIC_SUFFIX_LOAD.to_string(),
+        }
+    }
+
+    /// Create a source with custom suffixes.
+    #[must_use]
+    pub fn with_suffixes(
+        name: impl Into<String>,
+        land_suffix: impl Into<String>,
+        load_suffix: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            land_suffix: land_suffix.into(),
+            load_suffix: load_suffix.into(),
+        }
+    }
+
+    /// Source name (e.g. `"syslog"`, `"netflow"`).
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Landing zone topic: `{source}_land`.
+    #[must_use]
+    pub fn input_topic(&self) -> String {
+        format!("{}{}", self.name, self.land_suffix)
+    }
+
+    /// Load-ready topic: `{source}_load`.
+    #[must_use]
+    pub fn output_topic(&self) -> String {
+        format!("{}{}", self.name, self.load_suffix)
+    }
+
+    /// Consumer group ID following DFE naming conventions.
+    ///
+    /// The `cg_override` takes precedence when set — use it when the operator
+    /// explicitly configures a consumer group in YAML/env.
+    ///
+    /// When `cg_override` is `None`, the default pattern depends on the
+    /// service role:
+    ///
+    /// | Role | Pattern | Example |
+    /// |------|---------|---------|
+    /// | Transform | `dfe-{service}-{source}` | `dfe-transform-vector-syslog` |
+    /// | Universal (loader, archiver) | `dfe-{service}` | `dfe-loader` |
+    ///
+    /// For transforms, `pipeline` overrides the source component in the CG
+    /// (e.g. `syslog-enriched` instead of `syslog`). Either the `DfeSource`
+    /// name or `pipeline` must be non-empty — a bare service name is never
+    /// valid for transforms because multiple pipelines would compete.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the role is `Transform` and neither the source name
+    /// nor `pipeline` provides a non-empty suffix.
+    pub fn consumer_group(
+        &self,
+        service: &str,
+        role: ServiceRole,
+        pipeline: Option<&str>,
+        cg_override: Option<&str>,
+    ) -> Result<String, KafkaConfigError> {
+        if let Some(cg) = cg_override {
+            return Ok(cg.to_string());
+        }
+
+        match role {
+            ServiceRole::Transform => {
+                let suffix = pipeline.unwrap_or(&self.name);
+                if suffix.is_empty() {
+                    return Err(KafkaConfigError::ParseError {
+                        path: String::new(),
+                        message: format!(
+                            "transform service '{service}' requires a source or pipeline \
+                             name for its consumer group — a bare 'dfe-{service}' CG would \
+                             cause multiple pipelines to compete for messages"
+                        ),
+                    });
+                }
+                Ok(format!("dfe-{service}-{suffix}"))
+            }
+            ServiceRole::Universal => Ok(format!("dfe-{service}")),
+        }
+    }
+
+    /// Derive the source name from a topic by stripping known suffixes.
+    ///
+    /// Returns `None` if the topic doesn't end with a known suffix.
+    ///
+    /// ```
+    /// use hyperi_rustlib::kafka_config::DfeSource;
+    ///
+    /// assert_eq!(DfeSource::source_from_topic("syslog_land"), Some("syslog"));
+    /// assert_eq!(DfeSource::source_from_topic("netflow_load"), Some("netflow"));
+    /// assert_eq!(DfeSource::source_from_topic("unknown"), None);
+    /// ```
+    #[must_use]
+    pub fn source_from_topic(topic: &str) -> Option<&str> {
+        topic
+            .strip_suffix(TOPIC_SUFFIX_LAND)
+            .or_else(|| topic.strip_suffix(TOPIC_SUFFIX_LOAD))
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -441,6 +635,160 @@ sasl.mechanism=SCRAM-SHA-512
     fn config_from_file_not_found() {
         let result = config_from_file("/nonexistent/kafka.properties");
         assert!(matches!(result, Err(KafkaConfigError::FileNotFound { .. })));
+    }
+
+    // ===================================================================
+    // DfeSource tests
+    // ===================================================================
+
+    #[test]
+    fn dfe_source_default_topics() {
+        let source = DfeSource::new("syslog");
+        assert_eq!(source.name(), "syslog");
+        assert_eq!(source.input_topic(), "syslog_land");
+        assert_eq!(source.output_topic(), "syslog_load");
+    }
+
+    #[test]
+    fn dfe_source_custom_suffixes() {
+        let source = DfeSource::with_suffixes("auth", "_raw", "_enriched");
+        assert_eq!(source.input_topic(), "auth_raw");
+        assert_eq!(source.output_topic(), "auth_enriched");
+    }
+
+    #[test]
+    fn dfe_source_cg_transform_default() {
+        let source = DfeSource::new("syslog");
+        assert_eq!(
+            source
+                .consumer_group("transform-vector", ServiceRole::Transform, None, None)
+                .unwrap(),
+            "dfe-transform-vector-syslog"
+        );
+    }
+
+    #[test]
+    fn dfe_source_cg_transform_with_pipeline() {
+        let source = DfeSource::new("syslog");
+        assert_eq!(
+            source
+                .consumer_group(
+                    "transform-vector",
+                    ServiceRole::Transform,
+                    Some("syslog-enriched"),
+                    None
+                )
+                .unwrap(),
+            "dfe-transform-vector-syslog-enriched"
+        );
+    }
+
+    #[test]
+    fn dfe_source_cg_transform_empty_source_errors() {
+        let source = DfeSource::new("");
+        assert!(
+            source
+                .consumer_group("transform-vector", ServiceRole::Transform, None, None)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn dfe_source_cg_transform_empty_source_pipeline_rescues() {
+        let source = DfeSource::new("");
+        assert_eq!(
+            source
+                .consumer_group(
+                    "transform-vector",
+                    ServiceRole::Transform,
+                    Some("syslog"),
+                    None
+                )
+                .unwrap(),
+            "dfe-transform-vector-syslog"
+        );
+    }
+
+    #[test]
+    fn dfe_source_cg_universal() {
+        let source = DfeSource::new("netflow");
+        assert_eq!(
+            source
+                .consumer_group("loader", ServiceRole::Universal, None, None)
+                .unwrap(),
+            "dfe-loader"
+        );
+    }
+
+    #[test]
+    fn dfe_source_cg_universal_ignores_pipeline() {
+        let source = DfeSource::new("syslog");
+        assert_eq!(
+            source
+                .consumer_group("archiver", ServiceRole::Universal, Some("ignored"), None)
+                .unwrap(),
+            "dfe-archiver"
+        );
+    }
+
+    #[test]
+    fn dfe_source_cg_override_wins() {
+        let source = DfeSource::new("syslog");
+        assert_eq!(
+            source
+                .consumer_group(
+                    "transform-vector",
+                    ServiceRole::Transform,
+                    None,
+                    Some("my-custom-cg")
+                )
+                .unwrap(),
+            "my-custom-cg"
+        );
+    }
+
+    #[test]
+    fn dfe_source_cg_override_wins_universal() {
+        let source = DfeSource::new("syslog");
+        assert_eq!(
+            source
+                .consumer_group(
+                    "loader",
+                    ServiceRole::Universal,
+                    None,
+                    Some("custom-loader-cg")
+                )
+                .unwrap(),
+            "custom-loader-cg"
+        );
+    }
+
+    #[test]
+    fn dfe_source_from_topic_land() {
+        assert_eq!(DfeSource::source_from_topic("syslog_land"), Some("syslog"));
+        assert_eq!(DfeSource::source_from_topic("auth_land"), Some("auth"));
+    }
+
+    #[test]
+    fn dfe_source_from_topic_load() {
+        assert_eq!(DfeSource::source_from_topic("syslog_load"), Some("syslog"));
+        assert_eq!(
+            DfeSource::source_from_topic("netflow_load"),
+            Some("netflow")
+        );
+    }
+
+    #[test]
+    fn dfe_source_from_topic_unknown() {
+        assert_eq!(DfeSource::source_from_topic("unknown"), None);
+        assert_eq!(DfeSource::source_from_topic("events"), None);
+        assert_eq!(DfeSource::source_from_topic(""), None);
+    }
+
+    #[test]
+    fn dfe_source_from_topic_edge_cases() {
+        assert_eq!(DfeSource::source_from_topic("_land"), Some(""));
+        assert_eq!(DfeSource::source_from_topic("a_load"), Some("a"));
     }
 
     #[test]
