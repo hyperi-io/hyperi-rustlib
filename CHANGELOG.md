@@ -3,8 +3,10 @@
 
 ### Bug Fixes
 
-* add concurrent and edge-case tests for MemoryGuard ([b411d1c](https://github.com/hyperi-io/hyperi-rustlib/commit/b411d1c5a3fb85082da8cd6066248c72dc349d9a))
-* add MemoryGuard — cgroup-aware memory backpressure for OOM prevention ([fba690f](https://github.com/hyperi-io/hyperi-rustlib/commit/fba690fb3365d3a4240cba4fee9e894c2f13d40b))
+* add DfeSource convention for topic naming and consumer groups ([3b0c7da](https://github.com/hyperi-io/hyperi-rustlib/commit/3b0c7da))
+* add from_env/from_env_raw to MemoryGuardConfig, tune defaults ([3c59845](https://github.com/hyperi-io/hyperi-rustlib/commit/3c59845))
+* add concurrent and edge-case tests for MemoryGuard ([b411d1c](https://github.com/hyperi-io/hyperi-rustlib/commit/b411d1c))
+* add MemoryGuard — cgroup-aware memory backpressure for OOM prevention ([fba690f](https://github.com/hyperi-io/hyperi-rustlib/commit/fba690f))
 
 ## [1.16.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2...v1.16.3) (2026-03-19)
 
