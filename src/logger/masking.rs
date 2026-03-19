@@ -112,18 +112,24 @@ impl Default for MaskingLayer {
 /// Create a masking writer factory for use with tracing-subscriber's `with_writer`.
 ///
 /// Returns a closure that produces [`MaskingWriter`] instances wrapping stderr.
-/// When the sensitive fields set is empty, the writer passes through without
-/// buffering or redaction.
+/// When the sensitive fields set is empty and no service fields are set, the
+/// writer passes through without buffering or redaction.
 pub fn make_masking_writer(
     sensitive_fields: HashSet<String>,
     is_json: bool,
+    service_name: Option<String>,
+    service_version: Option<String>,
 ) -> impl Fn() -> MaskingWriter<io::Stderr> + Send + Sync {
     let fields = Arc::new(sensitive_fields);
+    let name = service_name.map(Arc::from);
+    let version = service_version.map(Arc::from);
     move || MaskingWriter {
         inner: io::stderr(),
         buffer: Vec::with_capacity(512),
         sensitive_fields: Arc::clone(&fields),
         is_json,
+        service_name: name.clone(),
+        service_version: version.clone(),
     }
 }
 
@@ -131,13 +137,17 @@ pub fn make_masking_writer(
 ///
 /// Buffers each log line (tracing-subscriber writes complete lines via
 /// `write_all`), applies field-level redaction, then flushes to the inner
-/// writer. When the sensitive fields set is empty, writes pass through
-/// directly with no buffering overhead.
+/// writer. When the sensitive fields set is empty and no service fields are
+/// set, writes pass through directly with no buffering overhead.
 pub struct MaskingWriter<W: io::Write> {
     inner: W,
     buffer: Vec<u8>,
     sensitive_fields: Arc<HashSet<String>>,
     is_json: bool,
+    /// Service name injected into JSON log output (JSON mode only).
+    service_name: Option<Arc<str>>,
+    /// Service version injected into JSON log output (JSON mode only).
+    service_version: Option<Arc<str>>,
 }
 
 impl<W: io::Write> MaskingWriter<W> {
@@ -152,6 +162,8 @@ impl<W: io::Write> MaskingWriter<W> {
             buffer: Vec::with_capacity(512),
             sensitive_fields,
             is_json,
+            service_name: None,
+            service_version: None,
         }
     }
 
@@ -161,7 +173,12 @@ impl<W: io::Write> MaskingWriter<W> {
         }
         let line = String::from_utf8_lossy(&self.buffer);
         let redacted = if self.is_json {
-            redact_json_line(&line, &self.sensitive_fields)
+            inject_and_redact_json_line(
+                &line,
+                &self.sensitive_fields,
+                self.service_name.as_deref(),
+                self.service_version.as_deref(),
+            )
         } else {
             redact_text_line(&line, &self.sensitive_fields)
         };
@@ -169,11 +186,18 @@ impl<W: io::Write> MaskingWriter<W> {
         self.buffer.clear();
         Ok(())
     }
+
+    /// Returns `true` if this writer must buffer output (masking or injection active).
+    fn needs_buffering(&self) -> bool {
+        !self.sensitive_fields.is_empty()
+            || self.service_name.is_some()
+            || self.service_version.is_some()
+    }
 }
 
 impl<W: io::Write> io::Write for MaskingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if self.sensitive_fields.is_empty() {
+        if !self.needs_buffering() {
             return self.inner.write(buf);
         }
         self.buffer.extend_from_slice(buf);
@@ -181,7 +205,7 @@ impl<W: io::Write> io::Write for MaskingWriter<W> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        if !self.sensitive_fields.is_empty() {
+        if self.needs_buffering() {
             self.flush_buffer()?;
         }
         self.inner.flush()
@@ -190,7 +214,7 @@ impl<W: io::Write> io::Write for MaskingWriter<W> {
 
 impl<W: io::Write> Drop for MaskingWriter<W> {
     fn drop(&mut self) {
-        if !self.sensitive_fields.is_empty() {
+        if self.needs_buffering() {
             let _ = self.flush_buffer();
         }
     }
@@ -206,13 +230,33 @@ fn should_mask_field(field_name: &str, sensitive: &HashSet<String>) -> bool {
     sensitive.iter().any(|s| lower.contains(s.as_str()))
 }
 
-/// Redact sensitive fields in a JSON log line.
+/// Inject service fields and redact sensitive fields in a JSON log line.
 ///
-/// Parses the line as JSON, walks the object tree, and replaces values
-/// of sensitive keys with `[REDACTED]`.
-fn redact_json_line(line: &str, sensitive: &HashSet<String>) -> String {
+/// Parses the line as JSON, inserts `service` and `version` at the root level
+/// (if provided), walks the object tree and replaces values of sensitive keys
+/// with `[REDACTED]`, then re-serialises.
+fn inject_and_redact_json_line(
+    line: &str,
+    sensitive: &HashSet<String>,
+    service_name: Option<&str>,
+    service_version: Option<&str>,
+) -> String {
     let trimmed = line.trim_end_matches('\n');
     if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let serde_json::Value::Object(ref mut map) = value {
+            if let Some(name) = service_name {
+                map.insert(
+                    "service".to_string(),
+                    serde_json::Value::String(name.to_string()),
+                );
+            }
+            if let Some(ver) = service_version {
+                map.insert(
+                    "version".to_string(),
+                    serde_json::Value::String(ver.to_string()),
+                );
+            }
+        }
         redact_json_value(&mut value, sensitive);
         let mut result = serde_json::to_string(&value).unwrap_or_else(|_| trimmed.to_string());
         if line.ends_with('\n') {
@@ -423,7 +467,7 @@ mod tests {
         let sensitive: HashSet<String> = ["password".to_string()].into_iter().collect();
         let input =
             "{\"level\":\"INFO\",\"fields\":{\"message\":\"hello\",\"password\":\"secret123\"}}\n";
-        let result = redact_json_line(input, &sensitive);
+        let result = inject_and_redact_json_line(input, &sensitive, None, None);
         assert!(result.contains("[REDACTED]"));
         assert!(!result.contains("secret123"));
         assert!(result.contains("hello"));
@@ -434,7 +478,7 @@ mod tests {
     fn test_redact_json_line_nested() {
         let sensitive: HashSet<String> = ["token".to_string()].into_iter().collect();
         let input = r#"{"fields":{"config":{"token":"abc123","host":"localhost"}}}"#;
-        let result = redact_json_line(input, &sensitive);
+        let result = inject_and_redact_json_line(input, &sensitive, None, None);
         assert!(!result.contains("abc123"));
         assert!(result.contains("localhost"));
     }
@@ -443,7 +487,7 @@ mod tests {
     fn test_redact_json_line_preserves_non_sensitive() {
         let sensitive: HashSet<String> = ["password".to_string()].into_iter().collect();
         let input = r#"{"level":"INFO","fields":{"username":"john","host":"db.example.com"}}"#;
-        let result = redact_json_line(input, &sensitive);
+        let result = inject_and_redact_json_line(input, &sensitive, None, None);
         assert!(result.contains("john"));
         assert!(result.contains("db.example.com"));
     }
@@ -452,7 +496,7 @@ mod tests {
     fn test_redact_json_line_invalid_json_passthrough() {
         let sensitive: HashSet<String> = ["password".to_string()].into_iter().collect();
         let input = "this is not json\n";
-        let result = redact_json_line(input, &sensitive);
+        let result = inject_and_redact_json_line(input, &sensitive, None, None);
         assert_eq!(result, input);
     }
 
@@ -520,6 +564,8 @@ mod tests {
                 buffer: Vec::new(),
                 sensitive_fields: sensitive,
                 is_json: false,
+                service_name: None,
+                service_version: None,
             };
             io::Write::write_all(&mut writer, b"password=secret\n").unwrap();
         }
@@ -538,6 +584,8 @@ mod tests {
                 buffer: Vec::new(),
                 sensitive_fields: Arc::new(sensitive),
                 is_json: false,
+                service_name: None,
+                service_version: None,
             };
             io::Write::write_all(&mut writer, b"password=secret123 user=john\n").unwrap();
         }
@@ -558,6 +606,8 @@ mod tests {
                 buffer: Vec::new(),
                 sensitive_fields: Arc::new(sensitive),
                 is_json: true,
+                service_name: None,
+                service_version: None,
             };
             let json = b"{\"message\":\"hello\",\"password\":\"secret123\"}\n";
             io::Write::write_all(&mut writer, json).unwrap();

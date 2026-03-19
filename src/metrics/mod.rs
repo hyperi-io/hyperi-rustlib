@@ -47,6 +47,7 @@
 //! ```
 
 mod container;
+pub mod dfe;
 mod process;
 
 #[cfg(feature = "otel-metrics")]
@@ -66,6 +67,7 @@ use tokio::sync::oneshot;
 use metrics_exporter_prometheus::PrometheusHandle;
 
 pub use container::ContainerMetrics;
+pub use dfe::DfeMetrics;
 pub use process::ProcessMetrics;
 
 #[cfg(feature = "otel-metrics")]

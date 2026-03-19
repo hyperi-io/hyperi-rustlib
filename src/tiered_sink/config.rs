@@ -56,6 +56,12 @@ pub struct TieredSinkConfig {
     /// Interval for drain task to check spool.
     #[serde(default = "default_drain_interval_ms")]
     pub drain_interval_ms: u64,
+
+    /// Disk-aware capacity management. When configured, a background poller
+    /// checks available disk space and stops spooling if the filesystem
+    /// exceeds the configured usage threshold.
+    #[serde(default)]
+    pub disk_aware: Option<DiskAwareConfig>,
 }
 
 fn default_send_timeout_ms() -> u64 {
@@ -89,6 +95,7 @@ impl TieredSinkConfig {
             circuit_failure_threshold: default_circuit_failure_threshold(),
             circuit_reset_timeout_ms: default_circuit_reset_timeout_ms(),
             drain_interval_ms: default_drain_interval_ms(),
+            disk_aware: None,
         }
     }
 
@@ -127,6 +134,13 @@ impl TieredSinkConfig {
         self
     }
 
+    /// Enable disk-aware capacity management with default settings.
+    #[must_use]
+    pub fn disk_aware(mut self, config: DiskAwareConfig) -> Self {
+        self.disk_aware = Some(config);
+        self
+    }
+
     /// Get send timeout as Duration.
     #[must_use]
     pub fn send_timeout_duration(&self) -> Duration {
@@ -143,6 +157,41 @@ impl TieredSinkConfig {
     #[must_use]
     pub fn drain_interval(&self) -> Duration {
         Duration::from_millis(self.drain_interval_ms)
+    }
+}
+
+/// Configuration for disk-aware capacity management.
+///
+/// When enabled, a background poller checks filesystem usage and pauses
+/// spool writes when the disk exceeds the configured threshold. Writes
+/// resume automatically when space is recovered.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiskAwareConfig {
+    /// Maximum filesystem usage percentage (0.0 - 1.0) before pausing spool writes.
+    /// Default: 0.8 (80%).
+    #[serde(default = "default_max_usage_percent")]
+    pub max_usage_percent: f64,
+
+    /// How often to check disk usage, in seconds.
+    /// Default: 5 seconds.
+    #[serde(default = "default_poll_interval_secs")]
+    pub poll_interval_secs: u64,
+}
+
+fn default_max_usage_percent() -> f64 {
+    0.8
+}
+
+fn default_poll_interval_secs() -> u64 {
+    5
+}
+
+impl Default for DiskAwareConfig {
+    fn default() -> Self {
+        Self {
+            max_usage_percent: default_max_usage_percent(),
+            poll_interval_secs: default_poll_interval_secs(),
+        }
     }
 }
 
@@ -229,13 +278,18 @@ mod tests {
     fn test_default_config() {
         let config = TieredSinkConfig::new("/tmp/test.queue");
         assert_eq!(config.send_timeout_ms, 1000);
-        assert_eq!(config.compression, CompressionCodec::Lz4);
+        assert_eq!(config.compression, CompressionCodec::default());
+        assert!(matches!(
+            config.compression,
+            CompressionCodec::Zstd { level: 1 }
+        ));
         assert!(matches!(
             config.drain_strategy,
             DrainStrategy::Adaptive { .. }
         ));
         assert_eq!(config.ordering, OrderingMode::Interleaved);
         assert_eq!(config.circuit_failure_threshold, 5);
+        assert!(config.disk_aware.is_none());
     }
 
     #[test]

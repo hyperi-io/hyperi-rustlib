@@ -1,11 +1,19 @@
-## [1.16.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.1...v1.16.2) (2026-03-17)
+## [1.16.2-dev.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.1...v1.16.2-dev.1) (2026-03-18)
 
 
 ### Bug Fixes
 
+* add DfeMetrics standard metric set with transport labels ([d66d9b3](https://github.com/hyperi-io/hyperi-rustlib/commit/d66d9b3ea9b490ef7057a39c72e4d60a4fd724c6))
+* add libc dependency for disk-aware capacity management ([7e47351](https://github.com/hyperi-io/hyperi-rustlib/commit/7e47351b1fe3bda50075342fcef8fae91bf97ddf))
+* add log spam helper functions (state, sampled, debounced) ([f38296d](https://github.com/hyperi-io/hyperi-rustlib/commit/f38296d6530829422c055f70c15c0f7f016718eb))
+* add tracing-throttle layer to logger (opt-in via LOG_THROTTLE_ENABLED) ([842914a](https://github.com/hyperi-io/hyperi-rustlib/commit/842914a34de03a3d84d51dcdf21784474242dcc9))
+* address clippy warnings in log helpers (is_multiple_of, cast) ([cc73e5d](https://github.com/hyperi-io/hyperi-rustlib/commit/cc73e5dd936545ef57f9c7335d8986c1ee58fd3d))
 * correct Dockerfile profile assertions in deployment tests ([2cfee48](https://github.com/hyperi-io/hyperi-rustlib/commit/2cfee484a30af9b557da456472db9880100b23e2))
 * Dockerfile generator header and Ubuntu 24.04 UID fix ([d8c3c69](https://github.com/hyperi-io/hyperi-rustlib/commit/d8c3c698083c9478d23b4887205f25af526df6e5))
 * downgrade rdkafka INFO/Notice logs to debug level ([c58c17f](https://github.com/hyperi-io/hyperi-rustlib/commit/c58c17fa73e2b6290815dcbd9f14e1ff5946a911)), closes [hyperi-io/dfe-loader#5](https://github.com/hyperi-io/dfe-loader/issues/5)
+* enforce max_spool_bytes limit in TieredSink ([9f9103f](https://github.com/hyperi-io/hyperi-rustlib/commit/9f9103f378df10b33c7321298ca6cc663a102030))
+* initialise spool len counter from existing queue on open ([a2c9a65](https://github.com/hyperi-io/hyperi-rustlib/commit/a2c9a65acea8368429173ed7ae64b5a0c05668e5))
+* make spool codec configurable, default to zstd level 1 ([90c1c4a](https://github.com/hyperi-io/hyperi-rustlib/commit/90c1c4a212ddc8aa87f12ccbd6b4635ac36ce1f6))
 
 ## [1.16.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.0...v1.16.1) (2026-03-12)
 

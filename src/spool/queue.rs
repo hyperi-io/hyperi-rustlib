@@ -41,9 +41,10 @@ impl Spool {
             message: e.to_string(),
         })?;
 
-        // Get initial count by iterating (yaque doesn't expose count directly)
-        // We track this ourselves for efficiency
-        let len = 0; // Will be tracked as items are pushed/popped
+        // Count existing items by walking the queue directory.
+        // yaque doesn't expose a count API, so we parse segment files to
+        // count messages between the receiver position and sender position.
+        let len = count_existing_items(&config.path).unwrap_or(0);
 
         Ok(Self {
             sender,
@@ -288,6 +289,85 @@ impl Spool {
     }
 }
 
+/// Count existing items in a yaque queue directory by walking segment files.
+///
+/// yaque stores messages as `[4-byte Hamming header][payload]` in segment files
+/// named `<n>.q`. The receiver position is persisted in `recv-metadata`.
+/// We count items from the receiver position to the end of the highest segment.
+fn count_existing_items(path: &std::path::Path) -> std::io::Result<usize> {
+    if !path.is_dir() {
+        return Ok(0);
+    }
+
+    // Read receiver state from recv-metadata (two big-endian u64: segment, position)
+    let recv_metadata_path = path.join("recv-metadata");
+    let (recv_segment, recv_position) = if recv_metadata_path.exists() {
+        let data = std::fs::read(&recv_metadata_path)?;
+        if data.len() >= 16 {
+            let segment = u64::from_be_bytes(data[0..8].try_into().unwrap_or([0; 8]));
+            let position = u64::from_be_bytes(data[8..16].try_into().unwrap_or([0; 8]));
+            (segment, position)
+        } else {
+            (0, 0)
+        }
+    } else {
+        (0, 0)
+    };
+
+    // Collect all segment numbers
+    let mut segments: Vec<u64> = Vec::new();
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let file_path = entry.path();
+        if file_path.extension().and_then(|e| e.to_str()) == Some("q")
+            && let Some(stem) = file_path.file_stem().and_then(|s| s.to_str())
+            && let Ok(seg_num) = stem.parse::<u64>()
+            && seg_num >= recv_segment
+        {
+            segments.push(seg_num);
+        }
+    }
+    segments.sort_unstable();
+
+    let mut count = 0usize;
+    // Header EOF marker in yaque
+    let header_eof: [u8; 4] = [255, 255, 255, 255];
+
+    for &seg_num in &segments {
+        let seg_path = path.join(format!("{seg_num}.q"));
+        let file_data = std::fs::read(&seg_path)?;
+
+        // Start position: if this is the receiver's segment, skip to receiver position
+        #[allow(clippy::cast_possible_truncation)]
+        let start = if seg_num == recv_segment {
+            recv_position as usize
+        } else {
+            0
+        };
+
+        let mut pos = start;
+        while pos + 4 <= file_data.len() {
+            let header_bytes: [u8; 4] = file_data[pos..pos + 4].try_into().unwrap_or([0; 4]);
+
+            // Check for EOF marker
+            if header_bytes == header_eof {
+                break; // End of segment, move to next
+            }
+
+            // Decode length from Hamming-encoded header (lower 26 bits)
+            let encoded = u32::from_be_bytes(header_bytes);
+            let payload_len = (encoded & 0x03_FF_FF_FF) as usize;
+
+            pos += 4 + payload_len;
+            if pos <= file_data.len() {
+                count += 1;
+            }
+        }
+    }
+
+    Ok(count)
+}
+
 impl std::fmt::Debug for Spool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Spool")
@@ -377,6 +457,51 @@ mod tests {
         assert_eq!(spool.len(), 2);
         spool.clear().unwrap();
         assert!(spool.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_len_survives_reopen() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test-reopen-queue");
+
+        // Open, push items, then drop
+        {
+            let mut spool = Spool::create(&path).await.unwrap();
+            spool.push(b"one").await.unwrap();
+            spool.push(b"two").await.unwrap();
+            spool.push(b"three").await.unwrap();
+            assert_eq!(spool.len(), 3);
+        }
+
+        // Reopen — len should reflect existing items
+        {
+            let spool = Spool::create(&path).await.unwrap();
+            assert_eq!(spool.len(), 3);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_len_survives_partial_consume_and_reopen() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test-partial-queue");
+
+        // Open, push 5, consume 2
+        {
+            let mut spool = Spool::create(&path).await.unwrap();
+            for i in 0..5 {
+                spool.push(format!("item-{i}").as_bytes()).await.unwrap();
+            }
+            assert_eq!(spool.len(), 5);
+            spool.pop_front().await.unwrap(); // consume 1
+            spool.pop_front().await.unwrap(); // consume 2
+            assert_eq!(spool.len(), 3);
+        }
+
+        // Reopen — should show 3 remaining
+        {
+            let spool = Spool::create(&path).await.unwrap();
+            assert_eq!(spool.len(), 3);
+        }
     }
 
     #[tokio::test]
