@@ -291,6 +291,23 @@ pub fn input_validation_failure(action: &str, reason: &str, source_ip: Option<Ip
     event.emit();
 }
 
+/// Log a data quality event — record routed to DLQ.
+pub fn record_dlq(action: &str, reason: &str, detail: Option<&str>) {
+    let mut event =
+        SecurityEvent::new("data.dlq_routed", action, SecurityOutcome::Failure).reason(reason);
+    if let Some(d) = detail {
+        event = event.detail(d);
+    }
+    event.emit();
+}
+
+/// Log a data quality event — validation rejection rate threshold exceeded.
+pub fn data_quality_alert(action: &str, detail: &str) {
+    SecurityEvent::new("data.quality_alert", action, SecurityOutcome::Failure)
+        .detail(detail)
+        .emit();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
