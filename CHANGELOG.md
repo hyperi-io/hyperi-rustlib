@@ -1,3 +1,10 @@
+## [1.16.2-dev.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2-dev.4...v1.16.2-dev.5) (2026-03-19)
+
+
+### Bug Fixes
+
+* add from_env/from_env_raw to MemoryGuardConfig, tune defaults ([3c59845](https://github.com/hyperi-io/hyperi-rustlib/commit/3c5984563857f494cbbac505184756ec71d6ce10))
+
 ## [1.16.2-dev.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2-dev.3...v1.16.2-dev.4) (2026-03-19)
 
 
