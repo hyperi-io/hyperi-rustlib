@@ -12,6 +12,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use super::cgroup;
 
+/// Read an env var `{PREFIX}_{SUFFIX}` and parse it.
+fn env_parsed<T: std::str::FromStr>(prefix: &str, suffix: &str) -> Option<T> {
+    std::env::var(format!("{prefix}_{suffix}"))
+        .ok()
+        .and_then(|v| v.parse().ok())
+}
+
 /// Memory pressure levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoryPressure {
@@ -35,13 +42,86 @@ pub struct MemoryGuardConfig {
     pub cgroup_headroom: f64,
 }
 
+/// Default cgroup headroom: use 85% of cgroup limit.
+///
+/// Rationale: Rust has no GC so no spike headroom needed (unlike JVM 75% / Go 80%).
+/// 15% headroom covers jemalloc fragmentation, kernel overhead, and page cache.
+const DEFAULT_CGROUP_HEADROOM: f64 = 0.85;
+
+/// Default pressure threshold: backpressure at 80% of effective limit.
+///
+/// With 85% headroom, backpressure activates at ~68% of actual cgroup limit.
+/// Matches OTel Collector's `limit_percentage: 80` philosophy.
+const DEFAULT_PRESSURE_THRESHOLD: f64 = 0.80;
+
 impl Default for MemoryGuardConfig {
     fn default() -> Self {
         Self {
             limit_bytes: 0, // auto-detect
-            pressure_threshold: 0.8,
-            cgroup_headroom: 0.9,
+            pressure_threshold: DEFAULT_PRESSURE_THRESHOLD,
+            cgroup_headroom: DEFAULT_CGROUP_HEADROOM,
         }
+    }
+}
+
+impl MemoryGuardConfig {
+    /// Create config from environment variables with a prefix.
+    ///
+    /// Reads standard env vars for memory configuration:
+    /// - `{PREFIX}_MEMORY_LIMIT_BYTES` — explicit limit (0 or unset = auto-detect from cgroup)
+    /// - `{PREFIX}_MEMORY_PRESSURE_THRESHOLD` — backpressure trigger (default 0.80)
+    /// - `{PREFIX}_MEMORY_CGROUP_HEADROOM` — fraction of cgroup limit to use (default 0.85)
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// DFE_MEMORY_LIMIT_BYTES=4294967296      # 4 GiB explicit
+    /// DFE_MEMORY_PRESSURE_THRESHOLD=0.75     # backpressure at 75%
+    /// DFE_MEMORY_CGROUP_HEADROOM=0.90        # use 90% of cgroup
+    /// ```
+    ///
+    /// ```rust,no_run
+    /// use hyperi_rustlib::memory::MemoryGuardConfig;
+    /// let config = MemoryGuardConfig::from_env("DFE");
+    /// ```
+    #[must_use]
+    #[cfg(feature = "config")]
+    pub fn from_env(prefix: &str) -> Self {
+        use crate::config::flat_env::flat_env_parsed;
+
+        let mut config = Self::default();
+
+        if let Some(v) = flat_env_parsed::<u64>(prefix, "MEMORY_LIMIT_BYTES") {
+            config.limit_bytes = v;
+        }
+        if let Some(v) = flat_env_parsed::<f64>(prefix, "MEMORY_PRESSURE_THRESHOLD") {
+            config.pressure_threshold = v;
+        }
+        if let Some(v) = flat_env_parsed::<f64>(prefix, "MEMORY_CGROUP_HEADROOM") {
+            config.cgroup_headroom = v;
+        }
+
+        config
+    }
+
+    /// Create config from environment variables without requiring `config` feature.
+    ///
+    /// Same as [`from_env`](Self::from_env) but uses `std::env` directly.
+    #[must_use]
+    pub fn from_env_raw(prefix: &str) -> Self {
+        let mut config = Self::default();
+
+        if let Some(v) = env_parsed::<u64>(prefix, "MEMORY_LIMIT_BYTES") {
+            config.limit_bytes = v;
+        }
+        if let Some(v) = env_parsed::<f64>(prefix, "MEMORY_PRESSURE_THRESHOLD") {
+            config.pressure_threshold = v;
+        }
+        if let Some(v) = env_parsed::<f64>(prefix, "MEMORY_CGROUP_HEADROOM") {
+            config.cgroup_headroom = v;
+        }
+
+        config
     }
 }
 
@@ -340,8 +420,49 @@ mod tests {
     fn test_config_defaults() {
         let config = MemoryGuardConfig::default();
         assert_eq!(config.limit_bytes, 0);
-        assert!((config.pressure_threshold - 0.8).abs() < 0.001);
-        assert!((config.cgroup_headroom - 0.9).abs() < 0.001);
+        assert!((config.pressure_threshold - 0.80).abs() < 0.001);
+        assert!((config.cgroup_headroom - 0.85).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_from_env_raw_defaults_when_unset() {
+        // With no env vars set, should return defaults
+        let config = MemoryGuardConfig::from_env_raw("TEST_MG_UNSET");
+        assert_eq!(config.limit_bytes, 0);
+        assert!((config.pressure_threshold - 0.80).abs() < 0.001);
+        assert!((config.cgroup_headroom - 0.85).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_env_parsed_helper() {
+        // env_parsed returns None for unset vars
+        assert!(env_parsed::<u64>("NONEXISTENT_PREFIX_XYZ", "FOO").is_none());
+        assert!(env_parsed::<f64>("NONEXISTENT_PREFIX_XYZ", "BAR").is_none());
+    }
+
+    #[test]
+    fn test_guard_with_explicit_config_overrides() {
+        // Simulates what from_env would produce with overrides
+        let config = MemoryGuardConfig {
+            limit_bytes: 2_147_483_648,
+            pressure_threshold: 0.75,
+            cgroup_headroom: 0.90,
+        };
+        let guard = MemoryGuard::new(config);
+        assert_eq!(guard.limit_bytes(), 2_147_483_648);
+    }
+
+    #[test]
+    fn test_guard_with_custom_headroom() {
+        // 85% headroom on 1 GiB = 870 MiB effective
+        let config = MemoryGuardConfig {
+            limit_bytes: 0, // auto-detect
+            pressure_threshold: 0.80,
+            cgroup_headroom: 0.85,
+        };
+        let guard = MemoryGuard::new(config);
+        // Auto-detected, so limit should be 85% of system/cgroup memory
+        assert!(guard.limit_bytes() > 0);
     }
 
     #[test]
