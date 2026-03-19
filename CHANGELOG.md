@@ -1,3 +1,21 @@
+## [1.16.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2...v1.16.3) (2026-03-19)
+
+
+### Bug Fixes
+
+* add data quality event helpers (DLQ routing, quality alerts) ([2a6eeb6](https://github.com/hyperi-io/hyperi-rustlib/commit/2a6eeb67109c4fbb59eb77f22622100dc64f3091))
+* add DfeMetrics standard metric set with transport labels ([d66d9b3](https://github.com/hyperi-io/hyperi-rustlib/commit/d66d9b3ea9b490ef7057a39c72e4d60a4fd724c6))
+* add flat env override helpers, ApplyFlatEnv and Normalize traits ([e583ecf](https://github.com/hyperi-io/hyperi-rustlib/commit/e583ecf650e0b1d8142e6f63a7fd233c88071192))
+* add libc dependency for disk-aware capacity management ([7e47351](https://github.com/hyperi-io/hyperi-rustlib/commit/7e47351b1fe3bda50075342fcef8fae91bf97ddf))
+* add log spam helper functions (state, sampled, debounced) ([f38296d](https://github.com/hyperi-io/hyperi-rustlib/commit/f38296d6530829422c055f70c15c0f7f016718eb))
+* add security event logging framework (OWASP-aligned) ([f08819b](https://github.com/hyperi-io/hyperi-rustlib/commit/f08819b18b01924bceee7f6e30460cbc78366eb0))
+* add tracing-throttle layer to logger (opt-in via LOG_THROTTLE_ENABLED) ([842914a](https://github.com/hyperi-io/hyperi-rustlib/commit/842914a34de03a3d84d51dcdf21784474242dcc9))
+* address clippy warnings in log helpers (is_multiple_of, cast) ([cc73e5d](https://github.com/hyperi-io/hyperi-rustlib/commit/cc73e5dd936545ef57f9c7335d8986c1ee58fd3d))
+* enforce max_spool_bytes limit in TieredSink ([9f9103f](https://github.com/hyperi-io/hyperi-rustlib/commit/9f9103f378df10b33c7321298ca6cc663a102030))
+* initialise spool len counter from existing queue on open ([a2c9a65](https://github.com/hyperi-io/hyperi-rustlib/commit/a2c9a65acea8368429173ed7ae64b5a0c05668e5))
+* inject service name and version into JSON log output ([e3c70ef](https://github.com/hyperi-io/hyperi-rustlib/commit/e3c70eff1a76ae31e667cb4da6fc9790c12f515e))
+* make spool codec configurable, default to zstd level 1 ([90c1c4a](https://github.com/hyperi-io/hyperi-rustlib/commit/90c1c4a212ddc8aa87f12ccbd6b4635ac36ce1f6))
+
 ## [1.16.2-dev.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.1...v1.16.2-dev.1) (2026-03-18)
 
 
