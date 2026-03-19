@@ -1,3 +1,13 @@
+## [1.16.2-dev.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2-dev.1...v1.16.2-dev.2) (2026-03-19)
+
+
+### Bug Fixes
+
+* add data quality event helpers (DLQ routing, quality alerts) ([2a6eeb6](https://github.com/hyperi-io/hyperi-rustlib/commit/2a6eeb67109c4fbb59eb77f22622100dc64f3091))
+* add flat env override helpers, ApplyFlatEnv and Normalize traits ([e583ecf](https://github.com/hyperi-io/hyperi-rustlib/commit/e583ecf650e0b1d8142e6f63a7fd233c88071192))
+* add security event logging framework (OWASP-aligned) ([f08819b](https://github.com/hyperi-io/hyperi-rustlib/commit/f08819b18b01924bceee7f6e30460cbc78366eb0))
+* inject service name and version into JSON log output ([e3c70ef](https://github.com/hyperi-io/hyperi-rustlib/commit/e3c70eff1a76ae31e667cb4da6fc9790c12f515e))
+
 ## [1.16.2-dev.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.1...v1.16.2-dev.1) (2026-03-18)
 
 
