@@ -77,6 +77,7 @@
 //! ```
 
 pub mod env_compat;
+pub mod flat_env;
 
 #[cfg(feature = "config-reload")]
 pub mod reloader;
