@@ -97,6 +97,9 @@ pub mod secrets;
 #[cfg(feature = "directory-config")]
 pub mod directory_config;
 
+#[cfg(feature = "memory")]
+pub mod memory;
+
 #[cfg(feature = "scaling")]
 pub mod scaling;
 
@@ -196,6 +199,9 @@ pub use directory_config::{
     ChangeEvent, ChangeOperation, DirectoryConfigError, DirectoryConfigResult,
     DirectoryConfigStore, DirectoryConfigStoreConfig, WriteMode, WriteResult,
 };
+
+#[cfg(feature = "memory")]
+pub use memory::{MemoryGuard, MemoryGuardConfig, MemoryPressure, detect_memory_limit};
 
 #[cfg(feature = "scaling")]
 pub use scaling::{
