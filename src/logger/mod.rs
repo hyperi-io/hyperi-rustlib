@@ -34,6 +34,7 @@
 pub mod format;
 pub mod helpers;
 mod masking;
+pub mod security;
 
 use std::io;
 use std::sync::OnceLock;
@@ -51,6 +52,7 @@ use tracing_throttle::{Policy, TracingRateLimitLayer};
 
 pub use helpers::{log_debounced, log_sampled, log_state_change};
 pub use masking::{MaskingLayer, MaskingWriter, default_sensitive_fields, mask_sensitive_string};
+pub use security::{SecurityEvent, SecurityOutcome};
 
 /// Global flag to track initialisation.
 static LOGGER_INIT: OnceLock<()> = OnceLock::new();
