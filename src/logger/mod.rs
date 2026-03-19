@@ -32,7 +32,9 @@
 //! ```
 
 pub mod format;
+pub mod helpers;
 mod masking;
+pub mod security;
 
 use std::io;
 use std::sync::OnceLock;
@@ -40,12 +42,17 @@ use std::sync::OnceLock;
 use thiserror::Error;
 use tracing::Level;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::Layer as _;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+use tracing_throttle::{Policy, TracingRateLimitLayer};
+
+pub use helpers::{log_debounced, log_sampled, log_state_change};
 pub use masking::{MaskingLayer, MaskingWriter, default_sensitive_fields, mask_sensitive_string};
+pub use security::{SecurityEvent, SecurityOutcome};
 
 /// Global flag to track initialisation.
 static LOGGER_INIT: OnceLock<()> = OnceLock::new();
@@ -108,6 +115,41 @@ impl std::str::FromStr for LogFormat {
     }
 }
 
+/// Log throttle configuration.
+///
+/// Controls global rate limiting via `tracing-throttle`. Disabled by default.
+/// When enabled, identical log events are deduplicated using a token bucket policy.
+#[derive(Debug, Clone)]
+pub struct ThrottleConfig {
+    /// Enable log throttling.
+    pub enabled: bool,
+    /// Token bucket burst capacity (max events before throttling starts).
+    pub burst: f64,
+    /// Token recovery rate (tokens per second).
+    pub rate: f64,
+    /// Maximum number of distinct event signatures to track.
+    pub max_signatures: usize,
+    /// High-cardinality fields to exclude from signature matching.
+    /// Events differing only in these fields will be treated as identical.
+    pub excluded_fields: Vec<String>,
+}
+
+impl Default for ThrottleConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            burst: 50.0,
+            rate: 1.0,
+            max_signatures: 10_000,
+            excluded_fields: vec![
+                "request_id".to_string(),
+                "trace_id".to_string(),
+                "span_id".to_string(),
+            ],
+        }
+    }
+}
+
 /// Logger configuration options.
 #[derive(Debug, Clone)]
 pub struct LoggerOptions {
@@ -123,6 +165,14 @@ pub struct LoggerOptions {
     pub sensitive_fields: Vec<String>,
     /// Include span events.
     pub span_events: bool,
+    /// Log throttle configuration (deduplicate identical events).
+    pub throttle: ThrottleConfig,
+    /// Service name injected into JSON log output.
+    /// Auto-populated by DfeApp. Falls back to SERVICE_NAME env var.
+    pub service_name: Option<String>,
+    /// Service version injected into JSON log output.
+    /// Auto-populated by DfeApp. Falls back to SERVICE_VERSION env var.
+    pub service_version: Option<String>,
 }
 
 impl Default for LoggerOptions {
@@ -134,6 +184,9 @@ impl Default for LoggerOptions {
             enable_masking: true,
             sensitive_fields: default_sensitive_fields(),
             span_events: false,
+            throttle: ThrottleConfig::default(),
+            service_name: None,
+            service_version: None,
         }
     }
 }
@@ -173,9 +226,17 @@ pub fn setup(opts: LoggerOptions) -> Result<(), LoggerError> {
         std::collections::HashSet::new()
     };
 
+    // Build optional throttle filter
+    let throttle_filter = build_throttle_filter(&opts.throttle);
+
     match format {
         LogFormat::Json => {
-            let writer = masking::make_masking_writer(sensitive, true);
+            let writer = masking::make_masking_writer(
+                sensitive,
+                true,
+                opts.service_name.clone(),
+                opts.service_version.clone(),
+            );
             let layer = tracing_subscriber::fmt::layer()
                 .json()
                 .with_timer(timer)
@@ -185,14 +246,22 @@ pub fn setup(opts: LoggerOptions) -> Result<(), LoggerError> {
                 .with_span_events(span_events)
                 .with_writer(writer);
 
-            tracing_subscriber::registry()
-                .with(filter)
-                .with(layer)
-                .try_init()
-                .map_err(|e| LoggerError::SetGlobalError(e.to_string()))?;
+            if let Some(throttle) = throttle_filter {
+                tracing_subscriber::registry()
+                    .with(filter)
+                    .with(layer.with_filter(throttle))
+                    .try_init()
+                    .map_err(|e| LoggerError::SetGlobalError(e.to_string()))?;
+            } else {
+                tracing_subscriber::registry()
+                    .with(filter)
+                    .with(layer)
+                    .try_init()
+                    .map_err(|e| LoggerError::SetGlobalError(e.to_string()))?;
+            }
         }
         LogFormat::Text => {
-            let writer = masking::make_masking_writer(sensitive, false);
+            let writer = masking::make_masking_writer(sensitive, false, None, None);
             let ansi = !is_no_color();
             let formatter = format::ColouredFormatter::new(ansi)
                 .with_file(opts.add_source)
@@ -203,11 +272,19 @@ pub fn setup(opts: LoggerOptions) -> Result<(), LoggerError> {
                 .event_format(formatter)
                 .with_writer(writer);
 
-            tracing_subscriber::registry()
-                .with(filter)
-                .with(layer)
-                .try_init()
-                .map_err(|e| LoggerError::SetGlobalError(e.to_string()))?;
+            if let Some(throttle) = throttle_filter {
+                tracing_subscriber::registry()
+                    .with(filter)
+                    .with(layer.with_filter(throttle))
+                    .try_init()
+                    .map_err(|e| LoggerError::SetGlobalError(e.to_string()))?;
+            } else {
+                tracing_subscriber::registry()
+                    .with(filter)
+                    .with(layer)
+                    .try_init()
+                    .map_err(|e| LoggerError::SetGlobalError(e.to_string()))?;
+            }
         }
         LogFormat::Auto => unreachable!("Auto should be resolved"),
     }
@@ -222,6 +299,9 @@ pub fn setup(opts: LoggerOptions) -> Result<(), LoggerError> {
 /// - `LOG_LEVEL` or `RUST_LOG`: Log level
 /// - `LOG_FORMAT`: Output format (json, text, auto)
 /// - `NO_COLOR`: Disable coloured output
+/// - `LOG_THROTTLE_ENABLED`: Enable log deduplication (default: false)
+/// - `LOG_THROTTLE_BURST`: Token bucket burst capacity (default: 50)
+/// - `LOG_THROTTLE_RATE`: Token recovery rate per second (default: 1.0)
 ///
 /// # Errors
 ///
@@ -238,11 +318,62 @@ pub fn setup_default() -> Result<(), LoggerError> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(LogFormat::Auto);
 
+    let throttle_enabled = std::env::var("LOG_THROTTLE_ENABLED")
+        .ok()
+        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+
+    let throttle_burst = std::env::var("LOG_THROTTLE_BURST")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50.0);
+
+    let throttle_rate = std::env::var("LOG_THROTTLE_RATE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1.0);
+
+    let service_name = std::env::var("SERVICE_NAME").ok();
+    let service_version = std::env::var("SERVICE_VERSION").ok();
+
     setup(LoggerOptions {
         level,
         format,
+        throttle: ThrottleConfig {
+            enabled: throttle_enabled,
+            burst: throttle_burst,
+            rate: throttle_rate,
+            ..Default::default()
+        },
+        service_name,
+        service_version,
         ..Default::default()
     })
+}
+
+/// Build an optional throttle filter from configuration.
+fn build_throttle_filter(config: &ThrottleConfig) -> Option<TracingRateLimitLayer> {
+    if !config.enabled {
+        return None;
+    }
+
+    let policy = Policy::token_bucket(config.burst, config.rate)
+        .unwrap_or_else(|_| Policy::token_bucket(50.0, 1.0).expect("default policy is valid"));
+
+    let mut builder = TracingRateLimitLayer::builder()
+        .with_policy(policy)
+        .with_max_signatures(config.max_signatures);
+
+    if !config.excluded_fields.is_empty() {
+        builder = builder.with_excluded_fields(config.excluded_fields.clone());
+    }
+
+    match builder.build() {
+        Ok(layer) => Some(layer),
+        Err(e) => {
+            eprintln!("Failed to build log throttle layer: {e}");
+            None
+        }
+    }
 }
 
 /// Check if stderr is a terminal.

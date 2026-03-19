@@ -46,7 +46,7 @@
 //! }
 //! ```
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::doc_markdown)] // Allow brand names without backticks
@@ -136,6 +136,9 @@ pub use runtime::RuntimePaths;
 #[cfg(feature = "config")]
 pub use config::{Config, ConfigError, ConfigOptions};
 
+#[cfg(feature = "config")]
+pub use config::flat_env::{ApplyFlatEnv, EnvVarDoc, Normalize};
+
 #[cfg(feature = "config-reload")]
 pub use config::reloader::{ConfigReloader, ReloaderConfig};
 
@@ -148,10 +151,12 @@ pub use config::postgres::{
 };
 
 #[cfg(feature = "logger")]
-pub use logger::{LogFormat, LoggerError, LoggerOptions};
+pub use logger::{
+    LogFormat, LoggerError, LoggerOptions, SecurityEvent, SecurityOutcome, ThrottleConfig,
+};
 
 #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
-pub use metrics::{MetricsConfig, MetricsError, MetricsManager};
+pub use metrics::{DfeMetrics, MetricsConfig, MetricsError, MetricsManager};
 
 #[cfg(feature = "otel-metrics")]
 pub use metrics::{OtelMetricsConfig, OtelProtocol};

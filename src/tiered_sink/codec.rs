@@ -14,27 +14,33 @@ use std::io;
 /// Compression codec for spool storage.
 ///
 /// Different codecs offer different CPU/compression tradeoffs:
-/// - `Lz4`: Fast compression, low CPU - best for hot-path fallback (default)
+/// - `Zstd`: Best compression ratio, configurable CPU (default, level 1)
+/// - `Lz4`: Fast compression, low CPU
 /// - `Snappy`: Very fast, Kafka-native - avoids transcode if sink uses Snappy
-/// - `Zstd`: Best compression ratio, higher CPU - good for constrained disk
 /// - `None`: No compression - maximum speed when CPU is bottleneck
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CompressionCodec {
     /// No compression - fastest, no CPU overhead
     None,
-    /// LZ4 - fast compression, low CPU (default)
+    /// LZ4 - fast compression, low CPU
     ///
-    /// LZ4 is the best default for hot-path fallback:
-    /// - Very low CPU overhead
-    /// - Still provides meaningful compression
-    /// - Pure Rust implementation (lz4_flex)
-    #[default]
+    /// LZ4 has very low CPU overhead with meaningful compression.
+    /// Pure Rust implementation (lz4_flex).
     Lz4,
     /// Snappy - very fast, Kafka-native format
     Snappy,
-    /// Zstd with configurable level (1-22)
+    /// Zstd with configurable level (1-22, default 1)
+    ///
+    /// Zstd at level 1 offers excellent compression with speed
+    /// comparable to LZ4, making it the best default.
     Zstd { level: i32 },
+}
+
+impl Default for CompressionCodec {
+    fn default() -> Self {
+        Self::Zstd { level: 1 }
+    }
 }
 
 impl CompressionCodec {
@@ -114,8 +120,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_is_lz4() {
-        assert_eq!(CompressionCodec::default(), CompressionCodec::Lz4);
+    fn test_default_is_zstd_level_1() {
+        assert_eq!(
+            CompressionCodec::default(),
+            CompressionCodec::Zstd { level: 1 }
+        );
     }
 
     #[test]
