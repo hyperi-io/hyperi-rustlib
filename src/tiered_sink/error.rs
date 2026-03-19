@@ -34,6 +34,10 @@ pub enum TieredSinkError {
     #[error("sink error: {0}")]
     Sink(String),
 
+    /// Disk is unavailable (full or inaccessible).
+    #[error("disk unavailable for spooling")]
+    DiskUnavailable,
+
     /// Operation was cancelled.
     #[error("operation cancelled")]
     Cancelled,
