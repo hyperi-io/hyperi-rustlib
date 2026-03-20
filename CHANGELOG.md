@@ -1,3 +1,10 @@
+## [1.16.2-dev.6](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2-dev.5...v1.16.2-dev.6) (2026-03-20)
+
+
+### Bug Fixes
+
+* add readiness callback to MetricsManager health endpoints ([500ccf3](https://github.com/hyperi-io/hyperi-rustlib/commit/500ccf3f7d8eee6eca741e75b186cc290efc063d))
+
 ## [1.16.2-dev.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2-dev.4...v1.16.2-dev.5) (2026-03-19)
 
 
