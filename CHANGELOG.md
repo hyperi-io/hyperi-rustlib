@@ -1,3 +1,10 @@
+# [1.17.0-dev.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.1...v1.17.0-dev.2) (2026-03-20)
+
+
+### Bug Fixes
+
+* bump lz4_flex upper bound, update deps, fix clippy lints ([a31e07f](https://github.com/hyperi-io/hyperi-rustlib/commit/a31e07f959b304b4de021c9346358cda8589ec82))
+
 # [1.17.0-dev.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2-dev.6...v1.17.0-dev.1) (2026-03-20)
 
 
