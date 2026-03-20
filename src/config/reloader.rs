@@ -412,12 +412,17 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
             Ok(new_config) => {
                 if let Err(e) = (self.validate_fn)(&new_config) {
                     error!(error = %e, "Config reload validation failed, keeping current config");
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!("config_reloads_total", "result" => "error").increment(1);
                     return;
                 }
 
                 let old_version = self.shared.version();
                 self.shared.update(new_config);
                 let new_version = self.shared.version();
+
+                #[cfg(feature = "metrics")]
+                metrics::counter!("config_reloads_total", "result" => "success").increment(1);
 
                 info!(
                     old_version = old_version,
@@ -427,6 +432,8 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
             }
             Err(e) => {
                 warn!(error = %e, "Config reload failed, keeping current config");
+                #[cfg(feature = "metrics")]
+                metrics::counter!("config_reloads_total", "result" => "error").increment(1);
             }
         }
     }
