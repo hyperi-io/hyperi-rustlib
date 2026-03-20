@@ -1,3 +1,16 @@
+# [1.17.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.8...v1.17.0) (2026-03-20)
+
+
+### Bug Fixes
+
+* add feature gates to gRPC integration tests ([47cf733](https://github.com/hyperi-io/hyperi-rustlib/commit/47cf733fbac1fae26296421073726b9a044512ae))
+* auto-emit config reload and rdkafka Prometheus metrics ([2696cb8](https://github.com/hyperi-io/hyperi-rustlib/commit/2696cb86553d6e0fc0253b7bd8d032388b730ac7))
+
+
+### Features
+
+* add metrics-dfe feature with composable metric groups ([5727737](https://github.com/hyperi-io/hyperi-rustlib/commit/5727737d804aeb5c78222547e43a822736cbfecd))
+
 ## [1.16.8](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.7...v1.16.8) (2026-03-20)
 
 
