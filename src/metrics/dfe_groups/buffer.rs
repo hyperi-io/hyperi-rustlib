@@ -20,6 +20,7 @@ pub struct BufferMetrics {
 }
 
 impl BufferMetrics {
+    #[must_use]
     pub fn new(manager: &MetricsManager) -> Self {
         Self {
             buffer_bytes: manager.gauge("buffer_bytes", "Current buffer size in bytes"),

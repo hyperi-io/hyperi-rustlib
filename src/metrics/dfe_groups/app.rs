@@ -29,6 +29,7 @@ impl AppMetrics {
     /// Create and register app metrics.
     ///
     /// `version` and `commit` are emitted as labels on the `info` gauge.
+    #[must_use]
     pub fn new(manager: &MetricsManager, version: &str, commit: &str) -> Self {
         // Info metric for service discovery
         let ns = manager.namespace();
