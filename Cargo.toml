@@ -200,7 +200,7 @@ yaque = { version = ">=0.6.6, <0.7", optional = true }
 zstd = { version = ">=0.13.3, <0.14", optional = true }
 
 # TieredSink compression codecs
-lz4_flex = { version = ">=0.11, <0.13", optional = true }
+lz4_flex = { version = ">=0.11, <0.14", optional = true }
 snap = { version = ">=1.1.1, <2", optional = true }
 
 # Async trait (for tiered-sink Sink trait)
