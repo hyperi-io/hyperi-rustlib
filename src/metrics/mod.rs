@@ -108,6 +108,8 @@ use metrics_exporter_prometheus::PrometheusHandle;
 
 pub use container::ContainerMetrics;
 pub use dfe::DfeMetrics;
+#[cfg(feature = "metrics-dfe")]
+pub mod dfe_groups;
 pub use process::ProcessMetrics;
 
 #[cfg(feature = "otel-metrics")]
@@ -628,6 +630,13 @@ impl MetricsManager {
         {
             tracing::warn!(error = %e, "OTel provider shutdown error");
         }
+    }
+
+    /// Get the namespace prefix (e.g. `dfe_loader`).
+    ///
+    /// Used by [`dfe_groups`] metric structs to build labelled metric keys.
+    pub fn namespace(&self) -> &str {
+        &self.config.namespace
     }
 
     /// Get prefixed metric name.
