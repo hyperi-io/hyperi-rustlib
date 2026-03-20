@@ -1,3 +1,10 @@
+## [1.16.7](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.6...v1.16.7) (2026-03-20)
+
+
+### Bug Fixes
+
+* add create_topics and delete_topics to KafkaAdmin ([53f2ced](https://github.com/hyperi-io/hyperi-rustlib/commit/53f2ced1baad9ef5b7e836ef17c6814b1da53003))
+
 ## [1.16.6](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.5...v1.16.6) (2026-03-20)
 
 
