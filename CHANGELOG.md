@@ -1,3 +1,19 @@
+# [1.17.0-dev.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2-dev.6...v1.17.0-dev.1) (2026-03-20)
+
+
+### Bug Fixes
+
+* add create_topics and delete_topics to KafkaAdmin ([21eb0c1](https://github.com/hyperi-io/hyperi-rustlib/commit/21eb0c190c502fe227975b490edbbaae0daad442))
+* add feature gates to gRPC integration tests ([b9bc063](https://github.com/hyperi-io/hyperi-rustlib/commit/b9bc06374c92876f2790bfb47c765e6b00eb701c))
+* add start_server_with_routes, scaling/memory endpoints to MetricsManager [skip ci] ([b229749](https://github.com/hyperi-io/hyperi-rustlib/commit/b229749b2cacb2ee1360b035ab83c6b39c3bfb2d))
+* auto-emit config reload and rdkafka Prometheus metrics ([9aa2893](https://github.com/hyperi-io/hyperi-rustlib/commit/9aa2893938662d55aea0a983269760aeb29102a7))
+* bump lz4_flex upper bound, update deps, fix clippy lints ([f7c04f1](https://github.com/hyperi-io/hyperi-rustlib/commit/f7c04f130dd385c49c930355844360672c0334f8))
+
+
+### Features
+
+* add metrics-dfe feature with composable metric groups ([e26c2dd](https://github.com/hyperi-io/hyperi-rustlib/commit/e26c2dd99fd3947c4999431ac4855522753c5ccf))
+
 ## [1.16.2-dev.6](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.2-dev.5...v1.16.2-dev.6) (2026-03-20)
 
 
