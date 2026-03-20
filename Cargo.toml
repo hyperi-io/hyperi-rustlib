@@ -34,6 +34,9 @@ otel = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing-ope
 otel-metrics = ["otel", "dep:metrics", "metrics-util", "metrics-exporter-opentelemetry", "sysinfo", "tokio", "tracing"]
 otel-tracing = ["otel"]
 
+# DFE-specific metric groups (opt-in, DFE pipeline apps only)
+metrics-dfe = ["metrics"]
+
 # Directory config store (YAML directory-backed)
 directory-config = ["serde_yaml_ng", "tokio", "tracing", "fs4"]
 directory-config-git = ["directory-config", "git2"]
@@ -98,7 +101,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "cli", "io", "dlq", "dlq-kafka", "output-file", "expression"]
+full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "cli", "io", "dlq", "dlq-kafka", "output-file", "expression"]
 
 [dependencies]
 # Serialisation (always needed)
