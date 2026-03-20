@@ -1,0 +1,1 @@
+../../hyperi-ai/standards/rules/repo-naming.md

@@ -635,6 +635,7 @@ impl MetricsManager {
     /// Get the namespace prefix (e.g. `dfe_loader`).
     ///
     /// Used by [`dfe_groups`] metric structs to build labelled metric keys.
+    #[must_use]
     pub fn namespace(&self) -> &str {
         &self.config.namespace
     }
