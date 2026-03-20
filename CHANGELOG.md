@@ -1,3 +1,10 @@
+## [1.16.8](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.7...v1.16.8) (2026-03-20)
+
+
+### Bug Fixes
+
+* add start_server_with_routes, scaling/memory endpoints to MetricsManager [skip ci] ([11fe149](https://github.com/hyperi-io/hyperi-rustlib/commit/11fe14942216c4179904d28ea2009c71faed78d9))
+
 ## [1.16.7](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.6...v1.16.7) (2026-03-20)
 
 
