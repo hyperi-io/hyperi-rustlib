@@ -15,6 +15,7 @@ pub struct EnrichmentMetrics {
 }
 
 impl EnrichmentMetrics {
+    #[must_use]
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
 
