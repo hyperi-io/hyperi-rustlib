@@ -240,6 +240,10 @@ impl ClientContext for StatsContext {
         if let Ok(mut lock) = self.stats.write() {
             *lock = Some(statistics);
         }
+
+        // Auto-emit as Prometheus metrics if a recorder is installed
+        #[cfg(feature = "metrics")]
+        self.emit_prometheus_metrics();
     }
 
     fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
@@ -282,6 +286,77 @@ impl ClientContext for StatsContext {
         tracing::error!(target: "librdkafka", error = %error, "{}", reason);
         #[cfg(not(feature = "logger"))]
         eprintln!("ERROR librdkafka: {}: {}", error, reason);
+    }
+}
+
+impl StatsContext {
+    /// Emit current metrics as Prometheus gauges/counters via the `metrics` crate.
+    ///
+    /// Call periodically (e.g. after each stats callback) to push rdkafka
+    /// internal statistics to the global metrics recorder. No-op if no
+    /// recorder is installed.
+    ///
+    /// Emits under the `rdkafka_` prefix per the DFE metrics standard.
+    /// Per-partition metrics are bounded by `max_partitions` (default 256).
+    #[cfg(feature = "metrics")]
+    pub fn emit_prometheus_metrics(&self) {
+        let m = self.get_metrics();
+
+        // Global counters
+        metrics::gauge!("rdkafka_global_msg_cnt").set(m.queue_message_count as f64);
+        metrics::gauge!("rdkafka_global_msg_size_bytes").set(m.queue_byte_count as f64);
+
+        // Per-broker metrics
+        for (name, broker) in &m.brokers {
+            metrics::gauge!(
+                "rdkafka_broker_rtt_avg_seconds",
+                "broker" => name.clone()
+            )
+            .set(broker.rtt_avg_ms / 1000.0);
+
+            metrics::gauge!(
+                "rdkafka_broker_outbuf_cnt",
+                "broker" => name.clone()
+            )
+            .set(broker.outbuf_msg_cnt as f64);
+
+            metrics::gauge!(
+                "rdkafka_broker_waitresp_cnt",
+                "broker" => name.clone()
+            )
+            .set(broker.waitresp_cnt as f64);
+        }
+
+        // Per-partition consumer lag (capped at 256 partitions for cardinality safety)
+        let max_partitions = 256;
+        for (i, ((topic, partition), lag)) in m.partition_lag.iter().enumerate() {
+            if i >= max_partitions {
+                break;
+            }
+            metrics::gauge!(
+                "rdkafka_topic_partition_consumer_lag",
+                "topic" => topic.clone(),
+                "partition" => partition.to_string()
+            )
+            .set(*lag as f64);
+        }
+
+        for (i, ((topic, partition), offset)) in m.partition_committed.iter().enumerate() {
+            if i >= max_partitions {
+                break;
+            }
+            metrics::gauge!(
+                "rdkafka_topic_partition_committed_offset",
+                "topic" => topic.clone(),
+                "partition" => partition.to_string()
+            )
+            .set(*offset as f64);
+        }
+
+        // Rebalance count
+        if m.rebalance_count > 0 {
+            metrics::gauge!("rdkafka_consumer_rebalance_count").set(m.rebalance_count as f64);
+        }
     }
 }
 
