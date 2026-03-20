@@ -56,12 +56,16 @@ pub(crate) mod otel;
 pub mod otel_types;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use metrics::{Counter, Gauge, Histogram, Unit};
 use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
+
+/// Readiness check callback type.
+pub type ReadinessFn = Arc<dyn Fn() -> bool + Send + Sync>;
 
 #[cfg(feature = "metrics")]
 use metrics_exporter_prometheus::PrometheusHandle;
@@ -216,6 +220,7 @@ pub struct MetricsManager {
     shutdown_tx: Option<oneshot::Sender<()>>,
     process_metrics: Option<ProcessMetrics>,
     container_metrics: Option<ContainerMetrics>,
+    readiness_fn: Option<ReadinessFn>,
     #[cfg(feature = "otel-metrics")]
     otel_provider: Option<opentelemetry_sdk::metrics::SdkMeterProvider>,
 }
@@ -259,6 +264,7 @@ impl MetricsManager {
             shutdown_tx: None,
             process_metrics,
             container_metrics,
+            readiness_fn: None,
             #[cfg(feature = "otel-metrics")]
             otel_provider: setup.otel_provider,
         }
@@ -316,6 +322,15 @@ impl MetricsManager {
             .map_or_else(String::new, PrometheusHandle::render)
     }
 
+    /// Set a readiness check callback.
+    ///
+    /// When set, `/readyz` and `/health/ready` call this function and return
+    /// 503 Service Unavailable if it returns `false`. Without a callback,
+    /// these endpoints always return 200.
+    pub fn set_readiness_check(&mut self, f: impl Fn() -> bool + Send + Sync + 'static) {
+        self.readiness_fn = Some(Arc::new(f));
+    }
+
     /// Update process and container metrics.
     pub fn update(&self) {
         if let Some(ref pm) = self.process_metrics {
@@ -361,6 +376,7 @@ impl MetricsManager {
         let update_interval = self.config.update_interval;
         let process_metrics = self.process_metrics.clone();
         let container_metrics = self.container_metrics.clone();
+        let readiness_fn = self.readiness_fn.clone();
 
         tokio::spawn(async move {
             run_server(
@@ -370,6 +386,7 @@ impl MetricsManager {
                 update_interval,
                 process_metrics,
                 container_metrics,
+                readiness_fn,
             )
             .await;
         });
@@ -422,6 +439,7 @@ async fn run_server(
     update_interval: Duration,
     process_metrics: Option<ProcessMetrics>,
     container_metrics: Option<ContainerMetrics>,
+    readiness_fn: Option<ReadinessFn>,
 ) {
     let mut update_interval = tokio::time::interval(update_interval);
 
@@ -441,8 +459,9 @@ async fn run_server(
             result = listener.accept() => {
                 if let Ok((stream, _)) = result {
                     let handle = handle.clone();
+                    let readiness_fn = readiness_fn.clone();
                     tokio::spawn(async move {
-                        handle_connection(stream, handle).await;
+                        handle_connection(stream, handle, readiness_fn).await;
                     });
                 }
             }
@@ -452,7 +471,11 @@ async fn run_server(
 
 /// Handle a single HTTP connection.
 #[cfg(feature = "metrics")]
-async fn handle_connection(mut stream: tokio::net::TcpStream, handle: PrometheusHandle) {
+async fn handle_connection(
+    mut stream: tokio::net::TcpStream,
+    handle: PrometheusHandle,
+    readiness_fn: Option<ReadinessFn>,
+) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
     let mut reader = BufReader::new(&mut stream);
@@ -471,7 +494,15 @@ async fn handle_connection(mut stream: tokio::net::TcpStream, handle: Prometheus
     } else if request_line.starts_with("GET /readyz")
         || request_line.starts_with("GET /health/ready")
     {
-        ("200 OK", r#"{"status":"ready"}"#.to_string())
+        let ready = readiness_fn.as_ref().map_or(true, |f| f());
+        if ready {
+            ("200 OK", r#"{"status":"ready"}"#.to_string())
+        } else {
+            (
+                "503 Service Unavailable",
+                r#"{"status":"not_ready"}"#.to_string(),
+            )
+        }
     } else {
         ("404 Not Found", "Not Found".to_string())
     };

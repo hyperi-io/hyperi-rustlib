@@ -5,6 +5,7 @@
 
 * add DfeSource convention for topic naming and consumer groups ([3b0c7da](https://github.com/hyperi-io/hyperi-rustlib/commit/3b0c7daceb9aa091093bad6b9f05f3366757dc0c))
 * add from_env/from_env_raw to MemoryGuardConfig, tune defaults ([3c59845](https://github.com/hyperi-io/hyperi-rustlib/commit/3c5984563857f494cbbac505184756ec71d6ce10))
+* add readiness callback to MetricsManager health endpoints ([500ccf3](https://github.com/hyperi-io/hyperi-rustlib/commit/500ccf3))
 
 ## [1.16.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.16.3...v1.16.4) (2026-03-19)
 
