@@ -32,7 +32,10 @@
 
 use super::config::KafkaConfig;
 use crate::transport::error::{TransportError, TransportResult};
-use rdkafka::admin::{AdminClient, AdminOptions, AlterConfig, NewPartitions, ResourceSpecifier};
+use rdkafka::admin::{
+    AdminClient, AdminOptions, AlterConfig, NewPartitions, NewTopic, ResourceSpecifier,
+    TopicReplication,
+};
 use rdkafka::client::DefaultClientContext;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer};
@@ -310,6 +313,73 @@ impl KafkaAdmin {
     }
 
     // --- Topic Management ---
+
+    /// Create one or more topics.
+    ///
+    /// Ignores "topic already exists" errors — safe to call repeatedly.
+    ///
+    /// # Arguments
+    ///
+    /// * `topics` - Slice of `(name, num_partitions, replication_factor)` tuples
+    ///
+    /// # Errors
+    ///
+    /// Returns error if topic creation fails for reasons other than already existing.
+    pub async fn create_topics(&self, topics: &[(&str, i32, i32)]) -> TransportResult<()> {
+        let new_topics: Vec<NewTopic<'_>> = topics
+            .iter()
+            .map(|(name, partitions, replication)| {
+                NewTopic::new(name, *partitions, TopicReplication::Fixed(*replication))
+            })
+            .collect();
+
+        let opts = AdminOptions::new().operation_timeout(Some(Duration::from_secs(30)));
+
+        let results = self
+            .admin
+            .create_topics(&new_topics, &opts)
+            .await
+            .map_err(|e| TransportError::Admin(format!("Failed to create topics: {e}")))?;
+
+        for result in results {
+            if let Err((topic_name, err_code)) = result {
+                let err_str = format!("{err_code:?}");
+                if err_str.contains("TopicAlreadyExists") {
+                    continue;
+                }
+                return Err(TransportError::Admin(format!(
+                    "Failed to create topic {topic_name}: {err_code:?}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Delete one or more topics.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if topic deletion fails.
+    pub async fn delete_topics(&self, topics: &[&str]) -> TransportResult<()> {
+        let opts = AdminOptions::new().operation_timeout(Some(Duration::from_secs(30)));
+
+        let results = self
+            .admin
+            .delete_topics(topics, &opts)
+            .await
+            .map_err(|e| TransportError::Admin(format!("Failed to delete topics: {e}")))?;
+
+        for result in results {
+            if let Err((topic_name, err_code)) = result {
+                return Err(TransportError::Admin(format!(
+                    "Failed to delete topic {topic_name}: {err_code:?}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
 
     /// Increase the partition count for a topic.
     ///
