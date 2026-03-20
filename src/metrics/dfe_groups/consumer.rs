@@ -21,6 +21,7 @@ pub struct ConsumerMetrics {
 }
 
 impl ConsumerMetrics {
+    #[must_use]
     pub fn new(manager: &MetricsManager) -> Self {
         Self {
             partitions_assigned: manager.gauge(
@@ -51,6 +52,7 @@ impl ConsumerMetrics {
         } else {
             format!("{}_consumer_lag", self.namespace)
         };
+        #[allow(clippy::cast_precision_loss)]
         metrics::gauge!(
             key,
             "topic" => topic.to_string(),

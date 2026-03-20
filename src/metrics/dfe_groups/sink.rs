@@ -17,6 +17,7 @@ pub struct SinkMetrics {
 }
 
 impl SinkMetrics {
+    #[must_use]
     pub fn new(manager: &MetricsManager) -> Self {
         // Pre-describe metrics that take labels
         let ns = manager.namespace();

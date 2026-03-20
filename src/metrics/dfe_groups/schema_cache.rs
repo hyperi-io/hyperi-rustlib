@@ -19,6 +19,7 @@ pub struct SchemaCacheMetrics {
 }
 
 impl SchemaCacheMetrics {
+    #[must_use]
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
         let recovery_key = if ns.is_empty() {

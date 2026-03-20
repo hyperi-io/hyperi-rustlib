@@ -17,6 +17,7 @@ pub struct BackpressureMetrics {
 }
 
 impl BackpressureMetrics {
+    #[must_use]
     pub fn new(manager: &MetricsManager) -> Self {
         Self {
             events: manager.counter(
@@ -38,8 +39,8 @@ impl BackpressureMetrics {
     /// Record backpressure pause duration in seconds.
     #[inline]
     pub fn record_duration(&self, seconds: f64) {
-        // Counter increment with fractional seconds (converted to integer millis
-        // would lose precision; the metrics crate handles f64 counters correctly).
+        // Duration is always non-negative and fits in u64 for practical values.
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
         self.duration.increment(seconds as u64);
     }
 }
