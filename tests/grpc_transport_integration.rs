@@ -6,6 +6,8 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
+#![cfg(feature = "transport-grpc")]
+
 //! Integration tests for the gRPC transport layer.
 //!
 //! These tests start real tonic gRPC servers and clients to verify

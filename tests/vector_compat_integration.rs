@@ -6,6 +6,8 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
+#![cfg(feature = "transport-grpc-vector-compat")]
+
 //! Integration tests for Vector compat gRPC transport.
 //!
 //! These tests start a real gRPC server with vector_compat enabled and use
