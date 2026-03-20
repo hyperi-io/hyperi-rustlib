@@ -14,6 +14,7 @@ pub struct CircuitBreakerMetrics {
 }
 
 impl CircuitBreakerMetrics {
+    #[must_use]
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
         let state_key = if ns.is_empty() {
