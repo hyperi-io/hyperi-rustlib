@@ -21,8 +21,12 @@
 //! - Container metrics from cgroups (memory limit, CPU limit)
 //! - Built-in HTTP server for `/metrics` endpoint (Prometheus)
 //! - OTLP push to HyperDX, Jaeger, Grafana, etc. (OTel)
+//! - Readiness callback for `/health/ready` endpoints
+//! - Optional scaling pressure endpoint (`/scaling/pressure`)
+//! - Optional memory guard endpoint (`/memory/pressure`)
+//! - Custom route support via [`start_server_with_routes`](MetricsManager::start_server_with_routes)
 //!
-//! ## Example
+//! ## Basic Example
 //!
 //! ```rust,no_run
 //! use hyperi_rustlib::metrics::{MetricsManager, MetricsConfig};
@@ -36,7 +40,7 @@
 //!     let active = manager.gauge("active_connections", "Active connections");
 //!     let latency = manager.histogram("request_duration_seconds", "Request latency");
 //!
-//!     // Start metrics server
+//!     // Start metrics server (simple — built-in endpoints only)
 //!     manager.start_server("0.0.0.0:9090").await.unwrap();
 //!
 //!     // Record metrics
@@ -44,6 +48,38 @@
 //!     active.set(42.0);
 //!     latency.record(0.123);
 //! }
+//! ```
+//!
+//! ## Advanced Example (with custom routes, scaling, memory)
+//!
+//! Requires features: `metrics`, `http-server`, `scaling`, `memory`.
+//!
+//! ```rust,ignore
+//! use std::sync::Arc;
+//! use hyperi_rustlib::metrics::MetricsManager;
+//! use hyperi_rustlib::scaling::{ScalingPressure, ScalingPressureConfig};
+//! use hyperi_rustlib::memory::{MemoryGuard, MemoryGuardConfig};
+//! use axum::{Router, routing::post};
+//!
+//! let mut mgr = MetricsManager::new("myapp");
+//!
+//! // Readiness callback
+//! mgr.set_readiness_check(|| true);
+//!
+//! // Attach scaling pressure (adds /scaling/pressure endpoint)
+//! let scaling = Arc::new(ScalingPressure::new(ScalingPressureConfig::default(), vec![]));
+//! mgr.set_scaling_pressure(scaling);
+//!
+//! // Attach memory guard (adds /memory/pressure endpoint)
+//! let guard = Arc::new(MemoryGuard::new(MemoryGuardConfig::default()));
+//! mgr.set_memory_guard(guard);
+//!
+//! // Service-specific routes
+//! let custom = Router::new()
+//!     .route("/test", post(|| async { "ok" }));
+//!
+//! // Start with everything merged into one server
+//! mgr.start_server_with_routes("0.0.0.0:9090", custom).await.unwrap();
 //! ```
 
 mod container;
@@ -221,6 +257,10 @@ pub struct MetricsManager {
     process_metrics: Option<ProcessMetrics>,
     container_metrics: Option<ContainerMetrics>,
     readiness_fn: Option<ReadinessFn>,
+    #[cfg(all(feature = "metrics", feature = "scaling"))]
+    scaling_pressure: Option<Arc<crate::scaling::ScalingPressure>>,
+    #[cfg(all(feature = "metrics", feature = "memory"))]
+    memory_guard: Option<Arc<crate::memory::MemoryGuard>>,
     #[cfg(feature = "otel-metrics")]
     otel_provider: Option<opentelemetry_sdk::metrics::SdkMeterProvider>,
 }
@@ -265,6 +305,10 @@ impl MetricsManager {
             process_metrics,
             container_metrics,
             readiness_fn: None,
+            #[cfg(all(feature = "metrics", feature = "scaling"))]
+            scaling_pressure: None,
+            #[cfg(all(feature = "metrics", feature = "memory"))]
+            memory_guard: None,
             #[cfg(feature = "otel-metrics")]
             otel_provider: setup.otel_provider,
         }
@@ -331,6 +375,24 @@ impl MetricsManager {
         self.readiness_fn = Some(Arc::new(f));
     }
 
+    /// Attach a `ScalingPressure` instance.
+    ///
+    /// When set and using `start_server_with_routes`, a `/scaling/pressure`
+    /// endpoint is automatically added that returns the current pressure value.
+    #[cfg(all(feature = "metrics", feature = "scaling"))]
+    pub fn set_scaling_pressure(&mut self, sp: Arc<crate::scaling::ScalingPressure>) {
+        self.scaling_pressure = Some(sp);
+    }
+
+    /// Attach a `MemoryGuard` instance.
+    ///
+    /// When set and using `start_server_with_routes`, a `/memory/pressure`
+    /// endpoint is automatically added that returns the current memory status.
+    #[cfg(all(feature = "metrics", feature = "memory"))]
+    pub fn set_memory_guard(&mut self, mg: Arc<crate::memory::MemoryGuard>) {
+        self.memory_guard = Some(mg);
+    }
+
     /// Update process and container metrics.
     pub fn update(&self) {
         if let Some(ref pm) = self.process_metrics {
@@ -387,6 +449,154 @@ impl MetricsManager {
                 process_metrics,
                 container_metrics,
                 readiness_fn,
+            )
+            .await;
+        });
+
+        Ok(())
+    }
+
+    /// Start the metrics HTTP server with additional custom routes.
+    ///
+    /// Serves the same built-in endpoints as [`start_server`](Self::start_server):
+    /// `/metrics`, `/healthz`, `/health/live`, `/readyz`, `/health/ready`.
+    ///
+    /// Additionally:
+    /// - If [`set_scaling_pressure`](Self::set_scaling_pressure) was called,
+    ///   adds `/scaling/pressure` returning the current pressure value.
+    /// - If [`set_memory_guard`](Self::set_memory_guard) was called,
+    ///   adds `/memory/pressure` returning memory status JSON.
+    /// - Any routes in `extra_routes` are merged (service-specific endpoints).
+    ///
+    /// Requires both `metrics` and `http-server` features.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the server fails to start.
+    #[cfg(all(feature = "metrics", feature = "http-server"))]
+    pub async fn start_server_with_routes(
+        &mut self,
+        addr: &str,
+        extra_routes: axum::Router,
+    ) -> Result<(), MetricsError> {
+        if self.shutdown_tx.is_some() {
+            return Err(MetricsError::AlreadyRunning);
+        }
+
+        let addr: SocketAddr = addr
+            .parse()
+            .map_err(|e| MetricsError::ServerError(format!("invalid address: {e}")))?;
+
+        let listener = TcpListener::bind(addr)
+            .await
+            .map_err(|e| MetricsError::ServerError(e.to_string()))?;
+
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        self.shutdown_tx = Some(shutdown_tx);
+
+        let handle = self
+            .handle
+            .as_ref()
+            .expect("Prometheus handle required for server")
+            .clone();
+        let update_interval = self.config.update_interval;
+        let process_metrics = self.process_metrics.clone();
+        let container_metrics = self.container_metrics.clone();
+        let readiness_fn = self.readiness_fn.clone();
+
+        // Build the axum router with built-in + optional + custom routes
+        let metrics_handle = handle.clone();
+        let readiness_for_live = readiness_fn.clone();
+
+        let mut app = axum::Router::new()
+            .route(
+                "/metrics",
+                axum::routing::get(move || {
+                    let h = metrics_handle.clone();
+                    async move { h.render() }
+                }),
+            )
+            .route(
+                "/healthz",
+                axum::routing::get(|| async {
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        r#"{"status":"alive"}"#,
+                    )
+                }),
+            )
+            .route(
+                "/health/live",
+                axum::routing::get(|| async {
+                    (
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        r#"{"status":"alive"}"#,
+                    )
+                }),
+            )
+            .route(
+                "/readyz",
+                axum::routing::get(move || {
+                    let rf = readiness_fn.clone();
+                    async move { readiness_response(rf) }
+                }),
+            )
+            .route(
+                "/health/ready",
+                axum::routing::get(move || {
+                    let rf = readiness_for_live.clone();
+                    async move { readiness_response(rf) }
+                }),
+            );
+
+        // Add scaling pressure endpoint if configured
+        #[cfg(feature = "scaling")]
+        if let Some(ref sp) = self.scaling_pressure {
+            let sp = sp.clone();
+            app = app.route(
+                "/scaling/pressure",
+                axum::routing::get(move || {
+                    let s = sp.clone();
+                    async move { format!("{:.2}", s.calculate()) }
+                }),
+            );
+        }
+
+        // Add memory pressure endpoint if configured
+        #[cfg(feature = "memory")]
+        if let Some(ref mg) = self.memory_guard {
+            let mg = mg.clone();
+            app = app.route(
+                "/memory/pressure",
+                axum::routing::get(move || {
+                    let m = mg.clone();
+                    async move {
+                        (
+                            [(axum::http::header::CONTENT_TYPE, "application/json")],
+                            format!(
+                                r#"{{"under_pressure":{},"ratio":{:.3},"current_bytes":{},"limit_bytes":{}}}"#,
+                                m.under_pressure(),
+                                m.pressure_ratio(),
+                                m.current_bytes(),
+                                m.limit_bytes()
+                            ),
+                        )
+                    }
+                }),
+            );
+        }
+
+        // Merge service-specific routes
+        app = app.merge(extra_routes);
+
+        tokio::spawn(async move {
+            run_axum_server(
+                listener,
+                app,
+                shutdown_rx,
+                update_interval,
+                process_metrics,
+                container_metrics,
             )
             .await;
         });
@@ -494,7 +704,7 @@ async fn handle_connection(
     } else if request_line.starts_with("GET /readyz")
         || request_line.starts_with("GET /health/ready")
     {
-        let ready = readiness_fn.as_ref().map_or(true, |f| f());
+        let ready = readiness_fn.as_ref().is_none_or(|f| f());
         if ready {
             ("200 OK", r#"{"status":"ready"}"#.to_string())
         } else {
@@ -519,6 +729,69 @@ async fn handle_connection(
     );
 
     let _ = stream.write_all(response.as_bytes()).await;
+}
+
+/// Readiness response helper for axum endpoints.
+#[cfg(all(feature = "metrics", feature = "http-server"))]
+fn readiness_response(rf: Option<ReadinessFn>) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    let ready = rf.as_ref().is_none_or(|f| f());
+    if ready {
+        (
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            r#"{"status":"ready"}"#,
+        )
+            .into_response()
+    } else {
+        (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            r#"{"status":"not_ready"}"#,
+        )
+            .into_response()
+    }
+}
+
+/// Run the axum-based metrics HTTP server with custom routes.
+#[cfg(all(feature = "metrics", feature = "http-server"))]
+async fn run_axum_server(
+    listener: TcpListener,
+    app: axum::Router,
+    shutdown_rx: oneshot::Receiver<()>,
+    update_interval: Duration,
+    process_metrics: Option<ProcessMetrics>,
+    container_metrics: Option<ContainerMetrics>,
+) {
+    let mut interval = tokio::time::interval(update_interval);
+
+    // Spawn the metrics update loop
+    let (update_stop_tx, mut update_stop_rx) = oneshot::channel::<()>();
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = &mut update_stop_rx => break,
+                _ = interval.tick() => {
+                    if let Some(ref pm) = process_metrics {
+                        pm.update();
+                    }
+                    if let Some(ref cm) = container_metrics {
+                        cm.update();
+                    }
+                }
+            }
+        }
+    });
+
+    // Run axum server with graceful shutdown
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            let _ = shutdown_rx.await;
+        })
+        .await
+        .unwrap_or_else(|e| tracing::error!(error = %e, "Metrics axum server error"));
+
+    let _ = update_stop_tx.send(());
 }
 
 /// Standard latency histogram buckets.
