@@ -1,4 +1,1 @@
-{
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>hyperi-io/renovate-config"]
-}
+{"$schema":"https://docs.renovatebot.com/renovate-schema.json","extends":["config:recommended","docker:pinDigests",":pinActionsToFullSha"],"labels":["dependencies"],"prHourlyLimit":5,"prConcurrentLimit":10,"commitMessagePrefix":"chore(deps):","dependencyDashboard":true,"packageRules":[{"description":"Automerge patch and digest updates when CI passes","matchUpdateTypes":["patch","digest"],"automerge":true},{"description":"Group all GitHub Actions updates","matchManagers":["github-actions"],"groupName":"github-actions","automerge":true},{"description":"Group Rust crate updates","matchManagers":["cargo"],"groupName":"rust-dependencies"},{"description":"Group Python dependency updates","matchManagers":["pip_requirements","pip-compile","pep621"],"groupName":"python-dependencies"},{"description":"Group Docker image updates","matchManagers":["dockerfile","docker-compose"],"groupName":"docker-images"}]}
