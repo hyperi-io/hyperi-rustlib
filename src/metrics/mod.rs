@@ -115,6 +115,23 @@ pub use process::ProcessMetrics;
 #[cfg(feature = "otel-metrics")]
 pub use otel_types::{OtelMetricsConfig, OtelProtocol};
 
+/// Cloneable handle for rendering Prometheus metrics text.
+///
+/// Obtained via [`MetricsManager::render_handle`]. Safe to clone into
+/// `axum` route handlers or share across tasks.
+#[cfg(feature = "metrics")]
+#[derive(Clone)]
+pub struct RenderHandle(PrometheusHandle);
+
+#[cfg(feature = "metrics")]
+impl RenderHandle {
+    /// Render current metrics in Prometheus text format.
+    #[must_use]
+    pub fn render(&self) -> String {
+        self.0.render()
+    }
+}
+
 /// Metrics errors.
 #[derive(Debug, Error)]
 pub enum MetricsError {
@@ -366,6 +383,34 @@ impl MetricsManager {
         self.handle
             .as_ref()
             .map_or_else(String::new, PrometheusHandle::render)
+    }
+
+    /// Get a cloneable render handle for use in route handlers.
+    ///
+    /// Returns a closure that renders the current Prometheus metrics text.
+    /// The closure is `Send + Sync + Clone`, making it safe to move into
+    /// `axum` route handlers or share across tasks via `Arc`.
+    ///
+    /// Returns `None` if no Prometheus recorder is installed.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let mut mgr = MetricsManager::new("myapp");
+    /// let render = mgr.render_handle().expect("recorder installed");
+    ///
+    /// // Use in axum route
+    /// let route = axum::Router::new().route("/metrics", axum::routing::get(move || {
+    ///     let r = render.clone();
+    ///     async move { r() }
+    /// }));
+    ///
+    /// mgr.start_server_with_routes("0.0.0.0:9090", route).await?;
+    /// ```
+    #[cfg(feature = "metrics")]
+    #[must_use]
+    pub fn render_handle(&self) -> Option<RenderHandle> {
+        self.handle.clone().map(RenderHandle)
     }
 
     /// Set a readiness check callback.
