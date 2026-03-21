@@ -1,3 +1,10 @@
+# [1.17.0-dev.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.2...v1.17.0-dev.3) (2026-03-21)
+
+
+### Features
+
+* add RenderHandle for sharing Prometheus render across tasks ([cd872a6](https://github.com/hyperi-io/hyperi-rustlib/commit/cd872a6e1840b7338c45f1873ae37894501dc58a))
+
 # [1.17.0-dev.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.1...v1.17.0-dev.2) (2026-03-20)
 
 
