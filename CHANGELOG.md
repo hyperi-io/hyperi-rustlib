@@ -1,3 +1,10 @@
+# [1.17.0-dev.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.3...v1.17.0-dev.4) (2026-03-22)
+
+
+### Bug Fixes
+
+* inline Renovate config (preset resolution broken) ([5f60ad3](https://github.com/hyperi-io/hyperi-rustlib/commit/5f60ad3d4a7083b85a776e20e11d0ded2d12ffa1))
+
 # [1.17.0-dev.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.2...v1.17.0-dev.3) (2026-03-21)
 
 
