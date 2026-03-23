@@ -1,3 +1,10 @@
+# [1.17.0-dev.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.4...v1.17.0-dev.5) (2026-03-23)
+
+
+### Bug Fixes
+
+* replace invalid Renovate preset :pinActionsToFullSha with helpers:pinGitHubActionDigestsToSemver ([39c09a9](https://github.com/hyperi-io/hyperi-rustlib/commit/39c09a941d68add12ef82a024d2b05c1d3cf6fff))
+
 # [1.17.0-dev.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.3...v1.17.0-dev.4) (2026-03-22)
 
 
