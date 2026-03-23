@@ -1,12 +1,10 @@
 // Project:   hyperi-rustlib
-// File:      tests/directory_config_tests.rs
+// File:      tests/integration/directory_config.rs
 // Purpose:   Integration tests for DirectoryConfigStore
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
-
-#![cfg(feature = "directory-config")]
 
 use std::path::PathBuf;
 use std::time::Duration;

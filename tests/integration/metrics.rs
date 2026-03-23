@@ -1,5 +1,5 @@
 // Project:   hyperi-rustlib
-// File:      tests/metrics_integration.rs
+// File:      tests/integration/metrics.rs
 // Purpose:   Integration tests for metrics HTTP server
 // Language:  Rust
 //
@@ -9,7 +9,7 @@
 //! Integration tests for the metrics HTTP server.
 //!
 //! These tests must run serially because the metrics crate uses a global recorder.
-//! Run with: `cargo test --test metrics_integration -- --test-threads=1`
+//! Run with: `cargo test --test integration_tests -- --test-threads=1`
 
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
