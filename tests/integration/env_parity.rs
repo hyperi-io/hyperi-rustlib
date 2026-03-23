@@ -1,5 +1,5 @@
 // Project:   hyperi-rustlib
-// File:      tests/parity/env_parity.rs
+// File:      tests/integration/env_parity.rs
 // Purpose:   Environment detection parity tests
 // Language:  Rust
 //

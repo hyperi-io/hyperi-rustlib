@@ -6,7 +6,7 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-#![allow(unsafe_code)]
+#![allow(unsafe_code, dead_code)]
 
 //! Shared test fixtures and utilities.
 
