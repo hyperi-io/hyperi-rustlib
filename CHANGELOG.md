@@ -1,3 +1,10 @@
+# [1.17.0-dev.12](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.11...v1.17.0-dev.12) (2026-03-24)
+
+
+### Bug Fixes
+
+* pin reqwest to 0.12 to avoid dual-version conflict ([8dc1b6d](https://github.com/hyperi-io/hyperi-rustlib/commit/8dc1b6dc6e7cf336dc20e434094bad52526d22cc))
+
 # [1.17.0-dev.11](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.10...v1.17.0-dev.11) (2026-03-24)
 
 
