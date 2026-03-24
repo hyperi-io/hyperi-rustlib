@@ -1,3 +1,10 @@
+## [1.19.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.2...v1.19.3) (2026-03-24)
+
+
+### Bug Fixes
+
+* add reflectable config registry with auto-registration ([a88f50d](https://github.com/hyperi-io/hyperi-rustlib/commit/a88f50dda5ff7574e7b6eeb1ce9188336d281b77))
+
 ## [1.19.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.1...v1.19.2) (2026-03-24)
 
 
