@@ -1,3 +1,11 @@
+# [1.17.0-dev.8](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.7...v1.17.0-dev.8) (2026-03-24)
+
+
+### Bug Fixes
+
+* add config redaction, /config endpoint, change notification ([c6a796b](https://github.com/hyperi-io/hyperi-rustlib/commit/c6a796b00868d91d65833b790b47ac2fa812afbe))
+* wire scaling, grpc, secrets configs into registry ([c1bd924](https://github.com/hyperi-io/hyperi-rustlib/commit/c1bd924ac88d34db3ff82bb97c4734aa785bb3a5))
+
 # [1.17.0-dev.7](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.6...v1.17.0-dev.7) (2026-03-24)
 
 
