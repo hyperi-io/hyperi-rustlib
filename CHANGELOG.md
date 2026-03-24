@@ -1,3 +1,13 @@
+## [1.19.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.0...v1.19.1) (2026-03-24)
+
+
+### Bug Fixes
+
+* inline Renovate config (preset resolution broken) ([5f60ad3](https://github.com/hyperi-io/hyperi-rustlib/commit/5f60ad3d4a7083b85a776e20e11d0ded2d12ffa1))
+* prevent underflow in MemoryGuard::release() ([9b74994](https://github.com/hyperi-io/hyperi-rustlib/commit/9b749949e6d5e34caaeb7bb6402cf465ff50c00e))
+* replace invalid Renovate preset :pinActionsToFullSha with helpers:pinGitHubActionDigestsToSemver ([39c09a9](https://github.com/hyperi-io/hyperi-rustlib/commit/39c09a941d68add12ef82a024d2b05c1d3cf6fff))
+* restructure tests to match testing standard ([1539471](https://github.com/hyperi-io/hyperi-rustlib/commit/15394714cb1508ef94882e37e6d1ae9366e0e0a6))
+
 # [1.19.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.18.0...v1.19.0) (2026-03-22)
 
 
