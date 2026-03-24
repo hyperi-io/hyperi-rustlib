@@ -1,5 +1,5 @@
 // Project:   hyperi-rustlib
-// File:      tests/env_integration.rs
+// File:      tests/integration/env.rs
 // Purpose:   Integration tests for environment variable loading
 // Language:  Rust
 //

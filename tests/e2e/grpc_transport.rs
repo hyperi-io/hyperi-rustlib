@@ -1,12 +1,10 @@
 // Project:   hyperi-rustlib
-// File:      tests/grpc_transport_integration.rs
+// File:      tests/e2e/grpc_transport.rs
 // Purpose:   Integration tests for gRPC transport (bidirectional client/server)
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
-
-#![cfg(feature = "transport-grpc")]
 
 //! Integration tests for the gRPC transport layer.
 //!
@@ -14,7 +12,7 @@
 //! end-to-end message delivery. Run with `--test-threads=1` to avoid
 //! port conflicts.
 //!
-//! `cargo test --test grpc_transport_integration --features transport-grpc -- --test-threads=1`
+//! `cargo test --test e2e_tests --features transport-grpc -- --test-threads=1`
 
 use std::time::Duration;
 

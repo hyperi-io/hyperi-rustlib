@@ -1,5 +1,5 @@
 // Project:   hyperi-rustlib
-// File:      tests/logger_output.rs
+// File:      tests/integration/logger_output.rs
 // Purpose:   Integration tests for logger output capturing and masking
 // Language:  Rust
 //
