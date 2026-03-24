@@ -89,6 +89,34 @@ Code is committed (`83713e6`), 425/426 tests pass. CI fails on pre-existing flak
 
 ---
 
+## Backlog (P1 - Config Registry)
+
+### Reflectable Config Registry
+
+Central registry where every module registers its config section at startup.
+Currently modules independently call `unmarshal_key()` — no visibility into
+what config keys exist, their types, defaults, or descriptions.
+
+**Goal:** Any DFE app can list/dump/expose all available config sections.
+
+- [ ] `ConfigRegistry` struct with `register::<T>(key, description)` API
+- [ ] Each module registers at init: expression, memory, version_check, tiered_sink, http_server, kafka, spool
+- [ ] `registry::sections()` — list all registered sections (key, type_name, description)
+- [ ] `registry::dump_effective()` — JSON map of all sections with current values
+- [ ] `registry::dump_defaults()` — JSON map of all sections with default values
+- [ ] Redaction support — mark fields as sensitive (passwords, tokens) for safe exposure
+- [ ] Health/admin endpoint integration — `/config` endpoint (redacted)
+- [ ] Change notification — registered consumers get notified on config reload (`ConfigReloader` integration)
+  - Replace `OnceLock` (init-once) with watch channel or callback so hot-reload propagates
+  - Modules subscribe to their key: `registry.on_change("expression", |new| { ... })`
+  - Integrate with existing `SharedConfig<T>` / `ConfigReloader` from `config-reload` feature
+- [ ] Align hyperi-pylib with same registry pattern
+- [ ] Update all downstream Rust apps (dfe-loader, dfe-receiver, dfe-archiver, dfe-fetcher)
+
+**Depends on:** Current `from_cascade()` / `OnceLock` pattern shipping first (this release).
+
+---
+
 ## Backlog (P2 - from Gap Analysis)
 
 ### Phase 1 - Core Enterprise
