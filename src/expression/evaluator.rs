@@ -78,7 +78,7 @@ fn get_profile_config() -> &'static ProfileConfig {
         #[cfg(feature = "config")]
         {
             if let Some(cfg) = crate::config::try_get()
-                && let Ok(profile) = cfg.unmarshal_key::<ProfileConfig>("expression")
+                && let Ok(profile) = cfg.unmarshal_key_registered::<ProfileConfig>("expression")
             {
                 return profile;
             }
