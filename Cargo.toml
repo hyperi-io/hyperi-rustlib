@@ -42,13 +42,13 @@ directory-config = ["serde_yaml_ng", "tokio", "tracing", "fs4"]
 directory-config-git = ["directory-config", "git2"]
 
 # Extended features (P2)
-http = ["reqwest", "reqwest-middleware", "reqwest-retry"]
+http = ["reqwest", "reqwest-middleware", "reqwest-retry", "serde_json"]
 http-server = ["axum", "tower", "tower-http", "tokio"]
 spool = ["yaque", "zstd"]
 tiered-sink = ["yaque", "zstd", "lz4_flex", "snap", "tokio", "tower-resilience", "libc"]
 resilience = ["tower-resilience", "tower"]
-database = []
-cache = []
+database = ["serde_json"]
+cache = ["moka", "serde_json"]
 
 # Cgroup-aware memory backpressure (OOM prevention)
 memory = ["sysinfo", "tracing"]
@@ -162,6 +162,9 @@ tokio = { version = ">=1.50.0, <2", features = ["rt-multi-thread", "net", "sync"
 reqwest = { version = ">=0.12, <0.14", features = ["json", "blocking"], optional = true }
 reqwest-middleware = { version = ">=0.5, <0.6", optional = true }
 reqwest-retry = { version = ">=0.7, <0.10", optional = true }
+
+# In-memory cache (TinyLFU, async, concurrent)
+moka = { version = ">=0.12, <0.13", features = ["future"], optional = true }
 
 # HTTP server (axum)
 axum = { version = ">=0.8.8, <0.9", optional = true }
