@@ -8,31 +8,27 @@
 
 ## Current Tasks
 
-### MemoryGuard: fix underflow in `release()`
+### Gap Analysis P2 — HTTP Client, Database URLs, Cache `[NEXT]`
 
-`MemoryGuard::release()` uses `AtomicU64::fetch_sub` which wraps on underflow.
-Releasing more bytes than were added produces `u64::MAX - N` instead of saturating
-at zero. Found by dfe-loader resilience tests.
-
-- [ ] Change `fetch_sub` to saturating subtraction (`fetch_update` with `saturating_sub`)
-- [ ] Add unit test for over-release scenario
-- [ ] Publish patch release
-
-### CEL Expression Module — CI Fix Required `[IN PROGRESS]`
-
-**Goal:** Publish v1.13.0 with `expression` feature to JFrog
-
-Code is committed (`83713e6`), 425/426 tests pass. CI fails on pre-existing flaky test.
-
-1. [x] Create `src/expression/` module (evaluator, profile, error)
-2. [x] Add `expression` feature flag with `cel-interpreter` dependency
-3. [x] 70 integration tests + 7 unit tests passing
-4. [x] Clippy pedantic clean (`#[must_use]`, `implicit_hasher`)
-5. [ ] Fix `test_instance_id_stable` flaky test (race condition on `~/.config/hyperi/instance_id`)
-6. [ ] CI green → Semantic Release → v1.13.0 → Publish to JFrog
+- [ ] HTTP client module with retry middleware (reqwest + reqwest-middleware + reqwest-retry)
+  - Wrap reqwest with exponential backoff, configurable timeouts
+  - Auto-register config via `unmarshal_key_registered`
+  - Metrics integration (request count, duration, errors)
+- [ ] Database URL builders (PostgreSQL, ClickHouse, Redis)
+  - Build connection strings from env vars with standard prefixes
+  - `SensitiveString` for password fields
+- [ ] Cache module with disk/memory backends
+  - Consolidate secrets cache pattern into reusable module
+  - TTL, stale-while-revalidate, size bounds
 
 ### Completed Recent
 
+- [x] **Config registry** (v1.19.3-v1.19.5) — auto-registering reflectable config, `/config` admin endpoint, `SensitiveString`, heuristic redaction, change notification, `ConfigReloader` hook
+- [x] **CEL expression profile** (v1.19.2) — `matches()` blocked by default, `ProfileConfig` with per-category overrides, string literal false-positive prevention
+- [x] **Config cascade wiring** (v1.19.2) — expression, memory, version_check, scaling, grpc, secrets auto-read from figment cascade
+- [x] **MemoryGuard underflow fix** (v1.19.1) — `fetch_sub` replaced with `fetch_update` + `saturating_sub`
+- [x] **Test restructure** (v1.19.1) — `tests/integration/`, `tests/e2e/`, `tests/common/` per testing standard
+- [x] **hyperi-ci release-merge** — CLI command replaces per-project workflow files
 - [x] **Rust edition 2024** — migrated from 2021; `temp-env` replaces unsafe `set_var`/`remove_var` in tests across 6 files
 - [x] **async-trait removal** — public traits (`Sink`, `Transport`, `SecretProvider`) now use `fn ... -> impl Future + Send` (Rust 1.75+ native)
 - [x] **kafka_config module** — `config_from_file`, 7 named profiles, `merge_with_overrides`; librdkafka settings loaded from config git dir (only cascade exception)
@@ -110,7 +106,9 @@ what config keys exist, their types, defaults, or descriptions.
 - [x] `/config` admin endpoint (opt-in via `enable_config_endpoint`) — returns redacted effective + defaults JSON
 - [x] Change notification (opt-in) — `registry::on_change(key, callback)` + `registry::update()`
   - Modules that need hot-reload subscribe; others keep `OnceLock` (init-once)
-- [ ] Wire `ConfigReloader` to call `registry::update()` on reload (connect the plumbing)
+- [x] `ConfigReloader.with_registry_update(key)` connects hot-reload to registry
+- [x] `SensitiveString` type — compile-time safe, `Serialize` always redacts
+- [x] 19 registry + 12 sensitive string tests covering all redaction guarantees
 - [ ] Migrate all dfe-* and hyperi-* apps to `unmarshal_key_registered` pattern
 - [ ] Align hyperi-pylib with same registry pattern
 
