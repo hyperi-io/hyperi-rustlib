@@ -1,3 +1,11 @@
+# [1.17.0-dev.7](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.6...v1.17.0-dev.7) (2026-03-24)
+
+
+### Bug Fixes
+
+* add reflectable config registry with auto-registration ([a88f50d](https://github.com/hyperi-io/hyperi-rustlib/commit/a88f50dda5ff7574e7b6eeb1ce9188336d281b77))
+* wire module configs into the config cascade ([cdb9f79](https://github.com/hyperi-io/hyperi-rustlib/commit/cdb9f79e58a92cbe6c489098aade1eddcddd8a65))
+
 # [1.17.0-dev.6](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.5...v1.17.0-dev.6) (2026-03-24)
 
 
