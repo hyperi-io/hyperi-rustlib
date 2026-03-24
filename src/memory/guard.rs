@@ -220,11 +220,18 @@ impl MemoryGuard {
     }
 
     /// Release bytes after data is flushed/sent/dropped.
+    ///
+    /// Uses saturating subtraction to prevent underflow wrapping.
     #[inline]
     pub fn release(&self, bytes: u64) {
-        let prev = self.current_bytes.fetch_sub(bytes, Ordering::Relaxed);
-        let new_total = prev.saturating_sub(bytes);
-        self.update_pressure(new_total);
+        let prev = self
+            .current_bytes
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                Some(current.saturating_sub(bytes))
+            })
+            // Always succeeds (closure always returns Some).
+            .unwrap_or_else(|v| v);
+        self.update_pressure(prev.saturating_sub(bytes));
     }
 
     /// Fast hot-path pressure check (single atomic load).
@@ -366,8 +373,18 @@ mod tests {
             ..Default::default()
         });
         guard.add_bytes(100);
-        guard.release(200); // release more than added — should not underflow panic
-        // The atomic wraps but update_pressure uses saturating_sub
+        guard.release(200); // release more than added — saturates to 0
+        assert_eq!(
+            guard.current_bytes(),
+            0,
+            "over-release must saturate to 0, not wrap"
+        );
+        assert!(!guard.under_pressure());
+        assert_eq!(guard.pressure(), MemoryPressure::Low);
+
+        // Verify the guard is still functional after over-release
+        assert!(guard.try_reserve(500));
+        assert_eq!(guard.current_bytes(), 500);
     }
 
     #[test]

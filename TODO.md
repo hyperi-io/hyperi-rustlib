@@ -8,6 +8,16 @@
 
 ## Current Tasks
 
+### MemoryGuard: fix underflow in `release()`
+
+`MemoryGuard::release()` uses `AtomicU64::fetch_sub` which wraps on underflow.
+Releasing more bytes than were added produces `u64::MAX - N` instead of saturating
+at zero. Found by dfe-loader resilience tests.
+
+- [ ] Change `fetch_sub` to saturating subtraction (`fetch_update` with `saturating_sub`)
+- [ ] Add unit test for over-release scenario
+- [ ] Publish patch release
+
 ### CEL Expression Module — CI Fix Required `[IN PROGRESS]`
 
 **Goal:** Publish v1.13.0 with `expression` feature to JFrog
