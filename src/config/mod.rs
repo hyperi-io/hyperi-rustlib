@@ -78,6 +78,7 @@
 
 pub mod env_compat;
 pub mod flat_env;
+pub mod registry;
 
 #[cfg(feature = "config-reload")]
 pub mod reloader;
@@ -536,6 +537,26 @@ impl Config {
         self.figment
             .extract_inner(key)
             .map_err(ConfigError::ExtractError)
+    }
+
+    /// Deserialise a specific key and auto-register it in the config registry.
+    ///
+    /// Same as [`unmarshal_key`](Self::unmarshal_key) but also records the
+    /// section in the global [`registry`] for reflection. The type must
+    /// implement `Serialize + Default` so the registry can capture both
+    /// the effective and default values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if deserialisation fails. The section is only
+    /// registered on success.
+    pub fn unmarshal_key_registered<T>(&self, key: &str) -> Result<T, ConfigError>
+    where
+        T: DeserializeOwned + serde::Serialize + Default + 'static,
+    {
+        let value: T = self.unmarshal_key(key)?;
+        registry::register::<T>(key, &value);
+        Ok(value)
     }
 
     /// Get the environment variable prefix.

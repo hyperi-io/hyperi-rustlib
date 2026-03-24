@@ -133,7 +133,7 @@ impl VersionCheckConfig {
         #[cfg(feature = "config")]
         {
             if let Some(cfg) = crate::config::try_get()
-                && let Ok(vc) = cfg.unmarshal_key::<Self>("version_check")
+                && let Ok(vc) = cfg.unmarshal_key_registered::<Self>("version_check")
             {
                 return vc;
             }
