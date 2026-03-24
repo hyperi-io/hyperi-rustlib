@@ -20,10 +20,9 @@ categories = ["development-tools"]
 exclude = [".claude/", ".github/", "ci/", "ai/", "docs/", "examples/", "benches/", "scripts/"]
 
 [features]
-default = ["config", "logger", "metrics", "env", "runtime"]
+default = ["config", "logger", "metrics", "runtime"]
 
 # Core features
-env = []
 runtime = ["dirs"]
 config = ["figment", "dotenvy", "serde_yaml_ng", "serde_json", "toml", "dirs", "tracing"]
 logger = ["tracing", "tracing-subscriber", "owo-colors", "serde_json", "tracing-throttle"]
@@ -101,7 +100,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "cli", "io", "dlq", "dlq-kafka", "output-file", "expression"]
+full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "cli", "io", "dlq", "dlq-kafka", "output-file", "expression"]
 
 [dependencies]
 # Serialisation (always needed)
