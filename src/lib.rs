@@ -82,8 +82,17 @@ pub mod metrics;
 #[cfg(feature = "transport")]
 pub mod transport;
 
+#[cfg(feature = "http")]
+pub mod http_client;
+
 #[cfg(feature = "http-server")]
 pub mod http_server;
+
+#[cfg(feature = "database")]
+pub mod database;
+
+#[cfg(feature = "cache")]
+pub mod cache;
 
 #[cfg(feature = "spool")]
 pub mod spool;
