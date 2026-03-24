@@ -154,6 +154,14 @@ pub fn dump_defaults() -> JsonValue {
 ///
 /// Any JSON field whose name (lowercased) contains one of these
 /// substrings will have its value replaced with `"***REDACTED***"`.
+/// Field name patterns that trigger automatic redaction.
+///
+/// Any JSON field whose name (lowercased) contains one of these
+/// substrings will have its value replaced with `"***REDACTED***"`.
+///
+/// This is a safety net — the primary protection is [`SensitiveString`]
+/// on the field type (compile-time safe). This heuristic catches fields
+/// that developers forgot to mark as sensitive.
 const SENSITIVE_PATTERNS: &[&str] = &[
     "password",
     "secret",
@@ -164,6 +172,8 @@ const SENSITIVE_PATTERNS: &[&str] = &[
     "private",
     "cert",
     "encryption",
+    "connection_string",
+    "dsn",
 ];
 
 const REDACTED: &str = "***REDACTED***";
@@ -530,6 +540,271 @@ mod tests {
         assert!(is_registered("fresh"));
         assert_eq!(get_section("fresh").unwrap().effective["enabled"], true);
     }
+
+    // ── Redaction test structs (module-level to avoid items_after_statements) ──
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+    struct MixedCase {
+        #[serde(rename = "Password")]
+        password_upper: String,
+        #[serde(rename = "API_TOKEN")]
+        token_upper: String,
+        #[serde(rename = "mySecret")]
+        secret_camel: String,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+    struct DeepNested {
+        level1: Level1,
+    }
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+    struct Level1 {
+        level2: Level2,
+        name: String,
+    }
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+    struct Level2 {
+        api_token: String,
+        db_password: String,
+        port: u16,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+    struct WithArray {
+        items: Vec<ArrayItem>,
+    }
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+    struct ArrayItem {
+        name: String,
+        secret_key: String,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct WithDefaultSecret {
+        api_token: String,
+        host: String,
+    }
+    impl Default for WithDefaultSecret {
+        fn default() -> Self {
+            Self {
+                api_token: "default-placeholder-token".into(),
+                host: "localhost".into(),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+    struct DoubleProtected {
+        #[serde(skip_serializing)]
+        #[allow(dead_code)]
+        hidden_secret: String,
+        visible_token: String,
+        normal: String,
+    }
+
+    // ── Redaction guarantee tests ──────────────────────────────
+
+    /// Config struct that exercises ALL sensitive field name patterns.
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+    struct AllSensitivePatterns {
+        // Each SENSITIVE_PATTERNS entry must be covered
+        my_password: String,
+        db_secret: String,
+        api_token: String,
+        encryption_key: String,
+        aws_credential: String,
+        oauth_auth_code: String,
+        private_data: String,
+        tls_cert_path: String,
+        // Non-sensitive controls (must NOT be redacted)
+        hostname: String,
+        port: u16,
+        enabled: bool,
+        timeout_ms: u64,
+    }
+
+    #[test]
+    fn redaction_covers_all_sensitive_patterns() {
+        serial_test!();
+
+        let config = AllSensitivePatterns {
+            my_password: "pass123".into(),
+            db_secret: "sec456".into(),
+            api_token: "tok789".into(),
+            encryption_key: "key012".into(),
+            aws_credential: "cred345".into(),
+            oauth_auth_code: "auth678".into(),
+            private_data: "priv901".into(),
+            tls_cert_path: "/etc/tls/cert.pem".into(),
+            hostname: "db.prod.internal".into(),
+            port: 5432,
+            enabled: true,
+            timeout_ms: 30000,
+        };
+        register::<AllSensitivePatterns>("all_patterns", &config);
+
+        let dump = dump_effective();
+        let section = &dump["all_patterns"];
+
+        // Every sensitive field MUST be redacted
+        assert_eq!(section["my_password"], REDACTED, "password pattern missed");
+        assert_eq!(section["db_secret"], REDACTED, "secret pattern missed");
+        assert_eq!(section["api_token"], REDACTED, "token pattern missed");
+        assert_eq!(section["encryption_key"], REDACTED, "key pattern missed");
+        assert_eq!(
+            section["aws_credential"], REDACTED,
+            "credential pattern missed"
+        );
+        assert_eq!(section["oauth_auth_code"], REDACTED, "auth pattern missed");
+        assert_eq!(section["private_data"], REDACTED, "private pattern missed");
+        assert_eq!(section["tls_cert_path"], REDACTED, "cert pattern missed");
+
+        // Non-sensitive fields MUST be preserved
+        assert_eq!(section["hostname"], "db.prod.internal");
+        assert_eq!(section["port"], 5432);
+        assert_eq!(section["enabled"], true);
+        assert_eq!(section["timeout_ms"], 30000);
+    }
+
+    #[test]
+    fn redaction_is_case_insensitive() {
+        serial_test!();
+
+        let config = MixedCase {
+            password_upper: "visible_if_broken".into(),
+            token_upper: "visible_if_broken".into(),
+            secret_camel: "visible_if_broken".into(),
+        };
+        register::<MixedCase>("case_test", &config);
+
+        let dump = dump_effective();
+        let section = &dump["case_test"];
+
+        assert_eq!(section["Password"], REDACTED);
+        assert_eq!(section["API_TOKEN"], REDACTED);
+        assert_eq!(section["mySecret"], REDACTED);
+    }
+
+    #[test]
+    fn redaction_handles_deeply_nested_secrets() {
+        serial_test!();
+
+        let config = DeepNested {
+            level1: Level1 {
+                level2: Level2 {
+                    api_token: "deep_secret_1".into(),
+                    db_password: "deep_secret_2".into(),
+                    port: 3306,
+                },
+                name: "safe_value".into(),
+            },
+        };
+        register::<DeepNested>("deep", &config);
+
+        let dump = dump_effective();
+        assert_eq!(dump["deep"]["level1"]["level2"]["api_token"], REDACTED);
+        assert_eq!(dump["deep"]["level1"]["level2"]["db_password"], REDACTED);
+        assert_eq!(dump["deep"]["level1"]["level2"]["port"], 3306);
+        assert_eq!(dump["deep"]["level1"]["name"], "safe_value");
+    }
+
+    #[test]
+    fn redaction_handles_arrays_with_sensitive_objects() {
+        serial_test!();
+
+        let config = WithArray {
+            items: vec![
+                ArrayItem {
+                    name: "item1".into(),
+                    secret_key: "sk_1".into(),
+                },
+                ArrayItem {
+                    name: "item2".into(),
+                    secret_key: "sk_2".into(),
+                },
+            ],
+        };
+        register::<WithArray>("array_test", &config);
+
+        let dump = dump_effective();
+        let items = dump["array_test"]["items"].as_array().unwrap();
+        for item in items {
+            assert_eq!(item["secret_key"], REDACTED);
+            assert_ne!(item["name"], REDACTED); // name should be preserved
+        }
+    }
+
+    #[test]
+    fn no_secret_values_in_redacted_dump_string() {
+        serial_test!();
+
+        let secrets = [
+            "hunter2",
+            "sk_live_abc123",
+            "super_s3cret!",
+            "my-private-key-data",
+        ];
+
+        let config = AllSensitivePatterns {
+            my_password: secrets[0].into(),
+            db_secret: secrets[1].into(),
+            api_token: secrets[2].into(),
+            encryption_key: secrets[3].into(),
+            ..Default::default()
+        };
+        register::<AllSensitivePatterns>("leak_check", &config);
+
+        // Serialise the full dump to a string and scan for ANY secret value
+        let dump = dump_effective();
+        let dump_str = serde_json::to_string(&dump).unwrap();
+
+        for secret in &secrets {
+            assert!(
+                !dump_str.contains(secret),
+                "SECRET LEAKED in dump_effective(): '{secret}' found in output"
+            );
+        }
+    }
+
+    #[test]
+    fn defaults_dump_also_redacted() {
+        serial_test!();
+
+        register::<WithDefaultSecret>("default_secrets", &WithDefaultSecret::default());
+
+        let dump = dump_defaults();
+        assert_eq!(dump["default_secrets"]["api_token"], REDACTED);
+        assert_eq!(dump["default_secrets"]["host"], "localhost");
+    }
+
+    #[test]
+    fn skip_serializing_plus_heuristic_double_protection() {
+        serial_test!();
+
+        let config = DoubleProtected {
+            hidden_secret: "should_not_appear".into(),
+            visible_token: "should_be_redacted".into(),
+            normal: "visible".into(),
+        };
+        register::<DoubleProtected>("double", &config);
+
+        let dump = dump_effective();
+        let section = &dump["double"];
+
+        // skip_serializing: field absent entirely
+        assert!(section.get("hidden_secret").is_none());
+        // heuristic: field present but redacted
+        assert_eq!(section["visible_token"], REDACTED);
+        // normal: preserved
+        assert_eq!(section["normal"], "visible");
+
+        // String scan: neither secret should appear
+        let dump_str = serde_json::to_string(&dump).unwrap();
+        assert!(!dump_str.contains("should_not_appear"));
+        assert!(!dump_str.contains("should_be_redacted"));
+    }
+
+    // ── Change notification ─────────────────────────────────────
 
     #[test]
     fn multiple_listeners_on_same_key() {
