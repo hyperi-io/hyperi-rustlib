@@ -45,6 +45,25 @@ impl Default for ScalingPressureConfig {
     }
 }
 
+impl ScalingPressureConfig {
+    /// Load from the config cascade under the `scaling` key.
+    ///
+    /// Falls back to [`ScalingPressureConfig::default()`] if config is not
+    /// initialised or the key is absent.
+    #[must_use]
+    pub fn from_cascade() -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(scaling) = cfg.unmarshal_key_registered::<Self>("scaling")
+            {
+                return scaling;
+            }
+        }
+        Self::default()
+    }
+}
+
 /// Named scaling component with weight and saturation point.
 ///
 /// Apps define their components with service-specific signals:
