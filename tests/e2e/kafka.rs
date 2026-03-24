@@ -1,5 +1,5 @@
 // Project:   hyperi-rustlib
-// File:      tests/kafka_integration.rs
+// File:      tests/e2e/kafka.rs
 // Purpose:   Kafka transport integration tests
 // Language:  Rust
 //
@@ -16,8 +16,6 @@
 //! - `TEST_KAFKA_TOPIC`: Test topic name (default: hyperi-rustlib-test)
 //! - `TEST_KAFKA_GROUP`: Consumer group ID (default: hyperi-rustlib-test-group)
 
-#![cfg(feature = "transport-kafka")]
-
 use hyperi_rustlib::transport::kafka::{
     BrokerMetrics, DEVTEST_PROFILE, KafkaAdmin, KafkaConfig, KafkaMetrics, KafkaProfile,
     KafkaToken, PRODUCTION_PROFILE, StatsContext, TopicInfo, healthy_broker_count,
@@ -25,8 +23,7 @@ use hyperi_rustlib::transport::kafka::{
 };
 use std::sync::Arc;
 
-mod common;
-use common::EnvGuard;
+use crate::common::EnvGuard;
 
 // --- Unit Tests (no Kafka required) ---
 
