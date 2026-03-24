@@ -37,6 +37,7 @@ coverage-html/
 coverage.lcov
 .cargo/
 !.cargo/config.toml
+!.cargo/audit.toml
 
 # AI agent working files (not committed)
 docs/superpowers/
