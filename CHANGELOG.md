@@ -1,3 +1,11 @@
+## [1.19.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.1...v1.19.2) (2026-03-24)
+
+
+### Bug Fixes
+
+* block regex (matches) in CEL expressions by default ([c192c0a](https://github.com/hyperi-io/hyperi-rustlib/commit/c192c0a24ed24f37a914af1bd6597e61baaa80e3))
+* wire module configs into the config cascade ([cdb9f79](https://github.com/hyperi-io/hyperi-rustlib/commit/cdb9f79e58a92cbe6c489098aade1eddcddd8a65))
+
 ## [1.19.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.0...v1.19.1) (2026-03-24)
 
 
