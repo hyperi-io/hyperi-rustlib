@@ -1,3 +1,12 @@
+# [1.17.0-dev.6](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.5...v1.17.0-dev.6) (2026-03-24)
+
+
+### Bug Fixes
+
+* block regex (matches) in CEL expressions by default ([c192c0a](https://github.com/hyperi-io/hyperi-rustlib/commit/c192c0a24ed24f37a914af1bd6597e61baaa80e3))
+* prevent underflow in MemoryGuard::release() ([9b74994](https://github.com/hyperi-io/hyperi-rustlib/commit/9b749949e6d5e34caaeb7bb6402cf465ff50c00e))
+* restructure tests to match testing standard ([1539471](https://github.com/hyperi-io/hyperi-rustlib/commit/15394714cb1508ef94882e37e6d1ae9366e0e0a6))
+
 # [1.17.0-dev.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.4...v1.17.0-dev.5) (2026-03-23)
 
 
