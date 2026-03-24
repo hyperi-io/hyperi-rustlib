@@ -106,6 +106,10 @@ what config keys exist, their types, defaults, or descriptions.
 - [ ] `registry::dump_defaults()` — JSON map of all sections with default values
 - [ ] Redaction support — mark fields as sensitive (passwords, tokens) for safe exposure
 - [ ] Health/admin endpoint integration — `/config` endpoint (redacted)
+- [ ] Change notification — registered consumers get notified on config reload (`ConfigReloader` integration)
+  - Replace `OnceLock` (init-once) with watch channel or callback so hot-reload propagates
+  - Modules subscribe to their key: `registry.on_change("expression", |new| { ... })`
+  - Integrate with existing `SharedConfig<T>` / `ConfigReloader` from `config-reload` feature
 - [ ] Align hyperi-pylib with same registry pattern
 - [ ] Update all downstream Rust apps (dfe-loader, dfe-receiver, dfe-archiver, dfe-fetcher)
 
