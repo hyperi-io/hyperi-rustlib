@@ -1,3 +1,10 @@
+# [1.17.0-dev.11](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.10...v1.17.0-dev.11) (2026-03-24)
+
+
+### Bug Fixes
+
+* remove unused env feature flag ([e7f41fa](https://github.com/hyperi-io/hyperi-rustlib/commit/e7f41fa6c5535e181b44940f400fbc7363ecf285))
+
 # [1.17.0-dev.10](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.9...v1.17.0-dev.10) (2026-03-24)
 
 
