@@ -1,3 +1,10 @@
+## [1.19.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.3...v1.19.4) (2026-03-24)
+
+
+### Bug Fixes
+
+* wire scaling, grpc, secrets configs into registry ([c1bd924](https://github.com/hyperi-io/hyperi-rustlib/commit/c1bd924ac88d34db3ff82bb97c4734aa785bb3a5))
+
 ## [1.19.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.2...v1.19.3) (2026-03-24)
 
 
