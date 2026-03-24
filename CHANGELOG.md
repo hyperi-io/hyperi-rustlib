@@ -1,3 +1,10 @@
+# [1.17.0-dev.9](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.8...v1.17.0-dev.9) (2026-03-24)
+
+
+### Bug Fixes
+
+* add SensitiveString type, ConfigReloader registry hook, redaction tests ([afe7a1d](https://github.com/hyperi-io/hyperi-rustlib/commit/afe7a1dc03a9eadb8280b6bceb72371888cb5888))
+
 # [1.17.0-dev.8](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.7...v1.17.0-dev.8) (2026-03-24)
 
 
