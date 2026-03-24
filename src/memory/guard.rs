@@ -31,15 +31,36 @@ pub enum MemoryPressure {
 }
 
 /// Configuration for `MemoryGuard`.
-#[derive(Debug, Clone)]
+///
+/// When the `config` feature is enabled, this can be loaded from the config
+/// cascade under the `memory` key:
+///
+/// ```yaml
+/// memory:
+///   limit_bytes: 0           # 0 = auto-detect from cgroup/system
+///   pressure_threshold: 0.80 # backpressure at 80% of effective limit
+///   cgroup_headroom: 0.85    # use 85% of cgroup limit
+/// ```
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MemoryGuardConfig {
     /// Explicit memory limit in bytes. 0 = auto-detect from cgroup/system.
+    #[serde(default)]
     pub limit_bytes: u64,
     /// Fraction of limit at which backpressure activates (default 0.8).
+    #[serde(default = "default_pressure_threshold")]
     pub pressure_threshold: f64,
-    /// Fraction of cgroup limit to use as the effective limit (default 0.9).
+    /// Fraction of cgroup limit to use as the effective limit (default 0.85).
     /// Leaves headroom for the process itself (stack, code, etc.).
+    #[serde(default = "default_cgroup_headroom")]
     pub cgroup_headroom: f64,
+}
+
+fn default_pressure_threshold() -> f64 {
+    DEFAULT_PRESSURE_THRESHOLD
+}
+
+fn default_cgroup_headroom() -> f64 {
+    DEFAULT_CGROUP_HEADROOM
 }
 
 /// Default cgroup headroom: use 85% of cgroup limit.
@@ -65,6 +86,24 @@ impl Default for MemoryGuardConfig {
 }
 
 impl MemoryGuardConfig {
+    /// Load from the config cascade, falling back to defaults.
+    ///
+    /// When the `config` feature is enabled and `config::setup()` has been
+    /// called, reads the `memory` key from the cascade. Otherwise returns
+    /// [`MemoryGuardConfig::default()`].
+    #[must_use]
+    pub fn from_cascade() -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(memory) = cfg.unmarshal_key::<Self>("memory")
+            {
+                return memory;
+            }
+        }
+        Self::default()
+    }
+
     /// Create config from environment variables with a prefix.
     ///
     /// Reads standard env vars for memory configuration:

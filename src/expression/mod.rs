@@ -22,15 +22,17 @@
 //! | Comparison | `==`, `!=`, `<`, `<=`, `>`, `>=` |
 //! | Logical | `&&`, `\|\|`, `!` |
 //! | Membership | `in` |
-//! | String | `contains()`, `startsWith()`, `endsWith()`, `matches()` |
+//! | String | `contains()`, `startsWith()`, `endsWith()` |
 //! | Existence | `has()` |
 //! | Size | `size()` |
 //! | Ternary | `? :` |
 //! | Type casts | `int()`, `double()`, `string()`, `bool()` |
 //! | Arithmetic | `+`, `-`, `*`, `/`, `%` |
 //!
-//! **Excluded:** `map()`, `filter()`, `exists()`, `all()` (iteration),
-//! `timestamp()`, `duration()` (ClickHouse handles time natively).
+//! **Restricted (blocked by default, opt-in via [`ProfileConfig`]):**
+//! - Regex: `matches()` — unbounded cost per record
+//! - Iteration: `map()`, `filter()`, `exists()`, `all()` — O(n) per collection
+//! - Time: `timestamp()`, `duration()` — ClickHouse handles natively
 //!
 //! # Usage
 //!
@@ -63,5 +65,11 @@ pub mod evaluator;
 pub mod profile;
 
 pub use error::{ExpressionError, ExpressionResult};
-pub use evaluator::{build_context, compile, evaluate, evaluate_condition, validate};
-pub use profile::{ALLOWED_FUNCTIONS, DISALLOWED_FUNCTIONS};
+pub use evaluator::{
+    build_context, compile, compile_with_config, evaluate, evaluate_condition, validate,
+    validate_with_config,
+};
+pub use profile::{
+    ALLOWED_FUNCTIONS, DISALLOWED_FUNCTIONS, ProfileConfig, RESTRICTED_ITERATION, RESTRICTED_REGEX,
+    RESTRICTED_TIME, check_profile_with_config,
+};

@@ -15,6 +15,22 @@
 //! language` PyO3 bindings) and Rust share the **same** `cel-interpreter`
 //! Rust crate — zero behavioural drift between services.
 //!
+//! # Profile Configuration
+//!
+//! When the `config` feature is enabled alongside `expression`, the profile
+//! is loaded automatically from the config cascade under the `expression`
+//! key. Applications can set overrides in their `settings.yaml`:
+//!
+//! ```yaml
+//! expression:
+//!   allow_regex: true
+//!   allow_iteration: false
+//!   allow_time: false
+//! ```
+//!
+//! Without the `config` feature (or before `config::setup()` is called),
+//! [`ProfileConfig::default()`] is used — all restrictions active.
+//!
 //! # Usage
 //!
 //! ```rust
@@ -41,33 +57,60 @@
 //! ```
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use cel_interpreter::{Context, Program, Value};
 use serde_json::Value as JsonValue;
 
 use super::error::{ExpressionError, ExpressionResult};
-use super::profile;
+use super::profile::{self, ProfileConfig};
+
+/// Cached profile config — loaded once from the config cascade or default.
+static PROFILE_CONFIG: OnceLock<ProfileConfig> = OnceLock::new();
+
+/// Get the active profile config.
+///
+/// When the `config` feature is enabled and `config::setup()` has been
+/// called, reads `expression` from the cascade. Otherwise returns
+/// `ProfileConfig::default()` (all restrictions active).
+fn get_profile_config() -> &'static ProfileConfig {
+    PROFILE_CONFIG.get_or_init(|| {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(profile) = cfg.unmarshal_key::<ProfileConfig>("expression")
+            {
+                return profile;
+            }
+        }
+        ProfileConfig::default()
+    })
+}
 
 // ── Validate ──────────────────────────────────────────────────────
 
 /// Validate an expression for syntax and DFE profile compliance.
 ///
-/// Returns a list of error strings (empty if valid).
-/// Designed for UI pre-submit validation — call this before storing
-/// expressions.
+/// Uses the profile config from the config cascade (if available) or
+/// [`ProfileConfig::default()`]. Returns a list of error strings
+/// (empty if valid).
 #[must_use]
 pub fn validate(expr: &str) -> Vec<String> {
+    validate_with_config(expr, get_profile_config())
+}
+
+/// Validate an expression with an explicit profile config.
+#[must_use]
+pub fn validate_with_config(expr: &str, config: &ProfileConfig) -> Vec<String> {
     if expr.trim().is_empty() {
         return vec!["Expression is empty".to_string()];
     }
 
-    // Check DFE profile (disallowed functions)
-    let profile_errors = profile::check_profile(expr);
+    let profile_errors = profile::check_profile_with_config(expr, config);
     if !profile_errors.is_empty() {
         return profile_errors;
     }
 
-    // Check syntax via CEL compiler
     match Program::compile(expr) {
         Ok(_) => vec![],
         Err(e) => vec![format!("{e}")],
@@ -78,15 +121,24 @@ pub fn validate(expr: &str) -> Vec<String> {
 
 /// Compile a CEL expression, enforcing the DFE profile.
 ///
-/// Use this for hot paths where the same expression is evaluated against
-/// many records. Compile once, then call [`Program::execute`] per record.
+/// Uses the profile config from the config cascade (if available).
 ///
 /// # Errors
 ///
 /// Returns [`ExpressionError::Validation`] if the expression violates the
 /// DFE profile, or [`ExpressionError::Compilation`] if it has a syntax error.
 pub fn compile(expr: &str) -> ExpressionResult<Program> {
-    let errors = validate(expr);
+    compile_with_config(expr, get_profile_config())
+}
+
+/// Compile a CEL expression with an explicit profile config.
+///
+/// # Errors
+///
+/// Returns [`ExpressionError::Validation`] if the expression violates the
+/// DFE profile, or [`ExpressionError::Compilation`] if it has a syntax error.
+pub fn compile_with_config(expr: &str, config: &ProfileConfig) -> ExpressionResult<Program> {
+    let errors = validate_with_config(expr, config);
     if !errors.is_empty() {
         return Err(ExpressionError::Validation(errors));
     }
