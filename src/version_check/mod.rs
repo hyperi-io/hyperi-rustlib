@@ -41,20 +41,63 @@ const DEFAULT_API_URL: &str = "https://releases.hyperi.io/api/v1/check";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Configuration for the startup version check.
-#[derive(Debug, Clone)]
+///
+/// When the `config` feature is enabled, this can be loaded from the config
+/// cascade under the `version_check` key:
+///
+/// ```yaml
+/// version_check:
+///   api_url: "https://releases.hyperi.io/api/v1/check"
+///   timeout_secs: 5
+///   disabled: false
+/// ```
+///
+/// `product` and `current_version` are always set programmatically — they
+/// come from the binary, not from config files.
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VersionCheckConfig {
     /// Product identifier (e.g., "dfe-loader", "dfe-receiver").
+    #[serde(default)]
     pub product: String,
     /// Current version of this product (e.g., "1.8.0").
+    #[serde(default)]
     pub current_version: String,
     /// Deployment type (e.g., "k8s", "docker", "bare").
+    #[serde(default)]
     pub deployment: Option<String>,
     /// API endpoint URL. Defaults to the HyperI version API.
+    #[serde(default = "default_api_url")]
     pub api_url: String,
-    /// HTTP request timeout.
+    /// HTTP request timeout in seconds.
+    #[serde(default = "default_timeout", with = "duration_secs")]
     pub timeout: Duration,
     /// Disable the version check entirely.
+    #[serde(default)]
     pub disabled: bool,
+}
+
+fn default_api_url() -> String {
+    DEFAULT_API_URL.into()
+}
+
+fn default_timeout() -> Duration {
+    DEFAULT_TIMEOUT
+}
+
+/// Serde helper to serialise `Duration` as seconds (u64).
+mod duration_secs {
+    use std::time::Duration;
+
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(d.as_secs())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Duration, D::Error> {
+        let secs = u64::deserialize(d)?;
+        Ok(Duration::from_secs(secs))
+    }
 }
 
 impl Default for VersionCheckConfig {
@@ -63,10 +106,39 @@ impl Default for VersionCheckConfig {
             product: String::new(),
             current_version: String::new(),
             deployment: None,
-            api_url: DEFAULT_API_URL.into(),
+            api_url: default_api_url(),
             timeout: DEFAULT_TIMEOUT,
             disabled: false,
         }
+    }
+}
+
+impl VersionCheckConfig {
+    /// Load from the config cascade, then overlay product/version.
+    ///
+    /// Reads the `version_check` key from the cascade for `api_url`,
+    /// `timeout`, and `disabled`. The `product` and `current_version`
+    /// fields are always set from the provided arguments (they come
+    /// from the binary, not from config files).
+    #[must_use]
+    pub fn from_cascade(product: &str, current_version: &str) -> Self {
+        let mut config = Self::cascade_base();
+        config.product = product.into();
+        config.current_version = current_version.into();
+        config
+    }
+
+    /// Load just the cascade portion (api_url, timeout, disabled).
+    fn cascade_base() -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(vc) = cfg.unmarshal_key::<Self>("version_check")
+            {
+                return vc;
+            }
+        }
+        Self::default()
     }
 }
 
