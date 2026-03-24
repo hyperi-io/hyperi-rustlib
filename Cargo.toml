@@ -20,10 +20,9 @@ categories = ["development-tools"]
 exclude = [".claude/", ".github/", "ci/", "ai/", "docs/", "examples/", "benches/", "scripts/"]
 
 [features]
-default = ["config", "logger", "metrics", "env", "runtime"]
+default = ["config", "logger", "metrics", "runtime"]
 
 # Core features
-env = []
 runtime = ["dirs"]
 config = ["figment", "dotenvy", "serde_yaml_ng", "serde_json", "toml", "dirs", "tracing"]
 logger = ["tracing", "tracing-subscriber", "owo-colors", "serde_json", "tracing-throttle"]
@@ -42,13 +41,13 @@ directory-config = ["serde_yaml_ng", "tokio", "tracing", "fs4"]
 directory-config-git = ["directory-config", "git2"]
 
 # Extended features (P2)
-http = ["reqwest", "reqwest-middleware", "reqwest-retry"]
+http = ["reqwest", "reqwest-middleware", "reqwest-retry", "serde_json"]
 http-server = ["axum", "tower", "tower-http", "tokio"]
 spool = ["yaque", "zstd"]
 tiered-sink = ["yaque", "zstd", "lz4_flex", "snap", "tokio", "tower-resilience", "libc"]
 resilience = ["tower-resilience", "tower"]
-database = []
-cache = []
+database = ["serde_json"]
+cache = ["moka", "serde_json"]
 
 # Cgroup-aware memory backpressure (OOM prevention)
 memory = ["sysinfo", "tracing"]
@@ -101,7 +100,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "env", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "cli", "io", "dlq", "dlq-kafka", "output-file", "expression"]
+full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "cli", "io", "dlq", "dlq-kafka", "output-file", "expression"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -158,10 +157,14 @@ sysinfo = { version = ">=0.38.0, <0.39", optional = true }
 # Async runtime (for metrics server, http-server)
 tokio = { version = ">=1.50.0, <2", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "fs"], optional = true }
 
-# HTTP client (P2)
-reqwest = { version = ">=0.12, <0.14", features = ["json", "blocking"], optional = true }
-reqwest-middleware = { version = ">=0.5, <0.6", optional = true }
-reqwest-retry = { version = ">=0.7, <0.10", optional = true }
+# HTTP client — pinned to reqwest 0.12 until vaultrs and opentelemetry-otlp
+# support 0.13. reqwest-middleware 0.4 and reqwest-retry 0.7 target 0.12.
+reqwest = { version = ">=0.12, <0.13", features = ["json"], optional = true }
+reqwest-middleware = { version = ">=0.4, <0.5", optional = true }
+reqwest-retry = { version = ">=0.7, <0.8", optional = true }
+
+# In-memory cache (TinyLFU, async, concurrent)
+moka = { version = ">=0.12, <0.13", features = ["future"], optional = true }
 
 # HTTP server (axum)
 axum = { version = ">=0.8.8, <0.9", optional = true }
@@ -200,7 +203,7 @@ yaque = { version = ">=0.6.6, <0.7", optional = true }
 zstd = { version = ">=0.13.3, <0.14", optional = true }
 
 # TieredSink compression codecs
-lz4_flex = { version = ">=0.11, <0.13", optional = true }
+lz4_flex = { version = ">=0.11, <0.14", optional = true }
 snap = { version = ">=1.1.1, <2", optional = true }
 
 # Async trait (for tiered-sink Sink trait)
@@ -214,7 +217,7 @@ parking_lot = { version = ">=0.12.3, <0.13", optional = true }
 base64 = { version = ">=0.22, <0.23", optional = true }
 
 # Vault/OpenBao (for secrets-vault)
-vaultrs = { version = ">=0.7, <0.8", optional = true }
+vaultrs = { version = ">=0.7, <0.9", optional = true }
 
 # AWS (for secrets-aws)
 # NOTE: aws-config and aws-sdk-* transitively pull in aws-lc-sys, which compiles
