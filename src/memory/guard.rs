@@ -96,7 +96,7 @@ impl MemoryGuardConfig {
         #[cfg(feature = "config")]
         {
             if let Some(cfg) = crate::config::try_get()
-                && let Ok(memory) = cfg.unmarshal_key::<Self>("memory")
+                && let Ok(memory) = cfg.unmarshal_key_registered::<Self>("memory")
             {
                 return memory;
             }

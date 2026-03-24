@@ -99,21 +99,20 @@ what config keys exist, their types, defaults, or descriptions.
 
 **Goal:** Any DFE app can list/dump/expose all available config sections.
 
-- [ ] `ConfigRegistry` struct with `register::<T>(key, description)` API
-- [ ] Each module registers at init: expression, memory, version_check, tiered_sink, http_server, kafka, spool
-- [ ] `registry::sections()` — list all registered sections (key, type_name, description)
-- [ ] `registry::dump_effective()` — JSON map of all sections with current values
-- [ ] `registry::dump_defaults()` — JSON map of all sections with default values
-- [ ] Redaction support — mark fields as sensitive (passwords, tokens) for safe exposure
+- [x] Auto-registration via `unmarshal_key_registered` — records `(key, type_name, defaults, effective)` in global registry. Zero code changes in downstream apps.
+- [x] `registry::sections()` — list all registered sections
+- [x] `registry::dump_effective()` — JSON map of effective values
+- [x] `registry::dump_defaults()` — JSON map of defaults (via `T::default()`)
+- [x] Redaction via `#[serde(skip_serializing)]` on sensitive fields
+- [x] expression, memory, version_check modules wired to auto-register
+- [ ] Wire remaining modules: tiered_sink, http_server, kafka, spool, secrets
 - [ ] Health/admin endpoint integration — `/config` endpoint (redacted)
-- [ ] Change notification — registered consumers get notified on config reload (`ConfigReloader` integration)
-  - Replace `OnceLock` (init-once) with watch channel or callback so hot-reload propagates
-  - Modules subscribe to their key: `registry.on_change("expression", |new| { ... })`
+- [ ] Change notification (opt-in) — consumers CAN subscribe to config reload events
+  - Opt-in: modules that need hot-reload subscribe; others keep `OnceLock` (init-once)
+  - `registry.on_change("expression", |new| { ... })` for subscribers
   - Integrate with existing `SharedConfig<T>` / `ConfigReloader` from `config-reload` feature
+- [ ] Migrate all dfe-* and hyperi-* apps to `unmarshal_key_registered` pattern
 - [ ] Align hyperi-pylib with same registry pattern
-- [ ] Update all downstream Rust apps (dfe-loader, dfe-receiver, dfe-archiver, dfe-fetcher)
-
-**Depends on:** Current `from_cascade()` / `OnceLock` pattern shipping first (this release).
 
 ---
 
