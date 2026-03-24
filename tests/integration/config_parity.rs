@@ -1,5 +1,5 @@
 // Project:   hyperi-rustlib
-// File:      tests/parity/config_parity.rs
+// File:      tests/integration/config_parity.rs
 // Purpose:   Config parity tests against hyperi-pylib
 // Language:  Rust
 //
@@ -585,14 +585,16 @@ fn test_config_with_app_name_extra_path() {
 fn test_app_name_from_env_does_not_panic() {
     // When APP_NAME is set but the directory doesn't exist,
     // config should load without error (directory is silently skipped)
+    let empty_dir = TempDir::new().expect("failed to create temp dir");
     let _env = EnvGuard::new(&[("APP_NAME", "nonexistent_app_12345")]);
 
     let config = Config::new(ConfigOptions {
         load_dotenv: false,
+        config_paths: vec![empty_dir.path().to_path_buf()],
         ..Default::default()
     })
     .expect("config should load even with non-existent app dir");
 
-    // Hardcoded defaults still work
+    // Hardcoded defaults still work (empty dir has no config files)
     assert_eq!(config.get_string("log_level"), Some("info".to_string()));
 }

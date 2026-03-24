@@ -1,14 +1,12 @@
 // Project:   hyperi-rustlib
-// File:      tests/expression_tests.rs
+// File:      tests/integration/expression.rs
 // Purpose:   Integration tests for CEL expression module
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 //
-// Run with: cargo test --test expression_tests --features expression
-
-#![cfg(feature = "expression")]
+// Run with: cargo test --test integration_tests --features expression
 
 use std::collections::HashMap;
 

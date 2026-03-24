@@ -79,8 +79,8 @@ mod tests {
     #[test]
     fn test_standard_command_variants() {
         // Verify the enum variants exist and are constructible
-        drop(StandardCommand::Run);
-        drop(StandardCommand::Version);
-        drop(StandardCommand::ConfigCheck);
+        let _ = StandardCommand::Run;
+        let _ = StandardCommand::Version;
+        let _ = StandardCommand::ConfigCheck;
     }
 }

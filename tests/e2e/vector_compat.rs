@@ -1,12 +1,10 @@
 // Project:   hyperi-rustlib
-// File:      tests/vector_compat_integration.rs
+// File:      tests/e2e/vector_compat.rs
 // Purpose:   Integration tests for Vector wire protocol compatibility
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
-
-#![cfg(feature = "transport-grpc-vector-compat")]
 
 //! Integration tests for Vector compat gRPC transport.
 //!
@@ -16,7 +14,7 @@
 //!
 //! Run with:
 //! ```bash
-//! cargo test --test vector_compat_integration --features transport-grpc-vector-compat -- --test-threads=1
+//! cargo test --test e2e_tests --features transport-grpc-vector-compat -- --test-threads=1
 //! ```
 //!
 //! Requirements:
