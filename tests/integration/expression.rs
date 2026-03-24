@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use serde_json::json;
 
 use hyperi_rustlib::expression::{
-    ALLOWED_FUNCTIONS, DISALLOWED_FUNCTIONS, ExpressionError, compile, evaluate,
-    evaluate_condition, validate,
+    ALLOWED_FUNCTIONS, DISALLOWED_FUNCTIONS, ExpressionError, ProfileConfig,
+    check_profile_with_config, compile, evaluate, evaluate_condition, validate,
 };
 
 // ── validate() ────────────────────────────────────────────────
@@ -55,8 +55,19 @@ fn validate_valid_ends_with() {
 }
 
 #[test]
-fn validate_valid_matches() {
-    assert!(validate(r#"name.matches("^web-[0-9]+$")"#).is_empty());
+fn validate_matches_blocked_by_default() {
+    let errors = validate(r#"name.matches("^web-[0-9]+$")"#);
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].contains("matches()"));
+}
+
+#[test]
+fn validate_matches_allowed_with_config() {
+    let config = ProfileConfig {
+        allow_regex: true,
+        ..Default::default()
+    };
+    assert!(check_profile_with_config(r#"name.matches("^web-[0-9]+$")"#, &config).is_empty());
 }
 
 #[test]
@@ -257,11 +268,11 @@ fn evaluate_string_ends_with() {
 }
 
 #[test]
-fn evaluate_string_matches_regex() {
+fn evaluate_string_matches_blocked_by_default() {
     let mut data = HashMap::new();
     data.insert("name".into(), json!("web-42"));
-    let result = evaluate(r#"name.matches("^web-[0-9]+$")"#, &data).unwrap();
-    assert_eq!(result, true.into());
+    let result = evaluate(r#"name.matches("^web-[0-9]+$")"#, &data);
+    assert!(result.is_err());
 }
 
 #[test]
@@ -487,16 +498,15 @@ fn compile_empty_raises() {
 
 #[test]
 fn allowed_functions_contains_core() {
-    for f in &[
-        "contains",
-        "startsWith",
-        "endsWith",
-        "matches",
-        "size",
-        "has",
-    ] {
+    for f in &["contains", "startsWith", "endsWith", "size", "has"] {
         assert!(ALLOWED_FUNCTIONS.contains(f), "missing allowed: {f}");
     }
+}
+
+#[test]
+fn matches_in_disallowed_not_allowed() {
+    assert!(DISALLOWED_FUNCTIONS.contains(&"matches"));
+    assert!(!ALLOWED_FUNCTIONS.contains(&"matches"));
 }
 
 #[test]
@@ -509,6 +519,7 @@ fn allowed_functions_contains_casts() {
 #[test]
 fn disallowed_functions_present() {
     for f in &[
+        "matches",
         "map",
         "filter",
         "exists",
@@ -529,6 +540,53 @@ fn no_overlap_between_allowed_and_disallowed() {
             "overlap: {f} in both allowed and disallowed"
         );
     }
+}
+
+// ── String literal false-positive prevention ─────────────────
+
+#[test]
+fn validate_function_name_inside_string_not_flagged() {
+    assert!(validate(r#"msg.contains("filter")"#).is_empty());
+}
+
+#[test]
+fn validate_timestamp_inside_string_not_flagged() {
+    assert!(validate(r#"label == "timestamp""#).is_empty());
+}
+
+#[test]
+fn validate_matches_inside_string_not_flagged() {
+    assert!(validate(r#"msg.contains("matches")"#).is_empty());
+}
+
+#[test]
+fn validate_real_call_after_string_caught() {
+    let errors = validate(r#""ok" + items.map(x, x)"#);
+    assert!(!errors.is_empty());
+    assert!(errors[0].contains("map()"));
+}
+
+// ── ProfileConfig integration ────────────────────────────────
+
+#[test]
+fn profile_config_default_blocks_all_restricted() {
+    let config = ProfileConfig::default();
+    let blocked = config.blocked_functions();
+    assert!(blocked.contains(&"matches"));
+    assert!(blocked.contains(&"map"));
+    assert!(blocked.contains(&"timestamp"));
+}
+
+#[test]
+fn profile_config_selective_unlock() {
+    let config = ProfileConfig {
+        allow_regex: true,
+        ..Default::default()
+    };
+    let blocked = config.blocked_functions();
+    assert!(!blocked.contains(&"matches"));
+    assert!(blocked.contains(&"map"));
+    assert!(blocked.contains(&"timestamp"));
 }
 
 // ── ExpressionError ───────────────────────────────────────────
