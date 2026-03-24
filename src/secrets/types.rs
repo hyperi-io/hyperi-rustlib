@@ -45,6 +45,22 @@ pub struct SecretsConfig {
     pub sources: HashMap<String, SecretSource>,
 }
 
+impl SecretsConfig {
+    /// Load from the config cascade under the `secrets` key.
+    #[must_use]
+    pub fn from_cascade() -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(secrets) = cfg.unmarshal_key_registered::<Self>("secrets")
+            {
+                return secrets;
+            }
+        }
+        Self::default()
+    }
+}
+
 /// Cache configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

@@ -104,8 +104,8 @@ what config keys exist, their types, defaults, or descriptions.
 - [x] `registry::dump_effective()` — JSON map of effective values
 - [x] `registry::dump_defaults()` — JSON map of defaults (via `T::default()`)
 - [x] Redaction via `#[serde(skip_serializing)]` on sensitive fields
-- [x] expression, memory, version_check modules wired to auto-register
-- [ ] Wire remaining modules: tiered_sink, http_server, kafka, spool, secrets
+- [x] expression, memory, version_check, scaling, grpc, secrets wired with `from_cascade()` auto-register
+- [x] Modules without defaults (tiered_sink, http_server, kafka, spool, dlq) use `unmarshal_key_registered` from downstream apps
 - [ ] Health/admin endpoint integration — `/config` endpoint (redacted)
 - [ ] Change notification (opt-in) — consumers CAN subscribe to config reload events
   - Opt-in: modules that need hot-reload subscribe; others keep `OnceLock` (init-once)
