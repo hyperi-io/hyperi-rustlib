@@ -190,11 +190,15 @@ impl Default for ReloaderConfig {
 ///
 /// On each trigger, calls `reload_fn` to load new config, `validate_fn` to
 /// validate, then updates the `SharedConfig<T>` if valid.
+/// Callback invoked after a successful reload with the new config value.
+type PostReloadHook<T> = Arc<dyn Fn(&T) + Send + Sync>;
+
 pub struct ConfigReloader<T: Clone + Send + Sync + 'static> {
     config: ReloaderConfig,
     shared: SharedConfig<T>,
     reload_fn: Arc<dyn Fn() -> Result<T, BoxError> + Send + Sync>,
     validate_fn: Arc<dyn Fn(&T) -> Result<(), BoxError> + Send + Sync>,
+    post_reload_hooks: Vec<PostReloadHook<T>>,
 }
 
 impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
@@ -215,7 +219,39 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
             shared,
             reload_fn: Arc::new(reload_fn),
             validate_fn: Arc::new(validate_fn),
+            post_reload_hooks: Vec::new(),
         }
+    }
+
+    /// Add a hook that runs after each successful reload.
+    ///
+    /// Use this to connect to the config registry:
+    ///
+    /// ```rust,no_run
+    /// # use hyperi_rustlib::config::reloader::ConfigReloader;
+    /// # use hyperi_rustlib::config::registry;
+    /// // reloader.with_registry_update("my_app");
+    /// ```
+    #[must_use]
+    pub fn with_post_reload_hook(mut self, hook: impl Fn(&T) + Send + Sync + 'static) -> Self {
+        self.post_reload_hooks.push(Arc::new(hook));
+        self
+    }
+
+    /// Connect to the config registry: after each successful reload,
+    /// call `registry::update()` so listeners are notified and the
+    /// registry reflects the new effective config.
+    ///
+    /// Requires `T: Serialize + Default`.
+    #[must_use]
+    pub fn with_registry_update(self, key: &str) -> Self
+    where
+        T: serde::Serialize + Default,
+    {
+        let key = key.to_string();
+        self.with_post_reload_hook(move |config| {
+            super::registry::update::<T>(&key, config);
+        })
     }
 
     /// Start the reload loop in a background task.
@@ -418,8 +454,13 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
                 }
 
                 let old_version = self.shared.version();
-                self.shared.update(new_config);
+                self.shared.update(new_config.clone());
                 let new_version = self.shared.version();
+
+                // Run post-reload hooks (registry update, etc.)
+                for hook in &self.post_reload_hooks {
+                    hook(&new_config);
+                }
 
                 #[cfg(feature = "metrics")]
                 metrics::counter!("config_reloads_total", "result" => "success").increment(1);
