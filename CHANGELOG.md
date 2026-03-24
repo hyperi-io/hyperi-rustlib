@@ -1,3 +1,11 @@
+## [1.19.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.4...v1.19.5) (2026-03-24)
+
+
+### Bug Fixes
+
+* add config redaction, /config endpoint, change notification ([c6a796b](https://github.com/hyperi-io/hyperi-rustlib/commit/c6a796b00868d91d65833b790b47ac2fa812afbe))
+* add SensitiveString type, ConfigReloader registry hook, redaction tests ([afe7a1d](https://github.com/hyperi-io/hyperi-rustlib/commit/afe7a1dc03a9eadb8280b6bceb72371888cb5888))
+
 ## [1.19.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.3...v1.19.4) (2026-03-24)
 
 
