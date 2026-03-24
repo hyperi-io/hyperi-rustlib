@@ -79,6 +79,7 @@
 pub mod env_compat;
 pub mod flat_env;
 pub mod registry;
+pub mod sensitive;
 
 #[cfg(feature = "config-reload")]
 pub mod reloader;
