@@ -1,0 +1,23 @@
+# Project:   hyperi-rustlib
+# File:      .cargo/audit.toml
+# Purpose:   cargo-audit advisory ignore list for transitive deps
+# Language:  TOML
+#
+# License:   FSL-1.1-ALv2
+# Copyright: (c) 2026 HYPERI PTY LIMITED
+
+# Ignored advisories — transitive deps we cannot fix.
+# Review on each major dependency update (especially sqlx, cel-interpreter).
+
+[advisories]
+ignore = [
+    # rsa timing side-channel (Marvin Attack), medium severity.
+    # Transitive: sqlx -> sqlx-mysql -> rsa. We use PostgreSQL only.
+    # No fixed version upstream. Revisit when sqlx drops default MySQL.
+    "RUSTSEC-2023-0071",
+
+    # paste crate unmaintained (no security impact).
+    # Transitive: cel-interpreter -> paste. We cannot control this.
+    # Revisit when cel-interpreter updates or replaces paste.
+    "RUSTSEC-2024-0436",
+]
