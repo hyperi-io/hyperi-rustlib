@@ -103,14 +103,14 @@ what config keys exist, their types, defaults, or descriptions.
 - [x] `registry::sections()` — list all registered sections
 - [x] `registry::dump_effective()` — JSON map of effective values
 - [x] `registry::dump_defaults()` — JSON map of defaults (via `T::default()`)
-- [x] Redaction via `#[serde(skip_serializing)]` on sensitive fields
+- [x] Heuristic auto-redaction (password, secret, token, key, credential, auth, private, cert, encryption)
+- [x] `#[serde(skip_serializing)]` as additional layer for fields that should never appear
 - [x] expression, memory, version_check, scaling, grpc, secrets wired with `from_cascade()` auto-register
 - [x] Modules without defaults (tiered_sink, http_server, kafka, spool, dlq) use `unmarshal_key_registered` from downstream apps
-- [ ] Health/admin endpoint integration — `/config` endpoint (redacted)
-- [ ] Change notification (opt-in) — consumers CAN subscribe to config reload events
-  - Opt-in: modules that need hot-reload subscribe; others keep `OnceLock` (init-once)
-  - `registry.on_change("expression", |new| { ... })` for subscribers
-  - Integrate with existing `SharedConfig<T>` / `ConfigReloader` from `config-reload` feature
+- [x] `/config` admin endpoint (opt-in via `enable_config_endpoint`) — returns redacted effective + defaults JSON
+- [x] Change notification (opt-in) — `registry::on_change(key, callback)` + `registry::update()`
+  - Modules that need hot-reload subscribe; others keep `OnceLock` (init-once)
+- [ ] Wire `ConfigReloader` to call `registry::update()` on reload (connect the plumbing)
 - [ ] Migrate all dfe-* and hyperi-* apps to `unmarshal_key_registered` pattern
 - [ ] Align hyperi-pylib with same registry pattern
 

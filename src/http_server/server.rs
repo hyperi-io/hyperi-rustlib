@@ -176,6 +176,11 @@ impl HttpServer {
             );
         }
 
+        #[cfg(feature = "config")]
+        if self.config.enable_config_endpoint {
+            router = router.route("/config", get(config_dump));
+        }
+
         router
     }
 }
@@ -221,6 +226,31 @@ async fn health_ready(ready: Arc<AtomicBool>) -> impl IntoResponse {
     } else {
         (StatusCode::SERVICE_UNAVAILABLE, "NOT READY")
     }
+}
+
+/// Config registry dump endpoint handler (redacted).
+#[cfg(feature = "config")]
+async fn config_dump() -> impl IntoResponse {
+    let effective = crate::config::registry::dump_effective();
+    let defaults = crate::config::registry::dump_defaults();
+
+    let body = serde_json::json!({
+        "effective": effective,
+        "defaults": defaults,
+        "sections": crate::config::registry::sections()
+            .iter()
+            .map(|s| serde_json::json!({
+                "key": s.key,
+                "type": s.type_name,
+            }))
+            .collect::<Vec<_>>(),
+    });
+
+    (
+        StatusCode::OK,
+        [("content-type", "application/json")],
+        serde_json::to_string_pretty(&body).unwrap_or_default(),
+    )
 }
 
 /// Wait for a shutdown signal (SIGTERM or SIGINT).

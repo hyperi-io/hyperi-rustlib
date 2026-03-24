@@ -13,6 +13,7 @@ use std::time::Duration;
 
 /// HTTP server configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct HttpServerConfig {
     /// Address to bind to (e.g., "0.0.0.0:8080").
     pub bind_address: String,
@@ -41,6 +42,12 @@ pub struct HttpServerConfig {
     /// Defaults to false (use metrics module's server instead if needed).
     #[serde(default)]
     pub enable_metrics_endpoint: bool,
+
+    /// Whether to include config registry endpoint (/config).
+    /// Returns the redacted effective config from the registry.
+    /// Defaults to false (opt-in for admin/debug use).
+    #[serde(default)]
+    pub enable_config_endpoint: bool,
 
     /// Enable HTTP/2 support (also required for gRPC).
     /// Defaults to true.
@@ -91,6 +98,7 @@ impl Default for HttpServerConfig {
             max_connections: default_max_connections(),
             enable_health_endpoints: true,
             enable_metrics_endpoint: false,
+            enable_config_endpoint: false,
             enable_http2: true,
             tls_cert_path: None,
             tls_key_path: None,
