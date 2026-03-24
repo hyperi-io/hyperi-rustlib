@@ -1,3 +1,10 @@
+# [1.17.0-dev.10](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.9...v1.17.0-dev.10) (2026-03-24)
+
+
+### Bug Fixes
+
+* add http_client, database URL builders, and cache modules ([eb76b54](https://github.com/hyperi-io/hyperi-rustlib/commit/eb76b54281287692df9632f5318a35ebef3ab25b))
+
 # [1.17.0-dev.9](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.8...v1.17.0-dev.9) (2026-03-24)
 
 
