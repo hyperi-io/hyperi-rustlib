@@ -1,3 +1,13 @@
+## [1.19.6](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.5...v1.19.6) (2026-03-24)
+
+
+### Bug Fixes
+
+* add http_client, database URL builders, and cache modules ([eb76b54](https://github.com/hyperi-io/hyperi-rustlib/commit/eb76b54281287692df9632f5318a35ebef3ab25b))
+* correct Cargo.toml after merge conflict resolution ([7ef241f](https://github.com/hyperi-io/hyperi-rustlib/commit/7ef241f390b214669946b66d4fe75c2187cc97a7))
+* pin reqwest to 0.12 to avoid dual-version conflict ([8dc1b6d](https://github.com/hyperi-io/hyperi-rustlib/commit/8dc1b6dc6e7cf336dc20e434094bad52526d22cc))
+* remove unused env feature flag ([e7f41fa](https://github.com/hyperi-io/hyperi-rustlib/commit/e7f41fa6c5535e181b44940f400fbc7363ecf285))
+
 ## [1.19.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.4...v1.19.5) (2026-03-24)
 
 
