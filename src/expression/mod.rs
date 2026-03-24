@@ -65,7 +65,10 @@ pub mod evaluator;
 pub mod profile;
 
 pub use error::{ExpressionError, ExpressionResult};
-pub use evaluator::{build_context, compile, evaluate, evaluate_condition, validate};
+pub use evaluator::{
+    build_context, compile, compile_with_config, evaluate, evaluate_condition, validate,
+    validate_with_config,
+};
 pub use profile::{
     ALLOWED_FUNCTIONS, DISALLOWED_FUNCTIONS, ProfileConfig, RESTRICTED_ITERATION, RESTRICTED_REGEX,
     RESTRICTED_TIME, check_profile_with_config,

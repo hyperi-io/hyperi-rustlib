@@ -54,7 +54,7 @@ pub const DISALLOWED_FUNCTIONS: &[&str] = &[
 ///
 /// Each flag unlocks a category of restricted functions. All default
 /// to `false` (blocked). Set explicitly in application config to opt in.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct ProfileConfig {
     /// Allow `matches()` (regex). Unbounded cost per record — use only
     /// when `contains()`/`startsWith()`/`endsWith()` are insufficient.
