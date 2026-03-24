@@ -99,19 +99,20 @@ what config keys exist, their types, defaults, or descriptions.
 
 **Goal:** Any DFE app can list/dump/expose all available config sections.
 
-- [ ] `ConfigRegistry` struct with `register::<T>(key, description)` API
-- [ ] Each module registers at init: expression, memory, version_check, tiered_sink, http_server, kafka, spool
+- [ ] Auto-registration via `unmarshal_key` — intercept `Config::unmarshal_key::<T>(key)` to
+      automatically record `(key, type_name, default_value, current_value)` in a global registry.
+      Zero code changes in downstream apps — any module that reads config gets registered for free.
 - [ ] `registry::sections()` — list all registered sections (key, type_name, description)
 - [ ] `registry::dump_effective()` — JSON map of all sections with current values
-- [ ] `registry::dump_defaults()` — JSON map of all sections with default values
-- [ ] Redaction support — mark fields as sensitive (passwords, tokens) for safe exposure
+- [ ] `registry::dump_defaults()` — JSON map of all sections with default values (via `T::default()`)
+- [ ] Redaction support — `#[serde(skip_serializing)]` or custom `#[redact]` attr for passwords/tokens
 - [ ] Health/admin endpoint integration — `/config` endpoint (redacted)
 - [ ] Change notification — registered consumers get notified on config reload (`ConfigReloader` integration)
   - Replace `OnceLock` (init-once) with watch channel or callback so hot-reload propagates
   - Modules subscribe to their key: `registry.on_change("expression", |new| { ... })`
   - Integrate with existing `SharedConfig<T>` / `ConfigReloader` from `config-reload` feature
 - [ ] Align hyperi-pylib with same registry pattern
-- [ ] Update all downstream Rust apps (dfe-loader, dfe-receiver, dfe-archiver, dfe-fetcher)
+- [ ] Downstream apps get registry for free — no code changes beyond what they already have
 
 **Depends on:** Current `from_cascade()` / `OnceLock` pattern shipping first (this release).
 
