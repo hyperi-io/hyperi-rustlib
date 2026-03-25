@@ -69,6 +69,10 @@ pub struct GrpcTransport {
 
     /// Receive timeout (milliseconds).
     recv_timeout_ms: u64,
+
+    /// In-flight send count (for metrics).
+    #[cfg(feature = "metrics")]
+    inflight: AtomicU64,
 }
 
 impl GrpcTransport {
@@ -173,6 +177,8 @@ impl GrpcTransport {
             _server_handle: server_handle,
             closed: AtomicBool::new(false),
             recv_timeout_ms: config.recv_timeout_ms,
+            #[cfg(feature = "metrics")]
+            inflight: AtomicU64::new(0),
         })
     }
 }
@@ -202,16 +208,54 @@ impl Transport for GrpcTransport {
             metadata,
         };
 
+        #[cfg(feature = "metrics")]
+        let start = std::time::Instant::now();
+
+        #[cfg(feature = "metrics")]
+        self.inflight.fetch_add(1, Ordering::Relaxed);
+
         // tonic clients are cheaply cloneable (shared channel)
-        match client.clone().push(request).await {
-            Ok(_) => SendResult::Ok,
+        let result = match client.clone().push(request).await {
+            Ok(_) => {
+                #[cfg(feature = "metrics")]
+                metrics::counter!("dfe_transport_sent_total", "transport" => "grpc").increment(1);
+                SendResult::Ok
+            }
             Err(status) => match status.code() {
                 tonic::Code::Unavailable | tonic::Code::ResourceExhausted => {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!(
+                        "dfe_transport_backpressured_total",
+                        "transport" => "grpc"
+                    )
+                    .increment(1);
                     SendResult::Backpressured
                 }
-                _ => SendResult::Fatal(TransportError::Send(status.message().to_string())),
+                _ => {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!(
+                        "dfe_transport_send_errors_total",
+                        "transport" => "grpc"
+                    )
+                    .increment(1);
+                    SendResult::Fatal(TransportError::Send(status.message().to_string()))
+                }
             },
+        };
+
+        #[cfg(feature = "metrics")]
+        {
+            self.inflight.fetch_sub(1, Ordering::Relaxed);
+            metrics::gauge!("dfe_transport_inflight", "transport" => "grpc")
+                .set(self.inflight.load(Ordering::Relaxed) as f64);
+            metrics::histogram!(
+                "dfe_transport_send_duration_seconds",
+                "transport" => "grpc"
+            )
+            .record(start.elapsed().as_secs_f64());
         }
+
+        result
     }
 
     async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
@@ -282,7 +326,14 @@ impl Transport for GrpcTransport {
     }
 
     fn is_healthy(&self) -> bool {
-        !self.closed.load(Ordering::Relaxed)
+        let healthy = !self.closed.load(Ordering::Relaxed);
+        #[cfg(feature = "metrics")]
+        metrics::gauge!("dfe_transport_healthy", "transport" => "grpc").set(if healthy {
+            1.0
+        } else {
+            0.0
+        });
+        healthy
     }
 
     fn name(&self) -> &'static str {
@@ -329,12 +380,39 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
             format,
         };
 
-        self.sender
-            .send(msg)
-            .await
-            .map_err(|_| Status::unavailable("receiver buffer full"))?;
-
-        Ok(Response::new(proto::PushResponse { accepted: 1 }))
+        match self.sender.try_send(msg) {
+            Ok(()) => {
+                #[cfg(feature = "metrics")]
+                {
+                    metrics::counter!("dfe_transport_sent_total", "transport" => "grpc")
+                        .increment(1);
+                    metrics::gauge!("dfe_transport_queue_size", "transport" => "grpc").set(
+                        self.sender
+                            .max_capacity()
+                            .saturating_sub(self.sender.capacity()) as f64,
+                    );
+                }
+                Ok(Response::new(proto::PushResponse { accepted: 1 }))
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                #[cfg(feature = "metrics")]
+                metrics::counter!(
+                    "dfe_transport_backpressured_total",
+                    "transport" => "grpc"
+                )
+                .increment(1);
+                Err(Status::resource_exhausted("receiver buffer full"))
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                #[cfg(feature = "metrics")]
+                metrics::counter!(
+                    "dfe_transport_refused_total",
+                    "transport" => "grpc"
+                )
+                .increment(1);
+                Err(Status::unavailable("receiver closed"))
+            }
+        }
     }
 
     async fn health_check(
