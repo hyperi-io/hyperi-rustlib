@@ -73,7 +73,7 @@ use super::error::{TransportError, TransportResult};
 use super::traits::Transport;
 use super::types::{Message, PayloadFormat, SendResult};
 use rdkafka::config::ClientConfig;
-use rdkafka::consumer::{BaseConsumer, CommitMode, Consumer, DefaultConsumerContext};
+use rdkafka::consumer::{BaseConsumer, CommitMode, Consumer};
 use rdkafka::message::Message as KafkaMessage;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::topic_partition_list::{Offset, TopicPartitionList};
@@ -109,8 +109,8 @@ pub mod tuning {
 /// - Drains internal queue with zero-timeout polls
 /// - Minimizes allocations in hot path
 pub struct KafkaTransport {
-    consumer: BaseConsumer<DefaultConsumerContext>,
-    producer: FutureProducer,
+    consumer: BaseConsumer<StatsContext>,
+    producer: FutureProducer<StatsContext>,
     /// Pre-populated topic cache - populated on construction, read-only after.
     /// Key optimization: no locks in the hot path.
     topic_cache: HashMap<String, Arc<str>>,
@@ -197,9 +197,19 @@ impl KafkaTransport {
         // Client ID
         client_config.set("client.id", &config.client_id);
 
-        // Create consumer using BaseConsumer for direct poll control
-        let consumer: BaseConsumer<DefaultConsumerContext> = client_config
-            .create()
+        // Ensure statistics callbacks fire (all profiles already set this, but
+        // guarantee it as a fallback for manual configs).
+        if client_config.get("statistics.interval.ms").is_none() {
+            client_config.set("statistics.interval.ms", "5000");
+        }
+
+        // StatsContext receives librdkafka statistics callbacks and auto-emits
+        // rdkafka_* Prometheus metrics when a recorder is installed.
+        // Consumer and producer each get their own context instance.
+
+        // Create consumer with StatsContext for metrics collection
+        let consumer: BaseConsumer<StatsContext> = client_config
+            .create_with_context(StatsContext::new())
             .map_err(|e| TransportError::Connection(format!("Failed to create consumer: {e}")))?;
 
         // Subscribe to topics
@@ -217,9 +227,9 @@ impl KafkaTransport {
             topic_cache.insert(topic.clone(), Arc::from(topic.as_str()));
         }
 
-        // Create producer (for send operations)
-        let producer: FutureProducer = client_config
-            .create()
+        // Create producer with StatsContext for metrics collection
+        let producer: FutureProducer<StatsContext> = client_config
+            .create_with_context(StatsContext::new())
             .map_err(|e| TransportError::Connection(format!("Failed to create producer: {e}")))?;
 
         Ok(Self {
@@ -231,18 +241,13 @@ impl KafkaTransport {
         })
     }
 
-    /// Create transport with custom context for metrics collection.
+    /// Get the consumer's metrics snapshot.
     ///
-    /// Use this when you need statistics collection via `StatsContext`.
-    /// Remember to set `statistics.interval.ms` in `extra_config`.
-    pub fn new_with_context<C>(config: &KafkaConfig, _context: C) -> TransportResult<Self>
-    where
-        C: rdkafka::consumer::ConsumerContext + 'static,
-    {
-        // For now, delegate to the standard constructor
-        // Full context support would require generic parameter on struct
-        // which complicates the Transport trait implementation
-        tokio::runtime::Handle::current().block_on(Self::new(config))
+    /// Returns statistics collected via librdkafka callbacks. Includes
+    /// broker RTT, consumer lag, rebalance count, etc.
+    #[must_use]
+    pub fn stats(&self) -> KafkaMetrics {
+        self.consumer.context().get_metrics()
     }
 }
 
@@ -256,21 +261,50 @@ impl Transport for KafkaTransport {
 
         let record: FutureRecord<'_, str, [u8]> = FutureRecord::to(key).payload(payload);
 
-        match self
+        #[cfg(feature = "metrics")]
+        let start = std::time::Instant::now();
+
+        let result = match self
             .producer
             .send(record, Timeout::After(Duration::from_secs(5)))
             .await
         {
-            Ok(_) => SendResult::Ok,
+            Ok(_) => {
+                #[cfg(feature = "metrics")]
+                ::metrics::counter!("dfe_transport_sent_total", "transport" => "kafka")
+                    .increment(1);
+                SendResult::Ok
+            }
             Err((err, _)) => {
                 let err_str = err.to_string();
                 if err_str.contains("queue full") || err_str.contains("Local: Queue full") {
+                    #[cfg(feature = "metrics")]
+                    ::metrics::counter!(
+                        "dfe_transport_backpressured_total",
+                        "transport" => "kafka"
+                    )
+                    .increment(1);
                     SendResult::Backpressured
                 } else {
+                    #[cfg(feature = "metrics")]
+                    ::metrics::counter!(
+                        "dfe_transport_send_errors_total",
+                        "transport" => "kafka"
+                    )
+                    .increment(1);
                     SendResult::Fatal(TransportError::Send(err_str))
                 }
             }
-        }
+        };
+
+        #[cfg(feature = "metrics")]
+        ::metrics::histogram!(
+            "dfe_transport_send_duration_seconds",
+            "transport" => "kafka"
+        )
+        .record(start.elapsed().as_secs_f64());
+
+        result
     }
 
     /// Receive a batch of messages.
