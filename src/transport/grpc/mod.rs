@@ -20,7 +20,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::{GrpcTransport, GrpcConfig, Transport};
+//! use hyperi_rustlib::transport::{GrpcTransport, GrpcConfig, TransportReceiver};
 //!
 //! // Server mode (receive from remote senders)
 //! let config = GrpcConfig::server("0.0.0.0:6000");
@@ -39,7 +39,7 @@ pub use config::GrpcConfig;
 pub use token::GrpcToken;
 
 use super::error::{TransportError, TransportResult};
-use super::traits::Transport;
+use super::traits::{TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -49,8 +49,8 @@ use tonic::{Request, Response, Status};
 
 /// gRPC transport for DFE inter-service communication.
 ///
-/// Combines a tonic gRPC client (for sending) and server (for receiving)
-/// behind the unified `Transport` trait.
+/// Implements both `TransportSender` and `TransportReceiver`, so it also
+/// satisfies the unified `Transport` trait via blanket impl.
 pub struct GrpcTransport {
     /// Client for sending (None if server-only mode).
     client: Option<proto::dfe_transport_client::DfeTransportClient<tonic::transport::Channel>>,
@@ -183,9 +183,33 @@ impl GrpcTransport {
     }
 }
 
-impl Transport for GrpcTransport {
-    type Token = GrpcToken;
+impl TransportBase for GrpcTransport {
+    async fn close(&self) -> TransportResult<()> {
+        self.closed.store(true, Ordering::Relaxed);
 
+        // Signal server shutdown
+        // Note: we can't take from Option behind &self, so we use a flag
+        // The server task will complete when the oneshot is dropped
+        Ok(())
+    }
+
+    fn is_healthy(&self) -> bool {
+        let healthy = !self.closed.load(Ordering::Relaxed);
+        #[cfg(feature = "metrics")]
+        metrics::gauge!("dfe_transport_healthy", "transport" => "grpc").set(if healthy {
+            1.0
+        } else {
+            0.0
+        });
+        healthy
+    }
+
+    fn name(&self) -> &'static str {
+        "grpc"
+    }
+}
+
+impl TransportSender for GrpcTransport {
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
@@ -257,6 +281,10 @@ impl Transport for GrpcTransport {
 
         result
     }
+}
+
+impl TransportReceiver for GrpcTransport {
+    type Token = GrpcToken;
 
     async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
         if self.closed.load(Ordering::Relaxed) {
@@ -314,30 +342,6 @@ impl Transport for GrpcTransport {
         // gRPC has no broker-side persistence — commit is a no-op.
         // Acknowledgement is implicit in the Push RPC response.
         Ok(())
-    }
-
-    async fn close(&self) -> TransportResult<()> {
-        self.closed.store(true, Ordering::Relaxed);
-
-        // Signal server shutdown
-        // Note: we can't take from Option behind &self, so we use a flag
-        // The server task will complete when the oneshot is dropped
-        Ok(())
-    }
-
-    fn is_healthy(&self) -> bool {
-        let healthy = !self.closed.load(Ordering::Relaxed);
-        #[cfg(feature = "metrics")]
-        metrics::gauge!("dfe_transport_healthy", "transport" => "grpc").set(if healthy {
-            1.0
-        } else {
-            0.0
-        });
-        healthy
-    }
-
-    fn name(&self) -> &'static str {
-        "grpc"
     }
 }
 

@@ -91,7 +91,11 @@ transport-memory = ["transport"]
 transport-kafka = ["transport", "rdkafka"]
 transport-grpc = ["transport", "dep:tonic", "dep:tonic-prost", "dep:prost", "dep:prost-types", "dep:tonic-prost-build", "dep:prost-build"]
 transport-grpc-vector-compat = ["transport-grpc"]
-transport-all = ["transport-memory", "transport-kafka", "transport-grpc"]
+transport-file = ["transport", "io"]
+transport-pipe = ["transport"]
+transport-http = ["transport", "http"]
+transport-redis = ["transport", "redis"]
+transport-all = ["transport-memory", "transport-kafka", "transport-grpc", "transport-file", "transport-pipe", "transport-http", "transport-redis"]
 
 # Secrets management
 secrets = ["tokio", "serde_json", "async-trait", "parking_lot", "base64", "dirs", "tracing"]
@@ -155,7 +159,7 @@ metrics-exporter-opentelemetry = { version = ">=0.2.1, <0.3", optional = true }
 sysinfo = { version = ">=0.38.0, <0.39", optional = true }
 
 # Async runtime (for metrics server, http-server)
-tokio = { version = ">=1.50.0, <2", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "fs"], optional = true }
+tokio = { version = ">=1.50.0, <2", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "fs", "io-std", "io-util"], optional = true }
 
 # HTTP client — pinned to reqwest 0.12 until vaultrs and opentelemetry-otlp
 # support 0.13. reqwest-middleware 0.4 and reqwest-retry 0.7 target 0.12.
@@ -182,6 +186,9 @@ rmp-serde = { version = ">=1.3.1, <2", optional = true }
 
 # Kafka transport (dynamic-linking: use system librdkafka instead of compiling C++ from source)
 rdkafka = { version = ">=0.39.0, <0.40", features = ["dynamic-linking"], optional = true }
+
+# Redis/Valkey Streams transport
+redis = { version = ">=1.0, <2", features = ["tokio-comp", "streams"], optional = true }
 
 # gRPC transport (tonic + prost)
 tonic = { version = ">=0.14, <0.15", features = ["gzip"], optional = true }

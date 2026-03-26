@@ -32,7 +32,7 @@ mod token;
 pub use token::MemoryToken;
 
 use super::error::{TransportError, TransportResult};
-use super::traits::Transport;
+use super::traits::{TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -174,9 +174,22 @@ impl MemorySender<'_> {
     }
 }
 
-impl Transport for MemoryTransport {
-    type Token = MemoryToken;
+impl TransportBase for MemoryTransport {
+    async fn close(&self) -> TransportResult<()> {
+        self.closed.store(true, Ordering::Relaxed);
+        Ok(())
+    }
 
+    fn is_healthy(&self) -> bool {
+        !self.closed.load(Ordering::Relaxed)
+    }
+
+    fn name(&self) -> &'static str {
+        "memory"
+    }
+}
+
+impl TransportSender for MemoryTransport {
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
@@ -198,6 +211,10 @@ impl Transport for MemoryTransport {
             Err(mpsc::error::TrySendError::Closed(_)) => SendResult::Fatal(TransportError::Closed),
         }
     }
+}
+
+impl TransportReceiver for MemoryTransport {
+    type Token = MemoryToken;
 
     async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
         if self.closed.load(Ordering::Relaxed) {
@@ -207,10 +224,8 @@ impl Transport for MemoryTransport {
         let mut receiver = self.receiver.lock().await;
         let mut messages = Vec::with_capacity(max.min(100));
 
-        // Try to receive up to max messages
         for _ in 0..max {
             let result = if self.recv_timeout_ms == 0 {
-                // Non-blocking: try_recv
                 match receiver.try_recv() {
                     Ok(msg) => Some(msg),
                     Err(mpsc::error::TryRecvError::Empty) => break,
@@ -219,7 +234,6 @@ impl Transport for MemoryTransport {
                     }
                 }
             } else if messages.is_empty() {
-                // First message: wait with timeout
                 match tokio::time::timeout(
                     std::time::Duration::from_millis(self.recv_timeout_ms),
                     receiver.recv(),
@@ -228,10 +242,9 @@ impl Transport for MemoryTransport {
                 {
                     Ok(Some(msg)) => Some(msg),
                     Ok(None) => return Err(TransportError::Closed),
-                    Err(_) => break, // Timeout
+                    Err(_) => break,
                 }
             } else {
-                // Subsequent messages: non-blocking
                 match receiver.try_recv() {
                     Ok(msg) => Some(msg),
                     Err(_) => break,
@@ -254,25 +267,10 @@ impl Transport for MemoryTransport {
     }
 
     async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
-        // Find the highest sequence number
         if let Some(max_seq) = tokens.iter().map(|t| t.seq).max() {
-            // Update committed sequence (only advance, never go back)
             let _ = self.committed_seq.fetch_max(max_seq, Ordering::Relaxed);
         }
         Ok(())
-    }
-
-    async fn close(&self) -> TransportResult<()> {
-        self.closed.store(true, Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn is_healthy(&self) -> bool {
-        !self.closed.load(Ordering::Relaxed)
-    }
-
-    fn name(&self) -> &'static str {
-        "memory"
     }
 }
 

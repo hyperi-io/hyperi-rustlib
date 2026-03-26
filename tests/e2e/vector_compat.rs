@@ -31,7 +31,7 @@ use std::time::Duration;
 
 use hyperi_rustlib::transport::VectorCompatClient;
 use hyperi_rustlib::transport::grpc::{GrpcConfig, GrpcTransport};
-use hyperi_rustlib::transport::{SendResult, Transport};
+use hyperi_rustlib::transport::{SendResult, TransportBase, TransportReceiver, TransportSender};
 
 /// Resolve the path to the Vector binary (cached via fetch-vector.sh or system PATH).
 ///

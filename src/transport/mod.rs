@@ -8,49 +8,50 @@
 
 //! # Transport Abstraction Layer
 //!
-//! Pluggable message transport supporting Kafka, gRPC, and in-memory channels.
-//! All transports deliver raw bytes (JSON or MsgPack) without any envelope format.
+//! Pluggable message transport with split sender/receiver traits for
+//! type-safe factory construction and runtime transport selection.
+//!
+//! ## Architecture
+//!
+//! ```text
+//! TransportSender (object-safe)     TransportReceiver<Token> (generic)
+//!   send(key, payload)                recv(max) -> Vec<Message<Token>>
+//!   close()                           commit(tokens)
+//!   is_healthy()                      close()
+//!   name()                            is_healthy(), name()
+//!         |                                    |
+//!         +-------- Transport (blanket) -------+
+//! ```
+//!
+//! - **Output stages** (DLQ, forwarding, archiving): use `Box<dyn TransportSender>`
+//! - **Input stages** (receiver, fetcher): use concrete `impl TransportReceiver`
+//! - **Factory**: `sender_from_config()` returns `Box<dyn TransportSender>`
 //!
 //! ## Transport Selection
 //!
-//! | Transport | Use Case | Durability |
-//! |-----------|----------|------------|
-//! | **Kafka** | Production (default) | At-least-once with broker persistence |
-//! | **gRPC** | DFE mesh, low-latency | In-flight only, sender-side WAL optional |
-//! | **Memory** | Unit tests | None, same-process only |
-//!
-//! ## Vector Wire Protocol Compatibility
-//!
-//! Enable `transport-grpc-vector-compat` to accept events from legacy Vector sinks.
-//! The Vector compat layer converts `vector.Vector/PushEvents` RPCs to native DFE
-//! messages, enabling component-by-component migration from Vector to DFE.
+//! | Transport | Send | Recv | Use Case |
+//! |-----------|------|------|----------|
+//! | **Kafka** | Yes | Yes | Production default, PB/day, persistence |
+//! | **gRPC** | Yes | Yes | Low-latency direct, DFE mesh |
+//! | **Memory** | Yes | Yes | Unit tests, same-process |
+//! | **File** | Yes | Yes | Debugging, audit trails, replay |
+//! | **Pipe** | Yes | Yes | Unix pipelines, sidecar pattern |
+//! | **HTTP** | Yes | Yes | Webhook delivery, REST ingest |
+//! | **Redis** | Yes | Yes | Edge deployments, lightweight pub/sub |
 //!
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::{Transport, TransportConfig, TransportType};
+//! use hyperi_rustlib::transport::{TransportSender, TransportConfig};
 //!
-//! // Create transport from config
-//! let config = TransportConfig {
-//!     transport_type: TransportType::Kafka,
-//!     kafka: Some(KafkaConfig { /* ... */ }),
-//!     ..Default::default()
-//! };
-//! let transport = create_transport(&config).await?;
-//!
-//! // Receive messages
-//! let messages = transport.recv(100).await?;
-//! for msg in &messages {
-//!     println!("Received: {} bytes", msg.payload.len());
-//! }
-//!
-//! // Commit after processing
-//! let tokens: Vec<_> = messages.iter().map(|m| m.token.clone()).collect();
-//! transport.commit(&tokens).await?;
+//! // Factory creates the right backend from config
+//! let sender: Box<dyn TransportSender> = transport::sender_from_config("transport.output").await?;
+//! sender.send("events.land", payload).await;
 //! ```
 
 mod detect;
 mod error;
+pub mod factory;
 mod payload;
 mod traits;
 mod types;
@@ -77,9 +78,25 @@ pub mod vector_compat;
 #[cfg(feature = "transport-memory")]
 pub mod memory;
 
-// Re-exports
+#[cfg(feature = "transport-pipe")]
+pub mod pipe;
+
+#[cfg(feature = "transport-file")]
+pub mod file;
+
+#[cfg(feature = "transport-http")]
+pub mod http;
+
+#[cfg(feature = "transport-redis")]
+pub mod redis_transport;
+
+pub mod routed;
+
+// Re-exports — traits and factory
 pub use error::{TransportError, TransportResult};
-pub use traits::{CommitToken, Transport};
+pub use factory::AnySender;
+pub use routed::RoutedSender;
+pub use traits::{CommitToken, Transport, TransportBase, TransportReceiver, TransportSender};
 pub use types::{Message, SendResult, TransportConfig, TransportType};
 
 #[cfg(feature = "transport-kafka")]
@@ -94,7 +111,14 @@ pub use vector_compat::{VectorCompatClient, VectorCompatService};
 #[cfg(feature = "transport-memory")]
 pub use memory::{MemoryConfig, MemoryToken, MemoryTransport};
 
-// Note: Transport instances are created directly via their constructors
-// (e.g., KafkaTransport::new(), GrpcTransport::new(), MemoryTransport::new())
-// rather than through a factory function, because each transport has a
-// different Token associated type that can't be erased without losing type safety.
+#[cfg(feature = "transport-pipe")]
+pub use pipe::{PipeToken, PipeTransport, PipeTransportConfig};
+
+#[cfg(feature = "transport-file")]
+pub use file::{FileToken, FileTransport, FileTransportConfig};
+
+#[cfg(feature = "transport-http")]
+pub use http::{HttpToken, HttpTransport, HttpTransportConfig};
+
+#[cfg(feature = "transport-redis")]
+pub use redis_transport::{RedisToken, RedisTransport, RedisTransportConfig};

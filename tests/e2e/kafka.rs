@@ -628,7 +628,7 @@ async fn test_kafka_admin_describe_topic() {
 #[tokio::test]
 #[ignore = "requires Kafka broker - set TEST_KAFKA_BROKERS to run"]
 async fn test_kafka_send_receive_batch() {
-    use hyperi_rustlib::transport::{Transport, kafka::KafkaTransport};
+    use hyperi_rustlib::transport::{TransportReceiver, TransportSender, kafka::KafkaTransport};
 
     let Some(mut config) = get_test_config() else {
         eprintln!("Skipping: TEST_KAFKA_BROKERS not set");

@@ -1,6 +1,6 @@
 // Project:   hyperi-rustlib
 // File:      src/transport/traits.rs
-// Purpose:   Transport trait definitions
+// Purpose:   Transport trait definitions (sender + receiver split)
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
@@ -15,8 +15,6 @@ use std::future::Future;
 ///
 /// Each transport implementation provides its own token type that
 /// captures the information needed to acknowledge message processing.
-///
-/// Implementors must be `Clone`, `Send`, `Sync`, and `Debug`.
 pub trait CommitToken: Clone + Send + Sync + Debug + Display + 'static {
     /// Get a string representation for logging/debugging.
     fn as_str(&self) -> String {
@@ -24,28 +22,49 @@ pub trait CommitToken: Clone + Send + Sync + Debug + Display + 'static {
     }
 }
 
-/// Transport-agnostic message delivery.
+/// Common transport operations shared by senders and receivers.
 ///
-/// All implementations deliver raw bytes (JSON or MsgPack) without
-/// any envelope or framing. Transport metadata is captured in tokens.
+/// Every transport implementation provides these lifecycle and
+/// introspection methods regardless of direction.
+pub trait TransportBase: Send + Sync {
+    /// Shutdown the transport gracefully.
+    fn close(&self) -> impl Future<Output = TransportResult<()>> + Send;
+
+    /// Check if the transport is healthy and connected.
+    fn is_healthy(&self) -> bool;
+
+    /// Get transport name for logging/metrics.
+    fn name(&self) -> &'static str;
+}
+
+/// Send-side transport.
 ///
-/// Async methods return `impl Future + Send` to ensure compatibility with
-/// `tokio::spawn` in downstream consumers.
+/// Extends `TransportBase` with send capability. The factory returns
+/// `AnySender` (enum dispatch) for runtime transport selection.
 ///
-/// # Type Parameter
+/// All implementations auto-emit `dfe_transport_*` Prometheus metrics
+/// when a `MetricsManager` recorder is installed.
+pub trait TransportSender: TransportBase {
+    /// Send raw bytes to a key/destination.
+    ///
+    /// The `key` semantics depend on the transport:
+    /// - Kafka: topic name
+    /// - gRPC: metadata routing key
+    /// - HTTP: URL path suffix or ignored
+    /// - File: filename suffix or ignored
+    /// - Redis: stream name
+    /// - Pipe: ignored (single stdout)
+    fn send(&self, key: &str, payload: &[u8]) -> impl Future<Output = SendResult> + Send;
+}
+
+/// Receive-side transport — generic over commit token type.
 ///
-/// The `Token` associated type allows each transport to have its own
-/// commit token type (e.g., `KafkaToken`, `ZenohToken`, `MemoryToken`).
-pub trait Transport: Send + Sync {
+/// Extends `TransportBase` with receive and commit capability.
+/// Input stages (receiver, fetcher) use concrete implementations
+/// directly for type-safe token handling.
+pub trait TransportReceiver: TransportBase {
     /// The token type for this transport.
     type Token: CommitToken;
-
-    /// Send raw bytes to a key/topic.
-    ///
-    /// Returns `SendResult::Ok` on success, `SendResult::Backpressured`
-    /// if the transport cannot accept more messages, or `SendResult::Fatal`
-    /// on unrecoverable errors.
-    fn send(&self, key: &str, payload: &[u8]) -> impl Future<Output = SendResult> + Send;
 
     /// Receive up to `max` messages.
     ///
@@ -58,19 +77,20 @@ pub trait Transport: Send + Sync {
 
     /// Commit/acknowledge processed messages.
     ///
-    /// For Kafka: commits consumer offsets.
-    /// For Zenoh: no-op (no persistence).
-    /// For Memory: advances internal sequence.
+    /// - Kafka: commits consumer offsets
+    /// - gRPC: no-op (no persistence)
+    /// - Redis: XACK
+    /// - File: advances read position
+    /// - Memory: advances internal sequence
     fn commit(&self, tokens: &[Self::Token]) -> impl Future<Output = TransportResult<()>> + Send;
-
-    /// Shutdown gracefully.
-    ///
-    /// Flushes pending messages and closes connections.
-    fn close(&self) -> impl Future<Output = TransportResult<()>> + Send;
-
-    /// Check if the transport is healthy and connected.
-    fn is_healthy(&self) -> bool;
-
-    /// Get transport name for logging/metrics.
-    fn name(&self) -> &'static str;
 }
+
+/// Combined transport — implements both send and receive.
+///
+/// Convenience trait for transports that support bidirectional communication.
+/// Most concrete implementations (Kafka, gRPC, Memory, Redis, File, Pipe)
+/// implement this. Automatically implemented via blanket impl.
+pub trait Transport: TransportSender + TransportReceiver {}
+
+/// Blanket impl: anything that implements both traits is a Transport.
+impl<T: TransportSender + TransportReceiver> Transport for T {}
