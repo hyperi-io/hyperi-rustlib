@@ -71,6 +71,22 @@ impl Default for PipeTransportConfig {
     }
 }
 
+impl PipeTransportConfig {
+    /// Load from the config cascade under the `transport.pipe` key.
+    #[must_use]
+    pub fn from_cascade() -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.pipe")
+            {
+                return tc;
+            }
+        }
+        Self::default()
+    }
+}
+
 /// Unix pipe transport (stdin/stdout).
 ///
 /// Send writes newline-delimited payloads to stdout.
@@ -88,6 +104,12 @@ impl PipeTransport {
     /// Create a new pipe transport.
     #[must_use]
     pub fn new(config: &PipeTransportConfig) -> Self {
+        #[cfg(feature = "logger")]
+        tracing::info!(
+            recv_timeout_ms = config.recv_timeout_ms,
+            "Pipe transport opened"
+        );
+
         Self {
             stdin: tokio::sync::Mutex::new(BufReader::new(tokio::io::stdin())),
             stdout: tokio::sync::Mutex::new(tokio::io::stdout()),
@@ -141,6 +163,12 @@ impl TransportSender for PipeTransport {
         if let Err(e) = stdout.flush().await {
             return SendResult::Fatal(TransportError::Send(format!("stdout flush failed: {e}")));
         }
+
+        #[cfg(feature = "logger")]
+        tracing::debug!(
+            bytes = payload.len(),
+            "Pipe transport: message sent to stdout"
+        );
 
         #[cfg(feature = "metrics")]
         metrics::counter!("dfe_transport_sent_total", "transport" => "pipe").increment(1);
@@ -227,6 +255,14 @@ impl TransportReceiver for PipeTransport {
                     return Err(TransportError::Recv(format!("stdin read failed: {e}")));
                 }
             }
+        }
+
+        #[cfg(feature = "logger")]
+        if !messages.is_empty() {
+            tracing::debug!(
+                lines = messages.len(),
+                "Pipe transport: batch received from stdin"
+            );
         }
 
         Ok(messages)

@@ -132,6 +132,22 @@ impl Default for RedisTransportConfig {
     }
 }
 
+impl RedisTransportConfig {
+    /// Load from the config cascade under the `transport.redis` key.
+    #[must_use]
+    pub fn from_cascade() -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.redis")
+            {
+                return tc;
+            }
+        }
+        Self::default()
+    }
+}
+
 /// Redis/Valkey Streams transport.
 ///
 /// Supports both send (`XADD`) and receive (`XREADGROUP`) operations.
@@ -167,6 +183,14 @@ impl RedisTransport {
                     config.url
                 ))
             })?;
+
+        #[cfg(feature = "logger")]
+        tracing::info!(
+            url = %config.url,
+            stream = ?config.stream,
+            group = %config.group,
+            "Redis transport opened"
+        );
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -267,14 +291,22 @@ impl TransportSender for RedisTransport {
 
         match result {
             Ok(_entry_id) => {
+                #[cfg(feature = "logger")]
+                tracing::debug!(stream = %stream, "Redis transport: XADD sent");
+
                 #[cfg(feature = "metrics")]
                 metrics::counter!("dfe_transport_sent_total", "transport" => "redis").increment(1);
 
                 SendResult::Ok
             }
-            Err(e) => SendResult::Fatal(TransportError::Send(format!(
-                "XADD to stream '{stream}' failed: {e}"
-            ))),
+            Err(e) => {
+                #[cfg(feature = "logger")]
+                tracing::warn!(error = %e, stream = %stream, "Redis transport: XADD error");
+
+                SendResult::Fatal(TransportError::Send(format!(
+                    "XADD to stream '{stream}' failed: {e}"
+                )))
+            }
         }
     }
 }
@@ -308,6 +340,9 @@ impl TransportReceiver for RedisTransport {
             .xread_options(&[&stream_name], &[">"], &opts)
             .await
             .map_err(|e| {
+                #[cfg(feature = "logger")]
+                tracing::warn!(error = %e, stream = %stream_name, "Redis transport: XREADGROUP error");
+
                 TransportError::Recv(format!("XREADGROUP on stream '{stream_name}' failed: {e}"))
             })?;
 
@@ -337,6 +372,14 @@ impl TransportReceiver for RedisTransport {
                     format,
                 });
             }
+        }
+
+        #[cfg(feature = "logger")]
+        if !messages.is_empty() {
+            tracing::debug!(
+                messages = messages.len(),
+                "Redis transport: XREADGROUP received"
+            );
         }
 
         #[cfg(feature = "metrics")]
@@ -371,9 +414,15 @@ impl TransportReceiver for RedisTransport {
                 .xack(*stream, &self.config.group, &id_refs)
                 .await
                 .map_err(|e| {
+                    #[cfg(feature = "logger")]
+                    tracing::warn!(error = %e, stream = %stream, "Redis transport: XACK error");
+
                     TransportError::Commit(format!("XACK on stream '{stream}' failed: {e}"))
                 })?;
         }
+
+        #[cfg(feature = "logger")]
+        tracing::debug!(count = tokens.len(), "Redis transport: XACK committed");
 
         Ok(())
     }

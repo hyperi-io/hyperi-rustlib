@@ -67,6 +67,9 @@ pub struct GrpcTransport {
     /// Whether the transport is closed.
     closed: AtomicBool,
 
+    /// Shared healthy flag — read by health registry closure, written by close().
+    healthy: Arc<AtomicBool>,
+
     /// Receive timeout (milliseconds).
     recv_timeout_ms: u64,
 
@@ -170,12 +173,27 @@ impl GrpcTransport {
             server_handle = Some(handle);
         }
 
+        let healthy = Arc::new(AtomicBool::new(true));
+
+        #[cfg(feature = "health")]
+        {
+            let h = Arc::clone(&healthy);
+            crate::health::HealthRegistry::register("transport:grpc", move || {
+                if h.load(Ordering::Relaxed) {
+                    crate::health::HealthStatus::Healthy
+                } else {
+                    crate::health::HealthStatus::Unhealthy
+                }
+            });
+        }
+
         Ok(Self {
             client,
             receiver,
             shutdown_tx,
             _server_handle: server_handle,
             closed: AtomicBool::new(false),
+            healthy,
             recv_timeout_ms: config.recv_timeout_ms,
             #[cfg(feature = "metrics")]
             inflight: AtomicU64::new(0),
@@ -186,6 +204,7 @@ impl GrpcTransport {
 impl TransportBase for GrpcTransport {
     async fn close(&self) -> TransportResult<()> {
         self.closed.store(true, Ordering::Relaxed);
+        self.healthy.store(false, Ordering::Relaxed);
 
         // Signal server shutdown
         // Note: we can't take from Option behind &self, so we use a flag
@@ -194,7 +213,7 @@ impl TransportBase for GrpcTransport {
     }
 
     fn is_healthy(&self) -> bool {
-        let healthy = !self.closed.load(Ordering::Relaxed);
+        let healthy = self.healthy.load(Ordering::Relaxed);
         #[cfg(feature = "metrics")]
         metrics::gauge!("dfe_transport_healthy", "transport" => "grpc").set(if healthy {
             1.0

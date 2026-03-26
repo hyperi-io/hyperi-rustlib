@@ -150,12 +150,25 @@ pub async fn drain_loop<S: Sink>(
 ) {
     let mut drainer = Drainer::new(strategy);
 
+    #[cfg(feature = "shutdown")]
+    let global_shutdown = crate::shutdown::token();
+
     loop {
-        // Check for shutdown
+        // Check for shutdown (local notify or global shutdown token)
         tokio::select! {
             () = shutdown.notified() => {
                 #[cfg(feature = "logger")]
-                tracing::info!("Drain task shutting down");
+                tracing::info!("Drain task shutting down (local notify)");
+                return;
+            }
+            () = async {
+                #[cfg(feature = "shutdown")]
+                global_shutdown.cancelled().await;
+                #[cfg(not(feature = "shutdown"))]
+                std::future::pending::<()>().await;
+            } => {
+                #[cfg(feature = "logger")]
+                tracing::info!("Drain task shutting down (global shutdown)");
                 return;
             }
             () = tokio::time::sleep(interval) => {}

@@ -141,6 +141,20 @@ impl Default for HttpTransportConfig {
 }
 
 impl HttpTransportConfig {
+    /// Load from the config cascade under the `transport.http` key.
+    #[must_use]
+    pub fn from_cascade() -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.http")
+            {
+                return tc;
+            }
+        }
+        Self::default()
+    }
+
     /// Create a send-only config pointing at the given endpoint URL.
     #[must_use]
     pub fn sender(endpoint: &str) -> Self {
@@ -240,6 +254,13 @@ impl HttpTransport {
         } else {
             (None, None, None)
         };
+
+        #[cfg(feature = "logger")]
+        tracing::info!(
+            endpoint = ?config.endpoint,
+            listen = ?config.listen,
+            "HTTP transport opened"
+        );
 
         Ok(Self {
             client,
@@ -372,6 +393,9 @@ impl TransportSender for HttpTransport {
             .await
         {
             Ok(resp) if resp.status().is_success() => {
+                #[cfg(feature = "logger")]
+                tracing::debug!(url = %url, bytes = payload.len(), "HTTP transport: POST sent");
+
                 #[cfg(feature = "metrics")]
                 metrics::counter!("dfe_transport_sent_total", "transport" => "http").increment(1);
                 SendResult::Ok
@@ -380,12 +404,18 @@ impl TransportSender for HttpTransport {
                 if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS
                     || resp.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE =>
             {
+                #[cfg(feature = "logger")]
+                tracing::warn!(status = %resp.status(), url = %url, "HTTP transport: backpressure");
+
                 #[cfg(feature = "metrics")]
                 metrics::counter!("dfe_transport_backpressured_total", "transport" => "http")
                     .increment(1);
                 SendResult::Backpressured
             }
             Ok(resp) => {
+                #[cfg(feature = "logger")]
+                tracing::warn!(status = %resp.status(), url = %url, "HTTP transport: send error");
+
                 #[cfg(feature = "metrics")]
                 metrics::counter!("dfe_transport_send_errors_total", "transport" => "http")
                     .increment(1);
@@ -396,6 +426,9 @@ impl TransportSender for HttpTransport {
                 )))
             }
             Err(e) => {
+                #[cfg(feature = "logger")]
+                tracing::warn!(error = %e, url = %url, "HTTP transport: request failed");
+
                 #[cfg(feature = "metrics")]
                 metrics::counter!("dfe_transport_send_errors_total", "transport" => "http")
                     .increment(1);
@@ -462,6 +495,11 @@ impl TransportReceiver for HttpTransport {
                 if let Some(msg) = result {
                     messages.push(msg);
                 }
+            }
+
+            #[cfg(feature = "logger")]
+            if !messages.is_empty() {
+                tracing::debug!(messages = messages.len(), "HTTP transport: batch received");
             }
 
             Ok(messages)

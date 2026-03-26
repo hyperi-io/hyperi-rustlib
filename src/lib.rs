@@ -70,6 +70,12 @@ pub mod kafka_config;
 #[cfg(feature = "runtime")]
 pub mod runtime;
 
+#[cfg(feature = "shutdown")]
+pub mod shutdown;
+
+#[cfg(feature = "health")]
+pub mod health;
+
 #[cfg(feature = "config")]
 pub mod config;
 
@@ -145,6 +151,9 @@ pub use kafka_config::{
 
 #[cfg(feature = "runtime")]
 pub use runtime::RuntimePaths;
+
+#[cfg(feature = "health")]
+pub use health::{HealthRegistry, HealthStatus};
 
 #[cfg(feature = "config")]
 pub use config::{Config, ConfigError, ConfigOptions};

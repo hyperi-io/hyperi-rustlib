@@ -80,6 +80,22 @@ impl Default for FileTransportConfig {
     }
 }
 
+impl FileTransportConfig {
+    /// Load from the config cascade under the `transport.file` key.
+    #[must_use]
+    pub fn from_cascade() -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.file")
+            {
+                return tc;
+            }
+        }
+        Self::default()
+    }
+}
+
 /// Internal state for the write side.
 struct WriteState {
     file: tokio::fs::File,
@@ -115,6 +131,9 @@ impl FileTransport {
         if config.path.is_empty() {
             return Err(TransportError::Config("file path is empty".into()));
         }
+
+        #[cfg(feature = "logger")]
+        tracing::info!(path = %config.path, append = config.append, "File transport opened");
 
         Ok(Self {
             config: config.clone(),
@@ -252,14 +271,23 @@ impl TransportSender for FileTransport {
 
         // Write payload + newline as a single operation
         if let Err(e) = state.file.write_all(payload).await {
+            #[cfg(feature = "logger")]
+            tracing::warn!(error = %e, "File transport: write error");
             return SendResult::Fatal(TransportError::Send(format!("write failed: {e}")));
         }
         if let Err(e) = state.file.write_all(b"\n").await {
+            #[cfg(feature = "logger")]
+            tracing::warn!(error = %e, "File transport: newline write error");
             return SendResult::Fatal(TransportError::Send(format!("write newline failed: {e}")));
         }
         if let Err(e) = state.file.flush().await {
+            #[cfg(feature = "logger")]
+            tracing::warn!(error = %e, "File transport: flush error");
             return SendResult::Fatal(TransportError::Send(format!("flush failed: {e}")));
         }
+
+        #[cfg(feature = "logger")]
+        tracing::debug!(bytes = payload.len(), "File transport: message sent");
 
         #[cfg(feature = "metrics")]
         metrics::counter!("dfe_transport_sent_total", "transport" => "file").increment(1);
@@ -322,6 +350,11 @@ impl TransportReceiver for FileTransport {
             });
         }
 
+        #[cfg(feature = "logger")]
+        if !messages.is_empty() {
+            tracing::debug!(lines = messages.len(), "File transport: batch received");
+        }
+
         #[cfg(feature = "metrics")]
         if !messages.is_empty() {
             metrics::counter!("dfe_transport_sent_total", "transport" => "file")
@@ -335,6 +368,12 @@ impl TransportReceiver for FileTransport {
         if let Some(max_token) = tokens.iter().max_by_key(|t| t.offset) {
             let path = Path::new(&self.config.path);
             Self::save_position(path, max_token.offset).await?;
+
+            #[cfg(feature = "logger")]
+            tracing::debug!(
+                offset = max_token.offset,
+                "File transport: position committed"
+            );
         }
         Ok(())
     }
