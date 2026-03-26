@@ -91,7 +91,17 @@ impl Cache {
     /// Returns `None` if not found or expired.
     pub async fn get<T: serde::de::DeserializeOwned>(&self, source: &str, key: &str) -> Option<T> {
         let full_key = format!("{source}:{key}");
-        let bytes = self.inner.get(&full_key).await?;
+        let bytes = self.inner.get(&full_key).await;
+
+        #[cfg(feature = "metrics")]
+        if bytes.is_some() {
+            metrics::counter!("dfe_cache_hits_total", "source" => source.to_string()).increment(1);
+        } else {
+            metrics::counter!("dfe_cache_misses_total", "source" => source.to_string())
+                .increment(1);
+        }
+
+        let bytes = bytes?;
         serde_json::from_slice(&bytes).ok()
     }
 
@@ -112,6 +122,9 @@ impl Cache {
 
         self.inner.insert(full_key.clone(), bytes).await;
 
+        #[cfg(feature = "metrics")]
+        metrics::gauge!("dfe_cache_entries").set(self.inner.entry_count() as f64);
+
         // Track key for source-level invalidation
         if let Ok(mut keys) = self.source_keys.lock() {
             keys.entry(source.to_string()).or_default().push(full_key);
@@ -130,6 +143,9 @@ impl Cache {
         for key in keys {
             self.inner.invalidate(&key).await;
         }
+
+        #[cfg(feature = "metrics")]
+        metrics::gauge!("dfe_cache_entries").set(self.inner.entry_count() as f64);
     }
 
     /// Invalidate a single entry.
