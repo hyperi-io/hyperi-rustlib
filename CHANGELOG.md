@@ -1,3 +1,10 @@
+# [1.17.0-dev.16](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.15...v1.17.0-dev.16) (2026-03-26)
+
+
+### Bug Fixes
+
+* add health registry, shutdown manager, and wire all modules ([21efaa2](https://github.com/hyperi-io/hyperi-rustlib/commit/21efaa2a4d61901dfe479d655ef9af1a5c437580))
+
 # [1.17.0-dev.15](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.14...v1.17.0-dev.15) (2026-03-26)
 
 
