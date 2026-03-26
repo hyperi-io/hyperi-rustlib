@@ -14,6 +14,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::net::TcpListener;
+#[cfg(not(feature = "shutdown"))]
 use tokio::signal;
 use tokio::sync::watch;
 
@@ -29,10 +30,21 @@ impl HttpServer {
     /// Create a new HTTP server with the given configuration.
     #[must_use]
     pub fn new(config: HttpServerConfig) -> Self {
-        Self {
-            config,
-            ready: Arc::new(AtomicBool::new(true)),
+        let ready = Arc::new(AtomicBool::new(true));
+
+        #[cfg(feature = "health")]
+        {
+            let r = Arc::clone(&ready);
+            crate::health::HealthRegistry::register("http_server", move || {
+                if r.load(Ordering::Relaxed) {
+                    crate::health::HealthStatus::Healthy
+                } else {
+                    crate::health::HealthStatus::Unhealthy
+                }
+            });
         }
+
+        Self { config, ready }
     }
 
     /// Create a new HTTP server bound to the specified address.
@@ -70,7 +82,15 @@ impl HttpServer {
     ///
     /// Returns an error if binding fails or the server encounters an error.
     pub async fn serve(self, app: Router) -> Result<()> {
-        self.serve_with_shutdown(app, shutdown_signal()).await
+        #[cfg(feature = "shutdown")]
+        {
+            let token = crate::shutdown::install_signal_handler();
+            self.serve_with_shutdown(app, token.cancelled_owned()).await
+        }
+        #[cfg(not(feature = "shutdown"))]
+        {
+            self.serve_with_shutdown(app, shutdown_signal()).await
+        }
     }
 
     /// Serve with a custom shutdown signal.
@@ -176,6 +196,11 @@ impl HttpServer {
             );
         }
 
+        #[cfg(all(feature = "health", feature = "serde_json"))]
+        if self.config.enable_health_endpoints {
+            router = router.route("/health/detailed", get(health_detailed));
+        }
+
         #[cfg(feature = "config")]
         if self.config.enable_config_endpoint {
             router = router.route("/config", get(config_dump));
@@ -220,12 +245,33 @@ async fn health_live() -> impl IntoResponse {
 }
 
 /// Readiness endpoint handler.
+///
+/// Checks the local ready flag AND (when the `health` feature is enabled)
+/// the global [`HealthRegistry`](crate::health::HealthRegistry). Both must
+/// be true for a 200 response; otherwise 503.
 async fn health_ready(ready: Arc<AtomicBool>) -> impl IntoResponse {
-    if ready.load(Ordering::SeqCst) {
+    let locally_ready = ready.load(Ordering::SeqCst);
+
+    #[cfg(feature = "health")]
+    let registry_ready = crate::health::HealthRegistry::is_ready();
+    #[cfg(not(feature = "health"))]
+    let registry_ready = true;
+
+    if locally_ready && registry_ready {
         (StatusCode::OK, "OK")
     } else {
         (StatusCode::SERVICE_UNAVAILABLE, "NOT READY")
     }
+}
+
+/// Detailed health endpoint returning per-component status as JSON.
+///
+/// Returns the output of [`HealthRegistry::to_json()`](crate::health::HealthRegistry::to_json),
+/// which includes overall status and each registered component's state.
+#[cfg(all(feature = "health", feature = "serde_json"))]
+async fn health_detailed() -> impl IntoResponse {
+    let json = crate::health::HealthRegistry::to_json();
+    axum::Json(json)
 }
 
 /// Config registry dump endpoint handler (redacted).
@@ -254,6 +300,9 @@ async fn config_dump() -> impl IntoResponse {
 }
 
 /// Wait for a shutdown signal (SIGTERM or SIGINT).
+///
+/// Used as fallback when the `shutdown` feature is not enabled.
+#[cfg(not(feature = "shutdown"))]
 async fn shutdown_signal() {
     let ctrl_c = async {
         signal::ctrl_c()
@@ -309,6 +358,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_ready_when_ready() {
+        #[cfg(feature = "health")]
+        crate::health::HealthRegistry::reset();
+
         let config = HttpServerConfig::default();
         let server = HttpServer::new(config);
         server.set_ready(true);

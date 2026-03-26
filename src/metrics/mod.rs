@@ -759,7 +759,14 @@ async fn handle_connection(
     } else if request_line.starts_with("GET /readyz")
         || request_line.starts_with("GET /health/ready")
     {
-        let ready = readiness_fn.as_ref().is_none_or(|f| f());
+        let callback_ready = readiness_fn.as_ref().is_none_or(|f| f());
+
+        #[cfg(feature = "health")]
+        let registry_ready = crate::health::HealthRegistry::is_ready();
+        #[cfg(not(feature = "health"))]
+        let registry_ready = true;
+
+        let ready = callback_ready && registry_ready;
         if ready {
             ("200 OK", r#"{"status":"ready"}"#.to_string())
         } else {
@@ -787,11 +794,22 @@ async fn handle_connection(
 }
 
 /// Readiness response helper for axum endpoints.
+///
+/// Checks the caller-supplied readiness callback AND (when the `health`
+/// feature is enabled) the global [`HealthRegistry`](crate::health::HealthRegistry).
+/// Both must be true for a 200 response.
 #[cfg(all(feature = "metrics", feature = "http-server"))]
 fn readiness_response(rf: Option<ReadinessFn>) -> axum::response::Response {
     use axum::response::IntoResponse;
 
-    let ready = rf.as_ref().is_none_or(|f| f());
+    let callback_ready = rf.as_ref().is_none_or(|f| f());
+
+    #[cfg(feature = "health")]
+    let registry_ready = crate::health::HealthRegistry::is_ready();
+    #[cfg(not(feature = "health"))]
+    let registry_ready = true;
+
+    let ready = callback_ready && registry_ready;
     if ready {
         (
             [(axum::http::header::CONTENT_TYPE, "application/json")],
