@@ -108,6 +108,34 @@ CARGO_BUILD_JOBS=2 cargo clippy
 
 ---
 
+## Core Pillars (Non-Negotiable Design Decision)
+
+Every module in hyperi-rustlib MUST auto-integrate with the core infrastructure
+pillars using the **global singleton pattern**. Services get observability for
+free — no handles passed, no opt-in, no extra code in downstream apps.
+
+| Pillar | Singleton | Module | Pattern |
+|--------|-----------|--------|---------|
+| Config | `OnceLock<Config>` | `config` | `T::from_cascade()` reads from global figment |
+| Logging | Global `tracing` subscriber | `logger` | `tracing::info!()` macros — always available |
+| Metrics | Global `metrics` recorder | `metrics` | `metrics::counter!()` macros — no-op if no recorder |
+| Tracing | Global OTel subscriber | `otel` | Trace context auto-propagated (planned: always-on) |
+| Health | Global `HealthState` | `http-server` | Unified readiness flag (planned: auto-wired) |
+| Shutdown | `CancellationToken` | (planned) | Unified graceful shutdown (planned: auto-wired) |
+
+**Rule:** When adding ANY new module or feature to rustlib:
+1. If it has configurable behaviour → load from cascade via `from_cascade()`
+2. If it does I/O or processing → add `#[cfg(feature = "metrics")]` counters/gauges/histograms
+3. If it can fail or has interesting state → add `tracing::` log calls
+4. If it affects service health → report into unified `HealthState`
+
+**The goal:** A DFE app that does `MetricsManager::new("dfe_loader")` +
+`logger::setup_default()` + `config::setup()` at startup gets full
+observability across every rustlib feature it uses — transport, tiered-sink,
+spool, cache, secrets, HTTP client, DLQ — with zero additional wiring.
+
+---
+
 ## Decisions
 
 - **Dynamic linking for C deps** — rdkafka, libgit2, zstd, zlib, openssl all link against system libs via pkg-config. Eliminates ~30min C++ build for rdkafka. aws-lc-sys is the one exception (AWS SDK hardcodes it, no opt-out).
