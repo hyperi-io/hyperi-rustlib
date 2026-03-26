@@ -94,7 +94,17 @@ impl DlqBackend for FileDlq {
             .map_err(|e| DlqError::Serialization(format!("failed to serialise DLQ entry: {e}")))?;
         line.push(b'\n');
 
-        self.writer.write_line(&line)?;
+        if let Err(e) = self.writer.write_line(&line) {
+            #[cfg(feature = "metrics")]
+            metrics::counter!("dfe_dlq_write_errors_total").increment(1);
+            return Err(e.into());
+        }
+
+        #[cfg(feature = "metrics")]
+        {
+            metrics::counter!("dfe_dlq_entries_total").increment(1);
+            metrics::gauge!("dfe_dlq_entries_written").set(self.writer.lines_written() as f64);
+        }
 
         debug!(
             service = %self.service_name,

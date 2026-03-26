@@ -146,6 +146,8 @@ impl<S: Sink> TieredSink<S> {
             match self.try_hot_path(data).await {
                 Ok(()) => {
                     self.hot_path_count.fetch_add(1, AtomicOrdering::Relaxed);
+                    #[cfg(feature = "metrics")]
+                    ::metrics::counter!("dfe_spool_hot_path_total").increment(1);
                     return Ok(());
                 }
                 Err(TieredSinkError::Sink(_)) => {
@@ -161,12 +163,21 @@ impl<S: Sink> TieredSink<S> {
         // Cold path: spool to disk
         self.spool_message(data).await?;
         self.cold_path_count.fetch_add(1, AtomicOrdering::Relaxed);
+        #[cfg(feature = "metrics")]
+        ::metrics::counter!("dfe_spool_cold_path_total").increment(1);
         Ok(())
     }
 
     /// Determine if we should attempt the hot path.
     async fn should_use_hot_path(&self) -> bool {
         let circuit_state = self.circuit.state().await;
+
+        #[cfg(feature = "metrics")]
+        ::metrics::gauge!("dfe_spool_circuit_state").set(match circuit_state {
+            CircuitState::Closed => 0.0,
+            CircuitState::HalfOpen => 1.0,
+            CircuitState::Open => 2.0,
+        });
 
         match circuit_state {
             CircuitState::Open => false,
@@ -195,6 +206,8 @@ impl<S: Sink> TieredSink<S> {
             }
             Ok(Err(SinkError::Unavailable)) => {
                 self.circuit.record_failure().await;
+                #[cfg(feature = "metrics")]
+                ::metrics::counter!("dfe_spool_circuit_trips_total").increment(1);
                 Err(TieredSinkError::Spool("sink unavailable".into()))
             }
             Ok(Err(SinkError::Fatal(e))) => {
@@ -203,6 +216,8 @@ impl<S: Sink> TieredSink<S> {
             }
             Err(_timeout) => {
                 self.circuit.record_failure().await;
+                #[cfg(feature = "metrics")]
+                ::metrics::counter!("dfe_spool_circuit_trips_total").increment(1);
                 Err(TieredSinkError::Spool("send timeout".into()))
             }
         }
@@ -249,6 +264,14 @@ impl<S: Sink> TieredSink<S> {
         self.spool_count.fetch_add(1, AtomicOrdering::Relaxed);
         self.spool_bytes
             .fetch_add(compressed_len, AtomicOrdering::Relaxed);
+
+        #[cfg(feature = "metrics")]
+        {
+            ::metrics::gauge!("dfe_spool_messages")
+                .set(self.spool_count.load(AtomicOrdering::Relaxed) as f64);
+            ::metrics::gauge!("dfe_spool_bytes")
+                .set(self.spool_bytes.load(AtomicOrdering::Relaxed) as f64);
+        }
 
         #[cfg(feature = "logger")]
         tracing::debug!(
@@ -453,7 +476,15 @@ async fn disk_capacity_poller(
             () = tokio::time::sleep(poll_interval) => {}
         }
 
-        let available = check_disk_space(&spool_path).is_none_or(|(total, avail)| {
+        let disk_space = check_disk_space(&spool_path);
+
+        #[cfg(feature = "metrics")]
+        if let Some((total, avail)) = disk_space {
+            ::metrics::gauge!("dfe_spool_disk_available_bytes").set(avail as f64);
+            ::metrics::gauge!("dfe_spool_disk_total_bytes").set(total as f64);
+        }
+
+        let available = disk_space.is_none_or(|(total, avail)| {
             if total == 0 {
                 return true;
             }
