@@ -28,15 +28,17 @@ All core pillar work is done. Need to:
 - [ ] Break-glass: static bearer token from secrets module
 - [ ] Design decision: dfe-engine as SSoT, rustlib validates tokens only
 
-### Downstream Remediation
+### Downstream Remediation (agreed order)
 
-- [ ] Migrate dfe-loader to v2.0.0 (transport factory, remove boilerplate)
-- [ ] Migrate dfe-receiver to v2.0.0 (RoutedSender, transport factory)
-- [ ] Migrate dfe-archiver to v2.0.0
-- [ ] Migrate dfe-fetcher to v2.0.0
-- [ ] Migrate dfe-transform-wasm to v2.0.0
-- [ ] Migrate dfe-transform-vrl to v2.0.0
-- [ ] Audit hyperi-pylib and write alignment plan
+1. [ ] Migrate dfe-receiver to v2.0.0 (RoutedSender, transport factory, 20 Transport refs)
+2. [ ] Migrate dfe-loader to v2.0.0 (transport factory, 81 Transport refs, DLQ, most complex)
+3. [ ] Migrate dfe-archiver to v2.0.0
+4. [ ] Migrate dfe-fetcher to v2.0.0 (data originator, possible RoutedSender)
+5. [ ] Migrate dfe-transform-vector to v2.0.0
+6. [ ] Migrate dfe-transform-vrl to v2.0.0
+7. [ ] Migrate dfe-transform-elastic to v2.0.0
+8. [ ] Migrate dfe-transform-splack to v2.0.0
+9. [ ] Audit hyperi-pylib and write alignment plan
 
 ---
 
