@@ -1,3 +1,10 @@
+## [1.19.7](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.6...v1.19.7) (2026-03-26)
+
+
+### Bug Fixes
+
+* add metrics instrumentation to gRPC transport ([85839b7](https://github.com/hyperi-io/hyperi-rustlib/commit/85839b78df82daf01153b93bd27f42bd31604a25))
+
 ## [1.19.6](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.19.5...v1.19.6) (2026-03-24)
 
 
