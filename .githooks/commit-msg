@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Conventional commit validation hook
+# Install: git config core.hooksPath .githooks
+
+if command -v hyperi-ci >/dev/null 2>&1; then
+    hyperi-ci check-commit "$1"
+elif command -v uvx >/dev/null 2>&1; then
+    uvx hyperi-ci check-commit "$1"
+else
+    echo "Warning: hyperi-ci not found — skipping commit validation" >&2
+    exit 0
+fi

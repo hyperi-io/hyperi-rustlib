@@ -6,9 +6,7 @@
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 
 branches:
-  - name: main
-    prerelease: dev
-  - release
+  - main
 
 tagFormat: "v${version}"
 
@@ -48,6 +46,26 @@ plugins:
           release: false
         - type: wip
           release: false
+        - type: cleanup
+          release: false
+        - type: data
+          release: false
+        - type: debt
+          release: false
+        - type: design
+          release: false
+        - type: infra
+          release: false
+        - type: meta
+          release: false
+        - type: ops
+          release: false
+        - type: review
+          release: false
+        - type: spike
+          release: false
+        - type: ui
+          release: false
 
   - "@semantic-release/release-notes-generator"
 
@@ -63,5 +81,3 @@ plugins:
         - VERSION
         - Cargo.toml
       message: "chore: version ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
-
-  - "@semantic-release/github"
