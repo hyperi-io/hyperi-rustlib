@@ -81,7 +81,20 @@ impl HttpClient {
 
     /// Send a GET request.
     pub async fn get(&self, url: &str) -> Result<Response, reqwest_middleware::Error> {
-        self.inner.get(url).send().await
+        #[cfg(feature = "metrics")]
+        let start = std::time::Instant::now();
+
+        let result = self.inner.get(url).send().await;
+
+        #[cfg(feature = "metrics")]
+        {
+            let status = if result.is_ok() { "success" } else { "error" };
+            metrics::counter!("dfe_http_client_requests_total", "method" => "GET", "status" => status).increment(1);
+            metrics::histogram!("dfe_http_client_duration_seconds", "method" => "GET")
+                .record(start.elapsed().as_secs_f64());
+        }
+
+        result
     }
 
     /// Send a POST request with a JSON body.
@@ -90,12 +103,26 @@ impl HttpClient {
         url: &str,
         body: &T,
     ) -> Result<Response, reqwest_middleware::Error> {
-        self.inner
+        #[cfg(feature = "metrics")]
+        let start = std::time::Instant::now();
+
+        let result = self
+            .inner
             .post(url)
             .header("content-type", "application/json")
             .body(serde_json::to_vec(body).unwrap_or_default())
             .send()
-            .await
+            .await;
+
+        #[cfg(feature = "metrics")]
+        {
+            let status = if result.is_ok() { "success" } else { "error" };
+            metrics::counter!("dfe_http_client_requests_total", "method" => "POST", "status" => status).increment(1);
+            metrics::histogram!("dfe_http_client_duration_seconds", "method" => "POST")
+                .record(start.elapsed().as_secs_f64());
+        }
+
+        result
     }
 
     /// Send a PUT request with a JSON body.
@@ -104,17 +131,44 @@ impl HttpClient {
         url: &str,
         body: &T,
     ) -> Result<Response, reqwest_middleware::Error> {
-        self.inner
+        #[cfg(feature = "metrics")]
+        let start = std::time::Instant::now();
+
+        let result = self
+            .inner
             .put(url)
             .header("content-type", "application/json")
             .body(serde_json::to_vec(body).unwrap_or_default())
             .send()
-            .await
+            .await;
+
+        #[cfg(feature = "metrics")]
+        {
+            let status = if result.is_ok() { "success" } else { "error" };
+            metrics::counter!("dfe_http_client_requests_total", "method" => "PUT", "status" => status).increment(1);
+            metrics::histogram!("dfe_http_client_duration_seconds", "method" => "PUT")
+                .record(start.elapsed().as_secs_f64());
+        }
+
+        result
     }
 
     /// Send a DELETE request.
     pub async fn delete(&self, url: &str) -> Result<Response, reqwest_middleware::Error> {
-        self.inner.delete(url).send().await
+        #[cfg(feature = "metrics")]
+        let start = std::time::Instant::now();
+
+        let result = self.inner.delete(url).send().await;
+
+        #[cfg(feature = "metrics")]
+        {
+            let status = if result.is_ok() { "success" } else { "error" };
+            metrics::counter!("dfe_http_client_requests_total", "method" => "DELETE", "status" => status).increment(1);
+            metrics::histogram!("dfe_http_client_duration_seconds", "method" => "DELETE")
+                .record(start.elapsed().as_secs_f64());
+        }
+
+        result
     }
 
     /// Access the underlying middleware client for custom requests.
