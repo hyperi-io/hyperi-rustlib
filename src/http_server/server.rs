@@ -196,6 +196,11 @@ impl HttpServer {
             );
         }
 
+        #[cfg(all(feature = "health", feature = "serde_json"))]
+        if self.config.enable_health_endpoints {
+            router = router.route("/health/detailed", get(health_detailed));
+        }
+
         #[cfg(feature = "config")]
         if self.config.enable_config_endpoint {
             router = router.route("/config", get(config_dump));
@@ -240,12 +245,33 @@ async fn health_live() -> impl IntoResponse {
 }
 
 /// Readiness endpoint handler.
+///
+/// Checks the local ready flag AND (when the `health` feature is enabled)
+/// the global [`HealthRegistry`](crate::health::HealthRegistry). Both must
+/// be true for a 200 response; otherwise 503.
 async fn health_ready(ready: Arc<AtomicBool>) -> impl IntoResponse {
-    if ready.load(Ordering::SeqCst) {
+    let locally_ready = ready.load(Ordering::SeqCst);
+
+    #[cfg(feature = "health")]
+    let registry_ready = crate::health::HealthRegistry::is_ready();
+    #[cfg(not(feature = "health"))]
+    let registry_ready = true;
+
+    if locally_ready && registry_ready {
         (StatusCode::OK, "OK")
     } else {
         (StatusCode::SERVICE_UNAVAILABLE, "NOT READY")
     }
+}
+
+/// Detailed health endpoint returning per-component status as JSON.
+///
+/// Returns the output of [`HealthRegistry::to_json()`](crate::health::HealthRegistry::to_json),
+/// which includes overall status and each registered component's state.
+#[cfg(all(feature = "health", feature = "serde_json"))]
+async fn health_detailed() -> impl IntoResponse {
+    let json = crate::health::HealthRegistry::to_json();
+    axum::Json(json)
 }
 
 /// Config registry dump endpoint handler (redacted).
@@ -332,6 +358,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_health_ready_when_ready() {
+        #[cfg(feature = "health")]
+        crate::health::HealthRegistry::reset();
+
         let config = HttpServerConfig::default();
         let server = HttpServer::new(config);
         server.set_ready(true);

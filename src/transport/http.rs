@@ -307,11 +307,26 @@ struct ReceiverState {
 async fn ingest_handler(
     axum::extract::State(state): axum::extract::State<ReceiverState>,
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    headers: axum::http::HeaderMap,
     body: axum::body::Bytes,
 ) -> axum::http::StatusCode {
     if body.is_empty() {
         return axum::http::StatusCode::BAD_REQUEST;
     }
+
+    // Extract W3C traceparent from incoming HTTP headers for distributed tracing
+    #[cfg(feature = "otel")]
+    if let Some(tp) = headers
+        .get(super::propagation::TRACEPARENT_HEADER)
+        .and_then(|v| v.to_str().ok())
+        && super::propagation::is_valid_traceparent(tp)
+    {
+        tracing::Span::current().record("traceparent", tp);
+    }
+
+    // Suppress unused variable warning when otel feature is disabled
+    #[cfg(not(feature = "otel"))]
+    let _ = &headers;
 
     let seq = state.sequence.fetch_add(1, Ordering::Relaxed);
     let format = PayloadFormat::detect(&body);
@@ -384,14 +399,20 @@ impl TransportSender for HttpTransport {
         #[cfg(feature = "metrics")]
         let start = std::time::Instant::now();
 
-        let result = match self
+        // Build request with optional W3C traceparent header for distributed tracing
+        let request_builder = self
             .client
             .post(&url)
-            .header("content-type", "application/octet-stream")
-            .body(payload.to_vec())
-            .send()
-            .await
-        {
+            .header("content-type", "application/octet-stream");
+
+        #[cfg(feature = "otel")]
+        let request_builder = if let Some(tp) = super::propagation::current_traceparent() {
+            request_builder.header(super::propagation::TRACEPARENT_HEADER, tp)
+        } else {
+            request_builder
+        };
+
+        let result = match request_builder.body(payload.to_vec()).send().await {
             Ok(resp) if resp.status().is_success() => {
                 #[cfg(feature = "logger")]
                 tracing::debug!(url = %url, bytes = payload.len(), "HTTP transport: POST sent");

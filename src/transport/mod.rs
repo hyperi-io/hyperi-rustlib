@@ -53,6 +53,7 @@ mod detect;
 mod error;
 pub mod factory;
 mod payload;
+pub mod propagation;
 mod traits;
 mod types;
 
