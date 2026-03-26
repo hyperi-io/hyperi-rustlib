@@ -8,7 +8,17 @@
 
 ## Current Tasks
 
-### Gap Analysis P2 — HTTP Client, Database URLs, Cache `[NEXT]`
+### Kafka Transport Metrics Parity with gRPC `[NEXT]`
+
+gRPC transport (v1.19.7) auto-emits `dfe_transport_*` metrics. Kafka transport does not — two gaps:
+
+1. **Add metrics instrumentation to `KafkaTransport::send()`** — emit `dfe_transport_sent_total{transport="kafka"}`, `dfe_transport_send_errors_total{transport="kafka"}`, `dfe_transport_backpressured_total{transport="kafka"}`, and send duration histogram, matching gRPC parity.
+
+2. **Wire `StatsContext` into `KafkaTransport`** — currently `new_with_context()` is a stub that ignores the context. The struct uses `DefaultConsumerContext` / plain `FutureProducer`, so `statistics.interval.ms` callbacks (set to 1000ms by all profiles) go to a no-op. Need to either make the struct generic over context (complicates `Transport` trait impl) or use `StatsContext` by default when the `metrics` feature is enabled. This enables `rdkafka_broker_rtt_avg_seconds`, `rdkafka_global_msg_cnt`, `rdkafka_topic_partition_consumer_lag`, etc.
+
+Downstream impact: dfe-fetcher, dfe-receiver, dfe-loader all use `KafkaTransport` and would get these for free once wired.
+
+### Gap Analysis P2 — HTTP Client, Database URLs, Cache
 
 - [ ] HTTP client module with retry middleware (reqwest + reqwest-middleware + reqwest-retry)
   - Wrap reqwest with exponential backoff, configurable timeouts
