@@ -17,7 +17,7 @@
 use std::time::Duration;
 
 use hyperi_rustlib::transport::grpc::{GrpcConfig, GrpcTransport};
-use hyperi_rustlib::transport::{SendResult, Transport};
+use hyperi_rustlib::transport::{SendResult, TransportBase, TransportReceiver, TransportSender};
 
 /// Find an available port for testing.
 async fn find_available_port() -> u16 {

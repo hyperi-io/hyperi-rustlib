@@ -70,7 +70,7 @@ pub use producer::{KafkaProducer, ProducerMetrics, ProducerProfile};
 pub use token::KafkaToken;
 
 use super::error::{TransportError, TransportResult};
-use super::traits::Transport;
+use super::traits::{TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{BaseConsumer, CommitMode, Consumer};
@@ -251,9 +251,23 @@ impl KafkaTransport {
     }
 }
 
-impl Transport for KafkaTransport {
-    type Token = KafkaToken;
+impl TransportBase for KafkaTransport {
+    async fn close(&self) -> TransportResult<()> {
+        self.closed.store(true, Ordering::Relaxed);
+        // rdkafka handles cleanup on drop
+        Ok(())
+    }
 
+    fn is_healthy(&self) -> bool {
+        !self.closed.load(Ordering::Relaxed)
+    }
+
+    fn name(&self) -> &'static str {
+        "kafka"
+    }
+}
+
+impl TransportSender for KafkaTransport {
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
@@ -306,6 +320,10 @@ impl Transport for KafkaTransport {
 
         result
     }
+}
+
+impl TransportReceiver for KafkaTransport {
+    type Token = KafkaToken;
 
     /// Receive a batch of messages.
     ///
@@ -434,20 +452,6 @@ impl Transport for KafkaTransport {
             .map_err(|e| TransportError::Commit(e.to_string()))?;
 
         Ok(())
-    }
-
-    async fn close(&self) -> TransportResult<()> {
-        self.closed.store(true, Ordering::Relaxed);
-        // rdkafka handles cleanup on drop
-        Ok(())
-    }
-
-    fn is_healthy(&self) -> bool {
-        !self.closed.load(Ordering::Relaxed)
-    }
-
-    fn name(&self) -> &'static str {
-        "kafka"
     }
 }
 

@@ -22,6 +22,14 @@ pub enum TransportType {
     Grpc,
     /// In-memory tokio channels (unit tests).
     Memory,
+    /// NDJSON file (debugging, audit trails, replay).
+    File,
+    /// Unix pipe (stdin/stdout, sidecar pattern).
+    Pipe,
+    /// HTTP/HTTPS (webhook delivery, REST ingest).
+    Http,
+    /// Redis/Valkey Streams (lightweight pub/sub).
+    Redis,
 }
 
 impl std::fmt::Display for TransportType {
@@ -30,6 +38,10 @@ impl std::fmt::Display for TransportType {
             Self::Kafka => write!(f, "kafka"),
             Self::Grpc => write!(f, "grpc"),
             Self::Memory => write!(f, "memory"),
+            Self::File => write!(f, "file"),
+            Self::Pipe => write!(f, "pipe"),
+            Self::Http => write!(f, "http"),
+            Self::Redis => write!(f, "redis"),
         }
     }
 }
@@ -152,9 +164,13 @@ impl SendResult {
 }
 
 /// Top-level transport configuration.
+///
+/// Used by the transport factory to create the right backend from config.
+/// Each transport type has its own optional config section — only the one
+/// matching `transport_type` is read.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TransportConfig {
-    /// Transport type (kafka, grpc, memory).
+    /// Transport type (kafka, grpc, memory, file, pipe, http, redis).
     #[serde(rename = "type", default)]
     pub transport_type: TransportType,
 
@@ -177,6 +193,21 @@ pub struct TransportConfig {
     #[serde(default)]
     pub memory: Option<super::memory::MemoryConfig>,
 
+    /// Pipe transport configuration (stdin/stdout).
+    #[cfg(feature = "transport-pipe")]
+    #[serde(default)]
+    pub pipe: Option<super::pipe::PipeTransportConfig>,
+
+    /// File transport configuration (NDJSON file I/O).
+    #[cfg(feature = "transport-file")]
+    #[serde(default)]
+    pub file: Option<super::file::FileTransportConfig>,
+
+    /// HTTP transport configuration (webhook delivery, REST ingest).
+    #[cfg(feature = "transport-http")]
+    #[serde(default)]
+    pub http: Option<super::http::HttpTransportConfig>,
+
     // Placeholder fields when features are disabled
     #[cfg(not(feature = "transport-kafka"))]
     #[serde(default, skip)]
@@ -189,6 +220,27 @@ pub struct TransportConfig {
     #[cfg(not(feature = "transport-memory"))]
     #[serde(default, skip)]
     pub memory: Option<()>,
+
+    #[cfg(not(feature = "transport-pipe"))]
+    #[serde(default, skip)]
+    pub pipe: Option<()>,
+
+    #[cfg(not(feature = "transport-file"))]
+    #[serde(default, skip)]
+    pub file: Option<()>,
+
+    #[cfg(not(feature = "transport-http"))]
+    #[serde(default, skip)]
+    pub http: Option<()>,
+
+    /// Redis/Valkey Streams transport configuration.
+    #[cfg(feature = "transport-redis")]
+    #[serde(default)]
+    pub redis: Option<super::redis_transport::RedisTransportConfig>,
+
+    #[cfg(not(feature = "transport-redis"))]
+    #[serde(default, skip)]
+    pub redis: Option<()>,
 }
 
 #[cfg(test)]
