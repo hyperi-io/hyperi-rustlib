@@ -360,8 +360,19 @@ impl StatsContext {
     }
 }
 
-// StatsContext can be used as a ConsumerContext
+// StatsContext can be used as a ConsumerContext and ProducerContext
 impl rdkafka::consumer::ConsumerContext for StatsContext {}
+
+impl rdkafka::producer::ProducerContext for StatsContext {
+    type DeliveryOpaque = ();
+
+    fn delivery(
+        &self,
+        _result: &rdkafka::producer::DeliveryResult<'_>,
+        _opaque: Self::DeliveryOpaque,
+    ) {
+    }
+}
 
 /// Calculate total consumer lag across all partitions.
 ///
