@@ -30,6 +30,9 @@ All core pillar work is done. Need to:
 
 ### Downstream Remediation (agreed order)
 
+**Rule:** Fix any bugs or issues encountered in each project during migration.
+Do not skip past problems — if you find it, fix it.
+
 1. [ ] Migrate dfe-receiver to v2.0.0 (RoutedSender, transport factory, 20 Transport refs)
 2. [ ] Migrate dfe-loader to v2.0.0 (transport factory, 81 Transport refs, DLQ, most complex)
 3. [ ] Migrate dfe-archiver to v2.0.0
