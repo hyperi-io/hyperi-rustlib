@@ -245,6 +245,12 @@ impl TransportSender for GrpcTransport {
             metadata.insert("topic".to_string(), key.to_string());
         }
 
+        // Inject W3C traceparent into gRPC metadata for distributed tracing
+        #[cfg(feature = "otel")]
+        if let Some(tp) = super::propagation::current_traceparent() {
+            metadata.insert(super::propagation::TRACEPARENT_HEADER.to_string(), tp);
+        }
+
         let request = proto::PushRequest {
             payload: payload.to_vec(),
             format: proto::Format::Auto.into(),
@@ -391,6 +397,14 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
     ) -> Result<Response<proto::PushResponse>, Status> {
         let req = request.into_inner();
         let seq = self.sequence.fetch_add(1, Ordering::Relaxed);
+
+        // Extract W3C traceparent from incoming gRPC metadata for distributed tracing
+        #[cfg(feature = "otel")]
+        if let Some(tp) = req.metadata.get(super::propagation::TRACEPARENT_HEADER)
+            && super::propagation::is_valid_traceparent(tp)
+        {
+            tracing::Span::current().record("traceparent", tp.as_str());
+        }
 
         let format = PayloadFormat::detect(&req.payload);
         let key = req.metadata.get("topic").map(|s| Arc::from(s.as_str()));
