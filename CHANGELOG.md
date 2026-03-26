@@ -1,3 +1,29 @@
+# [1.17.0-dev.15](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.14...v1.17.0-dev.15) (2026-03-26)
+
+
+* feat!: split Transport trait and add 4 new transports + factory ([36c383d](https://github.com/hyperi-io/hyperi-rustlib/commit/36c383d8bcdf96a120bf238cc45e629be984aa47))
+
+
+### BREAKING CHANGES
+
+* Transport trait split into TransportBase (close,
+is_healthy, name), TransportSender (send), and TransportReceiver
+(recv, commit, Token). Blanket Transport impl for types with both.
+
+New transport backends:
+- File: NDJSON with position tracking and commit persistence
+- Pipe: stdin/stdout for Unix pipeline composition
+- HTTP: POST to endpoint (send) + embedded axum server (receive)
+- Redis/Valkey Streams: XADD/XREADGROUP/XACK with consumer groups
+
+Transport factory:
+- AnySender: enum dispatch for runtime transport selection
+- AnySender::from_config(): create sender from config cascade
+- RoutedSender: per-key dispatch for data originators (receiver/fetcher)
+
+All transports auto-emit dfe_transport_* Prometheus metrics.
+648 tests pass.
+
 # [1.17.0-dev.14](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.13...v1.17.0-dev.14) (2026-03-26)
 
 
