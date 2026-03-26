@@ -8,7 +8,8 @@
 
 //! Circuit breaker for sink health tracking.
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::sync::RwLock;
 
@@ -34,6 +35,9 @@ pub struct CircuitBreaker {
     failure_threshold: u32,
     reset_timeout: Duration,
     last_failure_time: AtomicU64, // epoch millis
+    /// Atomic mirror of circuit state for sync health check access.
+    /// 0 = Closed, 1 = Open, 2 = HalfOpen.
+    health_state: Arc<AtomicU8>,
 }
 
 impl CircuitBreaker {
@@ -43,13 +47,38 @@ impl CircuitBreaker {
     /// - `reset_timeout`: Time to wait before allowing a probe request
     #[must_use]
     pub fn new(failure_threshold: u32, reset_timeout: Duration) -> Self {
+        let health_state = Arc::new(AtomicU8::new(0)); // 0 = Closed
+
+        #[cfg(feature = "health")]
+        {
+            let hs = Arc::clone(&health_state);
+            crate::health::HealthRegistry::register("circuit_breaker", move || {
+                match hs.load(Ordering::Relaxed) {
+                    0 => crate::health::HealthStatus::Healthy,   // Closed
+                    2 => crate::health::HealthStatus::Degraded,  // HalfOpen
+                    _ => crate::health::HealthStatus::Unhealthy, // Open
+                }
+            });
+        }
+
         Self {
             state: RwLock::new(CircuitState::Closed),
             consecutive_failures: AtomicU32::new(0),
             failure_threshold,
             reset_timeout,
             last_failure_time: AtomicU64::new(0),
+            health_state,
         }
+    }
+
+    /// Sync the atomic health state mirror with the current circuit state.
+    fn sync_health_state(&self, state: CircuitState) {
+        let val = match state {
+            CircuitState::Closed => 0,
+            CircuitState::Open => 1,
+            CircuitState::HalfOpen => 2,
+        };
+        self.health_state.store(val, Ordering::Relaxed);
     }
 
     /// Get current circuit state.
@@ -64,6 +93,7 @@ impl CircuitBreaker {
 
             if elapsed >= self.reset_timeout {
                 *state = CircuitState::HalfOpen;
+                self.sync_health_state(*state);
             }
         }
 
@@ -85,6 +115,7 @@ impl CircuitBreaker {
         let mut state = self.state.write().await;
         self.consecutive_failures.store(0, Ordering::SeqCst);
         *state = CircuitState::Closed;
+        self.sync_health_state(*state);
     }
 
     /// Record a failed request.
@@ -96,6 +127,7 @@ impl CircuitBreaker {
         if failures >= self.failure_threshold {
             let mut state = self.state.write().await;
             *state = CircuitState::Open;
+            self.sync_health_state(*state);
         }
     }
 
@@ -110,6 +142,7 @@ impl CircuitBreaker {
         self.consecutive_failures.store(0, Ordering::SeqCst);
         let mut state = self.state.write().await;
         *state = CircuitState::Closed;
+        self.sync_health_state(*state);
     }
 }
 

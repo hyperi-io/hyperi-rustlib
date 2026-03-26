@@ -14,6 +14,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::net::TcpListener;
+#[cfg(not(feature = "shutdown"))]
 use tokio::signal;
 use tokio::sync::watch;
 
@@ -29,10 +30,21 @@ impl HttpServer {
     /// Create a new HTTP server with the given configuration.
     #[must_use]
     pub fn new(config: HttpServerConfig) -> Self {
-        Self {
-            config,
-            ready: Arc::new(AtomicBool::new(true)),
+        let ready = Arc::new(AtomicBool::new(true));
+
+        #[cfg(feature = "health")]
+        {
+            let r = Arc::clone(&ready);
+            crate::health::HealthRegistry::register("http_server", move || {
+                if r.load(Ordering::Relaxed) {
+                    crate::health::HealthStatus::Healthy
+                } else {
+                    crate::health::HealthStatus::Unhealthy
+                }
+            });
         }
+
+        Self { config, ready }
     }
 
     /// Create a new HTTP server bound to the specified address.
@@ -70,7 +82,15 @@ impl HttpServer {
     ///
     /// Returns an error if binding fails or the server encounters an error.
     pub async fn serve(self, app: Router) -> Result<()> {
-        self.serve_with_shutdown(app, shutdown_signal()).await
+        #[cfg(feature = "shutdown")]
+        {
+            let token = crate::shutdown::install_signal_handler();
+            self.serve_with_shutdown(app, token.cancelled_owned()).await
+        }
+        #[cfg(not(feature = "shutdown"))]
+        {
+            self.serve_with_shutdown(app, shutdown_signal()).await
+        }
     }
 
     /// Serve with a custom shutdown signal.
@@ -254,6 +274,9 @@ async fn config_dump() -> impl IntoResponse {
 }
 
 /// Wait for a shutdown signal (SIGTERM or SIGINT).
+///
+/// Used as fallback when the `shutdown` feature is not enabled.
+#[cfg(not(feature = "shutdown"))]
 async fn shutdown_signal() {
     let ctrl_c = async {
         signal::ctrl_c()

@@ -115,6 +115,8 @@ pub struct KafkaTransport {
     /// Key optimization: no locks in the hot path.
     topic_cache: HashMap<String, Arc<str>>,
     closed: AtomicBool,
+    /// Shared healthy flag — read by health registry closure, written by close().
+    healthy: Arc<AtomicBool>,
     /// Topics we're subscribed to (for cache warming).
     subscribed_topics: Vec<String>,
 }
@@ -232,11 +234,26 @@ impl KafkaTransport {
             .create_with_context(StatsContext::new())
             .map_err(|e| TransportError::Connection(format!("Failed to create producer: {e}")))?;
 
+        let healthy = Arc::new(AtomicBool::new(true));
+
+        #[cfg(feature = "health")]
+        {
+            let h = Arc::clone(&healthy);
+            crate::health::HealthRegistry::register("transport:kafka", move || {
+                if h.load(Ordering::Relaxed) {
+                    crate::health::HealthStatus::Healthy
+                } else {
+                    crate::health::HealthStatus::Unhealthy
+                }
+            });
+        }
+
         Ok(Self {
             consumer,
             producer,
             topic_cache,
             closed: AtomicBool::new(false),
+            healthy,
             subscribed_topics,
         })
     }
@@ -254,12 +271,13 @@ impl KafkaTransport {
 impl TransportBase for KafkaTransport {
     async fn close(&self) -> TransportResult<()> {
         self.closed.store(true, Ordering::Relaxed);
+        self.healthy.store(false, Ordering::Relaxed);
         // rdkafka handles cleanup on drop
         Ok(())
     }
 
     fn is_healthy(&self) -> bool {
-        !self.closed.load(Ordering::Relaxed)
+        self.healthy.load(Ordering::Relaxed)
     }
 
     fn name(&self) -> &'static str {
@@ -473,6 +491,7 @@ impl std::fmt::Debug for KafkaTransport {
         f.debug_struct("KafkaTransport")
             .field("subscribed_topics", &self.subscribed_topics)
             .field("closed", &self.closed.load(Ordering::Relaxed))
+            .field("healthy", &self.healthy.load(Ordering::Relaxed))
             .finish_non_exhaustive()
     }
 }

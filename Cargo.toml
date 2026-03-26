@@ -20,9 +20,11 @@ categories = ["development-tools"]
 exclude = [".claude/", ".github/", "ci/", "ai/", "docs/", "examples/", "benches/", "scripts/"]
 
 [features]
-default = ["config", "logger", "metrics", "runtime"]
+default = ["config", "logger", "metrics", "runtime", "shutdown", "health"]
 
 # Core features
+health = []
+shutdown = ["tokio", "tokio-util"]
 runtime = ["dirs"]
 config = ["figment", "dotenvy", "serde_yaml_ng", "serde_json", "toml", "dirs", "tracing"]
 logger = ["tracing", "tracing-subscriber", "owo-colors", "serde_json", "tracing-throttle"]
@@ -104,7 +106,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "runtime", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "cli", "io", "dlq", "dlq-kafka", "output-file", "expression"]
+full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "cli", "io", "dlq", "dlq-kafka", "output-file", "expression"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -158,8 +160,9 @@ metrics-util = { version = ">=0.20.1, <0.21", optional = true }
 metrics-exporter-opentelemetry = { version = ">=0.2.1, <0.3", optional = true }
 sysinfo = { version = ">=0.38.0, <0.39", optional = true }
 
-# Async runtime (for metrics server, http-server)
+# Async runtime (for metrics server, http-server, shutdown)
 tokio = { version = ">=1.50.0, <2", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "fs", "io-std", "io-util"], optional = true }
+tokio-util = { version = ">=0.7.14, <0.8", optional = true }
 
 # HTTP client — pinned to reqwest 0.12 until vaultrs and opentelemetry-otlp
 # support 0.13. reqwest-middleware 0.4 and reqwest-retry 0.7 target 0.12.
