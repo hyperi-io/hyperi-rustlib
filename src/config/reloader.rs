@@ -277,6 +277,9 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
 
     /// Main reload loop — waits for any trigger, then attempts reload.
     async fn run_loop(self) {
+        #[cfg(feature = "shutdown")]
+        let shutdown_token = crate::shutdown::token();
+
         // File polling state
         let mut last_modified: Option<SystemTime> =
             self.config.config_path.as_ref().and_then(|p| file_mtime(p));
@@ -308,15 +311,46 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
         };
 
         loop {
-            let trigger = self
-                .wait_for_trigger(
-                    &mut poll_timer,
-                    &mut periodic_timer,
-                    #[cfg(unix)]
-                    &mut sighup,
-                    &mut last_modified,
-                )
-                .await;
+            // Check for global shutdown before waiting for next trigger
+            #[cfg(feature = "shutdown")]
+            if shutdown_token.is_cancelled() {
+                info!("Config reloader stopping (shutdown)");
+                return;
+            }
+
+            let trigger_result = {
+                #[cfg(feature = "shutdown")]
+                {
+                    tokio::select! {
+                        trigger = self.wait_for_trigger(
+                            &mut poll_timer,
+                            &mut periodic_timer,
+                            #[cfg(unix)]
+                            &mut sighup,
+                            &mut last_modified,
+                        ) => Some(trigger),
+                        () = shutdown_token.cancelled() => None,
+                    }
+                }
+                #[cfg(not(feature = "shutdown"))]
+                {
+                    Some(
+                        self.wait_for_trigger(
+                            &mut poll_timer,
+                            &mut periodic_timer,
+                            #[cfg(unix)]
+                            &mut sighup,
+                            &mut last_modified,
+                        )
+                        .await,
+                    )
+                }
+            };
+
+            let Some(trigger) = trigger_result else {
+                info!("Config reloader stopping (shutdown)");
+                return;
+            };
 
             // Debounce check
             if last_reload.elapsed() < self.config.debounce {

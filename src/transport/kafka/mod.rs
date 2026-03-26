@@ -70,7 +70,7 @@ pub use producer::{KafkaProducer, ProducerMetrics, ProducerProfile};
 pub use token::KafkaToken;
 
 use super::error::{TransportError, TransportResult};
-use super::traits::Transport;
+use super::traits::{TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{BaseConsumer, CommitMode, Consumer};
@@ -115,6 +115,8 @@ pub struct KafkaTransport {
     /// Key optimization: no locks in the hot path.
     topic_cache: HashMap<String, Arc<str>>,
     closed: AtomicBool,
+    /// Shared healthy flag — read by health registry closure, written by close().
+    healthy: Arc<AtomicBool>,
     /// Topics we're subscribed to (for cache warming).
     subscribed_topics: Vec<String>,
 }
@@ -232,11 +234,26 @@ impl KafkaTransport {
             .create_with_context(StatsContext::new())
             .map_err(|e| TransportError::Connection(format!("Failed to create producer: {e}")))?;
 
+        let healthy = Arc::new(AtomicBool::new(true));
+
+        #[cfg(feature = "health")]
+        {
+            let h = Arc::clone(&healthy);
+            crate::health::HealthRegistry::register("transport:kafka", move || {
+                if h.load(Ordering::Relaxed) {
+                    crate::health::HealthStatus::Healthy
+                } else {
+                    crate::health::HealthStatus::Unhealthy
+                }
+            });
+        }
+
         Ok(Self {
             consumer,
             producer,
             topic_cache,
             closed: AtomicBool::new(false),
+            healthy,
             subscribed_topics,
         })
     }
@@ -251,15 +268,42 @@ impl KafkaTransport {
     }
 }
 
-impl Transport for KafkaTransport {
-    type Token = KafkaToken;
+impl TransportBase for KafkaTransport {
+    async fn close(&self) -> TransportResult<()> {
+        self.closed.store(true, Ordering::Relaxed);
+        self.healthy.store(false, Ordering::Relaxed);
+        // rdkafka handles cleanup on drop
+        Ok(())
+    }
 
+    fn is_healthy(&self) -> bool {
+        self.healthy.load(Ordering::Relaxed)
+    }
+
+    fn name(&self) -> &'static str {
+        "kafka"
+    }
+}
+
+impl TransportSender for KafkaTransport {
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         let record: FutureRecord<'_, str, [u8]> = FutureRecord::to(key).payload(payload);
+
+        // Inject W3C traceparent into Kafka message headers for distributed tracing
+        #[cfg(feature = "otel")]
+        let record = if let Some(tp) = super::propagation::current_traceparent() {
+            let headers = rdkafka::message::OwnedHeaders::new().insert(rdkafka::message::Header {
+                key: super::propagation::TRACEPARENT_HEADER,
+                value: Some(tp.as_str()),
+            });
+            record.headers(headers)
+        } else {
+            record
+        };
 
         #[cfg(feature = "metrics")]
         let start = std::time::Instant::now();
@@ -306,6 +350,10 @@ impl Transport for KafkaTransport {
 
         result
     }
+}
+
+impl TransportReceiver for KafkaTransport {
+    type Token = KafkaToken;
 
     /// Receive a batch of messages.
     ///
@@ -335,6 +383,26 @@ impl Transport for KafkaTransport {
         if let Some(result) = self.consumer.poll(timeout) {
             match result {
                 Ok(msg) => {
+                    // Extract W3C traceparent from Kafka headers (first message only,
+                    // to associate the batch span with the upstream trace)
+                    #[cfg(feature = "otel")]
+                    if let Some(headers) = msg.headers() {
+                        use rdkafka::message::Headers;
+                        for idx in 0..headers.count() {
+                            if let Some(Ok(header)) = headers.try_get_as::<[u8]>(idx)
+                                && header.key == super::propagation::TRACEPARENT_HEADER
+                            {
+                                if let Some(value) = header.value
+                                    && let Ok(tp) = std::str::from_utf8(value)
+                                    && super::propagation::is_valid_traceparent(tp)
+                                {
+                                    tracing::Span::current().record("traceparent", tp);
+                                }
+                                break;
+                            }
+                        }
+                    }
+
                     let topic_str = msg.topic();
                     let topic: Arc<str> = get_or_insert_topic(&mut local_cache, topic_str);
                     let payload = msg.payload().map_or_else(Vec::new, |p| p.to_vec());
@@ -435,20 +503,6 @@ impl Transport for KafkaTransport {
 
         Ok(())
     }
-
-    async fn close(&self) -> TransportResult<()> {
-        self.closed.store(true, Ordering::Relaxed);
-        // rdkafka handles cleanup on drop
-        Ok(())
-    }
-
-    fn is_healthy(&self) -> bool {
-        !self.closed.load(Ordering::Relaxed)
-    }
-
-    fn name(&self) -> &'static str {
-        "kafka"
-    }
 }
 
 /// Get or insert topic Arc into cache.
@@ -469,6 +523,7 @@ impl std::fmt::Debug for KafkaTransport {
         f.debug_struct("KafkaTransport")
             .field("subscribed_topics", &self.subscribed_topics)
             .field("closed", &self.closed.load(Ordering::Relaxed))
+            .field("healthy", &self.healthy.load(Ordering::Relaxed))
             .finish_non_exhaustive()
     }
 }

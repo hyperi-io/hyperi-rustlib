@@ -20,7 +20,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::{GrpcTransport, GrpcConfig, Transport};
+//! use hyperi_rustlib::transport::{GrpcTransport, GrpcConfig, TransportReceiver};
 //!
 //! // Server mode (receive from remote senders)
 //! let config = GrpcConfig::server("0.0.0.0:6000");
@@ -39,7 +39,7 @@ pub use config::GrpcConfig;
 pub use token::GrpcToken;
 
 use super::error::{TransportError, TransportResult};
-use super::traits::Transport;
+use super::traits::{TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -49,8 +49,8 @@ use tonic::{Request, Response, Status};
 
 /// gRPC transport for DFE inter-service communication.
 ///
-/// Combines a tonic gRPC client (for sending) and server (for receiving)
-/// behind the unified `Transport` trait.
+/// Implements both `TransportSender` and `TransportReceiver`, so it also
+/// satisfies the unified `Transport` trait via blanket impl.
 pub struct GrpcTransport {
     /// Client for sending (None if server-only mode).
     client: Option<proto::dfe_transport_client::DfeTransportClient<tonic::transport::Channel>>,
@@ -66,6 +66,9 @@ pub struct GrpcTransport {
 
     /// Whether the transport is closed.
     closed: AtomicBool,
+
+    /// Shared healthy flag — read by health registry closure, written by close().
+    healthy: Arc<AtomicBool>,
 
     /// Receive timeout (milliseconds).
     recv_timeout_ms: u64,
@@ -170,12 +173,27 @@ impl GrpcTransport {
             server_handle = Some(handle);
         }
 
+        let healthy = Arc::new(AtomicBool::new(true));
+
+        #[cfg(feature = "health")]
+        {
+            let h = Arc::clone(&healthy);
+            crate::health::HealthRegistry::register("transport:grpc", move || {
+                if h.load(Ordering::Relaxed) {
+                    crate::health::HealthStatus::Healthy
+                } else {
+                    crate::health::HealthStatus::Unhealthy
+                }
+            });
+        }
+
         Ok(Self {
             client,
             receiver,
             shutdown_tx,
             _server_handle: server_handle,
             closed: AtomicBool::new(false),
+            healthy,
             recv_timeout_ms: config.recv_timeout_ms,
             #[cfg(feature = "metrics")]
             inflight: AtomicU64::new(0),
@@ -183,9 +201,34 @@ impl GrpcTransport {
     }
 }
 
-impl Transport for GrpcTransport {
-    type Token = GrpcToken;
+impl TransportBase for GrpcTransport {
+    async fn close(&self) -> TransportResult<()> {
+        self.closed.store(true, Ordering::Relaxed);
+        self.healthy.store(false, Ordering::Relaxed);
 
+        // Signal server shutdown
+        // Note: we can't take from Option behind &self, so we use a flag
+        // The server task will complete when the oneshot is dropped
+        Ok(())
+    }
+
+    fn is_healthy(&self) -> bool {
+        let healthy = self.healthy.load(Ordering::Relaxed);
+        #[cfg(feature = "metrics")]
+        metrics::gauge!("dfe_transport_healthy", "transport" => "grpc").set(if healthy {
+            1.0
+        } else {
+            0.0
+        });
+        healthy
+    }
+
+    fn name(&self) -> &'static str {
+        "grpc"
+    }
+}
+
+impl TransportSender for GrpcTransport {
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
@@ -200,6 +243,12 @@ impl Transport for GrpcTransport {
         let mut metadata = HashMap::new();
         if !key.is_empty() {
             metadata.insert("topic".to_string(), key.to_string());
+        }
+
+        // Inject W3C traceparent into gRPC metadata for distributed tracing
+        #[cfg(feature = "otel")]
+        if let Some(tp) = super::propagation::current_traceparent() {
+            metadata.insert(super::propagation::TRACEPARENT_HEADER.to_string(), tp);
         }
 
         let request = proto::PushRequest {
@@ -257,6 +306,10 @@ impl Transport for GrpcTransport {
 
         result
     }
+}
+
+impl TransportReceiver for GrpcTransport {
+    type Token = GrpcToken;
 
     async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
         if self.closed.load(Ordering::Relaxed) {
@@ -315,30 +368,6 @@ impl Transport for GrpcTransport {
         // Acknowledgement is implicit in the Push RPC response.
         Ok(())
     }
-
-    async fn close(&self) -> TransportResult<()> {
-        self.closed.store(true, Ordering::Relaxed);
-
-        // Signal server shutdown
-        // Note: we can't take from Option behind &self, so we use a flag
-        // The server task will complete when the oneshot is dropped
-        Ok(())
-    }
-
-    fn is_healthy(&self) -> bool {
-        let healthy = !self.closed.load(Ordering::Relaxed);
-        #[cfg(feature = "metrics")]
-        metrics::gauge!("dfe_transport_healthy", "transport" => "grpc").set(if healthy {
-            1.0
-        } else {
-            0.0
-        });
-        healthy
-    }
-
-    fn name(&self) -> &'static str {
-        "grpc"
-    }
 }
 
 impl Drop for GrpcTransport {
@@ -368,6 +397,14 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
     ) -> Result<Response<proto::PushResponse>, Status> {
         let req = request.into_inner();
         let seq = self.sequence.fetch_add(1, Ordering::Relaxed);
+
+        // Extract W3C traceparent from incoming gRPC metadata for distributed tracing
+        #[cfg(feature = "otel")]
+        if let Some(tp) = req.metadata.get(super::propagation::TRACEPARENT_HEADER)
+            && super::propagation::is_valid_traceparent(tp)
+        {
+            tracing::Span::current().record("traceparent", tp.as_str());
+        }
 
         let format = PayloadFormat::detect(&req.payload);
         let key = req.metadata.get("topic").map(|s| Arc::from(s.as_str()));
