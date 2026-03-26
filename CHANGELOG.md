@@ -1,3 +1,11 @@
+# [1.17.0-dev.14](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.13...v1.17.0-dev.14) (2026-03-26)
+
+
+### Bug Fixes
+
+* add metrics instrumentation to all modules ([0a690e4](https://github.com/hyperi-io/hyperi-rustlib/commit/0a690e40c9108f25394cda19d47c98f4774ed30f))
+* wire StatsContext into KafkaTransport and add send metrics ([ccfc9ad](https://github.com/hyperi-io/hyperi-rustlib/commit/ccfc9ad10180be10345a05605d0dca0d8601d254))
+
 # [1.17.0-dev.13](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.12...v1.17.0-dev.13) (2026-03-26)
 
 
