@@ -1,3 +1,10 @@
+## [1.20.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.20.1...v1.20.2) (2026-03-27)
+
+
+### Bug Fixes
+
+* add tag input to workflow_dispatch for publish trigger ([629a6e8](https://github.com/hyperi-io/hyperi-rustlib/commit/629a6e87d6b507d2530814522245fb0909894f06))
+
 ## [1.20.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.20.0...v1.20.1) (2026-03-27)
 
 
