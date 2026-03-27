@@ -38,7 +38,7 @@ impl AppMetrics {
         } else {
             format!("{ns}_info")
         };
-        metrics::describe_gauge!("app_info", "Application info for service discovery");
+        metrics::describe_gauge!(info_name.clone(), "Application info for service discovery");
         metrics::gauge!(
             info_name,
             "version" => version.to_string(),
