@@ -8,10 +8,10 @@
 
 ## Current Tasks
 
-### v2.0.0 Release `[NEXT]`
+### v1.20.0 Release `[NEXT]`
 
 All core pillar work is done. Need to:
-- [ ] Release-merge to release branch (feat!: breaking change → v2.0.0)
+- [ ] Release-merge to release branch (feat!: breaking change → v1.20.0)
 - [ ] Verify crates.io publication
 - [ ] Docs consolidation (TRANSPORT.md, CORE-PILLARS.md, per-feature docs)
 - [ ] Add Redis vs Kafka comparison table to transport docs
@@ -33,14 +33,15 @@ All core pillar work is done. Need to:
 **Rule:** Fix any bugs or issues encountered in each project during migration.
 Do not skip past problems — if you find it, fix it.
 
-1. [ ] Migrate dfe-receiver to v2.0.0 (RoutedSender, transport factory, 20 Transport refs)
-2. [ ] Migrate dfe-loader to v2.0.0 (transport factory, 81 Transport refs, DLQ, most complex)
-3. [ ] Migrate dfe-archiver to v2.0.0
-4. [ ] Migrate dfe-fetcher to v2.0.0 (data originator, possible RoutedSender)
-5. [ ] Migrate dfe-transform-vector to v2.0.0
-6. [ ] Migrate dfe-transform-vrl to v2.0.0
-7. [ ] Migrate dfe-transform-elastic to v2.0.0
-8. [ ] Migrate dfe-transform-splack to v2.0.0
+1. [x] Migrate dfe-receiver to v1.20.0 (328 tests pass, Transport import fix)
+2. [x] Migrate dfe-loader to v1.20.0 (391 tests pass, Transport import fix)
+3. [ ] Migrate dfe-archiver to v1.20.0 `[IN PROGRESS]`
+   - Version bump done, needs commit + push
+4. [ ] Migrate dfe-fetcher to v1.20.0 (Transport import fix needed)
+5. [ ] Migrate dfe-transform-vector to v1.20.0 (version bump only)
+6. [ ] Migrate dfe-transform-vrl to v1.20.0 (compiles clean with version bump)
+7. [ ] Migrate dfe-transform-elastic to v1.20.0
+8. [ ] Migrate dfe-transform-splack to v1.20.0
 9. [ ] Audit hyperi-pylib and write alignment plan
 
 ---
@@ -94,4 +95,4 @@ Do not skip past problems — if you find it, fix it.
 - Core pillars plan: `docs/superpowers/plans/2026-03-26-core-pillars.md`
 - Two deployment modes: Kafka-mediated (persistence) vs direct gRPC (low latency)
 - Routed transport is receiver/fetcher only — all other stages are 1:1
-- Breaking change: `feat!:` commit triggers v2.0.0 via semantic-release
+- Breaking change: `feat!:` commit triggers v1.20.0 via semantic-release
