@@ -1,3 +1,13 @@
+## [1.20.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.20.0...v1.20.1) (2026-03-27)
+
+
+### Bug Fixes
+
+* remove trailing blank line from lib.rs ([74c448e](https://github.com/hyperi-io/hyperi-rustlib/commit/74c448ed68a95192bdeef1f36023351f9f8c7f92))
+* validate single versioning publish pipeline ([fdfba9d](https://github.com/hyperi-io/hyperi-rustlib/commit/fdfba9dd3684f740d7bd79fab1d41fd3d98ac7da))
+* validate single versioning publish pipeline ([09c01c2](https://github.com/hyperi-io/hyperi-rustlib/commit/09c01c2fef29f31008e0c67e2564dfe8982817d2))
+* verify single versioning pipeline end-to-end ([0ac98cb](https://github.com/hyperi-io/hyperi-rustlib/commit/0ac98cb00ccc2dfc746625815d7494f79a2ffbef))
+
 # [1.17.0-dev.16](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.17.0-dev.15...v1.17.0-dev.16) (2026-03-26)
 
 
