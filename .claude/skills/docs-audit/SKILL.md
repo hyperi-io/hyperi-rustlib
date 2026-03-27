@@ -1,0 +1,1 @@
+../../../hyperi-ai/skills/docs-audit/SKILL.md
