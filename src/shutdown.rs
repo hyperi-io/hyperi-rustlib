@@ -97,17 +97,26 @@ pub fn install_signal_handler() -> CancellationToken {
 /// Wait for SIGTERM or SIGINT.
 async fn wait_for_signal() {
     let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::error!(error = %e, "Failed to install Ctrl+C handler");
+            std::future::pending::<()>().await;
+        }
     };
 
     #[cfg(unix)]
     let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sig) => {
+                sig.recv().await;
+            }
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    "Failed to install SIGTERM handler, only Ctrl+C will trigger shutdown"
+                );
+                std::future::pending::<()>().await;
+            }
+        }
     };
 
     #[cfg(unix)]

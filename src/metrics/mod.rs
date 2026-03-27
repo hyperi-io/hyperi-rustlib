@@ -361,6 +361,15 @@ impl MetricsManager {
     }
 
     /// Create a histogram metric with custom buckets.
+    ///
+    /// **Note:** The `buckets` parameter is accepted for API compatibility but
+    /// is currently ignored. The `metrics` crate sets histogram buckets globally
+    /// at recorder installation time, not per-metric. Use
+    /// `PrometheusBuilder::set_buckets_for_metric` when building the recorder
+    /// if you need per-metric bucket configuration.
+    ///
+    /// This method exists so callers can express intent about bucket ranges
+    /// without breaking if per-metric support is added later.
     #[must_use]
     pub fn histogram_with_buckets(
         &self,
@@ -368,8 +377,6 @@ impl MetricsManager {
         description: &str,
         _buckets: &[f64],
     ) -> Histogram {
-        // Note: metrics crate doesn't support custom buckets per-metric,
-        // they're set globally. This is a placeholder for API compatibility.
         self.histogram(name, description)
     }
 
@@ -480,7 +487,11 @@ impl MetricsManager {
         let handle = self
             .handle
             .as_ref()
-            .expect("Prometheus handle required for server")
+            .ok_or_else(|| {
+                MetricsError::ServerError(
+                    "Prometheus handle not configured — MetricsManager was created without a recorder".into(),
+                )
+            })?
             .clone();
         let update_interval = self.config.update_interval;
         let process_metrics = self.process_metrics.clone();
@@ -544,7 +555,11 @@ impl MetricsManager {
         let handle = self
             .handle
             .as_ref()
-            .expect("Prometheus handle required for server")
+            .ok_or_else(|| {
+                MetricsError::ServerError(
+                    "Prometheus handle not configured — MetricsManager was created without a recorder".into(),
+                )
+            })?
             .clone();
         let update_interval = self.config.update_interval;
         let process_metrics = self.process_metrics.clone();

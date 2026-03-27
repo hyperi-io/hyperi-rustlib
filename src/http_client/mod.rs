@@ -36,6 +36,14 @@ use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::RetryTransientMiddleware;
 use reqwest_retry::policies::ExponentialBackoff;
 
+/// HTTP client build error.
+#[derive(Debug, thiserror::Error)]
+pub enum HttpClientError {
+    /// Failed to build the underlying reqwest client.
+    #[error("failed to build HTTP client: {0}")]
+    BuildError(#[from] reqwest::Error),
+}
+
 /// Production HTTP client with retry middleware.
 pub struct HttpClient {
     inner: ClientWithMiddleware,
@@ -44,8 +52,21 @@ pub struct HttpClient {
 
 impl HttpClient {
     /// Create a new HTTP client with the given config.
+    ///
+    /// Panics if the underlying TLS backend fails to initialise.
+    /// Prefer [`try_new`](Self::try_new) for fallible construction.
     #[must_use]
     pub fn new(config: HttpClientConfig) -> Self {
+        Self::try_new(config).expect("failed to build reqwest client (TLS init failure)")
+    }
+
+    /// Create a new HTTP client, returning an error on build failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HttpClientError::BuildError`] if the underlying reqwest
+    /// client cannot be constructed (typically TLS backend init failure).
+    pub fn try_new(config: HttpClientConfig) -> Result<Self, HttpClientError> {
         let retry_policy = ExponentialBackoff::builder()
             .retry_bounds(
                 std::time::Duration::from_millis(config.min_retry_interval_ms),
@@ -61,16 +82,16 @@ impl HttpClient {
             builder = builder.user_agent(ua.clone());
         }
 
-        let reqwest_client = builder.build().expect("failed to build reqwest client");
+        let reqwest_client = builder.build()?;
 
         let client = ClientBuilder::new(reqwest_client)
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
 
-        Self {
+        Ok(Self {
             inner: client,
             config,
-        }
+        })
     }
 
     /// Create a client from the config cascade (or defaults).
