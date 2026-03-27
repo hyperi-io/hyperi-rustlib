@@ -281,3 +281,4 @@ pub fn init(env_prefix: &str) -> Result<(), Box<dyn std::error::Error + Send + S
     })?;
     Ok(())
 }
+
