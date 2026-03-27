@@ -83,9 +83,9 @@ pub struct CacheConfig {
     /// Refresh jitter in seconds (randomize to avoid thundering herd).
     pub refresh_jitter_secs: u64,
 
-    /// Optional encryption key for cache at rest (base64-encoded).
-    /// If not set, cache is stored in plaintext.
-    pub encryption_key: Option<String>,
+    /// Reserved for future use. Cache is currently stored unencrypted.
+    /// If set, the value will be redacted in serialisation and debug output.
+    pub encryption_key: Option<crate::SensitiveString>,
 }
 
 impl Default for CacheConfig {
@@ -130,7 +130,7 @@ pub enum SecretSource {
 }
 
 /// Value retrieved from a secrets provider.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SecretValue {
     /// The secret data (may be binary or text).
     pub data: Vec<u8>,
@@ -140,6 +140,16 @@ pub struct SecretValue {
 
     /// Metadata from the provider.
     pub metadata: SecretMetadata,
+}
+
+impl std::fmt::Debug for SecretValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretValue")
+            .field("data", &"[REDACTED]")
+            .field("fetched_at", &self.fetched_at)
+            .field("metadata", &self.metadata)
+            .finish()
+    }
 }
 
 impl SecretValue {

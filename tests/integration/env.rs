@@ -72,7 +72,10 @@ mod kafka_env {
 
         assert_eq!(config.brokers, vec!["broker1:9092", "broker2:9092"]);
         assert_eq!(config.sasl_username, Some("testuser".to_string()));
-        assert_eq!(config.sasl_password, Some("testpass".to_string()));
+        assert_eq!(
+            config.sasl_password.as_ref().map(|p| p.expose()),
+            Some("testpass")
+        );
         assert_eq!(config.security_protocol, "SASL_SSL");
         assert_eq!(config.sasl_mechanism, Some("SCRAM-SHA-512".to_string()));
         assert_eq!(config.group, "test-group");
