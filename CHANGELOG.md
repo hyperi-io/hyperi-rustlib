@@ -1,3 +1,19 @@
+# [1.21.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.20.2...v1.21.0) (2026-03-27)
+
+
+### Bug Fixes
+
+* add core pillars doc reference to lib.rs module docs ([76bfd77](https://github.com/hyperi-io/hyperi-rustlib/commit/76bfd77576f860f0cf40e5db771117789b26fcbf))
+* add deny.toml, document histogram stub, block single-dot in table names ([e4e18a5](https://github.com/hyperi-io/hyperi-rustlib/commit/e4e18a5d370b358413272b804a34e62a93008257))
+* correct recv() metric names and describe_gauge in AppMetrics ([cdec2c1](https://github.com/hyperi-io/hyperi-rustlib/commit/cdec2c121939ab965eb582394275beb1dc05710c))
+* register file, pipe, http, and redis transports with health registry ([164eca4](https://github.com/hyperi-io/hyperi-rustlib/commit/164eca4a76382edb9205faebb383e20ba8e207c8))
+* replace expect() with proper error handling in shutdown, metrics, http_client ([d775e85](https://github.com/hyperi-io/hyperi-rustlib/commit/d775e851b9e35dd309720f31f5d9ad5a450ca030))
+
+
+### Features
+
+* add HTTP and Redis DLQ backends ([8ea0af5](https://github.com/hyperi-io/hyperi-rustlib/commit/8ea0af52bfccd4fdbe5eec60585437d3c6df9393))
+
 ## [1.20.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.20.1...v1.20.2) (2026-03-27)
 
 
