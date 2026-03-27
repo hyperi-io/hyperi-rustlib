@@ -346,7 +346,7 @@ pub struct KafkaConfig {
 
     /// SASL password.
     #[serde(default)]
-    pub sasl_password: Option<String>,
+    pub sasl_password: Option<crate::SensitiveString>,
 
     // --- TLS Configuration ---
     /// SSL CA certificate file path.
@@ -628,7 +628,7 @@ impl KafkaConfig {
         self.security_protocol = "sasl_plaintext".to_string();
         self.sasl_mechanism = Some(mechanism.to_string());
         self.sasl_username = Some(username.to_string());
-        self.sasl_password = Some(password.to_string());
+        self.sasl_password = Some(crate::SensitiveString::new(password));
         self
     }
 
@@ -638,7 +638,7 @@ impl KafkaConfig {
         self.security_protocol = "sasl_ssl".to_string();
         self.sasl_mechanism = Some(mechanism.to_string());
         self.sasl_username = Some(username.to_string());
-        self.sasl_password = Some(password.to_string());
+        self.sasl_password = Some(crate::SensitiveString::new(password));
         self
     }
 
@@ -831,7 +831,7 @@ impl KafkaConfig {
 
         // SASL password
         if let Some(val) = prefixed("SASL_PASSWORD", &[]).get() {
-            config.sasl_password = Some(val);
+            config.sasl_password = Some(crate::SensitiveString::from(val));
         }
 
         // SSL CA location

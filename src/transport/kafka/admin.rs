@@ -87,7 +87,7 @@ impl KafkaAdmin {
             client_config.set("sasl.username", username);
         }
         if let Some(ref password) = config.sasl_password {
-            client_config.set("sasl.password", password);
+            client_config.set("sasl.password", password.expose());
         }
 
         // TLS settings

@@ -66,6 +66,7 @@
 // Core modules (always available)
 pub mod env;
 pub mod kafka_config;
+pub mod sensitive;
 
 #[cfg(feature = "runtime")]
 pub mod runtime;
@@ -148,6 +149,7 @@ pub use kafka_config::{
     DfeSource, KafkaConfigError, KafkaConfigResult, ServiceRole, TOPIC_SUFFIX_LAND,
     TOPIC_SUFFIX_LOAD, config_from_file, config_from_properties_str,
 };
+pub use sensitive::SensitiveString;
 
 #[cfg(feature = "runtime")]
 pub use runtime::RuntimePaths;
@@ -241,6 +243,12 @@ pub use dlq::{
 
 #[cfg(feature = "dlq-kafka")]
 pub use dlq::{DlqRouting, KafkaDlq, KafkaDlqConfig};
+
+#[cfg(feature = "dlq-http")]
+pub use dlq::{HttpDlq, HttpDlqConfig};
+
+#[cfg(feature = "dlq-redis")]
+pub use dlq::{RedisDlq, RedisDlqConfig};
 
 #[cfg(feature = "output-file")]
 pub use output::{FileOutput, FileOutputConfig, OutputError};

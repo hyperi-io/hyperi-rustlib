@@ -81,6 +81,19 @@ impl SecretCache {
                         dir.display()
                     ))
                 })?;
+
+                // Restrict to owner-only on Unix (secrets cache should not be world-readable)
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
+                        .map_err(|e| {
+                            SecretsError::CacheError(format!(
+                                "failed to set cache directory permissions on {}: {e}",
+                                dir.display()
+                            ))
+                        })?;
+                }
             }
 
             Some(dir)

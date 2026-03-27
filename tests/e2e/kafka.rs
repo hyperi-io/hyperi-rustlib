@@ -176,7 +176,10 @@ fn test_kafka_config_with_scram() {
     assert_eq!(config.security_protocol, "sasl_plaintext");
     assert_eq!(config.sasl_mechanism, Some("SCRAM-SHA-256".to_string()));
     assert_eq!(config.sasl_username, Some("user".to_string()));
-    assert_eq!(config.sasl_password, Some("pass".to_string()));
+    assert_eq!(
+        config.sasl_password.as_ref().map(|p| p.expose()),
+        Some("pass")
+    );
 }
 
 #[test]
@@ -409,7 +412,10 @@ fn test_kafka_config_from_env() {
     assert_eq!(config.security_protocol, "sasl_ssl");
     assert_eq!(config.sasl_mechanism, Some("SCRAM-SHA-256".to_string()));
     assert_eq!(config.sasl_username, Some("testuser".to_string()));
-    assert_eq!(config.sasl_password, Some("testpass".to_string()));
+    assert_eq!(
+        config.sasl_password.as_ref().map(|p| p.expose()),
+        Some("testpass")
+    );
     assert!(config.ssl_skip_verify);
     assert_eq!(config.topics, vec!["topic1", "topic2", "topic3"]);
 }
