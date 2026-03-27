@@ -447,6 +447,11 @@ pub(crate) fn validate_table_name(table: &str) -> DirectoryConfigResult<()> {
                 "path traversal not allowed".to_string(),
             ));
         }
+        if segment == "." {
+            return Err(DirectoryConfigError::InvalidTableName(
+                "current directory reference not allowed".to_string(),
+            ));
+        }
     }
     Ok(())
 }
@@ -843,6 +848,13 @@ mod tests {
     #[test]
     fn test_validate_table_name_rejects_empty_segments() {
         assert!(validate_table_name("foo//bar").is_err());
+    }
+
+    #[test]
+    fn test_validate_table_name_rejects_single_dot() {
+        assert!(validate_table_name(".").is_err());
+        assert!(validate_table_name("./foo").is_err());
+        assert!(validate_table_name("foo/./bar").is_err());
     }
 
     #[test]
