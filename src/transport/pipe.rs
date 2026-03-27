@@ -30,6 +30,7 @@ use super::error::{TransportError, TransportResult};
 use super::traits::{CommitToken, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -96,7 +97,7 @@ pub struct PipeTransport {
     stdin: tokio::sync::Mutex<BufReader<tokio::io::Stdin>>,
     stdout: tokio::sync::Mutex<tokio::io::Stdout>,
     sequence: AtomicU64,
-    closed: AtomicBool,
+    closed: Arc<AtomicBool>,
     recv_timeout_ms: u64,
 }
 
@@ -110,11 +111,25 @@ impl PipeTransport {
             "Pipe transport opened"
         );
 
+        let closed = Arc::new(AtomicBool::new(false));
+
+        #[cfg(feature = "health")]
+        {
+            let h = Arc::clone(&closed);
+            crate::health::HealthRegistry::register("transport:pipe", move || {
+                if h.load(Ordering::Relaxed) {
+                    crate::health::HealthStatus::Unhealthy
+                } else {
+                    crate::health::HealthStatus::Healthy
+                }
+            });
+        }
+
         Self {
             stdin: tokio::sync::Mutex::new(BufReader::new(tokio::io::stdin())),
             stdout: tokio::sync::Mutex::new(tokio::io::stdout()),
             sequence: AtomicU64::new(0),
-            closed: AtomicBool::new(false),
+            closed,
             recv_timeout_ms: config.recv_timeout_ms,
         }
     }
@@ -248,7 +263,7 @@ impl TransportReceiver for PipeTransport {
                     });
 
                     #[cfg(feature = "metrics")]
-                    metrics::counter!("dfe_records_received_total", "transport" => "pipe")
+                    metrics::counter!("dfe_transport_received_total", "transport" => "pipe")
                         .increment(1);
                 }
                 Err(e) => {

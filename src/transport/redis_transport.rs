@@ -155,7 +155,7 @@ impl RedisTransportConfig {
 pub struct RedisTransport {
     conn: Mutex<redis::aio::MultiplexedConnection>,
     config: RedisTransportConfig,
-    closed: AtomicBool,
+    closed: Arc<AtomicBool>,
     /// Whether the consumer group has been ensured for a given stream.
     group_created: Mutex<std::collections::HashSet<String>>,
 }
@@ -192,10 +192,24 @@ impl RedisTransport {
             "Redis transport opened"
         );
 
+        let closed = Arc::new(AtomicBool::new(false));
+
+        #[cfg(feature = "health")]
+        {
+            let h = Arc::clone(&closed);
+            crate::health::HealthRegistry::register("transport:redis", move || {
+                if h.load(Ordering::Relaxed) {
+                    crate::health::HealthStatus::Unhealthy
+                } else {
+                    crate::health::HealthStatus::Healthy
+                }
+            });
+        }
+
         Ok(Self {
             conn: Mutex::new(conn),
             config: config.clone(),
-            closed: AtomicBool::new(false),
+            closed,
             group_created: Mutex::new(std::collections::HashSet::new()),
         })
     }
@@ -384,7 +398,7 @@ impl TransportReceiver for RedisTransport {
 
         #[cfg(feature = "metrics")]
         if !messages.is_empty() {
-            metrics::counter!("dfe_transport_sent_total", "transport" => "redis")
+            metrics::counter!("dfe_transport_received_total", "transport" => "redis")
                 .increment(messages.len() as u64);
         }
 
@@ -409,9 +423,9 @@ impl TransportReceiver for RedisTransport {
         let mut conn = self.conn.lock().await;
 
         for (stream, ids) in &by_stream {
-            let id_refs: Vec<&str> = ids.clone();
+            let id_refs: &[&str] = ids;
             let _acked: i32 = conn
-                .xack(*stream, &self.config.group, &id_refs)
+                .xack(*stream, &self.config.group, id_refs)
                 .await
                 .map_err(|e| {
                     #[cfg(feature = "logger")]

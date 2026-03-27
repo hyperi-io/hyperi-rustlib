@@ -35,6 +35,7 @@ use super::traits::{CommitToken, TransportBase, TransportReceiver, TransportSend
 use super::types::{Message, PayloadFormat, SendResult};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::io::{AsyncBufReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
@@ -117,8 +118,7 @@ pub struct FileTransport {
     config: FileTransportConfig,
     writer: Mutex<Option<WriteState>>,
     reader: Mutex<Option<ReadState>>,
-    closed: AtomicBool,
-    sequence: std::sync::atomic::AtomicU64,
+    closed: Arc<AtomicBool>,
 }
 
 impl FileTransport {
@@ -135,12 +135,25 @@ impl FileTransport {
         #[cfg(feature = "logger")]
         tracing::info!(path = %config.path, append = config.append, "File transport opened");
 
+        let closed = Arc::new(AtomicBool::new(false));
+
+        #[cfg(feature = "health")]
+        {
+            let h = Arc::clone(&closed);
+            crate::health::HealthRegistry::register("transport:file", move || {
+                if h.load(Ordering::Relaxed) {
+                    crate::health::HealthStatus::Unhealthy
+                } else {
+                    crate::health::HealthStatus::Healthy
+                }
+            });
+        }
+
         Ok(Self {
             config: config.clone(),
             writer: Mutex::new(None),
             reader: Mutex::new(None),
-            closed: AtomicBool::new(false),
-            sequence: std::sync::atomic::AtomicU64::new(0),
+            closed,
         })
     }
 
@@ -336,7 +349,6 @@ impl TransportReceiver for FileTransport {
 
             let payload = line.as_bytes().to_vec();
             let format = PayloadFormat::detect(&payload);
-            let _seq = self.sequence.fetch_add(1, Ordering::Relaxed);
             let timestamp_ms = chrono::Utc::now().timestamp_millis();
 
             messages.push(Message {
@@ -357,7 +369,7 @@ impl TransportReceiver for FileTransport {
 
         #[cfg(feature = "metrics")]
         if !messages.is_empty() {
-            metrics::counter!("dfe_transport_sent_total", "transport" => "file")
+            metrics::counter!("dfe_transport_received_total", "transport" => "file")
                 .increment(messages.len() as u64);
         }
 
