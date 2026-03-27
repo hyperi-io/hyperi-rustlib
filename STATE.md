@@ -119,9 +119,9 @@ free — no handles passed, no opt-in, no extra code in downstream apps.
 | Config | `OnceLock<Config>` | `config` | `T::from_cascade()` reads from global figment |
 | Logging | Global `tracing` subscriber | `logger` | `tracing::info!()` macros — always available |
 | Metrics | Global `metrics` recorder | `metrics` | `metrics::counter!()` macros — no-op if no recorder |
-| Tracing | Global OTel subscriber | `otel` | Trace context auto-propagated (planned: always-on) |
-| Health | Global `HealthState` | `http-server` | Unified readiness flag (planned: auto-wired) |
-| Shutdown | `CancellationToken` | (planned) | Unified graceful shutdown (planned: auto-wired) |
+| Tracing | Global OTel subscriber | `otel` | W3C traceparent auto-propagated in gRPC/Kafka/HTTP |
+| Health | Global `HealthRegistry` | `health` | Modules auto-register, `/readyz` aggregates |
+| Shutdown | `CancellationToken` | `shutdown` | SIGTERM/SIGINT → all modules drain gracefully |
 
 **Rule:** When adding ANY new module or feature to rustlib:
 1. If it has configurable behaviour → load from cascade via `from_cascade()`
