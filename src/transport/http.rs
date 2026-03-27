@@ -199,7 +199,7 @@ pub struct HttpTransport {
     _server_handle: Option<tokio::task::JoinHandle<()>>,
 
     /// Whether the transport is closed.
-    closed: AtomicBool,
+    closed: Arc<AtomicBool>,
 
     /// Receive timeout in milliseconds (used by receive side).
     #[cfg(feature = "http-server")]
@@ -262,6 +262,20 @@ impl HttpTransport {
             "HTTP transport opened"
         );
 
+        let closed = Arc::new(AtomicBool::new(false));
+
+        #[cfg(feature = "health")]
+        {
+            let h = Arc::clone(&closed);
+            crate::health::HealthRegistry::register("transport:http", move || {
+                if h.load(Ordering::Relaxed) {
+                    crate::health::HealthStatus::Unhealthy
+                } else {
+                    crate::health::HealthStatus::Healthy
+                }
+            });
+        }
+
         Ok(Self {
             client,
             endpoint: config.endpoint.clone(),
@@ -271,7 +285,7 @@ impl HttpTransport {
             shutdown_tx,
             #[cfg(feature = "http-server")]
             _server_handle: server_handle,
-            closed: AtomicBool::new(false),
+            closed,
             #[cfg(feature = "http-server")]
             recv_timeout_ms: config.recv_timeout_ms,
         })
