@@ -45,6 +45,8 @@
 //!     Ok(())
 //! }
 //! ```
+//!
+//! See [`docs/CORE-PILLARS.md`] for the auto-wiring architecture.
 
 #![deny(unsafe_code)]
 #![warn(clippy::pedantic)]
