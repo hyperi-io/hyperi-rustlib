@@ -68,6 +68,8 @@ io = ["file-rotate", "parking_lot", "chrono", "tracing"]
 # Dead letter queue (file backend always available)
 dlq = ["io", "base64", "serde_json", "tokio", "async-trait", "tracing"]
 dlq-kafka = ["dlq", "transport-kafka"]
+dlq-http = ["dlq", "reqwest"]
+dlq-redis = ["dlq", "transport-redis"]
 
 # File output sink (local NDJSON file output)
 output-file = ["io", "serde_json", "tracing"]
@@ -106,7 +108,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "cli", "io", "dlq", "dlq-kafka", "output-file", "expression"]
+full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "cli", "io", "dlq", "dlq-kafka", "dlq-http", "dlq-redis", "output-file", "expression"]
 
 [dependencies]
 # Serialisation (always needed)

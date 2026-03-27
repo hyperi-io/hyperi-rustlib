@@ -57,6 +57,12 @@ mod orchestrator;
 #[cfg(feature = "dlq-kafka")]
 mod kafka;
 
+#[cfg(feature = "dlq-http")]
+mod http;
+
+#[cfg(feature = "dlq-redis")]
+mod redis_dlq;
+
 // Core types (always available with `dlq` feature)
 pub use backend::DlqBackend;
 pub use config::{DlqConfig, DlqMode, FileDlqConfig, RotationPeriod};
@@ -70,6 +76,14 @@ pub use orchestrator::Dlq;
 pub use config::{DlqRouting, KafkaDlqConfig};
 #[cfg(feature = "dlq-kafka")]
 pub use kafka::KafkaDlq;
+
+// HTTP types (only with `dlq-http` feature)
+#[cfg(feature = "dlq-http")]
+pub use http::{HttpDlq, HttpDlqConfig};
+
+// Redis types (only with `dlq-redis` feature)
+#[cfg(feature = "dlq-redis")]
+pub use redis_dlq::{RedisDlq, RedisDlqConfig};
 
 /// Result type for DLQ operations.
 pub type Result<T> = std::result::Result<T, DlqError>;
