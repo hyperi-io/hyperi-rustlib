@@ -28,24 +28,6 @@ All core pillar work is done. Need to:
 - [ ] Break-glass: static bearer token from secrets module
 - [ ] Design decision: dfe-engine as SSoT, rustlib validates tokens only
 
-### Downstream Remediation (agreed order)
-
-**Rule:** Fix any bugs or issues encountered in each project during migration.
-Do not skip past problems — if you find it, fix it.
-
-1. [x] Migrate dfe-receiver to v1.20.0 (328 tests pass, Transport import fix)
-2. [x] Migrate dfe-loader to v1.20.0 (391 tests pass, Transport import fix)
-3. [ ] Migrate dfe-archiver to v1.20.0 `[IN PROGRESS]`
-   - Version bump done, needs commit + push
-4. [ ] Migrate dfe-fetcher to v1.20.0 (Transport import fix needed)
-5. [ ] Migrate dfe-transform-vector to v1.20.0 (version bump only)
-6. [ ] Migrate dfe-transform-vrl to v1.20.0 (compiles clean with version bump)
-7. [ ] Migrate dfe-transform-elastic to v1.20.0
-8. [ ] Migrate dfe-transform-splack to v1.20.0
-9. [ ] Audit hyperi-pylib and write alignment plan
-
----
-
 ### Completed This Session
 
 - [x] **Transport trait split** — `Transport` split into `TransportBase` + `TransportSender` + `TransportReceiver` with blanket `Transport` impl
