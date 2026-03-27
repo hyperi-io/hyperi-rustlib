@@ -8,28 +8,26 @@
 
 ## Current Tasks
 
-### v1.20.0 Release `[NEXT]`
+### v1.20.0 Release
 
-All core pillar work is done. Need to:
-- [ ] Release-merge to release branch (feat!: breaking change → v1.20.0)
-- [ ] Verify crates.io publication
-- [ ] Docs consolidation (TRANSPORT.md, CORE-PILLARS.md, per-feature docs)
-- [ ] Add Redis vs Kafka comparison table to transport docs
-
-### DLQ Transport Integration
-
-- [ ] DLQ Kafka backend uses `Box<dyn TransportSender>` / `AnySender` instead of raw producer
-- [ ] DLQ can write to any transport (file, HTTP, Redis, Kafka)
-
-### Identity / Auth Module (Discussion)
-
-- [ ] Token validation middleware (JWT/OIDC) for gRPC interceptor + axum middleware
-- [ ] Service identity (service name + instance ID for mTLS, audit logs)
-- [ ] Break-glass: static bearer token from secrets module
-- [ ] Design decision: dfe-engine as SSoT, rustlib validates tokens only
+Release branch and v1.20.0 tag exist. Core pillar work done.
+- [x] Release-merge to release branch
+- [ ] Verify crates.io publication succeeded
+- [x] Docs consolidation (TRANSPORT.md, CORE-PILLARS.md)
+- [x] Redis vs Kafka comparison table in TRANSPORT.md
 
 ### Completed This Session
 
+- [x] **Code review remediation** — security fixes, bug fixes, panic removal, health wiring, cargo housekeeping, API polish
+  - SensitiveString moved to crate root (always available, no feature gate)
+  - KafkaConfig.sasl_password, CacheConfig.encryption_key → SensitiveString
+  - SecretValue Debug redaction, secrets cache dir permissions (0o700)
+  - recv() metric names fixed (file, pipe, redis), describe_gauge AppMetrics fix
+  - expect() removed from shutdown, metrics, http_client
+  - File, pipe, http, redis transports registered with HealthRegistry
+  - deny.toml added, validate_table_name blocks single-dot
+  - histogram_with_buckets limitation documented
+- [x] **DLQ HTTP + Redis backends** — `dlq-http` and `dlq-redis` features
 - [x] **Transport trait split** — `Transport` split into `TransportBase` + `TransportSender` + `TransportReceiver` with blanket `Transport` impl
 - [x] **Transport factory** — `AnySender` enum dispatch from config, `RoutedSender` for per-key dispatch (receiver/fetcher only)
 - [x] **File transport** — NDJSON with position tracking, commit persistence, rotation
@@ -63,6 +61,13 @@ All core pillar work is done. Need to:
 - [ ] `KafkaConfig::external_sasl_scram(brokers, username, password)`
 - [ ] `KafkaConfig::internal_sasl_scram(brokers, username, password)`
 
+### Identity / Auth Module (Discussion)
+
+- [ ] Token validation middleware (JWT/OIDC) for gRPC interceptor + axum middleware
+- [ ] Service identity (service name + instance ID for mTLS, audit logs)
+- [ ] Break-glass: static bearer token from secrets module
+- [ ] Design decision: dfe-engine as SSoT, rustlib validates tokens only
+
 ### Other
 
 - [ ] PII anonymiser (evaluate Rust libraries)
@@ -77,4 +82,4 @@ All core pillar work is done. Need to:
 - Core pillars plan: `docs/superpowers/plans/2026-03-26-core-pillars.md`
 - Two deployment modes: Kafka-mediated (persistence) vs direct gRPC (low latency)
 - Routed transport is receiver/fetcher only — all other stages are 1:1
-- Breaking change: `feat!:` commit triggers v1.20.0 via semantic-release
+- v1.20.0 released with breaking transport trait split (feat!: commit)
