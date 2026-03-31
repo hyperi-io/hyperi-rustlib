@@ -53,6 +53,7 @@ impl DfeMetrics {
     /// **Breaking change (v1.22):** Now takes `&MetricsManager` to ensure
     /// platform metrics are tightly coupled with the manifest registry.
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn register(manager: &super::MetricsManager) -> Self {
         let reg = manager.registry();
 

@@ -20,13 +20,17 @@ impl BackpressureMetrics {
     #[must_use]
     pub fn new(manager: &MetricsManager) -> Self {
         Self {
-            events: manager.counter(
+            events: manager.counter_with_labels(
                 "backpressure_events_total",
                 "Backpressure activation events",
+                &[],
+                "backpressure",
             ),
-            duration: manager.counter(
+            duration: manager.counter_with_labels(
                 "backpressure_duration_seconds_total",
                 "Cumulative time paused by backpressure",
+                &[],
+                "backpressure",
             ),
         }
     }

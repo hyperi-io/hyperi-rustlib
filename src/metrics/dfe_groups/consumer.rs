@@ -6,6 +6,7 @@
 use metrics::{Counter, Gauge, Histogram};
 
 use super::super::MetricsManager;
+use super::super::manifest::{MetricDescriptor, MetricType};
 
 /// Kafka consumer metrics.
 ///
@@ -23,24 +24,54 @@ pub struct ConsumerMetrics {
 impl ConsumerMetrics {
     #[must_use]
     pub fn new(manager: &MetricsManager) -> Self {
+        let ns = manager.namespace();
+
+        // consumer_lag — label-based, register descriptor manually
+        let lag_key = if ns.is_empty() {
+            "consumer_lag".to_string()
+        } else {
+            format!("{ns}_consumer_lag")
+        };
+        metrics::describe_gauge!(lag_key.clone(), "Kafka consumer lag per topic/partition");
+        manager.registry().push(MetricDescriptor {
+            name: lag_key,
+            metric_type: MetricType::Gauge,
+            description: "Kafka consumer lag per topic/partition".into(),
+            unit: String::new(),
+            labels: vec!["topic".into(), "partition".into()],
+            group: "consumer".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
+
         Self {
-            partitions_assigned: manager.gauge(
+            partitions_assigned: manager.gauge_with_labels(
                 "consumer_partitions_assigned",
                 "Current assigned partition count",
+                &[],
+                "consumer",
             ),
-            rebalance: manager.counter(
+            rebalance: manager.counter_with_labels(
                 "consumer_rebalance_total",
                 "Consumer group rebalance events",
+                &[],
+                "consumer",
             ),
-            poll_duration: manager.histogram(
+            poll_duration: manager.histogram_with_labels(
                 "consumer_poll_duration_seconds",
                 "Time per Kafka poll/recv call",
+                &[],
+                "consumer",
+                None,
             ),
-            offsets_committed: manager.counter(
+            offsets_committed: manager.counter_with_labels(
                 "offsets_committed_total",
                 "Kafka offsets committed after successful processing",
+                &[],
+                "consumer",
             ),
-            namespace: manager.namespace().to_string(),
+            namespace: ns.to_string(),
         }
     }
 
