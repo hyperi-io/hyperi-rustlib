@@ -1,3 +1,15 @@
+# [2.1.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.0.0...v2.1.0) (2026-03-31)
+
+
+### Bug Fixes
+
+* remove CARGO_BUILD_JOBS=2 from STATE.md ([5549a44](https://github.com/hyperi-io/hyperi-rustlib/commit/5549a44e4991af24d5ad5a9de02f48701a58bb7c))
+
+
+### Features
+
+* add metrics-manifest and generate-artefacts CLI subcommands ([b64fcaa](https://github.com/hyperi-io/hyperi-rustlib/commit/b64fcaa1f7631b20f7eba1f0d39c5a3e67ecbac1))
+
 # [2.0.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.23.0...v2.0.0) (2026-03-31)
 
 
