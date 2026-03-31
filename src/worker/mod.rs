@@ -6,11 +6,13 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Adaptive worker pool for CPU-saturating parallelism in DFE pipeline apps.
+//! Internal vertical scaling module for DFE pipeline applications.
 //!
-//! Provides a hybrid rayon (CPU-bound) + tokio (async I/O) worker pool with
-//! reactive pressure-based scaling, full config cascade integration, and
-//! automatic metrics emission.
+//! Provides CPU-saturating parallelism via a hybrid rayon (CPU-bound) + tokio
+//! (async I/O) worker pool. Reactively scales thread count up and down based
+//! on CPU utilisation and memory pressure, bounded by configurable watermark
+//! thresholds. All thresholds are config-cascade overridable and observable
+//! as gauge metrics for Grafana overlay.
 //!
 //! ## Quick Start
 //!
