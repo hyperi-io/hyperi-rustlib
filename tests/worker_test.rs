@@ -42,6 +42,17 @@ fn test_config_validation_accepts_max_zero_auto_detect() {
 }
 
 #[test]
+fn test_from_cascade_without_config_setup_returns_defaults() {
+    // Regression test for hyperi-io/dfe-loader#19:
+    // from_cascade() must not panic when config::setup() hasn't been called.
+    // It should fall back to defaults gracefully.
+    let cfg = WorkerPoolConfig::from_cascade("worker_pool")
+        .expect("from_cascade should not panic without config::setup()");
+    assert_eq!(cfg.min_threads, 2);
+    assert_eq!(cfg.max_threads, 0); // auto-detect default
+}
+
+#[test]
 fn test_config_validation_rejects_thresholds_out_of_order() {
     let cfg = WorkerPoolConfig {
         grow_below: 0.90,
