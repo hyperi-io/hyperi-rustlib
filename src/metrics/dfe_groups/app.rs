@@ -6,6 +6,7 @@
 use metrics::{Counter, Gauge};
 
 use super::super::MetricsManager;
+use super::super::manifest::{MetricDescriptor, MetricType};
 
 /// Mandatory metrics for every DFE application.
 ///
@@ -31,6 +32,8 @@ impl AppMetrics {
     /// `version` and `commit` are emitted as labels on the `info` gauge.
     #[must_use]
     pub fn new(manager: &MetricsManager, version: &str, commit: &str) -> Self {
+        manager.set_build_info(version, commit);
+
         // Info metric for service discovery
         let ns = manager.namespace();
         let info_name = if ns.is_empty() {
@@ -40,14 +43,30 @@ impl AppMetrics {
         };
         metrics::describe_gauge!(info_name.clone(), "Application info for service discovery");
         metrics::gauge!(
-            info_name,
+            info_name.clone(),
             "version" => version.to_string(),
             "commit" => commit.to_string()
         )
         .set(1.0);
+        manager.registry().push(MetricDescriptor {
+            name: info_name,
+            metric_type: MetricType::Gauge,
+            description: "Application info for service discovery".into(),
+            unit: String::new(),
+            labels: vec!["version".into(), "commit".into()],
+            group: "app".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
 
         // Start time
-        let start_time = manager.gauge("start_time_seconds", "Unix timestamp of process start");
+        let start_time = manager.gauge_with_labels(
+            "start_time_seconds",
+            "Unix timestamp of process start",
+            &[],
+            "app",
+        );
         start_time.set(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -55,34 +74,70 @@ impl AppMetrics {
                 .unwrap_or(0.0),
         );
 
+        // config_reloads_total — label-based, register descriptor manually
+        let config_key = if ns.is_empty() {
+            "config_reloads_total".to_string()
+        } else {
+            format!("{ns}_config_reloads_total")
+        };
+        metrics::describe_counter!(config_key.clone(), "Config reload attempts");
+        manager.registry().push(MetricDescriptor {
+            name: config_key.clone(),
+            metric_type: MetricType::Counter,
+            description: "Config reload attempts".into(),
+            unit: String::new(),
+            labels: vec!["result".into()],
+            group: "app".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
+
         Self {
-            records_received: manager
-                .counter("records_received_total", "Records received from source"),
-            records_processed: manager
-                .counter("records_processed_total", "Records successfully processed"),
-            records_error: manager.counter("records_error_total", "Records that failed processing"),
-            bytes_received: manager.counter("bytes_received_total", "Bytes received from source"),
-            bytes_written: manager.counter("bytes_written_total", "Bytes written to sink"),
-            memory_used_bytes: manager
-                .gauge("memory_used_bytes", "Current memory usage (cgroup-aware)"),
-            memory_limit_bytes: manager.gauge("memory_limit_bytes", "Effective memory limit"),
-            config_reloads_success: {
-                let key = if ns.is_empty() {
-                    "config_reloads_total".to_string()
-                } else {
-                    format!("{ns}_config_reloads_total")
-                };
-                metrics::describe_counter!(key.clone(), "Config reload attempts");
-                metrics::counter!(key, "result" => "success")
-            },
-            config_reloads_error: {
-                let key = if ns.is_empty() {
-                    "config_reloads_total".to_string()
-                } else {
-                    format!("{ns}_config_reloads_total")
-                };
-                metrics::counter!(key, "result" => "error")
-            },
+            records_received: manager.counter_with_labels(
+                "records_received_total",
+                "Records received from source",
+                &[],
+                "app",
+            ),
+            records_processed: manager.counter_with_labels(
+                "records_processed_total",
+                "Records successfully processed",
+                &[],
+                "app",
+            ),
+            records_error: manager.counter_with_labels(
+                "records_error_total",
+                "Records that failed processing",
+                &[],
+                "app",
+            ),
+            bytes_received: manager.counter_with_labels(
+                "bytes_received_total",
+                "Bytes received from source",
+                &[],
+                "app",
+            ),
+            bytes_written: manager.counter_with_labels(
+                "bytes_written_total",
+                "Bytes written to sink",
+                &[],
+                "app",
+            ),
+            memory_used_bytes: manager.gauge_with_labels(
+                "memory_used_bytes",
+                "Current memory usage (cgroup-aware)",
+                &[],
+                "app",
+            ),
+            memory_limit_bytes: manager.gauge_with_labels(
+                "memory_limit_bytes",
+                "Effective memory limit",
+                &[],
+                "app",
+            ),
+            config_reloads_success: metrics::counter!(config_key.clone(), "result" => "success"),
+            config_reloads_error: metrics::counter!(config_key, "result" => "error"),
         }
     }
 

@@ -6,6 +6,7 @@
 use metrics::{Counter, Gauge};
 
 use super::super::MetricsManager;
+use super::super::manifest::{MetricDescriptor, MetricType};
 
 /// Schema cache metrics.
 ///
@@ -22,20 +23,45 @@ impl SchemaCacheMetrics {
     #[must_use]
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
+
+        // schema_recovery_total — label-based, register descriptor manually
         let recovery_key = if ns.is_empty() {
             "schema_recovery_total".to_string()
         } else {
             format!("{ns}_schema_recovery_total")
         };
-        metrics::describe_counter!(recovery_key, "Schema mismatch recovery events");
+        metrics::describe_counter!(recovery_key.clone(), "Schema mismatch recovery events");
+        manager.registry().push(MetricDescriptor {
+            name: recovery_key,
+            metric_type: MetricType::Counter,
+            description: "Schema mismatch recovery events".into(),
+            unit: String::new(),
+            labels: vec!["table".into()],
+            group: "schema_cache".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
 
         Self {
-            hits: manager.counter("schema_cache_hits_total", "Schema cache hits"),
-            misses: manager.counter(
+            hits: manager.counter_with_labels(
+                "schema_cache_hits_total",
+                "Schema cache hits",
+                &[],
+                "schema_cache",
+            ),
+            misses: manager.counter_with_labels(
                 "schema_cache_misses_total",
                 "Schema cache misses (triggers fetch)",
+                &[],
+                "schema_cache",
             ),
-            tables: manager.gauge("schema_cache_tables", "Number of cached table schemas"),
+            tables: manager.gauge_with_labels(
+                "schema_cache_tables",
+                "Number of cached table schemas",
+                &[],
+                "schema_cache",
+            ),
             namespace: ns.to_string(),
         }
     }
