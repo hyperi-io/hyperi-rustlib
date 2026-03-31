@@ -16,7 +16,31 @@ Release branch and v1.20.0 tag exist. Core pillar work done.
 - [x] Docs consolidation (TRANSPORT.md, CORE-PILLARS.md)
 - [x] Redis vs Kafka comparison table in TRANSPORT.md
 
-### Completed This Session
+### Metrics Manifest (v1.22)
+
+- [x] **Metrics manifest infrastructure** — `MetricDescriptor`, `MetricRegistry`, `ManifestResponse` types
+  - Standards-aligned: OpenMetrics (type/description/unit), OTel Advisory (labels/buckets)
+  - Novel HyperI extensions: `group`, `use_cases`, `dashboard_hint`
+  - `MetricRegistry` (Arc<RwLock>) tightly coupled into `MetricsManager`
+  - Every `counter()`/`gauge()`/`histogram()` call auto-pushes descriptor
+  - New `_with_labels()` methods for declaring label keys and groups
+  - `set_build_info()`, `set_use_cases()`, `set_dashboard_hint()` enrichment
+- [x] **`/metrics/manifest` endpoint** — JSON contract on both axum and raw server paths
+  - Correct path ordering (manifest checked before /metrics in raw server)
+  - Explicit Content-Type: application/json
+- [x] **`DfeMetrics::register(&MetricsManager)` breaking change** — platform metrics tightly coupled
+  - All 24 dfe_* metrics auto-appear in manifest with correct labels and group="platform"
+- [x] **dfe_groups updated** — all 8 groups use `_with_labels()` internally
+  - `AppMetrics::new()` calls `set_build_info()` automatically
+  - Label-based metrics push descriptors with correct key names
+  - Histogram buckets captured in manifest
+- [x] **Downstream dfe-* projects updated** (committed, not pushed — waiting for parallelism remediation)
+  - dfe-loader, dfe-receiver, dfe-archiver, dfe-fetcher, dfe-transform-vector, dfe-transform-vrl
+  - Phase 3 (dfe-transform-wasm, dfe-transform-elastic, dfe-transform-splack) deferred
+- [ ] **Phase 2 enrichment** — `set_use_cases()` / `set_dashboard_hint()` content (deferred to parallelism remediation)
+- [ ] **Regenerate container + metrics contract artefacts** per project (deferred to push time)
+
+### Completed Previous Sessions
 
 - [x] **Code review remediation** — security fixes, bug fixes, panic removal, health wiring, cargo housekeeping, API polish
   - SensitiveString moved to crate root (always available, no feature gate)
