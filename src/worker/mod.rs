@@ -6,13 +6,18 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Internal vertical scaling module for DFE pipeline applications.
+//! Adaptive worker pool and batch processing framework.
 //!
-//! Provides CPU-saturating parallelism via a hybrid rayon (CPU-bound) + tokio
-//! (async I/O) worker pool. Reactively scales thread count up and down based
-//! on CPU utilisation and memory pressure, bounded by configurable watermark
-//! thresholds. All thresholds are config-cascade overridable and observable
-//! as gauge metrics for Grafana overlay.
+//! Two layers:
+//!
+//! - **Generic:** [`AdaptiveWorkerPool`] provides CPU-saturating parallelism via
+//!   rayon (CPU-bound) + tokio (async I/O), with reactive pressure-based scaling.
+//!   Useful for any workload — not DFE-specific.
+//!
+//! - **Opinionated:** [`BatchProcessor`] trait + [`BatchPipeline`] provide a
+//!   structured parallel-then-sequential pipeline for DFE apps. Apps implement
+//!   `BatchProcessor` for their domain; the pipeline handles stats, scaling,
+//!   and batch orchestration. [`PipelineStats`] provides common atomic counters.
 //!
 //! ## Quick Start
 //!
@@ -34,11 +39,15 @@
 //! }).await;
 //! ```
 
+mod batch;
 mod config;
 pub(crate) mod metrics;
 mod pool;
 pub(crate) mod scaler;
+mod stats;
 
+pub use batch::{BatchPipeline, BatchProcessor};
 pub use config::WorkerPoolConfig;
 pub use pool::AdaptiveWorkerPool;
 pub use scaler::{ScalingDecision, ScalingInput};
+pub use stats::{PipelineStats, PipelineStatsSnapshot};

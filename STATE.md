@@ -142,6 +142,8 @@ spool, cache, secrets, HTTP client, DLQ — with zero additional wiring.
 - **git2 kept over gix** — gix (pure Rust) lacks high-level write ops (add, commit, checkout). Revisit when gix matures.
 - **Package rename** from `hs-rustlib` to `hyperi-rustlib` to match org rebrand
 - **Config cascade unified spec** — rustlib and pylib must be identical. Both search `./`, `./config/`, `/config/`, `~/.config/{app_name}/`. Home `.env` opt-in. PG layer is built-for-not-with (YAML gitops already centralised). See [CONFIG-CASCADE.md](docs/CONFIG-CASCADE.md)
+- **Common patterns in rustlib first** — if all 6 DFE projects will use the same pattern, implement it in rustlib first, publish, then consume. Never duplicate common logic across downstream projects. This applies to: worker pool, batch pipeline, pipeline stats, DLQ routing, metrics groups, config cascade, CLI framework.
+- **DFE parallelisation pattern** — split sequential hot loops into parallel (pure `&self` computation via rayon) and sequential (mutable state: buffer push, mark_pending, stats, DLQ) phases. The `BatchProcessor` trait + `BatchPipeline` struct in rustlib provide the common framework. Each DFE app implements `BatchProcessor` for its domain. See `src/pipeline/` module.
 
 ---
 
