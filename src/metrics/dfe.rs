@@ -9,8 +9,9 @@
 //! Standard DFE metrics.
 //!
 //! Pre-defined metric set for DFE pipeline components (receiver, loader, engine).
-//! Call [`DfeMetrics::register`] **after** [`MetricsManager`](super::MetricsManager)
-//! installs the global recorder.
+//! Call [`DfeMetrics::register`] **after** creating a
+//! [`MetricsManager`](super::MetricsManager) — the manager must exist so that
+//! platform metrics are automatically captured in the manifest registry.
 //!
 //! All methods are `#[inline]` and designed for hot-path use.
 //!
@@ -19,13 +20,15 @@
 //! ```rust,no_run
 //! use hyperi_rustlib::metrics::{MetricsManager, DfeMetrics};
 //!
-//! let _mgr = MetricsManager::new("myapp");
-//! let dfe = DfeMetrics::register();
+//! let mgr = MetricsManager::new("myapp");
+//! let dfe = DfeMetrics::register(&mgr);
 //!
 //! dfe.transport_sent("kafka", 100);
 //! dfe.records_received(500);
 //! dfe.scaling_pressure(42.0);
 //! ```
+
+use super::manifest::{MetricDescriptor, MetricType};
 
 /// Standard DFE metric set.
 ///
@@ -33,20 +36,26 @@
 /// pipeline, records, scaling, spool, and security concerns.
 ///
 /// Construct via [`DfeMetrics::register`] — this describes all metrics with
-/// the global recorder and returns a zero-cost handle for recording.
+/// the global recorder AND pushes descriptors into the manifest registry.
 pub struct DfeMetrics {
     /// Prevent external construction.
     _private: (),
 }
 
 impl DfeMetrics {
-    /// Register all DFE metric descriptions with the global recorder.
+    /// Register all DFE metric descriptions with the global recorder and
+    /// manifest registry.
     ///
-    /// Call this **once** after [`MetricsManager`](super::MetricsManager) has
-    /// installed a recorder. The returned handle is cheaply clonable (it's
-    /// zero-sized — all recording goes through the global `metrics!` macros).
+    /// Call this **once** after creating a [`MetricsManager`](super::MetricsManager).
+    /// The returned handle is cheaply clonable (it's zero-sized — all recording
+    /// goes through the global `metrics!` macros).
+    ///
+    /// **Breaking change (v1.22):** Now takes `&MetricsManager` to ensure
+    /// platform metrics are tightly coupled with the manifest registry.
     #[must_use]
-    pub fn register() -> Self {
+    pub fn register(manager: &super::MetricsManager) -> Self {
+        let reg = manager.registry();
+
         // --- Transport ---
         metrics::describe_counter!(
             "dfe_transport_sent_total",
@@ -86,6 +95,73 @@ impl DfeMetrics {
             "Time to send a batch to transport"
         );
 
+        // Push transport descriptors into manifest registry
+        for (name, desc, mt) in [
+            (
+                "dfe_transport_sent_total",
+                "Messages successfully sent to transport",
+                MetricType::Counter,
+            ),
+            (
+                "dfe_transport_send_errors_total",
+                "Messages that failed to send",
+                MetricType::Counter,
+            ),
+            (
+                "dfe_transport_backpressured_total",
+                "Messages delayed due to backpressure",
+                MetricType::Counter,
+            ),
+            (
+                "dfe_transport_refused_total",
+                "Messages refused by transport (circuit open, capacity)",
+                MetricType::Counter,
+            ),
+            (
+                "dfe_transport_healthy",
+                "Transport health (1=healthy, 0=unhealthy)",
+                MetricType::Gauge,
+            ),
+            (
+                "dfe_transport_queue_size",
+                "Current number of messages in transport queue",
+                MetricType::Gauge,
+            ),
+            (
+                "dfe_transport_queue_capacity",
+                "Maximum transport queue capacity",
+                MetricType::Gauge,
+            ),
+            (
+                "dfe_transport_inflight",
+                "Messages currently in-flight (sent but not acked)",
+                MetricType::Gauge,
+            ),
+        ] {
+            reg.push(MetricDescriptor {
+                name: name.into(),
+                metric_type: mt,
+                description: desc.into(),
+                unit: String::new(),
+                labels: vec!["transport".into()],
+                group: "platform".into(),
+                buckets: None,
+                use_cases: vec![],
+                dashboard_hint: None,
+            });
+        }
+        reg.push(MetricDescriptor {
+            name: "dfe_transport_send_duration_seconds".into(),
+            metric_type: MetricType::Histogram,
+            description: "Time to send a batch to transport".into(),
+            unit: "seconds".into(),
+            labels: vec!["transport".into()],
+            group: "platform".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
+
         // --- Pipeline ---
         metrics::describe_gauge!(
             "dfe_pipeline_ready",
@@ -95,6 +171,29 @@ impl DfeMetrics {
             "dfe_pipeline_stall_seconds_total",
             "Cumulative seconds the pipeline was stalled"
         );
+
+        reg.push(MetricDescriptor {
+            name: "dfe_pipeline_ready".into(),
+            metric_type: MetricType::Gauge,
+            description: "Pipeline readiness (1=ready, 0=not ready)".into(),
+            unit: String::new(),
+            labels: vec![],
+            group: "platform".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
+        reg.push(MetricDescriptor {
+            name: "dfe_pipeline_stall_seconds_total".into(),
+            metric_type: MetricType::Counter,
+            description: "Cumulative seconds the pipeline was stalled".into(),
+            unit: "seconds".into(),
+            labels: vec![],
+            group: "platform".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
 
         // --- Records ---
         metrics::describe_counter!(
@@ -111,6 +210,34 @@ impl DfeMetrics {
         );
         metrics::describe_counter!("dfe_records_dlq_total", "Records sent to dead letter queue");
 
+        for (name, desc) in [
+            (
+                "dfe_records_received_total",
+                "Records received from all sources",
+            ),
+            (
+                "dfe_records_delivered_total",
+                "Records successfully delivered to sink",
+            ),
+            (
+                "dfe_records_filtered_total",
+                "Records dropped by filter/routing rules",
+            ),
+            ("dfe_records_dlq_total", "Records sent to dead letter queue"),
+        ] {
+            reg.push(MetricDescriptor {
+                name: name.into(),
+                metric_type: MetricType::Counter,
+                description: desc.into(),
+                unit: String::new(),
+                labels: vec![],
+                group: "platform".into(),
+                buckets: None,
+                use_cases: vec![],
+                dashboard_hint: None,
+            });
+        }
+
         // --- Scaling ---
         metrics::describe_gauge!(
             "dfe_scaling_pressure",
@@ -125,6 +252,33 @@ impl DfeMetrics {
             "Memory pressure ratio (0.0-1.0)"
         );
 
+        for (name, desc) in [
+            (
+                "dfe_scaling_pressure",
+                "Normalised scaling pressure (0-100)",
+            ),
+            (
+                "dfe_scaling_circuit_open",
+                "Circuit breaker state (1=open, 0=closed)",
+            ),
+            (
+                "dfe_scaling_memory_pressure",
+                "Memory pressure ratio (0.0-1.0)",
+            ),
+        ] {
+            reg.push(MetricDescriptor {
+                name: name.into(),
+                metric_type: MetricType::Gauge,
+                description: desc.into(),
+                unit: String::new(),
+                labels: vec![],
+                group: "platform".into(),
+                buckets: None,
+                use_cases: vec![],
+                dashboard_hint: None,
+            });
+        }
+
         // --- Spool ---
         metrics::describe_gauge!("dfe_spool_bytes", "Current spool size in bytes");
         metrics::describe_gauge!("dfe_spool_messages", "Current spool message count");
@@ -132,6 +286,27 @@ impl DfeMetrics {
             "dfe_spool_disk_available",
             "Available disk space for spool in bytes"
         );
+
+        for (name, desc) in [
+            ("dfe_spool_bytes", "Current spool size in bytes"),
+            ("dfe_spool_messages", "Current spool message count"),
+            (
+                "dfe_spool_disk_available",
+                "Available disk space for spool in bytes",
+            ),
+        ] {
+            reg.push(MetricDescriptor {
+                name: name.into(),
+                metric_type: MetricType::Gauge,
+                description: desc.into(),
+                unit: String::new(),
+                labels: vec![],
+                group: "platform".into(),
+                buckets: None,
+                use_cases: vec![],
+                dashboard_hint: None,
+            });
+        }
 
         // --- Security ---
         metrics::describe_counter!(
@@ -142,6 +317,29 @@ impl DfeMetrics {
             "dfe_validation_failures_total",
             "Validation failures by reason"
         );
+
+        reg.push(MetricDescriptor {
+            name: "dfe_auth_failures_total".into(),
+            metric_type: MetricType::Counter,
+            description: "Authentication failures by reason".into(),
+            unit: String::new(),
+            labels: vec!["reason".into()],
+            group: "platform".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
+        reg.push(MetricDescriptor {
+            name: "dfe_validation_failures_total".into(),
+            metric_type: MetricType::Counter,
+            description: "Validation failures by reason".into(),
+            unit: String::new(),
+            labels: vec!["reason".into()],
+            group: "platform".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
 
         Self { _private: () }
     }
@@ -314,16 +512,46 @@ mod tests {
 
     #[test]
     fn test_register_does_not_panic() {
-        // register() calls describe_*! macros which are no-ops without a
-        // global recorder, but must not panic.
-        let _dfe = DfeMetrics::register();
+        let mgr = super::super::MetricsManager::new("test_app");
+        let _dfe = DfeMetrics::register(&mgr);
+    }
+
+    #[test]
+    fn test_register_populates_registry() {
+        let mgr = super::super::MetricsManager::new("test_app");
+        let _dfe = DfeMetrics::register(&mgr);
+        let manifest = mgr.registry().manifest();
+        let names: Vec<&str> = manifest.metrics.iter().map(|m| m.name.as_str()).collect();
+        assert!(names.contains(&"dfe_transport_sent_total"));
+        assert!(names.contains(&"dfe_pipeline_ready"));
+        assert!(names.contains(&"dfe_records_received_total"));
+        assert!(names.contains(&"dfe_scaling_pressure"));
+        assert!(names.contains(&"dfe_spool_bytes"));
+        assert!(names.contains(&"dfe_auth_failures_total"));
+        // All should be group=platform
+        for m in &manifest.metrics {
+            assert_eq!(m.group, "platform");
+        }
+        // Transport metrics should have "transport" label
+        let sent = manifest
+            .metrics
+            .iter()
+            .find(|m| m.name == "dfe_transport_sent_total")
+            .unwrap();
+        assert_eq!(sent.labels, vec!["transport"]);
+        // Security metrics should have "reason" label
+        let auth = manifest
+            .metrics
+            .iter()
+            .find(|m| m.name == "dfe_auth_failures_total")
+            .unwrap();
+        assert_eq!(auth.labels, vec!["reason"]);
     }
 
     #[test]
     fn test_methods_callable_without_recorder() {
-        // All recording methods should be no-ops (not panic) when no
-        // global recorder is installed.
-        let dfe = DfeMetrics::register();
+        let mgr = super::super::MetricsManager::new("test_app");
+        let dfe = DfeMetrics::register(&mgr);
 
         dfe.transport_sent("kafka", 1);
         dfe.transport_send_errors("kafka", 1);
