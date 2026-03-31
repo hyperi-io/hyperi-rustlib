@@ -236,7 +236,10 @@ pub use scaling::{
 };
 
 #[cfg(feature = "worker")]
-pub use worker::{AdaptiveWorkerPool, ScalingDecision, ScalingInput, WorkerPoolConfig};
+pub use worker::{
+    AdaptiveWorkerPool, BatchPipeline, BatchProcessor, PipelineStats, PipelineStatsSnapshot,
+    ScalingDecision, ScalingInput, WorkerPoolConfig,
+};
 
 #[cfg(feature = "cli")]
 pub use cli::{CliError, CommonArgs, DfeApp, StandardCommand, VersionInfo};
