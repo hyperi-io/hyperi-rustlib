@@ -97,14 +97,20 @@ impl Default for WorkerPoolConfig {
 impl WorkerPoolConfig {
     /// Load config from the cascade under the given key (e.g. "worker_pool").
     ///
-    /// Falls back to defaults for any missing fields. Validates after loading.
+    /// Falls back to defaults if the config cascade is not initialised or the
+    /// key is absent. Validates after loading.
     ///
     /// # Errors
     ///
-    /// Returns an error if the config cascade is not initialised or validation fails.
+    /// Returns an error if validation fails (e.g. thresholds out of order).
     pub fn from_cascade(key: &str) -> Result<Self, crate::config::ConfigError> {
-        let cfg = crate::config::get();
-        let pool_cfg: Self = cfg.unmarshal_key(key).unwrap_or_default();
+        let pool_cfg: Self = match crate::config::try_get() {
+            Some(cfg) => cfg.unmarshal_key(key).unwrap_or_default(),
+            None => {
+                tracing::debug!("Config cascade not initialised, using default WorkerPoolConfig");
+                Self::default()
+            }
+        };
         pool_cfg.validate()?;
         Ok(pool_cfg)
     }
