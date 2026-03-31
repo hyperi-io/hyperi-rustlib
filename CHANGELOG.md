@@ -1,3 +1,14 @@
+## [1.21.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.21.0...v1.21.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* add BSL-1.0 to deny.toml allow list ([e59372f](https://github.com/hyperi-io/hyperi-rustlib/commit/e59372f070130fd38237aca832aef5ede1cc7caf))
+* add missing license types to deny.toml allow list ([76b2571](https://github.com/hyperi-io/hyperi-rustlib/commit/76b257164f82e6fab465672f4271c004782a47a8))
+* remove deprecated deny field from deny.toml ([c086931](https://github.com/hyperi-io/hyperi-rustlib/commit/c08693111c022dbbb991266059d6f135eeb9c5f5))
+* remove invalid unmaintained field from deny.toml advisories ([8f0e816](https://github.com/hyperi-io/hyperi-rustlib/commit/8f0e8161e0cdf8bc48c8e1a88541dd4b5de2bd04))
+* update deny.toml to cargo-deny 0.19 format ([7b5a977](https://github.com/hyperi-io/hyperi-rustlib/commit/7b5a9770fdd5e1fb922cc3079b7fb635fa7dce59))
+
 # [1.21.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.20.2...v1.21.0) (2026-03-27)
 
 
