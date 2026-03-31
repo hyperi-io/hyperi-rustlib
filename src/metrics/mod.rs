@@ -84,6 +84,7 @@
 
 mod container;
 pub mod dfe;
+pub mod manifest;
 mod process;
 
 #[cfg(feature = "otel-metrics")]
@@ -110,6 +111,7 @@ pub use container::ContainerMetrics;
 pub use dfe::DfeMetrics;
 #[cfg(feature = "metrics-dfe")]
 pub mod dfe_groups;
+pub use manifest::{ManifestResponse, MetricDescriptor, MetricRegistry, MetricType};
 pub use process::ProcessMetrics;
 
 #[cfg(feature = "otel-metrics")]
