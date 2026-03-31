@@ -8,7 +8,7 @@
 
 [package]
 name = "hyperi-rustlib"
-version = "2.2.0"
+version = "2.2.1"
 edition = "2024"
 rust-version = "1.94"
 description = "Opinionated Rust framework for high-throughput data pipelines at PB scale. Auto-wiring config, logging, metrics, tracing, health, and graceful shutdown — built from many years of production infrastructure experience."

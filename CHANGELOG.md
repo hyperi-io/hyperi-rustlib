@@ -1,3 +1,10 @@
+## [2.2.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.2.0...v2.2.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* cap max_threads at available_parallelism even when explicitly set ([b23d16d](https://github.com/hyperi-io/hyperi-rustlib/commit/b23d16d6a1e2f096e71c86b689d4f91ad22312c8))
+
 # [2.2.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.1.0...v2.2.0) (2026-03-31)
 
 
