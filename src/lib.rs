@@ -121,6 +121,9 @@ pub mod memory;
 #[cfg(feature = "scaling")]
 pub mod scaling;
 
+#[cfg(feature = "worker")]
+pub mod worker;
+
 #[cfg(feature = "cli")]
 pub mod cli;
 
@@ -231,6 +234,9 @@ pub use scaling::{
     ComponentSnapshot, GateType, PressureSnapshot, RateWindow, ScalingComponent, ScalingPressure,
     ScalingPressureConfig,
 };
+
+#[cfg(feature = "worker")]
+pub use worker::{AdaptiveWorkerPool, ScalingDecision, WorkerPoolConfig};
 
 #[cfg(feature = "cli")]
 pub use cli::{CliError, CommonArgs, DfeApp, StandardCommand, VersionInfo};
