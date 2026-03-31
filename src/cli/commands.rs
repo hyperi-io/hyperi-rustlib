@@ -38,9 +38,32 @@ pub enum StandardCommand {
     #[command(name = "config-check")]
     ConfigCheck,
 
+    /// Print metrics manifest JSON and exit.
+    ///
+    /// Outputs the full metric catalogue (names, types, labels, groups, buckets)
+    /// for this service. Use in CI to generate `docs/metrics-manifest.json`.
+    #[command(name = "metrics-manifest")]
+    MetricsManifest,
+
+    /// Generate all CI artefacts and exit.
+    ///
+    /// Produces metrics manifest, deployment contract, and container spec
+    /// in the specified output directory. Use in CI post-build:
+    /// `dfe-loader generate-artefacts --output-dir docs/`
+    #[command(name = "generate-artefacts")]
+    GenerateArtefacts(GenerateArtefactsArgs),
+
     /// Live metrics dashboard (like `vector top`).
     #[cfg(feature = "top")]
     Top(TopArgs),
+}
+
+/// Arguments for the `generate-artefacts` subcommand.
+#[derive(Debug, Clone, clap::Args)]
+pub struct GenerateArtefactsArgs {
+    /// Output directory for generated artefacts.
+    #[arg(long = "output-dir", default_value = "docs")]
+    pub output_dir: String,
 }
 
 /// Arguments for the `top` subcommand.

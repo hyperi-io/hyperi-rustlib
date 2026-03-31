@@ -85,6 +85,25 @@ pub trait DfeApp: Sized {
         &self,
         config: Self::Config,
     ) -> impl std::future::Future<Output = Result<(), CliError>> + Send;
+
+    /// Register all metrics for this service.
+    ///
+    /// Called by `metrics-manifest` and `generate-artefacts` subcommands to
+    /// capture the full metric catalogue without starting the service.
+    /// The default implementation is a no-op. Override to register
+    /// `DfeMetrics`, metric groups, and app-specific metrics.
+    #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
+    fn register_metrics(&self, _manager: &crate::metrics::MetricsManager) {}
+
+    /// Build the deployment contract for this service.
+    ///
+    /// Called by `generate-artefacts` to produce container specs, health
+    /// endpoints, KEDA config, and metrics manifest. The default returns
+    /// `None`. Override to provide a contract.
+    #[cfg(feature = "deployment")]
+    fn deployment_contract(&self) -> Option<crate::deployment::DeploymentContract> {
+        None
+    }
 }
 
 /// Drive the standard DFE service lifecycle.
@@ -133,6 +152,29 @@ pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
                     Err(e)
                 }
             }
+        }
+
+        #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
+        StandardCommand::MetricsManifest => {
+            let mgr = crate::metrics::MetricsManager::new(app.name());
+            app.register_metrics(&mgr);
+            let manifest = mgr.registry().manifest();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&manifest)
+                    .map_err(|e| CliError::Service(format!("JSON serialisation failed: {e}")))?
+            );
+            Ok(())
+        }
+        #[cfg(not(any(feature = "metrics", feature = "otel-metrics")))]
+        StandardCommand::MetricsManifest => {
+            output::print_error("metrics feature not enabled — no manifest available");
+            Err(CliError::Service("metrics feature not enabled".into()))
+        }
+
+        StandardCommand::GenerateArtefacts(ref artefact_args) => {
+            generate_artefacts(&app, artefact_args)?;
+            Ok(())
         }
 
         StandardCommand::Run => {
@@ -198,6 +240,65 @@ fn init_logger_for_service(
     _service_name: &str,
     _service_version: &str,
 ) -> Result<(), CliError> {
+    Ok(())
+}
+
+/// Generate all CI artefacts for this service.
+///
+/// Produces metrics manifest, deployment contract, and container spec
+/// in the output directory. Files are deterministic — running twice produces
+/// identical output (no timestamps that change between runs).
+fn generate_artefacts<A: DfeApp>(
+    app: &A,
+    args: &super::commands::GenerateArtefactsArgs,
+) -> Result<(), CliError> {
+    let output_dir = std::path::Path::new(&args.output_dir);
+    std::fs::create_dir_all(output_dir)
+        .map_err(|e| CliError::Service(format!("failed to create output dir: {e}")))?;
+
+    let mut generated = Vec::new();
+
+    // Metrics manifest
+    #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
+    {
+        let mgr = crate::metrics::MetricsManager::new(app.name());
+        app.register_metrics(&mgr);
+        let manifest = mgr.registry().manifest();
+        let path = output_dir.join("metrics-manifest.json");
+        let json = serde_json::to_string_pretty(&manifest)
+            .map_err(|e| CliError::Service(format!("metrics manifest JSON failed: {e}")))?;
+        std::fs::write(&path, &json)
+            .map_err(|e| CliError::Service(format!("failed to write {}: {e}", path.display())))?;
+        generated.push(format!(
+            "metrics-manifest.json ({} metrics)",
+            manifest.metrics.len()
+        ));
+    }
+
+    // Deployment contract
+    #[cfg(feature = "deployment")]
+    if let Some(contract) = app.deployment_contract() {
+        let path = output_dir.join("deployment-contract.json");
+        let json = serde_json::to_string_pretty(&contract)
+            .map_err(|e| CliError::Service(format!("deployment contract JSON failed: {e}")))?;
+        std::fs::write(&path, &json)
+            .map_err(|e| CliError::Service(format!("failed to write {}: {e}", path.display())))?;
+        generated.push("deployment-contract.json".to_string());
+    }
+
+    if generated.is_empty() {
+        output::print_warn("no artefacts generated (no metrics or deployment features enabled)");
+    } else {
+        output::print_success(&format!(
+            "generated {} artefact(s) in {}",
+            generated.len(),
+            output_dir.display()
+        ));
+        for name in &generated {
+            output::print_kv("  wrote", name);
+        }
+    }
+
     Ok(())
 }
 
