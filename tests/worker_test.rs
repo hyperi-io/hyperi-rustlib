@@ -83,7 +83,7 @@ fn test_process_batch_executes_on_multiple_threads() {
     for (i, result) in results.iter().enumerate() {
         assert_eq!(
             *result.as_ref().unwrap(),
-            (i as i32) * 2,
+            (i32::try_from(i).unwrap()) * 2,
             "Wrong result at index {i}"
         );
     }
@@ -171,7 +171,10 @@ async fn test_fan_out_async_preserves_order() {
     let items: Vec<i32> = (0..20).collect();
     let results: Vec<Result<i32, String>> = pool
         .fan_out_async(&items, |&item| async move {
-            tokio::time::sleep(std::time::Duration::from_millis((20 - item as u64) % 10)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(
+                u64::try_from(20 - item).unwrap_or(0) % 10,
+            ))
+            .await;
             Ok(item * 3)
         })
         .await;
@@ -180,7 +183,7 @@ async fn test_fan_out_async_preserves_order() {
     for (i, result) in results.iter().enumerate() {
         assert_eq!(
             *result.as_ref().unwrap(),
-            (i as i32) * 3,
+            (i32::try_from(i).unwrap()) * 3,
             "Result at index {i} has wrong value"
         );
     }

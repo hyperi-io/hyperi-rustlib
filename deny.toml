@@ -4,6 +4,11 @@ all-features = true
 
 [advisories]
 yanked = "warn"
+# Transitive deps we cannot control — track upstream for resolution
+ignore = [
+    "RUSTSEC-2024-0384", # instant (via reqwest-retry → parking_lot 0.11)
+    "RUSTSEC-2024-0436", # paste (dtolnay crate, widely used, no replacement)
+]
 
 [licenses]
 allow = [
