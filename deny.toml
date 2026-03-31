@@ -19,6 +19,9 @@ allow = [
     "Unicode-3.0",
     "Unicode-DFS-2016",
     "OpenSSL",
+    "CC0-1.0",
+    "Artistic-2.0",
+    "CDLA-Permissive-2.0",
 ]
 
 # Some crates don't have standard SPDX identifiers
