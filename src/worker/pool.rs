@@ -196,8 +196,13 @@ impl AdaptiveWorkerPool {
             let chunk_end = (chunk_start + concurrency).min(items.len());
             let mut handles = Vec::with_capacity(chunk_end - chunk_start);
 
-            for idx in chunk_start..chunk_end {
-                let fut = f(&items[idx]);
+            for (idx, item) in items
+                .iter()
+                .enumerate()
+                .skip(chunk_start)
+                .take(chunk_end - chunk_start)
+            {
+                let fut = f(item);
                 handles.push((idx, tokio::spawn(fut)));
             }
 
