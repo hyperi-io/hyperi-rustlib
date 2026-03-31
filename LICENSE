@@ -42,6 +42,39 @@ You may obtain a copy of the Apache License at:
 
 https://www.apache.org/licenses/LICENSE-2.0
 
+## AI / Machine Learning Restriction
+
+The Software and any modifications made to it may not be used for the
+purpose of training or improving machine learning algorithms, including but
+not limited to artificial intelligence systems, large language models,
+natural language processing, data mining, or automated content generation —
+whether for commercial or non-commercial purposes — without the prior
+written consent of HYPERI PTY LIMITED.
+
+The Software may not be included in any dataset used for training or
+improving machine learning algorithms, including but not limited to
+artificial intelligence, natural language processing, or data mining. This
+prohibition includes but is not limited to:
+
+- Direct training of models on the source code, documentation, or metadata
+- Fine-tuning or transfer learning using any part of the Software
+- Retrieval-augmented generation (RAG) systems that index or retrieve from
+  the Software
+- Inclusion in any corpus, dataset, or data pipeline intended for machine
+  learning purposes
+- Reverse engineering, decompilation, or analysis of the Software for the
+  purpose of replicating its functionality through AI-generated code
+
+This restriction applies regardless of the format in which the materials are
+accessed (including but not limited to source code, compiled binaries,
+documentation, and metadata) and survives the Apache 2.0 conversion described
+above only to the extent permitted by the Apache License, Version 2.0.
+
+Any person or organisation found to be in violation of these restrictions may
+be subject to legal action and may be held liable for any resulting damages.
+
+See [AI-TRAINING-POLICY.md](AI-TRAINING-POLICY.md) for full details.
+
 ## Australian Law Notice
 
 For users in Australia: To the extent this License is governed by Australian
