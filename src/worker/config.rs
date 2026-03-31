@@ -104,12 +104,11 @@ impl WorkerPoolConfig {
     ///
     /// Returns an error if validation fails (e.g. thresholds out of order).
     pub fn from_cascade(key: &str) -> Result<Self, crate::config::ConfigError> {
-        let pool_cfg: Self = match crate::config::try_get() {
-            Some(cfg) => cfg.unmarshal_key(key).unwrap_or_default(),
-            None => {
-                tracing::debug!("Config cascade not initialised, using default WorkerPoolConfig");
-                Self::default()
-            }
+        let pool_cfg: Self = if let Some(cfg) = crate::config::try_get() {
+            cfg.unmarshal_key(key).unwrap_or_default()
+        } else {
+            tracing::debug!("Config cascade not initialised, using default WorkerPoolConfig");
+            Self::default()
         };
         pool_cfg.validate()?;
         Ok(pool_cfg)
