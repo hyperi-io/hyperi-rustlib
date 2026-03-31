@@ -1,3 +1,10 @@
+# [2.2.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.1.0...v2.2.0) (2026-03-31)
+
+
+### Features
+
+* add BatchProcessor trait, BatchPipeline, and PipelineStats ([71ae5ab](https://github.com/hyperi-io/hyperi-rustlib/commit/71ae5abbecd395bcf53a9f6fd51ef23d2b853eda))
+
 # [2.1.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.0.0...v2.1.0) (2026-03-31)
 
 
