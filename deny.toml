@@ -4,7 +4,6 @@ all-features = true
 
 [advisories]
 vulnerability = "deny"
-unmaintained = "warn"
 yanked = "warn"
 notice = "warn"
 
@@ -23,7 +22,6 @@ allow = [
     "Unicode-3.0",
     "Unicode-DFS-2016",
     "OpenSSL",
-    "Ring",
 ]
 copyleft = "warn"
 default = "deny"
