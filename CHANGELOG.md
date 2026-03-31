@@ -1,3 +1,22 @@
+# [1.22.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.21.1...v1.22.0) (2026-03-31)
+
+
+### Bug Fixes
+
+* add serde_json to metrics feature for manifest endpoint ([1c64a1c](https://github.com/hyperi-io/hyperi-rustlib/commit/1c64a1c71670211319b5570c708b249e738de0a1))
+* resolve clippy warnings and remove CARGO_BUILD_JOBS limit ([dd2f0aa](https://github.com/hyperi-io/hyperi-rustlib/commit/dd2f0aa0ae2410b8223502878878a6d2190bc97c))
+* resolve dfe test failures and advisory warnings ([81a4eb7](https://github.com/hyperi-io/hyperi-rustlib/commit/81a4eb7a6845bf960922904a0ef5314604cb3056))
+* update dfe_groups to use _with_labels() for manifest metadata ([958ec98](https://github.com/hyperi-io/hyperi-rustlib/commit/958ec9809c0fe39079436f3367fee9470a3b18d6))
+
+
+### Features
+
+* add /metrics/manifest endpoint to both server paths ([95dc143](https://github.com/hyperi-io/hyperi-rustlib/commit/95dc1430e0e312d17d66d6fe8ab18b59d3f30799))
+* add adaptive worker pool with hybrid rayon + tokio execution ([e0c3cf8](https://github.com/hyperi-io/hyperi-rustlib/commit/e0c3cf87ef060cab6af2bce50256468fa2cb67c8))
+* add MetricDescriptor, MetricRegistry, ManifestResponse types ([dd2a62c](https://github.com/hyperi-io/hyperi-rustlib/commit/dd2a62c1a1c814fea2c2c3b6521da457b8912f14))
+* add MetricRegistry to MetricsManager with _with_labels() methods ([1b363f0](https://github.com/hyperi-io/hyperi-rustlib/commit/1b363f01a3a13abf41679f5d80d5243b491a057e))
+* add worker feature gate with rayon dependency ([99c3c10](https://github.com/hyperi-io/hyperi-rustlib/commit/99c3c1055ec0037a9607982a2725dbb171ca2b2d))
+
 ## [1.21.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.21.0...v1.21.1) (2026-03-31)
 
 
