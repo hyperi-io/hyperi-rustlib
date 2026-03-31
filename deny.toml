@@ -3,12 +3,9 @@ targets = []
 all-features = true
 
 [advisories]
-vulnerability = "deny"
 yanked = "warn"
-notice = "warn"
 
 [licenses]
-unlicensed = "deny"
 allow = [
     "FSL-1.1-ALv2",
     "MIT",
@@ -23,8 +20,11 @@ allow = [
     "Unicode-DFS-2016",
     "OpenSSL",
 ]
-copyleft = "warn"
-default = "deny"
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-3.0",
+]
 
 # Some crates don't have standard SPDX identifiers
 [[licenses.clarify]]
