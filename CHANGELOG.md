@@ -1,3 +1,17 @@
+# [1.23.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.22.0...v1.23.0) (2026-03-31)
+
+
+### Features
+
+* graduate to v2 — adaptive worker pool and metrics manifest ([58c2e81](https://github.com/hyperi-io/hyperi-rustlib/commit/58c2e81dd988d20b4d07409601deea459ffa8bf6))
+
+
+### BREAKING CHANGES
+
+* DfeMetrics::register() now requires &MetricsManager
+parameter for tight manifest coupling. All downstream dfe-* projects
+must update their register() call sites.
+
 # [1.22.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.21.1...v1.22.0) (2026-03-31)
 
 
