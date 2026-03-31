@@ -511,14 +511,14 @@ impl DfeMetrics {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_register_does_not_panic() {
+    #[tokio::test]
+    async fn test_register_does_not_panic() {
         let mgr = super::super::MetricsManager::new("test_app");
         let _dfe = DfeMetrics::register(&mgr);
     }
 
-    #[test]
-    fn test_register_populates_registry() {
+    #[tokio::test]
+    async fn test_register_populates_registry() {
         let mgr = super::super::MetricsManager::new("test_app");
         let _dfe = DfeMetrics::register(&mgr);
         let manifest = mgr.registry().manifest();
@@ -549,8 +549,8 @@ mod tests {
         assert_eq!(auth.labels, vec!["reason"]);
     }
 
-    #[test]
-    fn test_methods_callable_without_recorder() {
+    #[tokio::test]
+    async fn test_methods_callable_without_recorder() {
         let mgr = super::super::MetricsManager::new("test_app");
         let dfe = DfeMetrics::register(&mgr);
 
