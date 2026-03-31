@@ -638,10 +638,13 @@ impl MetricsManager {
         let container_metrics = self.container_metrics.clone();
         let readiness_fn = self.readiness_fn.clone();
 
+        let registry = self.registry();
+
         tokio::spawn(async move {
             run_server(
                 listener,
                 handle,
+                registry,
                 shutdown_rx,
                 update_interval,
                 process_metrics,
@@ -709,8 +712,21 @@ impl MetricsManager {
         // Build the axum router with built-in + optional + custom routes
         let metrics_handle = handle.clone();
         let readiness_for_live = readiness_fn.clone();
+        let registry_handle = self.registry();
 
         let mut app = axum::Router::new()
+            .route(
+                "/metrics/manifest",
+                axum::routing::get(move || {
+                    let reg = registry_handle.clone();
+                    async move {
+                        (
+                            [(axum::http::header::CONTENT_TYPE, "application/json")],
+                            serde_json::to_string(&reg.manifest()).unwrap_or_default(),
+                        )
+                    }
+                }),
+            )
             .route(
                 "/metrics",
                 axum::routing::get(move || {
@@ -884,9 +900,11 @@ impl MetricsManager {
 
 /// Run the metrics HTTP server.
 #[cfg(feature = "metrics")]
+#[allow(clippy::too_many_arguments)]
 async fn run_server(
     listener: TcpListener,
     handle: PrometheusHandle,
+    registry: MetricRegistry,
     mut shutdown_rx: oneshot::Receiver<()>,
     update_interval: Duration,
     process_metrics: Option<ProcessMetrics>,
@@ -911,9 +929,10 @@ async fn run_server(
             result = listener.accept() => {
                 if let Ok((stream, _)) = result {
                     let handle = handle.clone();
+                    let registry = registry.clone();
                     let readiness_fn = readiness_fn.clone();
                     tokio::spawn(async move {
-                        handle_connection(stream, handle, readiness_fn).await;
+                        handle_connection(stream, handle, registry, readiness_fn).await;
                     });
                 }
             }
@@ -922,10 +941,14 @@ async fn run_server(
 }
 
 /// Handle a single HTTP connection.
+///
+/// **Path ordering:** `/metrics/manifest` MUST be checked BEFORE `/metrics`
+/// because `"GET /metrics/manifest"` also matches `starts_with("GET /metrics")`.
 #[cfg(feature = "metrics")]
 async fn handle_connection(
     mut stream: tokio::net::TcpStream,
     handle: PrometheusHandle,
+    registry: MetricRegistry,
     readiness_fn: Option<ReadinessFn>,
 ) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -937,12 +960,23 @@ async fn handle_connection(
         return;
     }
 
-    let (status, body) = if request_line.starts_with("GET /metrics") {
-        ("200 OK", handle.render())
+    // IMPORTANT: /metrics/manifest MUST come before /metrics (prefix match ordering)
+    let (status, content_type, body) = if request_line.starts_with("GET /metrics/manifest") {
+        (
+            "200 OK",
+            "application/json",
+            serde_json::to_string(&registry.manifest()).unwrap_or_default(),
+        )
+    } else if request_line.starts_with("GET /metrics") {
+        ("200 OK", "text/plain; charset=utf-8", handle.render())
     } else if request_line.starts_with("GET /healthz")
         || request_line.starts_with("GET /health/live")
     {
-        ("200 OK", r#"{"status":"alive"}"#.to_string())
+        (
+            "200 OK",
+            "application/json",
+            r#"{"status":"alive"}"#.to_string(),
+        )
     } else if request_line.starts_with("GET /readyz")
         || request_line.starts_with("GET /health/ready")
     {
@@ -955,21 +989,24 @@ async fn handle_connection(
 
         let ready = callback_ready && registry_ready;
         if ready {
-            ("200 OK", r#"{"status":"ready"}"#.to_string())
+            (
+                "200 OK",
+                "application/json",
+                r#"{"status":"ready"}"#.to_string(),
+            )
         } else {
             (
                 "503 Service Unavailable",
+                "application/json",
                 r#"{"status":"not_ready"}"#.to_string(),
             )
         }
     } else {
-        ("404 Not Found", "Not Found".to_string())
-    };
-
-    let content_type = if body.starts_with('{') {
-        "application/json"
-    } else {
-        "text/plain; charset=utf-8"
+        (
+            "404 Not Found",
+            "text/plain; charset=utf-8",
+            "Not Found".to_string(),
+        )
     };
 
     let response = format!(
