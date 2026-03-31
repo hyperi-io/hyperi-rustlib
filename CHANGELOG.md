@@ -1,3 +1,17 @@
+# [2.0.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.23.0...v2.0.0) (2026-03-31)
+
+
+### Bug Fixes
+
+* add explicit breaking change rule to semantic-release config ([735364f](https://github.com/hyperi-io/hyperi-rustlib/commit/735364f58110055f45c523b84407f692a8ce9f6e))
+
+
+### BREAKING CHANGES
+
+* DfeMetrics::register() now requires &MetricsManager
+parameter. AdaptiveWorkerPool is the new internal vertical scaling
+module, bounded and throttled by available CPU and memory.
+
 # [1.23.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v1.22.0...v1.23.0) (2026-03-31)
 
 
