@@ -79,14 +79,6 @@ matching packages. The Confluent APT repo is added automatically when
 
 ## Build Configuration
 
-**IMPORTANT:** Use `CARGO_BUILD_JOBS=2` for all cargo commands:
-
-```bash
-CARGO_BUILD_JOBS=2 cargo build
-CARGO_BUILD_JOBS=2 cargo test
-CARGO_BUILD_JOBS=2 cargo clippy
-```
-
 **NEVER kill cargo processes.** Cargo holds a file lock on the build directory. Killing a process leaves the lock held, causing subsequent `cargo` invocations to block indefinitely on "Blocking waiting for file lock on build directory". If a build seems stuck, wait for it to finish or check for orphaned processes first.
 
 ---
