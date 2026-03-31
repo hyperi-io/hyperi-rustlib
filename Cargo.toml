@@ -28,7 +28,7 @@ shutdown = ["tokio", "tokio-util"]
 runtime = ["dirs"]
 config = ["figment", "dotenvy", "serde_yaml_ng", "serde_json", "toml", "dirs", "tracing"]
 logger = ["tracing", "tracing-subscriber", "owo-colors", "serde_json", "tracing-throttle"]
-metrics = ["dep:metrics", "metrics-exporter-prometheus", "sysinfo", "tokio"]
+metrics = ["dep:metrics", "metrics-exporter-prometheus", "sysinfo", "tokio", "serde_json"]
 
 # OpenTelemetry support (modern observability)
 otel = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing-opentelemetry", "tracing"]
