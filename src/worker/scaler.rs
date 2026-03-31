@@ -14,6 +14,20 @@ use tokio_util::sync::CancellationToken;
 
 use super::pool::AdaptiveWorkerPool;
 
+/// Inputs to the watermark scaling algorithm.
+#[derive(Debug, Clone)]
+pub struct ScalingInput {
+    pub cpu_util: f64,
+    pub memory_pressure: f64,
+    pub current: usize,
+    pub min_threads: usize,
+    pub max_threads: usize,
+    pub grow_below: f64,
+    pub shrink_above: f64,
+    pub emergency_above: f64,
+    pub memory_pressure_cap: f64,
+}
+
 /// Result of the watermark scaling algorithm.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScalingDecision {
@@ -29,37 +43,27 @@ impl ScalingDecision {
     /// Given current CPU utilisation, memory pressure, and thresholds, returns
     /// the target thread count and the direction of the scaling change.
     #[must_use]
-    pub fn evaluate(
-        cpu_util: f64,
-        memory_pressure: f64,
-        current: usize,
-        min_threads: usize,
-        max_threads: usize,
-        grow_below: f64,
-        shrink_above: f64,
-        emergency_above: f64,
-        memory_pressure_cap: f64,
-    ) -> Self {
+    pub fn evaluate(input: &ScalingInput) -> Self {
         // Memory pressure overrides everything — prevent OOM
-        if memory_pressure > memory_pressure_cap {
+        if input.memory_pressure > input.memory_pressure_cap {
             return Self {
-                target: min_threads,
+                target: input.min_threads,
                 direction: "memory_cap",
             };
         }
 
-        let (raw_target, direction) = if cpu_util < grow_below {
-            (current.saturating_add(2), "up")
-        } else if cpu_util <= shrink_above {
-            (current, "steady")
-        } else if cpu_util <= emergency_above {
-            (current.saturating_sub(1), "down")
+        let (raw_target, direction) = if input.cpu_util < input.grow_below {
+            (input.current.saturating_add(2), "up")
+        } else if input.cpu_util <= input.shrink_above {
+            (input.current, "steady")
+        } else if input.cpu_util <= input.emergency_above {
+            (input.current.saturating_sub(1), "down")
         } else {
-            (current.saturating_sub(2), "emergency_down")
+            (input.current.saturating_sub(2), "emergency_down")
         };
 
         // Clamp to [min, max]
-        let target = raw_target.clamp(min_threads, max_threads);
+        let target = raw_target.clamp(input.min_threads, input.max_threads);
 
         Self { target, direction }
     }
@@ -123,8 +127,7 @@ impl ScalingController {
             .memory_guard
             .lock()
             .as_ref()
-            .map(|g| g.pressure_ratio())
-            .unwrap_or(0.0);
+            .map_or(0.0, |g| g.pressure_ratio());
         #[cfg(not(feature = "memory"))]
         let memory_guard_pressure = 0.0;
 
@@ -135,19 +138,25 @@ impl ScalingController {
 
         let current_permits = self.pool.active_threads();
 
-        let decision = ScalingDecision::evaluate(
+        let decision = ScalingDecision::evaluate(&ScalingInput {
             cpu_util,
-            effective_memory_pressure,
-            current_permits,
-            cfg.min_threads,
-            cfg.max_threads,
-            cfg.grow_below,
-            cfg.shrink_above,
-            cfg.emergency_above,
-            cfg.memory_pressure_cap,
-        );
+            memory_pressure: effective_memory_pressure,
+            current: current_permits,
+            min_threads: cfg.min_threads,
+            max_threads: cfg.max_threads,
+            grow_below: cfg.grow_below,
+            shrink_above: cfg.shrink_above,
+            emergency_above: cfg.emergency_above,
+            memory_pressure_cap: cfg.memory_pressure_cap,
+        });
 
-        if decision.direction != "steady" {
+        if decision.direction == "steady" {
+            tracing::debug!(
+                cpu = format!("{cpu_util:.2}"),
+                current = current_permits,
+                "Worker pool steady"
+            );
+        } else {
             tracing::info!(
                 cpu = format!("{cpu_util:.2}"),
                 mem = format!("{effective_memory_pressure:.2}"),
@@ -158,12 +167,6 @@ impl ScalingController {
             );
             metrics::counter!("worker_pool_scale_events_total", "direction" => decision.direction)
                 .increment(1);
-        } else {
-            tracing::debug!(
-                cpu = format!("{cpu_util:.2}"),
-                current = current_permits,
-                "Worker pool steady"
-            );
         }
 
         // Adjust semaphore permits
