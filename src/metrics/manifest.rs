@@ -183,6 +183,7 @@ pub(crate) fn now_rfc3339() -> String {
         .unwrap_or_default();
     let total_secs = d.as_secs();
 
+    #[allow(clippy::cast_possible_wrap)]
     let days = (total_secs / 86400) as i64;
     let time_of_day = total_secs % 86400;
 
@@ -193,8 +194,10 @@ pub(crate) fn now_rfc3339() -> String {
     // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm)
     let z = days + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
     let doe = (z - era * 146_097) as u64;
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    #[allow(clippy::cast_possible_wrap)]
     let y = (yoe as i64) + era * 400;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
