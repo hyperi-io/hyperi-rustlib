@@ -278,6 +278,7 @@ pub struct MetricsManager {
     process_metrics: Option<ProcessMetrics>,
     container_metrics: Option<ContainerMetrics>,
     readiness_fn: Option<ReadinessFn>,
+    registry: MetricRegistry,
     #[cfg(all(feature = "metrics", feature = "scaling"))]
     scaling_pressure: Option<Arc<crate::scaling::ScalingPressure>>,
     #[cfg(all(feature = "metrics", feature = "memory"))]
@@ -318,9 +319,12 @@ impl MetricsManager {
             None
         };
 
+        let registry = MetricRegistry::new(&config.namespace);
+
         Self {
             #[cfg(feature = "metrics")]
             handle: setup.prom_handle,
+            registry,
             config,
             shutdown_tx: None,
             process_metrics,
@@ -336,50 +340,184 @@ impl MetricsManager {
     }
 
     /// Create a counter metric.
+    ///
+    /// Automatically registers a [`MetricDescriptor`] in the manifest registry
+    /// with empty labels and `group = "custom"`.
     #[must_use]
     pub fn counter(&self, name: &str, description: &str) -> Counter {
         let key = self.prefixed_key(name);
         let desc = description.to_string();
-        metrics::describe_counter!(key.clone(), desc);
+        metrics::describe_counter!(key.clone(), desc.clone());
+        self.registry.push(MetricDescriptor {
+            name: key.clone(),
+            metric_type: MetricType::Counter,
+            description: desc,
+            unit: String::new(),
+            labels: vec![],
+            group: "custom".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
+        metrics::counter!(key)
+    }
+
+    /// Create a counter with label keys and group metadata for the manifest.
+    ///
+    /// The `labels` parameter declares label **key names** for the manifest.
+    /// The returned `Counter` is label-free — apply label values at recording
+    /// time via `metrics::counter!(key, "label" => value)`.
+    #[must_use]
+    pub fn counter_with_labels(
+        &self,
+        name: &str,
+        description: &str,
+        labels: &[&str],
+        group: &str,
+    ) -> Counter {
+        let key = self.prefixed_key(name);
+        let desc = description.to_string();
+        metrics::describe_counter!(key.clone(), desc.clone());
+        self.registry.push(MetricDescriptor {
+            name: key.clone(),
+            metric_type: MetricType::Counter,
+            description: desc,
+            unit: String::new(),
+            labels: labels.iter().map(|s| (*s).to_string()).collect(),
+            group: group.into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
         metrics::counter!(key)
     }
 
     /// Create a gauge metric.
+    ///
+    /// Automatically registers a [`MetricDescriptor`] in the manifest registry
+    /// with empty labels and `group = "custom"`.
     #[must_use]
     pub fn gauge(&self, name: &str, description: &str) -> Gauge {
         let key = self.prefixed_key(name);
         let desc = description.to_string();
-        metrics::describe_gauge!(key.clone(), desc);
+        metrics::describe_gauge!(key.clone(), desc.clone());
+        self.registry.push(MetricDescriptor {
+            name: key.clone(),
+            metric_type: MetricType::Gauge,
+            description: desc,
+            unit: String::new(),
+            labels: vec![],
+            group: "custom".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
+        metrics::gauge!(key)
+    }
+
+    /// Create a gauge with label keys and group metadata for the manifest.
+    #[must_use]
+    pub fn gauge_with_labels(
+        &self,
+        name: &str,
+        description: &str,
+        labels: &[&str],
+        group: &str,
+    ) -> Gauge {
+        let key = self.prefixed_key(name);
+        let desc = description.to_string();
+        metrics::describe_gauge!(key.clone(), desc.clone());
+        self.registry.push(MetricDescriptor {
+            name: key.clone(),
+            metric_type: MetricType::Gauge,
+            description: desc,
+            unit: String::new(),
+            labels: labels.iter().map(|s| (*s).to_string()).collect(),
+            group: group.into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
         metrics::gauge!(key)
     }
 
     /// Create a histogram metric with default buckets.
+    ///
+    /// Automatically registers a [`MetricDescriptor`] in the manifest registry
+    /// with empty labels and `group = "custom"`.
     #[must_use]
     pub fn histogram(&self, name: &str, description: &str) -> Histogram {
         let key = self.prefixed_key(name);
         let desc = description.to_string();
-        metrics::describe_histogram!(key.clone(), Unit::Seconds, desc);
+        metrics::describe_histogram!(key.clone(), Unit::Seconds, desc.clone());
+        self.registry.push(MetricDescriptor {
+            name: key.clone(),
+            metric_type: MetricType::Histogram,
+            description: desc,
+            unit: "seconds".into(),
+            labels: vec![],
+            group: "custom".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
+        metrics::histogram!(key)
+    }
+
+    /// Create a histogram with label keys, group, and optional buckets for the manifest.
+    #[must_use]
+    pub fn histogram_with_labels(
+        &self,
+        name: &str,
+        description: &str,
+        labels: &[&str],
+        group: &str,
+        buckets: Option<&[f64]>,
+    ) -> Histogram {
+        let key = self.prefixed_key(name);
+        let desc = description.to_string();
+        metrics::describe_histogram!(key.clone(), Unit::Seconds, desc.clone());
+        self.registry.push(MetricDescriptor {
+            name: key.clone(),
+            metric_type: MetricType::Histogram,
+            description: desc,
+            unit: "seconds".into(),
+            labels: labels.iter().map(|s| (*s).to_string()).collect(),
+            group: group.into(),
+            buckets: buckets.map(|b| b.to_vec()),
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
         metrics::histogram!(key)
     }
 
     /// Create a histogram metric with custom buckets.
     ///
-    /// **Note:** The `buckets` parameter is accepted for API compatibility but
-    /// is currently ignored. The `metrics` crate sets histogram buckets globally
-    /// at recorder installation time, not per-metric. Use
-    /// `PrometheusBuilder::set_buckets_for_metric` when building the recorder
-    /// if you need per-metric bucket configuration.
-    ///
-    /// This method exists so callers can express intent about bucket ranges
-    /// without breaking if per-metric support is added later.
+    /// **Note:** The `buckets` parameter is captured in the manifest registry
+    /// but currently ignored by the `metrics` crate at runtime (buckets are set
+    /// globally at recorder installation time).
     #[must_use]
     pub fn histogram_with_buckets(
         &self,
         name: &str,
         description: &str,
-        _buckets: &[f64],
+        buckets: &[f64],
     ) -> Histogram {
-        self.histogram(name, description)
+        let key = self.prefixed_key(name);
+        let desc = description.to_string();
+        metrics::describe_histogram!(key.clone(), Unit::Seconds, desc.clone());
+        self.registry.push(MetricDescriptor {
+            name: key.clone(),
+            metric_type: MetricType::Histogram,
+            description: desc,
+            unit: "seconds".into(),
+            labels: vec![],
+            group: "custom".into(),
+            buckets: Some(buckets.to_vec()),
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
+        metrics::histogram!(key)
     }
 
     /// Get the Prometheus metrics output.
@@ -692,6 +830,38 @@ impl MetricsManager {
         {
             tracing::warn!(error = %e, "OTel provider shutdown error");
         }
+    }
+
+    /// Set application version and git commit for the manifest.
+    ///
+    /// Uses interior mutability (writes through the registry's `Arc<RwLock>`),
+    /// so only `&self` is needed. Called automatically by
+    /// [`dfe_groups::AppMetrics::new()`] if the `metrics-dfe` feature is enabled.
+    pub fn set_build_info(&self, version: &str, commit: &str) {
+        self.registry.set_build_info(version, commit);
+    }
+
+    /// Set operational use cases for a metric (by full prefixed name).
+    ///
+    /// No-op if the metric is not found in the registry.
+    pub fn set_use_cases(&self, metric_name: &str, use_cases: &[&str]) {
+        self.registry.set_use_cases(metric_name, use_cases);
+    }
+
+    /// Set the suggested Grafana panel type for a metric (by full prefixed name).
+    ///
+    /// No-op if the metric is not found in the registry.
+    pub fn set_dashboard_hint(&self, metric_name: &str, hint: &str) {
+        self.registry.set_dashboard_hint(metric_name, hint);
+    }
+
+    /// Get a cloneable handle to the metric registry.
+    ///
+    /// Use this to pass into route handlers. The handle is `Clone + Send + Sync`.
+    /// Call before starting the server, consistent with the `render_handle()` pattern.
+    #[must_use]
+    pub fn registry(&self) -> MetricRegistry {
+        self.registry.clone()
     }
 
     /// Get the namespace prefix (e.g. `dfe_loader`).
