@@ -57,6 +57,9 @@ memory = ["sysinfo", "tracing"]
 # Scaling pressure calculation (KEDA autoscaling)
 scaling = ["parking_lot", "tracing"]
 
+# Adaptive worker pool (hybrid rayon + tokio, pressure-based scaling)
+worker = ["rayon", "config", "metrics", "tokio", "sysinfo", "parking_lot", "tracing"]
+
 # Standard CLI framework (clap-based)
 cli = ["clap", "tracing"]
 # TUI metrics dashboard (ratatui + crossterm via ratatui re-export)
@@ -108,7 +111,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "cli", "io", "dlq", "dlq-kafka", "dlq-http", "dlq-redis", "output-file", "expression"]
+full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "resilience", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "worker", "cli", "io", "dlq", "dlq-kafka", "dlq-http", "dlq-redis", "output-file", "expression"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -226,6 +229,9 @@ sqlx = { version = ">=0.8, <0.9", features = ["runtime-tokio", "tls-rustls-ring-
 
 # Secrets management
 parking_lot = { version = ">=0.12.3, <0.13", optional = true }
+
+# Data parallelism (CPU-bound work distribution for worker pool)
+rayon = { version = ">=1.10, <2", optional = true }
 base64 = { version = ">=0.22, <0.23", optional = true }
 
 # Vault/OpenBao (for secrets-vault)
