@@ -39,4 +39,4 @@ pub(crate) mod scaler;
 
 pub use config::WorkerPoolConfig;
 pub use pool::AdaptiveWorkerPool;
-pub use scaler::ScalingDecision;
+pub use scaler::{ScalingDecision, ScalingInput};

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use hyperi_rustlib::worker::{AdaptiveWorkerPool, ScalingDecision, WorkerPoolConfig};
+use hyperi_rustlib::worker::{AdaptiveWorkerPool, ScalingDecision, ScalingInput, WorkerPoolConfig};
 
 // --- Config tests ---
 
@@ -229,37 +229,51 @@ async fn test_fan_out_async_empty_input() {
 
 // --- Scaling decision tests ---
 
+fn scaling_input(cpu: f64, mem: f64, current: usize) -> ScalingInput {
+    ScalingInput {
+        cpu_util: cpu,
+        memory_pressure: mem,
+        current,
+        min_threads: 2,
+        max_threads: 8,
+        grow_below: 0.60,
+        shrink_above: 0.85,
+        emergency_above: 0.95,
+        memory_pressure_cap: 0.80,
+    }
+}
+
 #[test]
 fn test_scaling_decision_grow_when_cpu_low() {
-    let decision = ScalingDecision::evaluate(0.40, 0.20, 4, 2, 8, 0.60, 0.85, 0.95, 0.80);
+    let decision = ScalingDecision::evaluate(&scaling_input(0.40, 0.20, 4));
     assert_eq!(decision.target, 6);
     assert_eq!(decision.direction, "up");
 }
 
 #[test]
 fn test_scaling_decision_steady_in_dead_band() {
-    let decision = ScalingDecision::evaluate(0.72, 0.20, 4, 2, 8, 0.60, 0.85, 0.95, 0.80);
+    let decision = ScalingDecision::evaluate(&scaling_input(0.72, 0.20, 4));
     assert_eq!(decision.target, 4);
     assert_eq!(decision.direction, "steady");
 }
 
 #[test]
 fn test_scaling_decision_shrink_when_cpu_high() {
-    let decision = ScalingDecision::evaluate(0.90, 0.20, 6, 2, 8, 0.60, 0.85, 0.95, 0.80);
+    let decision = ScalingDecision::evaluate(&scaling_input(0.90, 0.20, 6));
     assert_eq!(decision.target, 5);
     assert_eq!(decision.direction, "down");
 }
 
 #[test]
 fn test_scaling_decision_emergency_shrink() {
-    let decision = ScalingDecision::evaluate(0.97, 0.20, 6, 2, 8, 0.60, 0.85, 0.95, 0.80);
+    let decision = ScalingDecision::evaluate(&scaling_input(0.97, 0.20, 6));
     assert_eq!(decision.target, 4);
     assert_eq!(decision.direction, "emergency_down");
 }
 
 #[test]
 fn test_scaling_decision_memory_cap_overrides_cpu() {
-    let decision = ScalingDecision::evaluate(0.40, 0.90, 6, 2, 8, 0.60, 0.85, 0.95, 0.80);
+    let decision = ScalingDecision::evaluate(&scaling_input(0.40, 0.90, 6));
     assert_eq!(decision.target, 2);
     assert_eq!(decision.direction, "memory_cap");
 }
@@ -267,11 +281,11 @@ fn test_scaling_decision_memory_cap_overrides_cpu() {
 #[test]
 fn test_scaling_decision_respects_min_max_bounds() {
     // Try to grow past max
-    let decision = ScalingDecision::evaluate(0.30, 0.20, 7, 2, 8, 0.60, 0.85, 0.95, 0.80);
+    let decision = ScalingDecision::evaluate(&scaling_input(0.30, 0.20, 7));
     assert_eq!(decision.target, 8);
 
     // Try to shrink below min
-    let decision = ScalingDecision::evaluate(0.97, 0.20, 3, 2, 8, 0.60, 0.85, 0.95, 0.80);
+    let decision = ScalingDecision::evaluate(&scaling_input(0.97, 0.20, 3));
     assert_eq!(decision.target, 2);
 }
 
