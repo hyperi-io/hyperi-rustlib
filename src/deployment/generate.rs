@@ -1280,7 +1280,9 @@ fn write_file(path: impl AsRef<Path>, content: &str) -> Result<(), DeploymentErr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::deployment::contract::{PortContract, SecretEnvContract, SecretGroupContract};
+    use crate::deployment::contract::{
+        OciLabels, PortContract, SecretEnvContract, SecretGroupContract,
+    };
     use crate::deployment::keda::KedaContract;
     use crate::deployment::native_deps::NativeDepsContract;
 
@@ -1328,6 +1330,8 @@ mod tests {
             base_image: "ubuntu:24.04".into(),
             native_deps: NativeDepsContract::default(),
             image_profile: ImageProfile::default(),
+            schema_version: 2,
+            oci_labels: OciLabels::default(),
         }
     }
 
