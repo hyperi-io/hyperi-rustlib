@@ -8,37 +8,34 @@
 
 ## Current Tasks
 
-### v1.20.0 Release
+### Phase 2: Parallelism + Batching (all DFE projects)
 
-Release branch and v1.20.0 tag exist. Core pillar work done.
-- [x] Release-merge to release branch
-- [ ] Verify crates.io publication succeeded
-- [x] Docs consolidation (TRANSPORT.md, CORE-PILLARS.md)
-- [x] Redis vs Kafka comparison table in TRANSPORT.md
+Common patterns needed in rustlib first:
+- [ ] `BatchAccumulator<T>` — bounded channel + drain-on-threshold for receiver batching
+- [ ] SIMD-optimised batch processing — sonic-rs batch parse, memchr for NDJSON splitting
+- [ ] Evaluate columnar batch layout — if SoA (struct-of-arrays) layout improves cache locality for batch transforms, adopt it. NOT necessarily Arrow — could be simple Vec<Field> columns. Profile before deciding.
+- [ ] Mutex audit enforcement — document/lint pattern for hot-path Mutex detection
 
-### Metrics Manifest (v1.22)
+Per-project parallelism work:
+- [ ] dfe-archiver — per-destination writers (remove single Mutex), parallel compression
+- [ ] dfe-receiver — request batching (accumulate N bodies → batch validate+route → batch produce)
+- [ ] dfe-receiver — Splunk HEC / OTLP / gRPC parallel per-event processing via fan_out_async
+- [ ] dfe-fetcher — within-source parallel service fetching via fan_out_async
+- [ ] dfe-transform-vrl — parallel deserialisation (Phase 1 of pipeline, currently sequential)
+- [ ] Per-project: adversarial parallel tests, throughput benchmarks
 
-- [x] **Metrics manifest infrastructure** — `MetricDescriptor`, `MetricRegistry`, `ManifestResponse` types
-  - Standards-aligned: OpenMetrics (type/description/unit), OTel Advisory (labels/buckets)
-  - Novel HyperI extensions: `group`, `use_cases`, `dashboard_hint`
-  - `MetricRegistry` (Arc<RwLock>) tightly coupled into `MetricsManager`
-  - Every `counter()`/`gauge()`/`histogram()` call auto-pushes descriptor
-  - New `_with_labels()` methods for declaring label keys and groups
-  - `set_build_info()`, `set_use_cases()`, `set_dashboard_hint()` enrichment
-- [x] **`/metrics/manifest` endpoint** — JSON contract on both axum and raw server paths
-  - Correct path ordering (manifest checked before /metrics in raw server)
-  - Explicit Content-Type: application/json
-- [x] **`DfeMetrics::register(&MetricsManager)` breaking change** — platform metrics tightly coupled
-  - All 24 dfe_* metrics auto-appear in manifest with correct labels and group="platform"
-- [x] **dfe_groups updated** — all 8 groups use `_with_labels()` internally
-  - `AppMetrics::new()` calls `set_build_info()` automatically
-  - Label-based metrics push descriptors with correct key names
-  - Histogram buckets captured in manifest
-- [x] **Downstream dfe-* projects updated** (committed, not pushed — waiting for parallelism remediation)
-  - dfe-loader, dfe-receiver, dfe-archiver, dfe-fetcher, dfe-transform-vector, dfe-transform-vrl
-  - Phase 3 (dfe-transform-wasm, dfe-transform-elastic, dfe-transform-splack) deferred
-- [ ] **Phase 2 enrichment** — `set_use_cases()` / `set_dashboard_hint()` content (deferred to parallelism remediation)
-- [ ] **Regenerate container + metrics contract artefacts** per project (deferred to push time)
+Phase 2 spec: `docs/superpowers/specs/2026-04-01-phase2-parallelism-batching.md`
+
+### Phase 3: Non-Integrated Transforms
+
+- [ ] dfe-transform-wasm — parallel WASM invocation per batch
+- [ ] dfe-transform-elastic — assess rustlib integration level, discuss
+- [ ] dfe-transform-splunk — assess rustlib integration level, discuss
+
+### Metrics Manifest Enrichment (deferred)
+
+- [ ] `set_use_cases()` / `set_dashboard_hint()` content per metric group
+- [ ] Regenerate container + metrics contract artefacts per project
 
 ### Completed Previous Sessions
 
@@ -101,9 +98,10 @@ Release branch and v1.20.0 tag exist. Core pillar work done.
 
 ## Notes
 
-- Use `CARGO_BUILD_JOBS=2` for all cargo commands
 - Transport backends: Kafka, gRPC, Memory, File, Pipe, HTTP, Redis/Valkey
 - Core pillars plan: `docs/superpowers/plans/2026-03-26-core-pillars.md`
 - Two deployment modes: Kafka-mediated (persistence) vs direct gRPC (low latency)
 - Routed transport is receiver/fetcher only — all other stages are 1:1
-- v1.20.0 released with breaking transport trait split (feat!: commit)
+- Common patterns in rustlib first — if all 6 DFE projects use the same pattern, implement in rustlib
+- DFE parallelisation playbook: `/projects/dfe-loader/docs/PARALLELISE-REMEDIATION.md`
+- Phase 2 spec: `docs/superpowers/specs/2026-04-01-phase2-parallelism-batching.md`
