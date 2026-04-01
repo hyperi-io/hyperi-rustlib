@@ -237,8 +237,9 @@ pub use scaling::{
 
 #[cfg(feature = "worker")]
 pub use worker::{
-    AdaptiveWorkerPool, BatchPipeline, BatchProcessor, PipelineStats, PipelineStatsSnapshot,
-    ScalingDecision, ScalingInput, WorkerPoolConfig,
+    AccumulatorConfig, AccumulatorFull, AdaptiveWorkerPool, BatchAccumulator, BatchDrainer,
+    BatchPipeline, BatchProcessor, PipelineStats, PipelineStatsSnapshot, ScalingDecision,
+    ScalingInput, WorkerPoolConfig,
 };
 
 #[cfg(feature = "cli")]

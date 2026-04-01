@@ -39,6 +39,7 @@
 //! }).await;
 //! ```
 
+mod accumulator;
 mod batch;
 mod config;
 pub(crate) mod metrics;
@@ -46,6 +47,7 @@ mod pool;
 pub(crate) mod scaler;
 mod stats;
 
+pub use accumulator::{AccumulatorConfig, AccumulatorFull, BatchAccumulator, BatchDrainer};
 pub use batch::{BatchPipeline, BatchProcessor};
 pub use config::WorkerPoolConfig;
 pub use pool::AdaptiveWorkerPool;
