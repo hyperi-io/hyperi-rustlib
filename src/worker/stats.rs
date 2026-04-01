@@ -31,6 +31,8 @@ pub struct PipelineStats {
     pub errors: AtomicU64,
     /// Messages sent to the dead letter queue (subset of errors, only if DLQ enabled).
     pub dlq: AtomicU64,
+    /// Messages filtered out (did not pass routing rules or predicates).
+    pub filtered: AtomicU64,
     /// Total bytes received from source.
     pub bytes_received: AtomicU64,
     /// Total bytes written to sink.
@@ -64,6 +66,10 @@ impl PipelineStats {
         self.dlq.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn incr_filtered(&self) {
+        self.filtered.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn incr_batches_flushed(&self) {
         self.batches_flushed.fetch_add(1, Ordering::Relaxed);
     }
@@ -76,6 +82,10 @@ impl PipelineStats {
 
     pub fn add_processed(&self, n: u64) {
         self.processed.fetch_add(n, Ordering::Relaxed);
+    }
+
+    pub fn add_filtered(&self, n: u64) {
+        self.filtered.fetch_add(n, Ordering::Relaxed);
     }
 
     pub fn add_bytes_received(&self, n: u64) {
@@ -94,6 +104,7 @@ impl PipelineStats {
             processed: self.processed.load(Ordering::Relaxed),
             errors: self.errors.load(Ordering::Relaxed),
             dlq: self.dlq.load(Ordering::Relaxed),
+            filtered: self.filtered.load(Ordering::Relaxed),
             bytes_received: self.bytes_received.load(Ordering::Relaxed),
             bytes_written: self.bytes_written.load(Ordering::Relaxed),
             batches_flushed: self.batches_flushed.load(Ordering::Relaxed),
@@ -111,6 +122,7 @@ pub struct PipelineStatsSnapshot {
     pub processed: u64,
     pub errors: u64,
     pub dlq: u64,
+    pub filtered: u64,
     pub bytes_received: u64,
     pub bytes_written: u64,
     pub batches_flushed: u64,
@@ -120,8 +132,13 @@ impl std::fmt::Display for PipelineStatsSnapshot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "received={} processed={} errors={} dlq={} batches={}",
-            self.received, self.processed, self.errors, self.dlq, self.batches_flushed,
+            "received={} processed={} errors={} dlq={} filtered={} batches={}",
+            self.received,
+            self.processed,
+            self.errors,
+            self.dlq,
+            self.filtered,
+            self.batches_flushed,
         )
     }
 }
@@ -180,6 +197,15 @@ mod tests {
         let snap = stats.snapshot();
         let copy = snap; // Copy
         assert_eq!(snap.received, copy.received);
+    }
+
+    #[test]
+    fn test_filtered_counter() {
+        let stats = PipelineStats::new();
+        stats.incr_filtered();
+        stats.add_filtered(9);
+        let snap = stats.snapshot();
+        assert_eq!(snap.filtered, 10);
     }
 
     #[test]
