@@ -80,6 +80,10 @@ impl TransportBase for AnySender {
             Self::Http(t) => t.close().await,
             #[cfg(feature = "transport-redis")]
             Self::Redis(t) => t.close().await,
+            #[allow(unreachable_patterns)]
+            _ => Err(TransportError::Config(
+                "no transport variant enabled".into(),
+            )),
         }
     }
 
@@ -99,6 +103,8 @@ impl TransportBase for AnySender {
             Self::Http(t) => t.is_healthy(),
             #[cfg(feature = "transport-redis")]
             Self::Redis(t) => t.is_healthy(),
+            #[allow(unreachable_patterns)]
+            _ => false,
         }
     }
 
@@ -118,6 +124,8 @@ impl TransportBase for AnySender {
             Self::Http(t) => t.name(),
             #[cfg(feature = "transport-redis")]
             Self::Redis(t) => t.name(),
+            #[allow(unreachable_patterns)]
+            _ => "none",
         }
     }
 }
@@ -139,6 +147,10 @@ impl TransportSender for AnySender {
             Self::Http(t) => t.send(key, payload).await,
             #[cfg(feature = "transport-redis")]
             Self::Redis(t) => t.send(key, payload).await,
+            #[allow(unreachable_patterns)]
+            _ => SendResult::Fatal(TransportError::Config(
+                "no transport variant enabled".into(),
+            )),
         }
     }
 }

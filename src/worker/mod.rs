@@ -42,6 +42,7 @@
 mod accumulator;
 mod batch;
 mod config;
+pub mod engine;
 pub(crate) mod metrics;
 pub mod ndjson;
 mod pool;
