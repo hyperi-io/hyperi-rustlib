@@ -76,7 +76,10 @@ pub trait DfeApp: Sized {
 
     /// Run the main service loop.
     ///
-    /// Called after logging and config are initialised.
+    /// Called after logging, config, and [`ServiceRuntime`](super::ServiceRuntime)
+    /// are initialised. The runtime contains all common infrastructure (metrics,
+    /// memory guard, shutdown token, worker pool, scaling pressure). Apps just
+    /// use it — no boilerplate needed.
     ///
     /// # Errors
     ///
@@ -84,7 +87,17 @@ pub trait DfeApp: Sized {
     fn run_service(
         &self,
         config: Self::Config,
+        runtime: super::ServiceRuntime,
     ) -> impl std::future::Future<Output = Result<(), CliError>> + Send;
+
+    /// Provide scaling pressure components for KEDA autoscaling.
+    ///
+    /// Override to register app-specific scaling signals (buffer depth,
+    /// consumer lag, error rate, etc.). The default returns an empty vec.
+    #[cfg(feature = "scaling")]
+    fn scaling_components(&self, _config: &Self::Config) -> Vec<crate::ScalingComponent> {
+        vec![]
+    }
 
     /// Register all metrics for this service.
     ///
@@ -192,7 +205,20 @@ pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
 
             tracing::debug!(?config, "configuration loaded");
 
-            app.run_service(config).await
+            // Build ServiceRuntime — all common infrastructure for free
+            let commit = option_env!("GIT_COMMIT").unwrap_or("unknown");
+            let runtime = super::ServiceRuntime::build(
+                app.name(),
+                app.env_prefix(),
+                &args.metrics_addr,
+                &version_info.version,
+                commit,
+                #[cfg(feature = "scaling")]
+                app.scaling_components(&config),
+            )
+            .await?;
+
+            app.run_service(config, runtime).await
         }
 
         #[cfg(feature = "top")]
