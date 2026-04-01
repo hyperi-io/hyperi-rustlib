@@ -278,6 +278,7 @@ pub struct MetricsManager {
     process_metrics: Option<ProcessMetrics>,
     container_metrics: Option<ContainerMetrics>,
     readiness_fn: Option<ReadinessFn>,
+    started: Arc<std::sync::atomic::AtomicBool>,
     registry: MetricRegistry,
     #[cfg(all(feature = "metrics", feature = "scaling"))]
     scaling_pressure: Option<Arc<crate::scaling::ScalingPressure>>,
@@ -330,6 +331,7 @@ impl MetricsManager {
             process_metrics,
             container_metrics,
             readiness_fn: None,
+            started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(all(feature = "metrics", feature = "scaling"))]
             scaling_pressure: None,
             #[cfg(all(feature = "metrics", feature = "memory"))]
@@ -569,6 +571,21 @@ impl MetricsManager {
         self.readiness_fn = Some(Arc::new(f));
     }
 
+    /// Mark the service as started (startup probe passes).
+    ///
+    /// Call this once init is complete. K8s `startupProbe` hits `/startupz`
+    /// which returns 503 until this is called, then 200 thereafter.
+    /// Separate from readiness — startup has a longer timeout for slow starters.
+    pub fn mark_started(&self) {
+        self.started
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// Get a clone of the started flag (for passing to HTTP handler).
+    pub(crate) fn started_flag(&self) -> Arc<std::sync::atomic::AtomicBool> {
+        Arc::clone(&self.started)
+    }
+
     /// Attach a `ScalingPressure` instance.
     ///
     /// When set and using `start_server_with_routes`, a `/scaling/pressure`
@@ -637,6 +654,7 @@ impl MetricsManager {
         let process_metrics = self.process_metrics.clone();
         let container_metrics = self.container_metrics.clone();
         let readiness_fn = self.readiness_fn.clone();
+        let started_flag = self.started_flag();
 
         let registry = self.registry();
 
@@ -650,6 +668,7 @@ impl MetricsManager {
                 process_metrics,
                 container_metrics,
                 readiness_fn,
+                started_flag,
             )
             .await;
         });
@@ -734,6 +753,27 @@ impl MetricsManager {
                     async move { h.render() }
                 }),
             )
+            .route("/startupz", {
+                let sf = self.started_flag();
+                axum::routing::get(move || {
+                    let started = sf.load(std::sync::atomic::Ordering::Acquire);
+                    async move {
+                        if started {
+                            (
+                                axum::http::StatusCode::OK,
+                                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                                r#"{"status":"started"}"#,
+                            )
+                        } else {
+                            (
+                                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                                r#"{"status":"starting"}"#,
+                            )
+                        }
+                    }
+                })
+            })
             .route(
                 "/healthz",
                 axum::routing::get(|| async {
@@ -910,6 +950,7 @@ async fn run_server(
     process_metrics: Option<ProcessMetrics>,
     container_metrics: Option<ContainerMetrics>,
     readiness_fn: Option<ReadinessFn>,
+    started_flag: Arc<std::sync::atomic::AtomicBool>,
 ) {
     let mut update_interval = tokio::time::interval(update_interval);
 
@@ -931,8 +972,9 @@ async fn run_server(
                     let handle = handle.clone();
                     let registry = registry.clone();
                     let readiness_fn = readiness_fn.clone();
+                    let sf = Arc::clone(&started_flag);
                     tokio::spawn(async move {
-                        handle_connection(stream, handle, registry, readiness_fn).await;
+                        handle_connection(stream, handle, registry, readiness_fn, &sf).await;
                     });
                 }
             }
@@ -950,6 +992,7 @@ async fn handle_connection(
     handle: PrometheusHandle,
     registry: MetricRegistry,
     readiness_fn: Option<ReadinessFn>,
+    started_flag: &std::sync::atomic::AtomicBool,
 ) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -969,6 +1012,22 @@ async fn handle_connection(
         )
     } else if request_line.starts_with("GET /metrics") {
         ("200 OK", "text/plain; charset=utf-8", handle.render())
+    } else if request_line.starts_with("GET /startupz")
+        || request_line.starts_with("GET /health/startup")
+    {
+        if started_flag.load(std::sync::atomic::Ordering::Acquire) {
+            (
+                "200 OK",
+                "application/json",
+                r#"{"status":"started"}"#.to_string(),
+            )
+        } else {
+            (
+                "503 Service Unavailable",
+                "application/json",
+                r#"{"status":"starting"}"#.to_string(),
+            )
+        }
     } else if request_line.starts_with("GET /healthz")
         || request_line.starts_with("GET /health/live")
     {
