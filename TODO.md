@@ -8,33 +8,66 @@
 
 ## Current Tasks
 
-### Phase 2: Parallelism + Batching (all DFE projects)
+### Step 1: Finish Parallelism Wiring (all DFE Rust apps)
 
-Common patterns needed in rustlib first:
-- [ ] `BatchAccumulator<T>` — bounded channel + drain-on-threshold for receiver batching
-- [ ] SIMD-optimised batch processing — sonic-rs batch parse, memchr for NDJSON splitting
-- [ ] Evaluate columnar batch layout — if SoA (struct-of-arrays) layout improves cache locality for batch transforms, adopt it. NOT necessarily Arrow — could be simple Vec<Field> columns. Profile before deciding.
-- [ ] Mutex audit enforcement — document/lint pattern for hot-path Mutex detection
+Rustlib common patterns (done):
+- [x] `BatchAccumulator<T>` — bounded channel + drain-on-threshold (9 tests)
+- [x] NDJSON split utilities — `split_lines()`, `count_lines()` (11 tests)
 
-Per-project parallelism work:
-- [ ] dfe-archiver — per-destination writers (remove single Mutex), parallel compression
-- [ ] dfe-receiver — request batching (accumulate N bodies → batch validate+route → batch produce)
+Actually parallelised (process_batch wired + tested):
+- [x] dfe-loader — parallel parse+route+CEL+enrich (3 parallel tests)
+- [x] dfe-transform-vrl — parallel deser + VRL eval (2 parallel tests)
+
+NOT yet parallelised (architecture prepared but process_batch NOT wired):
+- [ ] dfe-archiver — wire process_batch for parallel compression of staged batches
+- [ ] dfe-receiver — wire BatchAccumulator for request batching + NDJSON split + parallel validate+route
 - [ ] dfe-receiver — Splunk HEC / OTLP / gRPC parallel per-event processing via fan_out_async
-- [ ] dfe-fetcher — within-source parallel service fetching via fan_out_async
-- [ ] dfe-transform-vrl — parallel deserialisation (Phase 1 of pipeline, currently sequential)
-- [ ] Per-project: adversarial parallel tests, throughput benchmarks
+- [ ] dfe-fetcher — within-source concurrent service fetching (needs Source trait + Arc<Self> or futures crate)
 
-Phase 2 spec: `docs/superpowers/specs/2026-04-01-phase2-parallelism-batching.md`
+Mutex audit:
+- [ ] Document hot-path Mutex patterns to avoid (in standards)
+- [ ] dfe-archiver transport Mutex — evaluate
 
-### Phase 3: Non-Integrated Transforms
+### Step 2: A/B Benchmark — Columnar vs Row Batch Layout
+
+- [ ] Create `benches/batch_layout_benchmark.rs` in rustlib
+- [ ] Implement both layouts: row-based (current: Vec<Map<String,Value>>) and columnar (SoA: Vec<Field> per column)
+- [ ] Benchmark with realistic workloads:
+  - 10K event Kafka batch (dfe-loader/transform-vrl hot path)
+  - HTTP stream batches (dfe-receiver accumulator pattern)
+  - 1K, 10K, 100K event sizes
+- [ ] Test transforms: field extraction, CEL evaluation, VRL evaluation, routing
+- [ ] Keep BOTH implementations regardless of winner
+- [ ] NOT necessarily Arrow — simple Vec<Field> columns first
+
+### Step 3: Pick and Document Winner from A/B Testing
+
+- [ ] Document benchmark results with numbers
+- [ ] Decision: adopt columnar if >20% improvement, keep row if marginal
+- [ ] If columnar wins: implement the common batch type in rustlib (`worker` module)
+- [ ] If row wins: document why and close the investigation
+- [ ] Update standards/rules/rust.md with the decision and rationale
+
+### Step 4: Remediate ALL dfe- Rust App Projects
+
+Full remediation per project (using the winning batch layout from Step 3):
+- [ ] dfe-loader — update to final batch layout, deployment contract artefacts, adversarial tests
+- [ ] dfe-archiver — parallel compression, deployment contract, adversarial tests
+- [ ] dfe-receiver — BatchAccumulator integration, deployment contract, adversarial tests
+- [ ] dfe-transform-vrl — update to final batch layout, deployment contract, adversarial tests
+- [ ] dfe-fetcher — concurrent service fetching, deployment contract, adversarial tests
+- [ ] dfe-transform-vector — deployment contract artefacts (no parallelism changes)
+- [ ] Per-project: throughput benchmark (sequential vs parallel comparison)
+
+### Phase 3: Non-Integrated Transforms (after Step 4)
 
 - [ ] dfe-transform-wasm — parallel WASM invocation per batch
 - [ ] dfe-transform-elastic — assess rustlib integration level, discuss
 - [ ] dfe-transform-splunk — assess rustlib integration level, discuss
 
-### Metrics Manifest Enrichment (deferred)
+### Deferred
 
-- [ ] `set_use_cases()` / `set_dashboard_hint()` content per metric group
+- [ ] Metrics manifest enrichment — `set_use_cases()` / `set_dashboard_hint()` content
 - [ ] Regenerate container + metrics contract artefacts per project
 
 ### Completed Previous Sessions
