@@ -43,6 +43,10 @@ pub enum ImageProfile {
 /// fragment) from scratch.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeploymentContract {
+    /// Contract schema version. CI checks this and fails if unsupported.
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
+
     /// Application name (e.g., "dfe-loader") — matched against Chart.yaml `name`.
     pub app_name: String,
 
@@ -116,6 +120,53 @@ pub struct DeploymentContract {
     /// to derive a development variant from an existing contract.
     #[serde(default)]
     pub image_profile: ImageProfile,
+
+    /// OCI image labels (static — dynamic labels injected by CI at build time).
+    #[serde(default)]
+    pub oci_labels: OciLabels,
+}
+
+/// OCI image labels for the container.
+///
+/// Static labels are set from the contract. Dynamic labels (source, revision,
+/// version, created) are injected by CI at build time via `--build-arg`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OciLabels {
+    /// Image title (defaults to app_name).
+    #[serde(default)]
+    pub title: String,
+    /// Image description.
+    #[serde(default)]
+    pub description: String,
+    /// Image vendor.
+    #[serde(default = "default_vendor")]
+    pub vendor: String,
+    /// License identifier.
+    #[serde(default = "default_license")]
+    pub licenses: String,
+}
+
+impl Default for OciLabels {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            description: String::new(),
+            vendor: default_vendor(),
+            licenses: default_license(),
+        }
+    }
+}
+
+fn default_vendor() -> String {
+    "HYPERI PTY LIMITED".to_string()
+}
+
+fn default_license() -> String {
+    "FSL-1.1-ALv2".to_string()
+}
+
+fn default_schema_version() -> u32 {
+    2
 }
 
 /// Health probe endpoint paths.

@@ -73,17 +73,20 @@
 
 mod contract;
 mod error;
-mod generate;
+pub mod generate;
 mod keda;
 mod native_deps;
 mod validate;
 
 pub use contract::{
-    DeploymentContract, HealthContract, ImageProfile, PortContract, SecretEnvContract,
+    DeploymentContract, HealthContract, ImageProfile, OciLabels, PortContract, SecretEnvContract,
     SecretGroupContract,
 };
 pub use error::{ContractMismatch, DeploymentError};
-pub use generate::{generate_chart, generate_compose_fragment, generate_dockerfile};
+pub use generate::{
+    generate_chart, generate_compose_fragment, generate_container_manifest, generate_dockerfile,
+    generate_runtime_stage,
+};
 pub use keda::{KedaConfig, KedaContract};
 pub use native_deps::{AptRepoContract, NativeDepsContract};
 pub use validate::{validate_dockerfile, validate_helm_values};
