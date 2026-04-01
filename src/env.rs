@@ -158,6 +158,10 @@ pub struct RuntimeContext {
     pub node_name: Option<String>,
     /// Container ID (from `HOSTNAME` in container environments).
     pub container_id: Option<String>,
+    /// cgroup memory limit in bytes (`None` if unlimited or bare metal).
+    pub memory_limit_bytes: Option<u64>,
+    /// cgroup CPU quota in cores (`None` if unlimited or bare metal).
+    pub cpu_quota_cores: Option<f64>,
 }
 
 impl RuntimeContext {
@@ -192,12 +196,27 @@ impl RuntimeContext {
             None
         };
 
+        // cgroup resource limits (container environments only)
+        let memory_limit_bytes = if environment.is_container() {
+            read_cgroup_memory_limit()
+        } else {
+            None
+        };
+
+        let cpu_quota_cores = if environment.is_container() {
+            read_cgroup_cpu_quota()
+        } else {
+            None
+        };
+
         Self {
             environment,
             pod_name,
             namespace,
             node_name,
             container_id,
+            memory_limit_bytes,
+            cpu_quota_cores,
         }
     }
 
@@ -235,6 +254,38 @@ static RUNTIME_CONTEXT: std::sync::OnceLock<RuntimeContext> = std::sync::OnceLoc
 #[must_use]
 pub fn runtime_context() -> &'static RuntimeContext {
     RUNTIME_CONTEXT.get_or_init(RuntimeContext::detect)
+}
+
+// =============================================================================
+// cgroup resource limit helpers
+// =============================================================================
+
+/// Read cgroup v2 memory limit (returns None if unlimited or not in a cgroup).
+fn read_cgroup_memory_limit() -> Option<u64> {
+    let content = std::fs::read_to_string("/sys/fs/cgroup/memory.max").ok()?;
+    let trimmed = content.trim();
+    if trimmed == "max" {
+        return None; // No limit set
+    }
+    trimmed.parse::<u64>().ok()
+}
+
+/// Read cgroup v2 CPU quota as fractional cores (returns None if unlimited).
+///
+/// Reads `/sys/fs/cgroup/cpu.max` which contains `quota period` (e.g. "200000 100000" = 2 cores).
+fn read_cgroup_cpu_quota() -> Option<f64> {
+    let content = std::fs::read_to_string("/sys/fs/cgroup/cpu.max").ok()?;
+    let parts: Vec<&str> = content.trim().split_whitespace().collect();
+    if parts.len() < 2 || parts[0] == "max" {
+        return None; // No limit
+    }
+    let quota: f64 = parts[0].parse().ok()?;
+    let period: f64 = parts[1].parse().ok()?;
+    if period > 0.0 {
+        Some(quota / period)
+    } else {
+        None
+    }
 }
 
 // =============================================================================
