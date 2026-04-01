@@ -76,6 +76,12 @@ pub fn trigger() {
 /// Call this once at application startup. It spawns a background
 /// task that waits for the OS signal, then cancels the global token.
 ///
+/// **K8s pre-stop compliance:** When running in Kubernetes (detected via
+/// [`crate::env::runtime_context`]), sleeps for `PRESTOP_DELAY_SECS`
+/// (default 5) before cancelling the token. This gives K8s time to
+/// remove the pod from Service endpoints before the app starts draining.
+/// On bare metal / Docker, the delay is 0 (immediate shutdown).
+///
 /// Returns the token for use in `tokio::select!` or other async
 /// shutdown coordination.
 #[must_use]
@@ -85,6 +91,19 @@ pub fn install_signal_handler() -> CancellationToken {
 
     tokio::spawn(async move {
         wait_for_signal().await;
+
+        // K8s pre-stop: delay before draining to allow endpoint removal.
+        // Without this, K8s routes traffic to a pod that's already shutting down.
+        let prestop_delay = prestop_delay_secs();
+        if prestop_delay > 0 {
+            #[cfg(feature = "logger")]
+            tracing::info!(
+                delay_secs = prestop_delay,
+                "Pre-stop delay: waiting for K8s endpoint removal"
+            );
+            tokio::time::sleep(std::time::Duration::from_secs(prestop_delay)).await;
+        }
+
         cancel.cancel();
 
         #[cfg(feature = "logger")]
@@ -92,6 +111,24 @@ pub fn install_signal_handler() -> CancellationToken {
     });
 
     t
+}
+
+/// Determine the pre-stop delay in seconds.
+///
+/// - `PRESTOP_DELAY_SECS` env var overrides (for tuning in deployment manifests)
+/// - K8s detected: default 5 seconds
+/// - Bare metal / Docker: default 0 (no delay)
+fn prestop_delay_secs() -> u64 {
+    if let Ok(val) = std::env::var("PRESTOP_DELAY_SECS")
+        && let Ok(secs) = val.parse::<u64>()
+    {
+        return secs;
+    }
+    if crate::env::runtime_context().is_kubernetes() {
+        5
+    } else {
+        0
+    }
 }
 
 /// Wait for SIGTERM or SIGINT.

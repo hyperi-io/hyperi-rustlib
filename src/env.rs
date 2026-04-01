@@ -135,6 +135,112 @@ impl Default for Environment {
     }
 }
 
+// =============================================================================
+// RuntimeContext — rich runtime metadata detected once at startup
+// =============================================================================
+
+/// Rich runtime context detected once at startup, immutable after.
+///
+/// Provides all K8s/container metadata in one place. Modules read from this
+/// instead of doing their own env var lookups. Detected lazily on first access
+/// via [`runtime_context()`].
+///
+/// On bare metal, most fields are `None` — features that read them become no-ops.
+#[derive(Debug, Clone)]
+pub struct RuntimeContext {
+    /// Detected runtime environment.
+    pub environment: Environment,
+    /// K8s pod name (from `POD_NAME` or `HOSTNAME` env var).
+    pub pod_name: Option<String>,
+    /// K8s namespace (from `POD_NAMESPACE` env var or service account).
+    pub namespace: Option<String>,
+    /// K8s node name (from `NODE_NAME` env var).
+    pub node_name: Option<String>,
+    /// Container ID (from `HOSTNAME` in container environments).
+    pub container_id: Option<String>,
+}
+
+impl RuntimeContext {
+    /// Detect the full runtime context.
+    ///
+    /// Reads environment variables and filesystem signals. Safe to call
+    /// on bare metal — fields will be `None` when not in a container.
+    #[must_use]
+    pub fn detect() -> Self {
+        let environment = Environment::detect();
+
+        let pod_name = std::env::var("POD_NAME").ok().or_else(|| {
+            if environment.is_container() {
+                std::env::var("HOSTNAME").ok()
+            } else {
+                None
+            }
+        });
+
+        let namespace = std::env::var("POD_NAMESPACE").ok().or_else(|| {
+            // Fall back to reading the K8s service account namespace file
+            std::fs::read_to_string("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+                .ok()
+                .map(|s| s.trim().to_string())
+        });
+
+        let node_name = std::env::var("NODE_NAME").ok();
+
+        let container_id = if environment.is_container() {
+            std::env::var("HOSTNAME").ok()
+        } else {
+            None
+        };
+
+        Self {
+            environment,
+            pod_name,
+            namespace,
+            node_name,
+            container_id,
+        }
+    }
+
+    /// Convenience: is this running in Kubernetes?
+    #[must_use]
+    pub fn is_kubernetes(&self) -> bool {
+        self.environment.is_kubernetes()
+    }
+
+    /// Convenience: is this running in any container?
+    #[must_use]
+    pub fn is_container(&self) -> bool {
+        self.environment.is_container()
+    }
+
+    /// Convenience: is this bare metal / local dev?
+    #[must_use]
+    pub fn is_bare_metal(&self) -> bool {
+        self.environment.is_bare_metal()
+    }
+}
+
+impl Default for RuntimeContext {
+    fn default() -> Self {
+        Self::detect()
+    }
+}
+
+static RUNTIME_CONTEXT: std::sync::OnceLock<RuntimeContext> = std::sync::OnceLock::new();
+
+/// Get the global runtime context (detected lazily on first call).
+///
+/// All modules should use this instead of reading env vars directly.
+/// The context is immutable after first detection.
+#[must_use]
+pub fn runtime_context() -> &'static RuntimeContext {
+    RUNTIME_CONTEXT.get_or_init(RuntimeContext::detect)
+}
+
+// =============================================================================
+// Helm detection and app env helpers
+// =============================================================================
+
 /// Check if the application was deployed via Helm.
 ///
 /// Looks for Helm-specific labels in Kubernetes downward API.
