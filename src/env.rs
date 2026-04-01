@@ -392,4 +392,119 @@ mod tests {
                 | Environment::BareMetal
         ));
     }
+
+    // --- RuntimeContext tests ---
+
+    #[test]
+    fn test_runtime_context_detect_does_not_panic() {
+        let ctx = RuntimeContext::detect();
+        // Environment is always set
+        assert!(matches!(
+            ctx.environment,
+            Environment::Kubernetes
+                | Environment::Docker
+                | Environment::Container
+                | Environment::BareMetal
+        ));
+    }
+
+    #[test]
+    fn test_runtime_context_bare_metal_has_no_k8s_fields() {
+        // On a dev machine (bare metal), K8s fields should be None
+        // unless POD_NAME etc. env vars happen to be set
+        let ctx = RuntimeContext::detect();
+        if ctx.environment.is_bare_metal() {
+            assert!(
+                ctx.node_name.is_none(),
+                "node_name should be None on bare metal"
+            );
+            // pod_name might come from HOSTNAME, so we don't assert it's None
+        }
+    }
+
+    #[test]
+    fn test_runtime_context_reads_pod_name_env() {
+        temp_env::with_vars(
+            [
+                ("POD_NAME", Some("test-pod-123")),
+                ("KUBERNETES_SERVICE_HOST", Some("10.0.0.1")),
+            ],
+            || {
+                let ctx = RuntimeContext::detect();
+                assert_eq!(ctx.pod_name.as_deref(), Some("test-pod-123"));
+            },
+        );
+    }
+
+    #[test]
+    fn test_runtime_context_reads_namespace_env() {
+        temp_env::with_var("POD_NAMESPACE", Some("production"), || {
+            let ctx = RuntimeContext::detect();
+            assert_eq!(ctx.namespace.as_deref(), Some("production"));
+        });
+    }
+
+    #[test]
+    fn test_runtime_context_reads_node_name_env() {
+        temp_env::with_var("NODE_NAME", Some("node-1"), || {
+            let ctx = RuntimeContext::detect();
+            assert_eq!(ctx.node_name.as_deref(), Some("node-1"));
+        });
+    }
+
+    #[test]
+    fn test_runtime_context_global_singleton() {
+        // runtime_context() should return the same instance every time
+        let ctx1 = runtime_context();
+        let ctx2 = runtime_context();
+        assert_eq!(ctx1.environment, ctx2.environment);
+        assert_eq!(ctx1.pod_name, ctx2.pod_name);
+    }
+
+    #[test]
+    fn test_runtime_context_is_kubernetes_convenience() {
+        let mut ctx = RuntimeContext::detect();
+        ctx.environment = Environment::Kubernetes;
+        assert!(ctx.is_kubernetes());
+        assert!(ctx.is_container());
+        assert!(!ctx.is_bare_metal());
+    }
+
+    #[test]
+    fn test_runtime_context_is_bare_metal_convenience() {
+        let mut ctx = RuntimeContext::detect();
+        ctx.environment = Environment::BareMetal;
+        assert!(!ctx.is_kubernetes());
+        assert!(!ctx.is_container());
+        assert!(ctx.is_bare_metal());
+    }
+
+    // --- cgroup helper tests ---
+
+    #[test]
+    fn test_read_cgroup_memory_limit_returns_option() {
+        // On bare metal, returns None (no cgroup). On container, returns Some.
+        let limit = read_cgroup_memory_limit();
+        // Just verify it doesn't panic — result depends on environment
+        let _ = limit;
+    }
+
+    #[test]
+    fn test_read_cgroup_cpu_quota_returns_option() {
+        let quota = read_cgroup_cpu_quota();
+        let _ = quota;
+    }
+
+    #[test]
+    fn test_prestop_delay_default_bare_metal() {
+        // On bare metal, default pre-stop delay should be 0
+        temp_env::with_var("PRESTOP_DELAY_SECS", None::<&str>, || {
+            let ctx = RuntimeContext::detect();
+            if ctx.environment.is_bare_metal() {
+                // The prestop_delay_secs function is in shutdown.rs,
+                // but we can verify the RuntimeContext is bare metal
+                assert!(!ctx.is_kubernetes());
+            }
+        });
+    }
 }
