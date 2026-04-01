@@ -104,6 +104,12 @@ pub fn install_signal_handler() -> CancellationToken {
             tokio::time::sleep(std::time::Duration::from_secs(prestop_delay)).await;
         }
 
+        // Emit eviction metric when SIGTERM received in K8s
+        #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
+        if crate::env::runtime_context().is_kubernetes() {
+            metrics::counter!("pod_eviction_received_total").increment(1);
+        }
+
         cancel.cancel();
 
         #[cfg(feature = "logger")]
