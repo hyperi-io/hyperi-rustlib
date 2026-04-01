@@ -1,3 +1,15 @@
+# [2.3.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.2.1...v2.3.0) (2026-04-01)
+
+
+### Bug Fixes
+
+* from_cascade falls back to defaults when config not initialised ([2b93167](https://github.com/hyperi-io/hyperi-rustlib/commit/2b93167c335dad0efa46e1f8b1495d2f9a01054e)), closes [hyperi-io/dfe-loader#19](https://github.com/hyperi-io/dfe-loader/issues/19) [hyperi-io/dfe-loader#19](https://github.com/hyperi-io/dfe-loader/issues/19)
+
+
+### Features
+
+* add RuntimeContext and K8s pre-stop hook delay ([c0f88fe](https://github.com/hyperi-io/hyperi-rustlib/commit/c0f88fe7bed61dd11a65214cec9c93421779d070))
+
 ## [2.2.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.2.0...v2.2.1) (2026-03-31)
 
 
