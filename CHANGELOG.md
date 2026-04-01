@@ -1,3 +1,11 @@
+## [2.4.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.0...v2.4.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* add /startupz startup probe endpoint ([515c090](https://github.com/hyperi-io/hyperi-rustlib/commit/515c090d898c472d560be5e116b63e5ad3d9188c))
+* inject pod_name, namespace, node_name into JSON log output ([505c2fd](https://github.com/hyperi-io/hyperi-rustlib/commit/505c2fd980dc6e3a412e56d7b4b7d5890955e1ce))
+
 # [2.4.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.3.0...v2.4.0) (2026-04-01)
 
 
