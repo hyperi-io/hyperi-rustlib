@@ -644,3 +644,47 @@ async fn test_18_concurrent_requests_during_shutdown() {
         "concurrent requests should not hang during shutdown"
     );
 }
+
+#[tokio::test]
+async fn test_19_startupz_before_and_after_mark_started() {
+    let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    init_manager();
+
+    let port = find_available_port().await;
+    let addr = format!("127.0.0.1:{port}");
+
+    let mut guard = MANAGER.lock().unwrap_or_else(|e| e.into_inner());
+    let manager = guard.as_mut().expect("manager not initialised");
+
+    manager
+        .start_server(&addr)
+        .await
+        .expect("failed to start server");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Before mark_started: /startupz should return 503
+    let (status, body) = http_get(&addr, "/startupz").await;
+    assert!(
+        status.contains("503"),
+        "expected 503 before mark_started, got: {status}"
+    );
+    assert!(
+        body.contains("starting"),
+        "expected 'starting' in body: {body}"
+    );
+
+    // After mark_started: /startupz should return 200
+    manager.mark_started();
+    let (status, body) = http_get(&addr, "/startupz").await;
+    assert!(
+        status.contains("200"),
+        "expected 200 after mark_started, got: {status}"
+    );
+    assert!(
+        body.contains("started"),
+        "expected 'started' in body: {body}"
+    );
+
+    // Cleanup
+    let _ = manager.stop_server().await;
+}
