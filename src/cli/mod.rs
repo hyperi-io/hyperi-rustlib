@@ -57,12 +57,14 @@ mod args;
 mod commands;
 mod error;
 pub mod output;
+mod runtime;
 mod version;
 
 pub use app::{DfeApp, run_app};
 pub use args::CommonArgs;
 pub use commands::StandardCommand;
 pub use error::CliError;
+pub use runtime::ServiceRuntime;
 pub use version::VersionInfo;
 
 #[cfg(feature = "top")]

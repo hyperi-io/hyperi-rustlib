@@ -242,7 +242,7 @@ pub use worker::{
 };
 
 #[cfg(feature = "cli")]
-pub use cli::{CliError, CommonArgs, DfeApp, StandardCommand, VersionInfo};
+pub use cli::{CliError, CommonArgs, DfeApp, ServiceRuntime, StandardCommand, VersionInfo};
 
 #[cfg(feature = "io")]
 pub use io::{FileWriterConfig, NdjsonWriter, RotationPeriod};
