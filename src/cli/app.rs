@@ -301,15 +301,33 @@ fn generate_artefacts<A: DfeApp>(
         ));
     }
 
-    // Deployment contract
+    // Deployment contract + container manifest
     #[cfg(feature = "deployment")]
     if let Some(contract) = app.deployment_contract() {
+        // Full deployment contract (secrets, KEDA, Helm, everything)
         let path = output_dir.join("deployment-contract.json");
         let json = serde_json::to_string_pretty(&contract)
             .map_err(|e| CliError::Service(format!("deployment contract JSON failed: {e}")))?;
         std::fs::write(&path, &json)
             .map_err(|e| CliError::Service(format!("failed to write {}: {e}", path.display())))?;
         generated.push("deployment-contract.json".to_string());
+
+        // Container manifest (minimal subset for CI image builds)
+        let cm_path = output_dir.join("container-manifest.json");
+        let cm_json = crate::deployment::generate::generate_container_manifest(&contract)
+            .map_err(|e| CliError::Service(format!("container manifest failed: {e}")))?;
+        std::fs::write(&cm_path, &cm_json).map_err(|e| {
+            CliError::Service(format!("failed to write {}: {e}", cm_path.display()))
+        })?;
+        generated.push("container-manifest.json".to_string());
+
+        // Runtime stage Dockerfile fragment (for CI composition)
+        let rt_path = output_dir.join("Dockerfile.runtime");
+        let rt_content = crate::deployment::generate::generate_runtime_stage(&contract);
+        std::fs::write(&rt_path, &rt_content).map_err(|e| {
+            CliError::Service(format!("failed to write {}: {e}", rt_path.display()))
+        })?;
+        generated.push("Dockerfile.runtime".to_string());
     }
 
     if generated.is_empty() {

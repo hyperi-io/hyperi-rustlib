@@ -153,11 +153,87 @@ impl NativeDepsContract {
         }
     }
 
+    /// Auto-detect native deps from the app's Cargo.toml.
+    ///
+    /// Reads `[dependencies.hyperi-rustlib]` features from the given Cargo.toml
+    /// and maps them to runtime packages. Falls back to empty deps if parsing fails.
+    #[must_use]
+    pub fn from_cargo_toml(cargo_toml_path: &std::path::Path, base_image: &str) -> Self {
+        let Ok(content) = std::fs::read_to_string(cargo_toml_path) else {
+            return Self::default();
+        };
+
+        // Parse features from the hyperi-rustlib dependency line
+        // Matches: features = ["transport-kafka", "spool", ...]
+        let features = extract_rustlib_features(&content);
+        if features.is_empty() {
+            return Self::default();
+        }
+
+        let feature_refs: Vec<&str> = features.iter().map(String::as_str).collect();
+        Self::for_rustlib_features(&feature_refs, base_image)
+    }
+
     /// Returns true if there are no native deps to install.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.apt_repos.is_empty() && self.apt_packages.is_empty()
     }
+}
+
+/// Extract hyperi-rustlib feature names from Cargo.toml content.
+///
+/// Parses the `features = [...]` array from the `hyperi-rustlib` dependency.
+/// Returns empty vec if not found or parsing fails.
+fn extract_rustlib_features(content: &str) -> Vec<String> {
+    // Find the hyperi-rustlib dependency line
+    let mut in_rustlib = false;
+    let mut features = Vec::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Single-line: hyperi-rustlib = { version = "...", features = [...] }
+        if trimmed.starts_with("hyperi-rustlib")
+            && trimmed.contains("features")
+            && let Some(start) = trimmed.find("features = [")
+        {
+            let after = &trimmed[start + 12..];
+            if let Some(end) = after.find(']') {
+                let feature_str = &after[..end];
+                for feat in feature_str.split(',') {
+                    let f = feat.trim().trim_matches('"').trim();
+                    if !f.is_empty() {
+                        features.push(f.to_string());
+                    }
+                }
+                return features;
+            }
+        }
+
+        // Multi-line: features = [\n"transport-kafka",\n...\n]
+        if trimmed.starts_with("hyperi-rustlib") {
+            in_rustlib = true;
+            continue;
+        }
+        if in_rustlib {
+            if trimmed.starts_with(']') {
+                return features;
+            }
+            if trimmed.starts_with('"') {
+                let f = trimmed.trim_matches('"').trim_end_matches(',').trim();
+                if !f.is_empty() {
+                    features.push(f.to_string());
+                }
+            }
+            // End of dependency block
+            if trimmed.starts_with('[') && !trimmed.starts_with("[dependencies") {
+                return features;
+            }
+        }
+    }
+
+    features
 }
 
 #[cfg(test)]

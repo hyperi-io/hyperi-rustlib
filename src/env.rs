@@ -275,7 +275,7 @@ fn read_cgroup_memory_limit() -> Option<u64> {
 /// Reads `/sys/fs/cgroup/cpu.max` which contains `quota period` (e.g. "200000 100000" = 2 cores).
 fn read_cgroup_cpu_quota() -> Option<f64> {
     let content = std::fs::read_to_string("/sys/fs/cgroup/cpu.max").ok()?;
-    let parts: Vec<&str> = content.trim().split_whitespace().collect();
+    let parts: Vec<&str> = content.split_whitespace().collect();
     if parts.len() < 2 || parts[0] == "max" {
         return None; // No limit
     }
