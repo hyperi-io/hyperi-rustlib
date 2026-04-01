@@ -7,6 +7,9 @@
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 pub mod config;
+pub mod intern;
+pub mod parse;
+pub mod pre_route;
 pub mod types;
 
 pub use config::{BatchProcessingConfig, ParseErrorAction, PreRouteFilterConfig};
