@@ -58,7 +58,10 @@ memory = ["sysinfo", "tracing"]
 scaling = ["parking_lot", "tracing"]
 
 # Adaptive worker pool (hybrid rayon + tokio, pressure-based scaling)
-worker = ["rayon", "config", "metrics", "tokio", "sysinfo", "parking_lot", "tracing"]
+worker = ["rayon", "config", "metrics", "tokio", "sysinfo", "parking_lot", "tracing", "sonic-rs", "dashmap", "bytes"]
+
+# Worker pool with msgpack batch serialisation support
+worker-msgpack = ["worker", "rmp-serde"]
 
 # Standard CLI framework (clap-based)
 cli = ["clap", "tracing"]
@@ -126,6 +129,9 @@ dirs = { version = ">=6.0.0, <7", optional = true }
 # Configuration
 figment = { version = ">=0.10.19, <0.11", features = ["yaml", "toml", "json", "env"], optional = true }
 dotenvy = { version = ">=0.15.7, <0.16", optional = true }
+
+# Concurrent hash map (field interning)
+dashmap = { version = ">=6.1, <7", optional = true }
 serde_yaml_ng = { version = ">=0.10.0, <0.11", optional = true }
 serde_json = { version = ">=1.0.149, <2", optional = true }
 toml = { version = ">=0.8, <2", optional = true }
@@ -221,6 +227,9 @@ zstd = { version = ">=0.13.3, <0.14", optional = true }
 lz4_flex = { version = ">=0.11, <0.14", optional = true }
 snap = { version = ">=1.1.1, <2", optional = true }
 
+# SIMD JSON (BatchEngine — 2-4x faster than serde_json)
+sonic-rs = { version = ">=0.5, <1", optional = true }
+
 # Async trait (for tiered-sink Sink trait)
 async-trait = { version = ">=0.1.88, <0.2", optional = true }
 
@@ -233,6 +242,9 @@ parking_lot = { version = ">=0.12.3, <0.13", optional = true }
 # Data parallelism (CPU-bound work distribution for worker pool)
 rayon = { version = ">=1.10, <2", optional = true }
 base64 = { version = ">=0.22, <0.23", optional = true }
+
+# Zero-copy byte buffers (BatchEngine)
+bytes = { version = ">=1.10, <2", optional = true }
 
 # Vault/OpenBao (for secrets-vault)
 vaultrs = { version = ">=0.7, <0.9", optional = true }
