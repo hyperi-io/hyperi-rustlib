@@ -1,3 +1,10 @@
+# [2.4.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.3.0...v2.4.0) (2026-04-01)
+
+
+### Features
+
+* add ServiceRuntime to DfeApp — eliminates per-app boilerplate ([39aa82b](https://github.com/hyperi-io/hyperi-rustlib/commit/39aa82b3b077ced419013e1976617f8a8a8bf5aa))
+
 # [2.3.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.2.1...v2.3.0) (2026-04-01)
 
 
