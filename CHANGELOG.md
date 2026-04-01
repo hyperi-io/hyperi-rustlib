@@ -1,3 +1,13 @@
+## [2.4.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.1...v2.4.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* add cgroup resource limits to RuntimeContext + eviction metric ([ce8b774](https://github.com/hyperi-io/hyperi-rustlib/commit/ce8b7747ca915471fa5a0f7869419d8e90b39d2a))
+* add missing schema_version and oci_labels fields to test constructors ([490559b](https://github.com/hyperi-io/hyperi-rustlib/commit/490559bd4aa6779a51414c3298c09512cebf92f1))
+* deployment contract CI bridge — container manifest, OCI labels, runtime stage ([84b3e00](https://github.com/hyperi-io/hyperi-rustlib/commit/84b3e0051f5cb80f55953159c3ae11613d778fd3))
+* gate memory imports in ServiceRuntime for feature-minimal builds ([dc6a7bd](https://github.com/hyperi-io/hyperi-rustlib/commit/dc6a7bdf8daf9470cd7d5981128018be3b5b54b2))
+
 ## [2.4.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.0...v2.4.1) (2026-04-01)
 
 
