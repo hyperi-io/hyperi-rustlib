@@ -43,6 +43,7 @@ mod accumulator;
 mod batch;
 mod config;
 pub(crate) mod metrics;
+pub mod ndjson;
 mod pool;
 pub(crate) mod scaler;
 mod stats;
