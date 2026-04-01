@@ -256,6 +256,27 @@ fn inject_and_redact_json_line(
                     serde_json::Value::String(ver.to_string()),
                 );
             }
+
+            // Inject K8s context fields (no-op on bare metal — fields are None)
+            let ctx = crate::env::runtime_context();
+            if let Some(ref pod) = ctx.pod_name {
+                map.insert(
+                    "pod_name".to_string(),
+                    serde_json::Value::String(pod.clone()),
+                );
+            }
+            if let Some(ref ns) = ctx.namespace {
+                map.insert(
+                    "namespace".to_string(),
+                    serde_json::Value::String(ns.clone()),
+                );
+            }
+            if let Some(ref node) = ctx.node_name {
+                map.insert(
+                    "node_name".to_string(),
+                    serde_json::Value::String(node.clone()),
+                );
+            }
         }
         redact_json_value(&mut value, sensitive);
         let mut result = serde_json::to_string(&value).unwrap_or_else(|_| trimmed.to_string());
