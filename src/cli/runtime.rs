@@ -41,6 +41,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use crate::env::{RuntimeContext, runtime_context};
+#[cfg(feature = "memory")]
 use crate::memory::{MemoryGuard, MemoryGuardConfig};
 use crate::metrics::MetricsManager;
 
@@ -62,6 +63,7 @@ pub struct ServiceRuntime {
 
     /// Cgroup-aware memory guard. Tracks memory usage for backpressure.
     /// Auto-detected from env prefix + cgroup limits.
+    #[cfg(feature = "memory")]
     pub memory_guard: Arc<MemoryGuard>,
 
     /// Shutdown token. Cancelled on SIGTERM/SIGINT (with K8s pre-stop delay).
@@ -112,6 +114,7 @@ impl ServiceRuntime {
         }
 
         // --- Memory guard ---
+        #[cfg(feature = "memory")]
         let memory_guard = Arc::new(MemoryGuard::new(MemoryGuardConfig::from_env(env_prefix)));
 
         // --- Scaling pressure ---
@@ -130,6 +133,7 @@ impl ServiceRuntime {
                 Ok(pool) => {
                     let pool = Arc::new(pool);
                     pool.register_metrics(&metrics);
+                    #[cfg(feature = "memory")]
                     pool.set_memory_guard(Arc::clone(&memory_guard));
                     #[cfg(feature = "scaling")]
                     if let Some(ref sp) = scaling {
@@ -181,13 +185,13 @@ impl ServiceRuntime {
             environment = %ctx.environment,
             pod_name = ?ctx.pod_name,
             namespace = ?ctx.namespace,
-            memory_limit = memory_guard.limit_bytes(),
             "Service runtime initialised"
         );
 
         Ok(Self {
             metrics,
             dfe,
+            #[cfg(feature = "memory")]
             memory_guard,
             shutdown,
             context: ctx,
