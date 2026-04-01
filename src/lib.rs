@@ -149,7 +149,7 @@ pub mod deployment;
 pub mod version_check;
 
 // Re-export common types at crate root
-pub use env::Environment;
+pub use env::{Environment, RuntimeContext, runtime_context};
 pub use kafka_config::{
     DfeSource, KafkaConfigError, KafkaConfigResult, ServiceRole, TOPIC_SUFFIX_LAND,
     TOPIC_SUFFIX_LOAD, config_from_file, config_from_properties_str,
