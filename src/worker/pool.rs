@@ -219,6 +219,17 @@ impl AdaptiveWorkerPool {
         results.into_iter().flatten().collect()
     }
 
+    /// Execute a closure on the rayon thread pool.
+    ///
+    /// Provides direct access to the rayon pool for operations that need
+    /// `par_iter_mut` or other rayon primitives not covered by `process_batch`.
+    /// The semaphore is NOT applied — callers manage their own concurrency.
+    ///
+    /// Used by `BatchEngine` for the mutable transform phase.
+    pub fn install<R: Send>(&self, f: impl FnOnce() -> R + Send) -> R {
+        self.rayon_pool.install(f)
+    }
+
     /// Register worker pool metrics with the `MetricsManager`.
     ///
     /// Registers operational metrics and emits threshold gauges with current values.
