@@ -326,6 +326,8 @@ mod tests {
             base_image: "ubuntu:24.04".into(),
             native_deps: NativeDepsContract::default(),
             image_profile: ImageProfile::default(),
+            schema_version: 2,
+            oci_labels: OciLabels::default(),
         };
         let json = contract.to_json();
         assert!(json.contains("test-app"));
@@ -353,6 +355,8 @@ mod tests {
             base_image: "ubuntu:24.04".into(),
             native_deps: NativeDepsContract::default(),
             image_profile: ImageProfile::default(),
+            schema_version: 2,
+            oci_labels: OciLabels::default(),
         };
         let json = contract.to_json();
         let parsed: DeploymentContract = serde_json::from_str(&json).unwrap();
@@ -381,6 +385,8 @@ mod tests {
             base_image: "ubuntu:24.04".into(),
             native_deps: NativeDepsContract::default(),
             image_profile: ImageProfile::default(),
+            schema_version: 2,
+            oci_labels: OciLabels::default(),
         };
         assert_eq!(contract.binary(), "my-app");
     }
@@ -406,6 +412,8 @@ mod tests {
             base_image: "ubuntu:24.04".into(),
             native_deps: NativeDepsContract::default(),
             image_profile: ImageProfile::default(),
+            schema_version: 2,
+            oci_labels: OciLabels::default(),
         };
         assert_eq!(contract.config_filename(), "loader.yaml");
         assert_eq!(contract.config_dir(), "/etc/dfe");
