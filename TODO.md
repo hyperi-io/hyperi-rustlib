@@ -8,98 +8,90 @@
 
 ## Current Tasks
 
-### Step 1: Finish Parallelism Wiring (all DFE Rust apps)
+### DFE Full Remediation — Rustlib v2.0→HEAD Catch-Up
 
-Rustlib common patterns (done):
-- [x] `BatchAccumulator<T>` — bounded channel + drain-on-threshold (9 tests)
-- [x] NDJSON split utilities — `split_lines()`, `count_lines()` (11 tests)
+All 6 DFE apps need full catch-up covering BatchEngine, ServiceRuntime,
+TopicResolver, metrics manifest, RuntimeContext, deployment contract, SIMD
+parse, pre-route filtering, field interning, etc.
 
-Actually parallelised (process_batch wired + tested):
-- [x] dfe-loader — parallel parse+route+CEL+enrich (3 parallel tests)
-- [x] dfe-transform-vrl — parallel deser + VRL eval (2 parallel tests)
+Plan: `docs/superpowers/plans/2026-04-02-dfe-full-remediation.md`
 
-NOT yet parallelised (architecture prepared but process_batch NOT wired):
-- [ ] dfe-archiver — wire process_batch for parallel compression of staged batches
-- [ ] dfe-receiver — wire BatchAccumulator for request batching + NDJSON split + parallel validate+route
-- [ ] dfe-receiver — Splunk HEC / OTLP / gRPC parallel per-event processing via fan_out_async
-- [ ] dfe-fetcher — within-source concurrent service fetching (needs Source trait + Arc<Self> or futures crate)
+Remediation order:
+- [ ] dfe-loader `[IN PROGRESS]`
+  - Current state: waiting for CI to publish new rustlib version
+  - Next: bump rustlib version, adopt ServiceRuntime + BatchEngine, delete bespoke TopicResolver
+  - Heaviest — ~500 line delta
+- [ ] dfe-receiver
+  - BatchEngine standalone `process_mid_tier` (HTTP inbound)
+  - BatchAccumulator for Splunk HEC request batching
+- [ ] dfe-archiver
+  - BatchEngine `run_raw` (passthrough, no parse)
+  - TopicResolver auto-discovery (`topics: []`)
+- [ ] dfe-fetcher
+  - BatchEngine standalone `process_mid_tier`
+  - `fan_out_async` for within-source parallel service fetching
+- [ ] dfe-transform-vector
+  - Lightest — ServiceRuntime only, no BatchEngine (Vector owns pipeline)
+- [ ] dfe-transform-vrl
+  - BatchEngine `run()` replaces pipeline loop
+  - sonic-rs replaces serde_json
 
-Mutex audit:
-- [ ] Document hot-path Mutex patterns to avoid (in standards)
-- [ ] dfe-archiver transport Mutex — evaluate
-
-### Step 2: A/B Benchmark — Columnar vs Row Batch Layout
-
-- [ ] Create `benches/batch_layout_benchmark.rs` in rustlib
-- [ ] Implement both layouts: row-based (current: Vec<Map<String,Value>>) and columnar (SoA: Vec<Field> per column)
-- [ ] Benchmark with realistic workloads:
-  - 10K event Kafka batch (dfe-loader/transform-vrl hot path)
-  - HTTP stream batches (dfe-receiver accumulator pattern)
-  - 1K, 10K, 100K event sizes
-- [ ] Test transforms: field extraction, CEL evaluation, VRL evaluation, routing
-- [ ] Keep BOTH implementations regardless of winner
-- [ ] NOT necessarily Arrow — simple Vec<Field> columns first
-
-### Step 3: Pick and Document Winner from A/B Testing
-
-- [ ] Document benchmark results with numbers
-- [ ] Decision: adopt columnar if >20% improvement, keep row if marginal
-- [ ] If columnar wins: implement the common batch type in rustlib (`worker` module)
-- [ ] If row wins: document why and close the investigation
-- [ ] Update standards/rules/rust.md with the decision and rationale
-
-### Step 4: Remediate ALL dfe- Rust App Projects
-
-Full remediation per project (using the winning batch layout from Step 3):
-- [ ] dfe-loader — update to final batch layout, deployment contract artefacts, adversarial tests
-- [ ] dfe-archiver — parallel compression, deployment contract, adversarial tests
-- [ ] dfe-receiver — BatchAccumulator integration, deployment contract, adversarial tests
-- [ ] dfe-transform-vrl — update to final batch layout, deployment contract, adversarial tests
-- [ ] dfe-fetcher — concurrent service fetching, deployment contract, adversarial tests
-- [ ] dfe-transform-vector — deployment contract artefacts (no parallelism changes)
-- [ ] Per-project: throughput benchmark (sequential vs parallel comparison)
-
-### Phase 3: Non-Integrated Transforms (after Step 4)
-
-- [ ] dfe-transform-wasm — parallel WASM invocation per batch
-- [ ] dfe-transform-elastic — assess rustlib integration level, discuss
-- [ ] dfe-transform-splunk — assess rustlib integration level, discuss
+Per-app remediation includes:
+- Bump hyperi-rustlib to latest
+- Push committed DfeMetrics::register(&mgr) fix
+- Adopt ServiceRuntime (remove manual MetricsManager/MemoryGuard/pool/shutdown wiring)
+- Adopt BatchEngine (replace manual recv→parse→transform loop)
+- TopicResolver where applicable
+- Generate deployment contract artefacts
 
 ### Deferred
 
+- [ ] Columnar (SoA) batch layout — backlogged, benchmark later
+- [ ] String interning deeper integration — custom Value type with interned keys
+- [ ] Disk buffer improvements (rkyv zero-copy) — separate concern (tiered-sink/spool)
 - [ ] Metrics manifest enrichment — `set_use_cases()` / `set_dashboard_hint()` content
-- [ ] Regenerate container + metrics contract artefacts per project
+- [ ] Mutex audit documentation (in standards)
+- [ ] Phase 3: dfe-transform-wasm, dfe-transform-elastic, dfe-transform-splunk
+
+### Completed This Session (2026-04-02)
+
+- [x] **BatchEngine** — SIMD-optimised batch processing framework (15 commits)
+  - sonic-rs SIMD JSON parse (2-4x faster than serde_json)
+  - Pre-route field extraction via `get_from_slice` (skip full parse for filtered/DLQ)
+  - FieldInterner (DashMap concurrent field name dedup)
+  - Two tiers: mid-tier (materialised DOM) and full-tier (raw passthrough)
+  - Transport-wired `run()` loop + standalone `process_mid_tier()`/`process_raw()`
+  - Auto-wired from ServiceRuntime — zero boilerplate for apps
+  - MemoryGuard-bounded chunking between batch chunks
+  - 78 tests (unit + integration + adversarial + concurrent + 20K scale)
+  - Criterion benchmarks (engine vs manual serde_json)
+- [x] **TopicResolver** — Kafka topic auto-discovery in rustlib transport-kafka
+  - Configurable suppression rules (default: `_load` suppresses `_land`)
+  - Include/exclude regex filters
+  - TopicRefreshHandle for periodic re-resolution
+  - Wired into KafkaTransport::new() — auto-discovers when `topics: []`
+- [x] **PipelineStats.filtered** — new atomic counter for pre-route filtered messages
+- [x] **AdaptiveWorkerPool.install()** — expose rayon pool for `par_iter_mut`
+- [x] **Dependencies** — sonic-rs, dashmap, bytes, regex added to worker/transport-kafka
 
 ### Completed Previous Sessions
 
-- [x] **Code review remediation** — security fixes, bug fixes, panic removal, health wiring, cargo housekeeping, API polish
-  - SensitiveString moved to crate root (always available, no feature gate)
-  - KafkaConfig.sasl_password, CacheConfig.encryption_key → SensitiveString
-  - SecretValue Debug redaction, secrets cache dir permissions (0o700)
-  - recv() metric names fixed (file, pipe, redis), describe_gauge AppMetrics fix
-  - expect() removed from shutdown, metrics, http_client
-  - File, pipe, http, redis transports registered with HealthRegistry
-  - deny.toml added, validate_table_name blocks single-dot
-  - histogram_with_buckets limitation documented
-- [x] **DLQ HTTP + Redis backends** — `dlq-http` and `dlq-redis` features
-- [x] **Transport trait split** — `Transport` split into `TransportBase` + `TransportSender` + `TransportReceiver` with blanket `Transport` impl
-- [x] **Transport factory** — `AnySender` enum dispatch from config, `RoutedSender` for per-key dispatch (receiver/fetcher only)
-- [x] **File transport** — NDJSON with position tracking, commit persistence, rotation
-- [x] **Pipe transport** — stdin/stdout for Unix pipeline composition
-- [x] **HTTP transport** — POST send + embedded axum receive (bidirectional)
-- [x] **Redis/Valkey Streams transport** — XADD/XREADGROUP/XACK with consumer groups
-- [x] **HealthRegistry** — global singleton, modules auto-register health check closures, `/readyz` aggregates, `/health/detailed` JSON
-- [x] **Shutdown manager** — global CancellationToken, SIGTERM/SIGINT handler, modules listen on token
-- [x] **OTel trace propagation** — W3C traceparent auto-injected/extracted in gRPC, Kafka, HTTP transports
-- [x] **Universal metrics** — all modules auto-emit Prometheus metrics via global recorder
-- [x] **Logging + config cascade** — added to all new transports
-- [x] **Health wiring** — Kafka, gRPC, CircuitBreaker, HttpServer auto-register
-- [x] **Shutdown wiring** — HttpServer, TieredSink drainer, ConfigReloader listen on global token
-- [x] **KafkaTransport StatsContext** — always-on, rdkafka_* metrics auto-emitted
-- [x] **gRPC transport metrics** — dfe_transport_* parity with Kafka
-- [x] **HTTP client, database URL builders, cache modules** (v1.19.6)
-- [x] **Config registry, SensitiveString, /config endpoint** (v1.19.3-v1.19.5)
-- [x] **Dependency updates, cargo-audit ignores** (v1.19.6)
+- [x] BatchAccumulator (bounded channel, time/count/bytes drain thresholds)
+- [x] NDJSON split utilities (split_lines, count_lines)
+- [x] Adversarial worker pool tests (34 tests)
+- [x] RuntimeContext + startupz integration tests
+- [x] ServiceRuntime (auto-wired DfeApp infrastructure)
+- [x] RuntimeContext (K8s metadata, cgroup limits)
+- [x] Deployment contract CI bridge (container-manifest.json, OCI labels)
+- [x] Metrics manifest + CLI subcommands
+- [x] AdaptiveWorkerPool (rayon + tokio hybrid)
+- [x] BatchProcessor trait + BatchPipeline + PipelineStats
+- [x] Code review remediation — security fixes, panic removal, health wiring
+- [x] DLQ HTTP + Redis backends
+- [x] Transport trait split + factory + File/Pipe/HTTP/Redis transports
+- [x] HealthRegistry, Shutdown manager, OTel trace propagation
+- [x] KafkaTransport StatsContext, gRPC transport metrics
+- [x] Config registry, SensitiveString, /config endpoint
 
 ---
 
@@ -133,8 +125,9 @@ Full remediation per project (using the winning batch layout from Step 3):
 
 - Transport backends: Kafka, gRPC, Memory, File, Pipe, HTTP, Redis/Valkey
 - Core pillars plan: `docs/superpowers/plans/2026-03-26-core-pillars.md`
+- BatchEngine spec: `docs/superpowers/specs/2026-04-02-batch-engine-design.md`
+- TopicResolver spec: `docs/superpowers/specs/2026-04-02-topic-resolver-design.md`
+- DFE remediation plan: `docs/superpowers/plans/2026-04-02-dfe-full-remediation.md`
 - Two deployment modes: Kafka-mediated (persistence) vs direct gRPC (low latency)
 - Routed transport is receiver/fetcher only — all other stages are 1:1
 - Common patterns in rustlib first — if all 6 DFE projects use the same pattern, implement in rustlib
-- DFE parallelisation playbook: `/projects/dfe-loader/docs/PARALLELISE-REMEDIATION.md`
-- Phase 2 spec: `docs/superpowers/specs/2026-04-01-phase2-parallelism-batching.md`
