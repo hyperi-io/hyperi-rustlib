@@ -1,3 +1,38 @@
+## [2.4.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.2...v2.4.3) (2026-04-02)
+
+
+### Bug Fixes
+
+* add adversarial worker pool tests — panic recovery, stress, boundaries ([e0e8448](https://github.com/hyperi-io/hyperi-rustlib/commit/e0e8448670554905e42e40de3a87acd5691d3e65))
+* add auto_wire and ServiceRuntime integration for BatchEngine ([ea60109](https://github.com/hyperi-io/hyperi-rustlib/commit/ea60109e135c7cf035e543fbc9c0c81d241561f6))
+* add BatchAccumulator for bounded batch drain with time/count/bytes thresholds ([311af18](https://github.com/hyperi-io/hyperi-rustlib/commit/311af186d059251db4e5b48c9e405cdf9d91cdb1))
+* add BatchEngine adversarial tests — edge cases, boundaries, stress ([b172e1b](https://github.com/hyperi-io/hyperi-rustlib/commit/b172e1bdc4a9c813273363be1b7c305afd731c10))
+* add BatchEngine core types — RawMessage, ParsedMessage, accessors ([d43349e](https://github.com/hyperi-io/hyperi-rustlib/commit/d43349ede27bcf8b50af660d8d6837baa3398764))
+* add BatchEngine criterion benchmarks ([d299d89](https://github.com/hyperi-io/hyperi-rustlib/commit/d299d89d3082252d22a94cdbb00494b7f90fc121))
+* add BatchEngine metrics — auto-registered via MetricsManager ([5d53d9a](https://github.com/hyperi-io/hyperi-rustlib/commit/5d53d9ad97758a2f96e4bbafc8671d3a1fb56549))
+* add BatchEngine with process_mid_tier and process_raw ([de19ed3](https://github.com/hyperi-io/hyperi-rustlib/commit/de19ed3d6772f785132e0aaabe9ecbeaf88a4e07))
+* add BatchProcessingConfig with cascade support and DFE defaults ([6336449](https://github.com/hyperi-io/hyperi-rustlib/commit/633644933c9e2ea6f94624f27b71f44b8fb701db))
+* add engine.run() transport-wired recv→process→commit loop ([857495b](https://github.com/hyperi-io/hyperi-rustlib/commit/857495b5f5e54a5c31d0c6fd779ad1a5d8d83853))
+* add FieldInterner — concurrent field name interning with DashMap ([3032cb0](https://github.com/hyperi-io/hyperi-rustlib/commit/3032cb0769037943fd49d625b2272460d6e3312e))
+* add filtered counter to PipelineStats ([5cf7934](https://github.com/hyperi-io/hyperi-rustlib/commit/5cf7934666c8b443626365fb5a9bb841053dab4b))
+* add missing adversarial tests — skip/fail actions, concurrent, 20K batch ([0b975e2](https://github.com/hyperi-io/hyperi-rustlib/commit/0b975e241637b85c81bf50fceb09b538d1fd1192))
+* add NDJSON batch split utilities for parallel line parsing ([e1ca772](https://github.com/hyperi-io/hyperi-rustlib/commit/e1ca772116b846062ea0582a7a3ae7a1ef18b6de))
+* add pre-route field extraction via sonic_rs::get_from_slice ([65e961d](https://github.com/hyperi-io/hyperi-rustlib/commit/65e961dd7c4fc282a1c6f10b1519f7579915ade3))
+* add regex dep for topic resolver filters ([6abcf8e](https://github.com/hyperi-io/hyperi-rustlib/commit/6abcf8e4f1daeb04eb689eaff47faaa3aca4c3a2))
+* add RuntimeContext + startupz integration tests ([dc57737](https://github.com/hyperi-io/hyperi-rustlib/commit/dc57737ce98c3e6dfe38a21e5ca2f370927f2fe8))
+* add SIMD parse phase — sonic_rs for JSON, rmp_serde bridge for msgpack ([04e54b9](https://github.com/hyperi-io/hyperi-rustlib/commit/04e54b9740103a64c7af06abade8fd11a269442b))
+* add sonic-rs, dashmap, bytes deps for BatchEngine ([fa5ebe7](https://github.com/hyperi-io/hyperi-rustlib/commit/fa5ebe723379e330149b9635e796f0f41a3e81e0))
+* add topic resolution fields to KafkaConfig ([7324fcc](https://github.com/hyperi-io/hyperi-rustlib/commit/7324fcc025c3404b47cbe21379c648420cf160b3))
+* add TopicRefreshHandle for periodic topic re-resolution ([146fa48](https://github.com/hyperi-io/hyperi-rustlib/commit/146fa48316583775172ba214119aa6830ad290d9))
+* add TopicResolver — configurable suppression rules, include/exclude regex ([f6275de](https://github.com/hyperi-io/hyperi-rustlib/commit/f6275de4de164e6d8a7e603529ef5aa5c86f2a78))
+* clippy and test fixups for BatchEngine ([dbfa114](https://github.com/hyperi-io/hyperi-rustlib/commit/dbfa11484f484edc477e586156d535ad12a3dc3d))
+* clippy fixes — collapsible if, Debug impl, default_trait_access ([adef3b5](https://github.com/hyperi-io/hyperi-rustlib/commit/adef3b53e78f28ec81f0a099c4f0e40ca10ab09e))
+* expose rayon pool install() on AdaptiveWorkerPool ([285c560](https://github.com/hyperi-io/hyperi-rustlib/commit/285c560164a4fe9b63256ee0432b856c13a66bc6))
+* resolve Prometheus recorder test conflicts — test-safe MetricsManager ([cc5af7b](https://github.com/hyperi-io/hyperi-rustlib/commit/cc5af7ba9ef88b49c7912a512bb1be0947a8fb32))
+* resolve Prometheus recorder test conflicts — test-safe MetricsManager ([31a9089](https://github.com/hyperi-io/hyperi-rustlib/commit/31a9089a8c101c6d6e824224ad9f494b4fc68529))
+* wire BatchEngine module exports ([058eefb](https://github.com/hyperi-io/hyperi-rustlib/commit/058eefb5270ae4f8915601595fcf97cfcb8a81d5))
+* wire TopicResolver into KafkaTransport — auto-discover when topics empty ([c34fc4c](https://github.com/hyperi-io/hyperi-rustlib/commit/c34fc4c11fb3e4d497aedc5f0b727c72b67cf377))
+
 ## [2.4.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.1...v2.4.2) (2026-04-01)
 
 
