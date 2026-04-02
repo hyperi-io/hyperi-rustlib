@@ -519,26 +519,31 @@ impl BatchEngine {
     #[allow(clippy::unused_self)]
     fn check_memory_pressure(&self) {
         #[cfg(feature = "memory")]
-        if let Some(guard) = &self.memory_guard {
-            if guard.under_pressure() {
-                tracing::warn!("BatchEngine: memory pressure detected, pausing between chunks");
-                std::thread::sleep(std::time::Duration::from_millis(
-                    self.config.memory_pressure_pause_ms,
-                ));
-            }
+        if let Some(guard) = &self.memory_guard
+            && guard.under_pressure()
+        {
+            tracing::warn!(
+                pause_ms = self.config.memory_pressure_pause_ms,
+                "BatchEngine: memory pressure detected, pausing between chunks"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(
+                self.config.memory_pressure_pause_ms,
+            ));
         }
     }
 }
 
 impl std::fmt::Debug for BatchEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BatchEngine")
-            .field("config", &self.config)
+        let mut s = f.debug_struct("BatchEngine");
+        s.field("config", &self.config)
             .field("pool_max_threads", &self.pool.max_threads())
             .field("stats", &self.stats.snapshot())
             .field("interner_len", &self.interner.len())
-            .field("filters", &self.filters)
-            .finish()
+            .field("filters", &self.filters);
+        #[cfg(feature = "memory")]
+        s.field("memory_guard", &self.memory_guard.is_some());
+        s.finish()
     }
 }
 
