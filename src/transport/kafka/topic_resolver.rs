@@ -146,6 +146,7 @@ impl std::fmt::Debug for TopicResolver {
 /// With the default rule (`_load` suppresses `_land`):
 /// - `auth_load` + `auth_land` → keeps `auth_load`, drops `auth_land`
 /// - `events_land` (no `events_load`) → kept
+#[must_use]
 pub fn apply_suppression_rules(topics: Vec<String>, rules: &[SuppressionRule]) -> Vec<String> {
     if rules.is_empty() {
         return topics;
@@ -161,16 +162,13 @@ pub fn apply_suppression_rules(topics: Vec<String>, rules: &[SuppressionRule]) -
             })
             .collect();
 
-        result = result
-            .into_iter()
-            .filter(|t| {
-                if let Some(base) = t.strip_suffix(rule.suppressed_suffix.as_str()) {
-                    !preferred_bases.contains(base)
-                } else {
-                    true
-                }
-            })
-            .collect();
+        result.retain(|t| {
+            if let Some(base) = t.strip_suffix(rule.suppressed_suffix.as_str()) {
+                !preferred_bases.contains(base)
+            } else {
+                true
+            }
+        });
     }
     result
 }
@@ -184,6 +182,7 @@ pub fn apply_suppression_rules(topics: Vec<String>, rules: &[SuppressionRule]) -
 /// - **Include**: if patterns exist, the topic MUST match at least one (OR).
 ///   Empty include list means all topics are accepted.
 /// - **Exclude**: the topic MUST NOT match any pattern (OR). Exclude wins over include.
+#[must_use]
 pub fn passes_filters(topic: &str, include: &[Regex], exclude: &[Regex]) -> bool {
     if !include.is_empty() && !include.iter().any(|r| r.is_match(topic)) {
         return false;
@@ -229,12 +228,11 @@ impl TopicRefreshHandle {
         if self.rx.has_changed().unwrap_or(false) {
             self.rx.mark_changed();
             let current = self.rx.borrow().clone();
-            if current != self.last_seen {
-                self.last_seen = current.clone();
-                Some(current)
-            } else {
-                None
+            if current == self.last_seen {
+                return None;
             }
+            self.last_seen.clone_from(&current);
+            Some(current)
         } else {
             None
         }
@@ -265,6 +263,7 @@ impl TopicResolver {
     /// so the initial topic list is taken from `resolve()` at construction time.
     ///
     /// If the shutdown token is cancelled, the background task exits cleanly.
+    #[must_use]
     pub fn start_refresh_loop(
         self,
         interval: std::time::Duration,
@@ -280,11 +279,11 @@ impl TopicResolver {
             loop {
                 tokio::select! {
                     biased;
-                    _ = shutdown.cancelled() => {
+                    () = shutdown.cancelled() => {
                         tracing::debug!("Topic refresh loop shutting down");
                         break;
                     }
-                    _ = ticker.tick() => {
+                    _tick = ticker.tick() => {
                         match self.resolve() {
                             Ok(new_topics) => {
                                 if tx.send(new_topics).is_err() {

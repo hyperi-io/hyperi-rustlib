@@ -62,13 +62,15 @@ pub use admin::{KafkaAdmin, TopicInfo};
 pub use config::{
     DEVTEST_PROFILE, HIGH_THROUGHPUT_CONSUMER_DEFAULTS, KafkaConfig, KafkaProfile,
     LOW_LATENCY_CONSUMER_DEFAULTS, PRODUCER_DEFAULTS, PRODUCER_DEVTEST, PRODUCER_EXACTLY_ONCE,
-    PRODUCER_HIGH_THROUGHPUT, PRODUCER_LOW_LATENCY, PRODUCTION_PROFILE, merge_with_overrides,
+    PRODUCER_HIGH_THROUGHPUT, PRODUCER_LOW_LATENCY, PRODUCTION_PROFILE, SuppressionRule,
+    merge_with_overrides,
 };
 pub use metrics::{
     BrokerMetrics, KafkaMetrics, StatsContext, healthy_broker_count, total_consumer_lag,
 };
 pub use producer::{KafkaProducer, ProducerMetrics, ProducerProfile};
 pub use token::KafkaToken;
+pub use topic_resolver::{TopicRefreshHandle, TopicResolver};
 
 use super::error::{TransportError, TransportResult};
 use super::traits::{TransportBase, TransportReceiver, TransportSender};
@@ -215,8 +217,23 @@ impl KafkaTransport {
             .create_with_context(StatsContext::new())
             .map_err(|e| TransportError::Connection(format!("Failed to create consumer: {e}")))?;
 
+        // Resolve effective topics: use explicit list or auto-discover from broker
+        let effective_topics = if config.topics.is_empty() {
+            tracing::info!("Topics empty — auto-discovering from broker");
+            let resolver = topic_resolver::TopicResolver::new(config)?;
+            let discovered = resolver.resolve()?;
+            if discovered.is_empty() {
+                return Err(TransportError::Config(
+                    "Auto-discovery found no matching topics".into(),
+                ));
+            }
+            discovered
+        } else {
+            config.topics.clone()
+        };
+
         // Subscribe to topics
-        let subscribed_topics = config.topics.clone();
+        let subscribed_topics = effective_topics;
         if !subscribed_topics.is_empty() {
             let topics: Vec<&str> = subscribed_topics.iter().map(String::as_str).collect();
             consumer
