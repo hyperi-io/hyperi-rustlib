@@ -52,6 +52,7 @@ mod stats;
 pub use accumulator::{AccumulatorConfig, AccumulatorFull, BatchAccumulator, BatchDrainer};
 pub use batch::{BatchPipeline, BatchProcessor};
 pub use config::WorkerPoolConfig;
+pub use engine::BatchEngine;
 pub use pool::AdaptiveWorkerPool;
 pub use scaler::{ScalingDecision, ScalingInput};
 pub use stats::{PipelineStats, PipelineStatsSnapshot};
