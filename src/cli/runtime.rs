@@ -78,6 +78,11 @@ pub struct ServiceRuntime {
     #[cfg(feature = "worker")]
     pub worker_pool: Option<Arc<crate::worker::AdaptiveWorkerPool>>,
 
+    /// Batch processing engine with SIMD parsing and pre-route filtering (`worker` feature).
+    /// `None` if the `worker` feature is not enabled or worker pool creation failed.
+    #[cfg(feature = "worker")]
+    pub batch_engine: Option<Arc<crate::worker::BatchEngine>>,
+
     /// Scaling pressure calculator for KEDA autoscaling (`scaling` feature).
     /// `None` if the `scaling` feature is not enabled.
     #[cfg(feature = "scaling")]
@@ -155,6 +160,25 @@ impl ServiceRuntime {
             }
         };
 
+        // --- Batch engine ---
+        #[cfg(feature = "worker")]
+        let batch_engine = {
+            if let Some(ref pool) = worker_pool {
+                let config =
+                    crate::worker::engine::BatchProcessingConfig::from_cascade("batch_processing")
+                        .unwrap_or_default();
+                let mut engine = crate::worker::BatchEngine::with_pool(Arc::clone(pool), config);
+                engine.auto_wire(
+                    &metrics,
+                    #[cfg(feature = "memory")]
+                    Some(&memory_guard),
+                );
+                Some(Arc::new(engine))
+            } else {
+                None
+            }
+        };
+
         // --- Shutdown ---
         let shutdown = crate::shutdown::install_signal_handler();
 
@@ -197,6 +221,8 @@ impl ServiceRuntime {
             context: ctx,
             #[cfg(feature = "worker")]
             worker_pool,
+            #[cfg(feature = "worker")]
+            batch_engine,
             #[cfg(feature = "scaling")]
             scaling,
         })
@@ -208,5 +234,13 @@ impl ServiceRuntime {
     /// once you know what "ready" means for your app.
     pub fn set_readiness_check<F: Fn() -> bool + Send + Sync + 'static>(&mut self, check: F) {
         self.metrics.set_readiness_check(check);
+    }
+
+    /// Return the batch processing engine, if the `worker` feature is enabled
+    /// and the worker pool was successfully created.
+    #[cfg(feature = "worker")]
+    #[must_use]
+    pub fn batch_engine(&self) -> Option<&Arc<crate::worker::BatchEngine>> {
+        self.batch_engine.as_ref()
     }
 }

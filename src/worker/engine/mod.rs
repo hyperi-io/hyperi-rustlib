@@ -610,4 +610,27 @@ mod engine_tests {
         let _config = engine.config();
         assert_eq!(engine.stats().snapshot().received, 0);
     }
+
+    #[test]
+    fn auto_wire_does_not_panic() {
+        let mut engine = default_engine();
+        let mgr = crate::metrics::MetricsManager::new("test_auto_wire");
+        engine.auto_wire(
+            &mgr,
+            #[cfg(feature = "memory")]
+            None,
+        );
+        // Engine should still work after auto_wire
+        let msgs = make_json_messages(5);
+        let results: Vec<Result<(), String>> = engine.process_mid_tier(&msgs, |_| Ok(()));
+        assert_eq!(results.len(), 5);
+    }
+
+    #[test]
+    fn debug_impl_works() {
+        let engine = default_engine();
+        let debug = format!("{engine:?}");
+        assert!(debug.contains("BatchEngine"));
+        assert!(debug.contains("config"));
+    }
 }
