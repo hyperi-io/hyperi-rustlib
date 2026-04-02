@@ -206,6 +206,109 @@ fn compile_patterns(patterns: &[String]) -> TransportResult<Vec<Regex>> {
 }
 
 // ============================================================================
+// TopicRefreshHandle
+// ============================================================================
+
+/// Handle for periodic topic refresh notifications.
+///
+/// The refresh loop runs on a background tokio task, re-resolves topics
+/// periodically, and notifies via a watch channel when the list changes.
+/// Use `check_changed()` from the main event loop to detect updates.
+pub struct TopicRefreshHandle {
+    rx: tokio::sync::watch::Receiver<Vec<String>>,
+    last_seen: Vec<String>,
+    _task: tokio::task::JoinHandle<()>,
+}
+
+impl TopicRefreshHandle {
+    /// Check if topics changed since last check.
+    ///
+    /// Returns the new topic list if it has changed since the last call,
+    /// or `None` if there are no changes.
+    pub fn check_changed(&mut self) -> Option<Vec<String>> {
+        if self.rx.has_changed().unwrap_or(false) {
+            self.rx.mark_changed();
+            let current = self.rx.borrow().clone();
+            if current != self.last_seen {
+                self.last_seen = current.clone();
+                Some(current)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Return the most recently resolved topic list without marking as seen.
+    #[must_use]
+    pub fn current(&self) -> Vec<String> {
+        self.rx.borrow().clone()
+    }
+}
+
+impl std::fmt::Debug for TopicRefreshHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TopicRefreshHandle")
+            .field("last_seen_count", &self.last_seen.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl TopicResolver {
+    /// Start a background refresh loop. Returns a handle for change detection.
+    ///
+    /// The resolver is moved into the background task. The handle provides
+    /// `check_changed()` for polling from the main event loop.
+    ///
+    /// The loop skips the first tick (waits `interval` before first refresh),
+    /// so the initial topic list is taken from `resolve()` at construction time.
+    ///
+    /// If the shutdown token is cancelled, the background task exits cleanly.
+    pub fn start_refresh_loop(
+        self,
+        interval: std::time::Duration,
+        shutdown: tokio_util::sync::CancellationToken,
+    ) -> TopicRefreshHandle {
+        let initial = self.resolve().unwrap_or_default();
+        let (tx, rx) = tokio::sync::watch::channel(initial.clone());
+
+        let task = tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            ticker.tick().await; // skip immediate first tick
+
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = shutdown.cancelled() => {
+                        tracing::debug!("Topic refresh loop shutting down");
+                        break;
+                    }
+                    _ = ticker.tick() => {
+                        match self.resolve() {
+                            Ok(new_topics) => {
+                                if tx.send(new_topics).is_err() {
+                                    break; // receiver dropped — no point continuing
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "Topic refresh failed, retaining previous list");
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        TopicRefreshHandle {
+            rx,
+            last_seen: initial,
+            _task: task,
+        }
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
