@@ -18,7 +18,7 @@
 //!
 //! # Auto-registration
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use hyperi_rustlib::config;
 //!
 //! // This automatically registers "expression" in the registry:

@@ -8,89 +8,103 @@
 
 ## Current Tasks
 
-### DFE Full Remediation — Rustlib v2.0→HEAD Catch-Up
+### DFE Full Remediation — Phase 2: Deep Integration (AMENDED 2026-04-03)
 
-All 6 DFE apps need full catch-up covering BatchEngine, ServiceRuntime,
-TopicResolver, metrics manifest, RuntimeContext, deployment contract, SIMD
-parse, pre-route filtering, field interning, etc.
+> **Scope directive:** Don't go light. The whole point of BatchEngine and
+> parallelisation is to FORCE architectural improvement in all apps. Every app
+> gets: SIMD parsing, pre-route filtering, chunked rayon, field interning,
+> standardised PipelineStats. Where the engine API doesn't fit, evolve the engine.
+>
+> **No SEP rule:** Every warning, clippy lint, doc-test failure, or bug
+> encountered during this remediation is OUR problem. We own every line we
+> touch AND every pre-existing issue in files we modify. Fix it there and then.
 
-Plan: `docs/superpowers/plans/2026-04-02-dfe-full-remediation.md`
+Phase 1 done (all 6 apps on rustlib >=2.4.3, ServiceRuntime, released).
+Phase 2 plan: `docs/superpowers/plans/2026-04-03-dfe-phase2-deep-integration.md`
 
-Remediation order:
-- [ ] dfe-loader `[IN PROGRESS]`
-  - Current state: waiting for CI to publish new rustlib version
-  - Next: bump rustlib version, adopt ServiceRuntime + BatchEngine, delete bespoke TopicResolver
-  - Heaviest — ~500 line delta
-- [ ] dfe-receiver
-  - BatchEngine standalone `process_mid_tier` (HTTP inbound)
-  - BatchAccumulator for Splunk HEC request batching
-- [ ] dfe-archiver
-  - BatchEngine `run_raw` (passthrough, no parse)
-  - TopicResolver auto-discovery (`topics: []`)
-- [ ] dfe-fetcher
-  - BatchEngine standalone `process_mid_tier`
-  - `fan_out_async` for within-source parallel service fetching
-- [ ] dfe-transform-vector
-  - Lightest — ServiceRuntime only, no BatchEngine (Vector owns pipeline)
-- [ ] dfe-transform-vrl
-  - BatchEngine `run()` replaces pipeline loop
-  - sonic-rs replaces serde_json
+**Phase 2A: Evolve BatchEngine API (rustlib)**
+- [ ] Async sink for run() / run_raw() (enables loader's async CH inserts)
+- [ ] Optional ticker callback (enables flush timers inside engine loop)
+- [ ] TransportReceiver impl for loader's TransportBackend (clean adapter)
+- [ ] Publish rustlib with engine changes
 
-Per-app remediation includes:
-- Bump hyperi-rustlib to latest
-- Push committed DfeMetrics::register(&mgr) fix
-- Adopt ServiceRuntime (remove manual MetricsManager/MemoryGuard/pool/shutdown wiring)
-- Adopt BatchEngine (replace manual recv→parse→transform loop)
-- TopicResolver where applicable
-- Generate deployment contract artefacts
+**Phase 2B: Per-App Integration**
+- [ ] dfe-loader: engine.process_mid_tier() replaces MessageProcessor
+  - SIMD parse (sonic-rs), pre-route routing_field="_table", field interning
+  - Transform closure wraps existing pipeline (route→extract→enrich)
+  - BatchCoordinator stays (sequential buffer push, DLQ)
+  - Orchestrator select! loop stays (5 arms: shutdown, config, flush, schema, recv)
+- [ ] dfe-transform-vrl: engine.process_mid_tier() replaces deser+VRL phases
+  - Benchmark: sonic_rs::Value → vrl::Value conversion cost first
+  - Single engine call replaces two pool.process_batch() calls
+  - Produce stays sequential (async I/O)
+- [ ] dfe-archiver: engine.run_raw() or process_raw() + TopicResolver
+  - Pre-route routing_field="_destination", TopicResolver auto-discovery
+  - Flush timer as separate task (or engine ticker if evolved)
+- [ ] dfe-receiver: BatchAccumulator for Splunk HEC only (additive)
+  - DO NOT replace zero-copy hot path (validation, routing, enrichment)
+  - Existing optimisations proven faster than generic alternatives
+- [ ] dfe-fetcher: fan_out_async() + engine.process_raw() for post-fetch
+  - JoinSet in each Source impl (AWS/Azure/M365/GCP)
+  - Parallel enrich+filter via engine
+- [ ] dfe-transform-vector: generate-artefacts only
+- [ ] ALL apps: run `generate-artefacts` for deployment contract
+
+**Phase 1 DONE (all apps):**
+- [x] Bump rustlib to >=2.4.3
+- [x] DfeMetrics::register(&mgr) signature fix
+- [x] ServiceRuntime adoption (where not already done)
+- [x] DeploymentContract schema_version + oci_labels fields
+- [x] Debug/trace logging across all pipeline stages
+- [x] Target symlink + orphan submodule fixes
+- [x] All 6 apps released with Phase 1 changes
+
+### clickhouse-rs
+
+- [x] Schema cache drift detection (issue #20 fix in dfe-loader)
+- [x] Expanded SchemaMismatch error classification
+- [x] Auto-invalidate schema cache on end() failure
+- [x] Nullable(JSON) RowBinary insert fix (c178b37)
+- [x] Nullable/non-nullable tests for ALL types
+- [x] Upstream PR: ClickHouse/clickhouse-rs#414
+- [ ] Monitor upstream PR review feedback
 
 ### Deferred
 
 - [ ] Columnar (SoA) batch layout — backlogged, benchmark later
 - [ ] String interning deeper integration — custom Value type with interned keys
-- [ ] Disk buffer improvements (rkyv zero-copy) — separate concern (tiered-sink/spool)
-- [ ] Metrics manifest enrichment — `set_use_cases()` / `set_dashboard_hint()` content
+- [ ] Disk buffer improvements (rkyv zero-copy) — tiered-sink/spool
+- [ ] Metrics manifest enrichment — set_use_cases() / set_dashboard_hint()
 - [ ] Mutex audit documentation (in standards)
 - [ ] Phase 3: dfe-transform-wasm, dfe-transform-elastic, dfe-transform-splunk
+- [ ] Debug/trace logging increasing detail levels (all repos)
 
-### Completed This Session (2026-04-02)
+### Completed This Session
 
-- [x] **BatchEngine** — SIMD-optimised batch processing framework (15 commits)
-  - sonic-rs SIMD JSON parse (2-4x faster than serde_json)
-  - Pre-route field extraction via `get_from_slice` (skip full parse for filtered/DLQ)
-  - FieldInterner (DashMap concurrent field name dedup)
-  - Two tiers: mid-tier (materialised DOM) and full-tier (raw passthrough)
-  - Transport-wired `run()` loop + standalone `process_mid_tier()`/`process_raw()`
-  - Auto-wired from ServiceRuntime — zero boilerplate for apps
-  - MemoryGuard-bounded chunking between batch chunks
-  - 78 tests (unit + integration + adversarial + concurrent + 20K scale)
-  - Criterion benchmarks (engine vs manual serde_json)
-- [x] **TopicResolver** — Kafka topic auto-discovery in rustlib transport-kafka
-  - Configurable suppression rules (default: `_load` suppresses `_land`)
-  - Include/exclude regex filters
-  - TopicRefreshHandle for periodic re-resolution
-  - Wired into KafkaTransport::new() — auto-discovers when `topics: []`
-- [x] **PipelineStats.filtered** — new atomic counter for pre-route filtered messages
-- [x] **AdaptiveWorkerPool.install()** — expose rayon pool for `par_iter_mut`
-- [x] **Dependencies** — sonic-rs, dashmap, bytes, regex added to worker/transport-kafka
+- [x] **BatchEngine** — 15 commits, SIMD batch processing framework
+- [x] **TopicResolver** — Kafka topic auto-discovery with suppression rules
+- [x] **PipelineStats.filtered** counter
+- [x] **AdaptiveWorkerPool.install()** exposure
+- [x] **Prometheus recorder test fix** — test-safe MetricsManager
+- [x] **Rustlib v2.4.3** published to crates.io
+- [x] **clickhouse-rs schema-cache-strong** branch — 3 commits + Nullable(JSON) fix
+- [x] **Upstream PR** ClickHouse/clickhouse-rs#414
+- [x] **dfe-loader** v1.16.4 — ServiceRuntime, TopicResolver deletion, schema cache fix, logging
+- [x] **dfe-receiver** v1.14.8 — ServiceRuntime, logging, target symlink + orphan ci fix
+- [x] **dfe-archiver** v1.6.1 — ServiceRuntime, logging, deployment contract fields
+- [x] **dfe-fetcher** v1.1.8 — ServiceRuntime, logging, SensitiveString fix
+- [x] **dfe-transform-vector** — ServiceRuntime, logging, SensitiveString fix
+- [x] **dfe-transform-vrl** — rustlib bump, logging (CI pending)
+- [x] **Target symlink fix** across 4 repos (receiver, archiver, fetcher, vrl)
+- [x] **Orphan ci submodule** removed from dfe-receiver
 
 ### Completed Previous Sessions
 
-- [x] BatchAccumulator (bounded channel, time/count/bytes drain thresholds)
-- [x] NDJSON split utilities (split_lines, count_lines)
-- [x] Adversarial worker pool tests (34 tests)
-- [x] RuntimeContext + startupz integration tests
-- [x] ServiceRuntime (auto-wired DfeApp infrastructure)
-- [x] RuntimeContext (K8s metadata, cgroup limits)
-- [x] Deployment contract CI bridge (container-manifest.json, OCI labels)
+- [x] BatchAccumulator, NDJSON split, adversarial worker tests
+- [x] RuntimeContext, ServiceRuntime, deployment contract CI bridge
 - [x] Metrics manifest + CLI subcommands
-- [x] AdaptiveWorkerPool (rayon + tokio hybrid)
-- [x] BatchProcessor trait + BatchPipeline + PipelineStats
-- [x] Code review remediation — security fixes, panic removal, health wiring
-- [x] DLQ HTTP + Redis backends
-- [x] Transport trait split + factory + File/Pipe/HTTP/Redis transports
-- [x] HealthRegistry, Shutdown manager, OTel trace propagation
-- [x] KafkaTransport StatsContext, gRPC transport metrics
+- [x] AdaptiveWorkerPool, BatchProcessor, PipelineStats
+- [x] All transport backends, HealthRegistry, Shutdown manager
 - [x] Config registry, SensitiveString, /config endpoint
 
 ---
@@ -102,18 +116,6 @@ Per-app remediation includes:
 - [ ] GCP Secret Manager provider (`secrets-gcp` feature)
 - [ ] Azure Key Vault provider (`secrets-azure` feature)
 
-### Kafka — Opinionated SASL-SCRAM Named Constructors
-
-- [ ] `KafkaConfig::external_sasl_scram(brokers, username, password)`
-- [ ] `KafkaConfig::internal_sasl_scram(brokers, username, password)`
-
-### Identity / Auth Module (Discussion)
-
-- [ ] Token validation middleware (JWT/OIDC) for gRPC interceptor + axum middleware
-- [ ] Service identity (service name + instance ID for mTLS, audit logs)
-- [ ] Break-glass: static bearer token from secrets module
-- [ ] Design decision: dfe-engine as SSoT, rustlib validates tokens only
-
 ### Other
 
 - [ ] PII anonymiser (evaluate Rust libraries)
@@ -123,11 +125,10 @@ Per-app remediation includes:
 
 ## Notes
 
-- Transport backends: Kafka, gRPC, Memory, File, Pipe, HTTP, Redis/Valkey
-- Core pillars plan: `docs/superpowers/plans/2026-03-26-core-pillars.md`
 - BatchEngine spec: `docs/superpowers/specs/2026-04-02-batch-engine-design.md`
 - TopicResolver spec: `docs/superpowers/specs/2026-04-02-topic-resolver-design.md`
-- DFE remediation plan: `docs/superpowers/plans/2026-04-02-dfe-full-remediation.md`
-- Two deployment modes: Kafka-mediated (persistence) vs direct gRPC (low latency)
-- Routed transport is receiver/fetcher only — all other stages are 1:1
+- DFE remediation plan (Phase 1): `docs/superpowers/plans/2026-04-02-dfe-full-remediation.md`
+- DFE Phase 2 plan (amended): `docs/superpowers/plans/2026-04-03-dfe-phase2-deep-integration.md`
+- Phase 2A evolves the engine API first (async sink, ticker, transport adapter)
+- Phase 2B applies engine per-app: loader → VRL → archiver → receiver → fetcher → vector
 - Common patterns in rustlib first — if all 6 DFE projects use the same pattern, implement in rustlib
