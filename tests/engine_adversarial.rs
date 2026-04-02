@@ -357,3 +357,190 @@ fn process_raw_large_batch() {
     assert_eq!(snap.received, 5_000);
     assert_eq!(snap.processed, 5_000);
 }
+
+#[test]
+fn parse_error_action_skip() {
+    // With Skip action, invalid messages are silently dropped — not included in results.
+    let config = BatchProcessingConfig {
+        parse_error_action: hyperi_rustlib::worker::engine::ParseErrorAction::Skip,
+        ..Default::default()
+    };
+    let engine = BatchEngine::new(config);
+
+    let mut msgs = make_json_messages(3);
+    // Insert 2 invalid messages at positions 1 and 3
+    msgs.insert(1, make_raw(b"not json {{{"));
+    msgs.push(make_raw(b"also not json <<<"));
+    // msgs is now: valid, invalid, valid, valid, invalid → 5 total, 3 valid
+
+    let results: Vec<Result<(), String>> = engine.process_mid_tier(&msgs, |_| Ok(()));
+    // Skip drops the 2 invalid ones entirely — only 3 Ok entries
+    assert_eq!(
+        results.len(),
+        3,
+        "skipped messages must not appear in results"
+    );
+    assert!(results.iter().all(|r| r.is_ok()));
+
+    let snap = engine.stats().snapshot();
+    assert_eq!(snap.received, 5);
+    assert_eq!(snap.processed, 3);
+    // Errors are still counted even when skipped
+    assert_eq!(snap.errors, 2);
+}
+
+#[test]
+fn parse_error_action_fail_batch() {
+    // With FailBatch, any parse error causes the entire batch to return Err.
+    let config = BatchProcessingConfig {
+        parse_error_action: hyperi_rustlib::worker::engine::ParseErrorAction::FailBatch,
+        ..Default::default()
+    };
+    let engine = BatchEngine::new(config);
+
+    let mut msgs = make_json_messages(4);
+    // Inject one invalid message at position 2
+    msgs.insert(2, make_raw(b"totally not json!!!"));
+    // msgs: valid, valid, invalid, valid, valid → 5 total
+
+    let results: Vec<Result<(), String>> = engine.process_mid_tier(&msgs, |_| Ok(()));
+    // FailBatch: all results in the batch (up to and including the error) are Err
+    assert!(
+        !results.is_empty(),
+        "FailBatch must return results, not empty"
+    );
+    assert!(
+        results.iter().all(|r| r.is_err()),
+        "FailBatch: every result must be Err, got {} ok and {} err",
+        results.iter().filter(|r| r.is_ok()).count(),
+        results.iter().filter(|r| r.is_err()).count(),
+    );
+}
+
+#[cfg(feature = "worker-msgpack")]
+#[test]
+fn msgpack_auto_detection() {
+    // Encode {"key": "value"} as MsgPack and verify Auto detection + parsing.
+    let json_value: serde_json::Value = serde_json::json!({"key": "value", "_table": "events"});
+    let msgpack_bytes = rmp_serde::to_vec(&json_value).expect("msgpack encode failed");
+
+    let engine = default_engine();
+    // Use Auto format — engine should sniff the MsgPack header bytes
+    let msg = RawMessage {
+        payload: bytes::Bytes::from(msgpack_bytes),
+        key: None,
+        headers: vec![],
+        metadata: MessageMetadata {
+            timestamp_ms: None,
+            format: PayloadFormat::Auto,
+            commit_token: None,
+        },
+    };
+
+    let results: Vec<Result<String, String>> = engine.process_mid_tier(&[msg], |pm| {
+        pm.field("key")
+            .and_then(|v| sonic_rs::JsonValueTrait::as_str(v))
+            .map(String::from)
+            .ok_or_else(|| "missing key field".to_string())
+    });
+
+    assert_eq!(results.len(), 1);
+    assert!(results[0].is_ok(), "msgpack parse failed: {:?}", results[0]);
+    assert_eq!(results[0].as_ref().unwrap(), "value");
+}
+
+#[test]
+fn pre_route_field_error_on_invalid_json() {
+    // Routing + DropFieldMissing filter applied to messages with completely invalid JSON.
+    // Invalid JSON cannot be parsed for field extraction — should be treated as
+    // field-missing (dropped) or parse error (DLQ) depending on engine phase ordering.
+    let config = BatchProcessingConfig {
+        routing_field: Some("_table".to_string()),
+        pre_route_filters: vec![PreRouteFilterConfig::DropFieldMissing {
+            field: "_table".to_string(),
+        }],
+        ..Default::default()
+    };
+    let engine = BatchEngine::new(config);
+
+    let msgs = vec![
+        make_raw(r#"{"_table":"events","id":1}"#.as_bytes()), // valid, has field
+        make_raw(b"not json at all <<<"),                     // completely invalid
+        make_raw(r#"{"_table":"logs","id":2}"#.as_bytes()),   // valid, has field
+    ];
+
+    let results: Vec<Result<(), String>> = engine.process_mid_tier(&msgs, |_| Ok(()));
+
+    // The two valid messages should succeed.
+    // The invalid JSON message is either filtered (field extraction fails → treated as
+    // missing) or produces an Err (DLQ from parse phase after pre-route passes).
+    // Either way, no panic and exactly 2 Ok results.
+    let ok_count = results.iter().filter(|r| r.is_ok()).count();
+    assert_eq!(ok_count, 2, "expected 2 successful results, got {ok_count}");
+
+    let snap = engine.stats().snapshot();
+    assert_eq!(snap.received, 3);
+    // The 2 valid messages must be processed
+    assert_eq!(snap.processed, 2);
+}
+
+#[test]
+fn concurrent_process_mid_tier() {
+    // 4 threads each calling process_mid_tier on shared Arc<BatchEngine>.
+    // Verifies thread safety of the engine, stats, and interner.
+    let engine = Arc::new(BatchEngine::new(BatchProcessingConfig::default()));
+
+    let num_threads = 4;
+    let msgs_per_thread = 1_000;
+
+    let handles: Vec<_> = (0..num_threads)
+        .map(|t| {
+            let engine = Arc::clone(&engine);
+            std::thread::spawn(move || {
+                let msgs = (0..msgs_per_thread)
+                    .map(|i| {
+                        make_raw(
+                            format!(r#"{{"_table":"events","thread":{t},"id":{i}}}"#).as_bytes(),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let results: Vec<Result<usize, String>> =
+                    engine.process_mid_tier(&msgs, |pm| Ok(pm.raw_payload().len()));
+                assert_eq!(results.len(), msgs_per_thread);
+                assert!(
+                    results.iter().all(|r| r.is_ok()),
+                    "thread {t}: unexpected errors"
+                );
+            })
+        })
+        .collect();
+
+    for h in handles {
+        h.join().expect("thread panicked");
+    }
+
+    let snap = engine.stats().snapshot();
+    let total = (num_threads * msgs_per_thread) as u64;
+    assert_eq!(snap.received, total, "stats.received mismatch: {snap:?}");
+    assert_eq!(snap.processed, total, "stats.processed mismatch: {snap:?}");
+    assert_eq!(snap.errors, 0);
+}
+
+#[test]
+fn large_batch_20k() {
+    // Kafka-scale: 20 000 messages across 2 chunks of 10 000 (default max_chunk_size).
+    let engine = default_engine();
+    let msgs = make_json_messages(20_000);
+
+    let results: Vec<Result<usize, String>> =
+        engine.process_mid_tier(&msgs, |pm| Ok(pm.raw_payload().len()));
+
+    assert_eq!(results.len(), 20_000);
+    assert!(results.iter().all(|r| r.is_ok()));
+
+    let snap = engine.stats().snapshot();
+    assert_eq!(snap.received, 20_000);
+    assert_eq!(snap.processed, 20_000);
+    assert_eq!(snap.errors, 0);
+    assert_eq!(snap.filtered, 0);
+}
