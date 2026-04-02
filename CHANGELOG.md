@@ -1,3 +1,11 @@
+## [2.4.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.3...v2.4.4) (2026-04-02)
+
+
+### Bug Fixes
+
+* add async sink engine API, fix doc-tests — Phase 2A ([45c307a](https://github.com/hyperi-io/hyperi-rustlib/commit/45c307a44c15ac114822bc6eb0bf70028f7d5904))
+* clippy — use flatten() instead of if-let in test loop ([82a50b3](https://github.com/hyperi-io/hyperi-rustlib/commit/82a50b33b51d3ef7acf8376f40fea5655507e20f))
+
 ## [2.4.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.2...v2.4.3) (2026-04-02)
 
 
