@@ -44,6 +44,23 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 // ============================================================================
+// Topic Resolution Types
+// ============================================================================
+
+/// Topic suppression rule for auto-discovery.
+///
+/// When auto-discovering topics, if a topic with `preferred_suffix` exists
+/// for a base name, the topic with `suppressed_suffix` for that same base
+/// is removed. Default: `_load` suppresses `_land`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuppressionRule {
+    /// The suffix of the preferred (kept) topic.
+    pub preferred_suffix: String,
+    /// The suffix of the suppressed (removed) topic.
+    pub suppressed_suffix: String,
+}
+
+// ============================================================================
 // Profile System
 // ============================================================================
 
@@ -332,6 +349,27 @@ pub struct KafkaConfig {
     #[serde(default)]
     pub topics: Vec<String>,
 
+    /// Regex patterns for topic include filtering (empty = accept all).
+    /// Topics must match at least one pattern (OR logic).
+    #[serde(default)]
+    pub topic_include: Vec<String>,
+
+    /// Regex patterns for topic exclude filtering.
+    /// Topics matching any pattern are excluded. Exclude wins over include.
+    #[serde(default)]
+    pub topic_exclude: Vec<String>,
+
+    /// Periodic topic refresh interval in seconds (0 = disabled).
+    /// Only applies when `topics` is empty (auto-discovery mode).
+    #[serde(default = "default_topic_refresh_secs")]
+    pub topic_refresh_secs: u64,
+
+    /// Suppression rules: if a topic with preferred_suffix exists,
+    /// suppress the topic with suppressed_suffix for the same base name.
+    /// Default: _load suppresses _land (DFE convention).
+    #[serde(default = "default_topic_suppression_rules")]
+    pub topic_suppression_rules: Vec<SuppressionRule>,
+
     /// Security protocol (plaintext, ssl, sasl_plaintext, sasl_ssl).
     #[serde(default = "default_security_protocol")]
     pub security_protocol: String,
@@ -428,6 +466,17 @@ pub struct KafkaConfig {
     pub extra_config: HashMap<String, String>,
 }
 
+fn default_topic_refresh_secs() -> u64 {
+    60
+}
+
+fn default_topic_suppression_rules() -> Vec<SuppressionRule> {
+    vec![SuppressionRule {
+        preferred_suffix: "_load".into(),
+        suppressed_suffix: "_land".into(),
+    }]
+}
+
 fn default_brokers() -> Vec<String> {
     vec!["localhost:9092".to_string()]
 }
@@ -485,6 +534,10 @@ impl Default for KafkaConfig {
             group: default_group(),
             client_id: default_client_id(),
             topics: Vec::new(),
+            topic_include: Vec::new(),
+            topic_exclude: Vec::new(),
+            topic_refresh_secs: default_topic_refresh_secs(),
+            topic_suppression_rules: default_topic_suppression_rules(),
             security_protocol: default_security_protocol(),
             sasl_mechanism: None,
             sasl_username: None,
@@ -871,5 +924,21 @@ impl KafkaConfig {
     #[must_use]
     pub fn from_env_standard() -> Self {
         Self::from_env("KAFKA")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kafka_config_topic_resolution_defaults() {
+        let config = KafkaConfig::default();
+        assert!(config.topic_include.is_empty());
+        assert!(config.topic_exclude.is_empty());
+        assert_eq!(config.topic_refresh_secs, 60);
+        assert_eq!(config.topic_suppression_rules.len(), 1);
+        assert_eq!(config.topic_suppression_rules[0].preferred_suffix, "_load");
+        assert_eq!(config.topic_suppression_rules[0].suppressed_suffix, "_land");
     }
 }
