@@ -776,7 +776,7 @@ mod engine_tests {
     #[test]
     fn auto_wire_does_not_panic() {
         let mut engine = default_engine();
-        let mgr = crate::metrics::MetricsManager::new("test_auto_wire");
+        let mgr = crate::metrics::MetricsManager::new_for_test("test_auto_wire");
         engine.auto_wire(
             &mgr,
             #[cfg(feature = "memory")]
