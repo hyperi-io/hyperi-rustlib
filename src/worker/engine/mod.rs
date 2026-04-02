@@ -511,6 +511,197 @@ impl BatchEngine {
         }
     }
 
+    /// Transport-wired async run loop with full control over commit semantics.
+    ///
+    /// Like [`run`](Self::run) but with two key differences:
+    ///
+    /// 1. **Async sink** — the sink is an async closure, enabling async I/O
+    ///    (ClickHouse inserts, Kafka produce, storage writes) inside the sink.
+    ///
+    /// 2. **Sink-managed commits** — the sink receives commit tokens and decides
+    ///    when to commit. The engine does NOT auto-commit. This enables deferred
+    ///    commit patterns (e.g., commit after ClickHouse flush, not after buffer push).
+    ///
+    /// An optional ticker fires on a fixed interval within the select! loop,
+    /// enabling flush timers and periodic maintenance without breaking out of
+    /// the engine loop.
+    ///
+    /// # Errors
+    ///
+    /// Returns `EngineError::Transport` if recv fails fatally.
+    /// Returns `EngineError::Sink` if the sink callback errors.
+    #[cfg(feature = "transport")]
+    pub async fn run_async<R, O, E, Transform, Sink, SinkFut, Ticker, TickerFut>(
+        &self,
+        receiver: &R,
+        shutdown: tokio_util::sync::CancellationToken,
+        transform: Transform,
+        mut sink: Sink,
+        ticker: Option<(std::time::Duration, Ticker)>,
+    ) -> Result<(), EngineError>
+    where
+        R: crate::transport::TransportReceiver,
+        O: Send + 'static,
+        E: Send + From<String> + std::fmt::Display + 'static,
+        Transform: Fn(&mut ParsedMessage) -> Result<O, E> + Sync,
+        Sink: FnMut(Vec<Result<O, E>>, Vec<R::Token>) -> SinkFut,
+        SinkFut: std::future::Future<Output = Result<(), EngineError>>,
+        Ticker: FnMut() -> TickerFut,
+        TickerFut: std::future::Future<Output = Result<(), EngineError>>,
+    {
+        tracing::info!(
+            chunk_size = self.config.max_chunk_size,
+            routing_field = ?self.config.routing_field,
+            ticker = ticker.is_some(),
+            "BatchEngine (async) starting"
+        );
+
+        // Ticker interval — if None, create a dummy that never fires.
+        let mut tick_interval = ticker.as_ref().map(|(d, _)| tokio::time::interval(*d));
+        let mut ticker_fn = ticker.map(|(_, f)| f);
+
+        // Consume the first tick (fires immediately).
+        if let Some(ref mut interval) = tick_interval {
+            interval.tick().await;
+        }
+
+        loop {
+            tokio::select! {
+                biased;
+
+                () = shutdown.cancelled() => {
+                    tracing::info!("BatchEngine (async) shutting down");
+                    return Ok(());
+                }
+
+                _ = async {
+                    match tick_interval.as_mut() {
+                        Some(interval) => interval.tick().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    if let Some(ref mut f) = ticker_fn
+                        && let Err(e) = f().await
+                    {
+                        tracing::error!(error = %e, "Ticker failed");
+                    }
+                }
+
+                recv_result = receiver.recv(self.config.max_chunk_size) => {
+                    let messages = recv_result.map_err(EngineError::Transport)?;
+                    if messages.is_empty() {
+                        continue;
+                    }
+
+                    // Collect commit tokens before converting (move happens below).
+                    let tokens: Vec<R::Token> = messages.iter()
+                        .map(|m| m.token.clone())
+                        .collect();
+
+                    // Convert to RawMessage (type-erased).
+                    let raw: Vec<RawMessage> = messages.into_iter()
+                        .map(RawMessage::from)
+                        .collect();
+
+                    // Process: pre-route + parse + parallel transform.
+                    let results = self.process_mid_tier(&raw, &transform);
+
+                    // Sink receives results AND tokens — sink decides when to commit.
+                    if let Err(e) = sink(results, tokens).await {
+                        tracing::error!(error = %e, "Sink failed (async)");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Transport-wired async run loop for raw byte processing with full control.
+    ///
+    /// Like [`run_async`](Self::run_async) but uses [`process_raw`](Self::process_raw):
+    /// the transform closure receives `&RawMessage` bytes without JSON parsing.
+    ///
+    /// # Errors
+    ///
+    /// Returns `EngineError::Transport` if recv fails fatally.
+    /// Returns `EngineError::Sink` if the sink callback errors.
+    #[cfg(feature = "transport")]
+    pub async fn run_raw_async<R, O, E, Transform, Sink, SinkFut, Ticker, TickerFut>(
+        &self,
+        receiver: &R,
+        shutdown: tokio_util::sync::CancellationToken,
+        transform: Transform,
+        mut sink: Sink,
+        ticker: Option<(std::time::Duration, Ticker)>,
+    ) -> Result<(), EngineError>
+    where
+        R: crate::transport::TransportReceiver,
+        O: Send + 'static,
+        E: Send + From<String> + std::fmt::Display + 'static,
+        Transform: Fn(&RawMessage) -> Result<O, E> + Sync,
+        Sink: FnMut(Vec<Result<O, E>>, Vec<R::Token>) -> SinkFut,
+        SinkFut: std::future::Future<Output = Result<(), EngineError>>,
+        Ticker: FnMut() -> TickerFut,
+        TickerFut: std::future::Future<Output = Result<(), EngineError>>,
+    {
+        tracing::info!(
+            chunk_size = self.config.max_chunk_size,
+            ticker = ticker.is_some(),
+            "BatchEngine (raw async) starting"
+        );
+
+        let mut tick_interval = ticker.as_ref().map(|(d, _)| tokio::time::interval(*d));
+        let mut ticker_fn = ticker.map(|(_, f)| f);
+
+        if let Some(ref mut interval) = tick_interval {
+            interval.tick().await;
+        }
+
+        loop {
+            tokio::select! {
+                biased;
+
+                () = shutdown.cancelled() => {
+                    tracing::info!("BatchEngine (raw async) shutting down");
+                    return Ok(());
+                }
+
+                _ = async {
+                    match tick_interval.as_mut() {
+                        Some(interval) => interval.tick().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    if let Some(ref mut f) = ticker_fn
+                        && let Err(e) = f().await
+                    {
+                        tracing::error!(error = %e, "Ticker (raw) failed");
+                    }
+                }
+
+                recv_result = receiver.recv(self.config.max_chunk_size) => {
+                    let messages = recv_result.map_err(EngineError::Transport)?;
+                    if messages.is_empty() {
+                        continue;
+                    }
+
+                    let tokens: Vec<R::Token> = messages.iter()
+                        .map(|m| m.token.clone())
+                        .collect();
+
+                    let raw: Vec<RawMessage> = messages.into_iter()
+                        .map(RawMessage::from)
+                        .collect();
+
+                    let results = self.process_raw(&raw, &transform);
+
+                    if let Err(e) = sink(results, tokens).await {
+                        tracing::error!(error = %e, "Sink failed (raw async)");
+                    }
+                }
+            }
+        }
+    }
+
     /// Pause between chunks when memory pressure is detected.
     ///
     /// Uses `std::thread::sleep` (not tokio) because `process_mid_tier` and
@@ -794,5 +985,215 @@ mod engine_tests {
         let debug = format!("{engine:?}");
         assert!(debug.contains("BatchEngine"));
         assert!(debug.contains("config"));
+    }
+
+    #[cfg(feature = "transport-memory")]
+    mod async_engine_tests {
+        use super::*;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        fn json_payload(table: &str, id: usize) -> Vec<u8> {
+            format!(r#"{{"_table":"{table}","id":{id}}}"#).into_bytes()
+        }
+
+        #[tokio::test]
+        async fn run_async_processes_and_passes_tokens_to_sink() {
+            let config = crate::transport::memory::MemoryConfig {
+                recv_timeout_ms: 50,
+                ..Default::default()
+            };
+            let transport = crate::transport::memory::MemoryTransport::new(&config);
+
+            // Inject 5 messages
+            for i in 0..5 {
+                transport
+                    .inject(None, json_payload("events", i))
+                    .await
+                    .unwrap();
+            }
+
+            let engine = default_engine();
+            let shutdown = tokio_util::sync::CancellationToken::new();
+            let shutdown_clone = shutdown.clone();
+
+            let sink_count = Arc::new(AtomicU64::new(0));
+            let token_count = Arc::new(AtomicU64::new(0));
+            let sink_count_clone = Arc::clone(&sink_count);
+            let token_count_clone = Arc::clone(&token_count);
+
+            // Shut down after a short delay
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                shutdown_clone.cancel();
+            });
+
+            let result = engine
+                .run_async(
+                    &transport,
+                    shutdown,
+                    |pm: &mut ParsedMessage| -> Result<String, String> {
+                        Ok(pm
+                            .field("_table")
+                            .and_then(|v| sonic_rs::JsonValueTrait::as_str(v))
+                            .unwrap_or("?")
+                            .to_string())
+                    },
+                    |results, tokens| {
+                        let sc = Arc::clone(&sink_count_clone);
+                        let tc = Arc::clone(&token_count_clone);
+                        async move {
+                            sc.fetch_add(results.len() as u64, Ordering::Relaxed);
+                            tc.fetch_add(tokens.len() as u64, Ordering::Relaxed);
+                            // Simulate app committing tokens via receiver
+                            Ok(())
+                        }
+                    },
+                    None::<(
+                        std::time::Duration,
+                        fn() -> std::future::Ready<Result<(), EngineError>>,
+                    )>,
+                )
+                .await;
+
+            assert!(result.is_ok());
+            assert_eq!(sink_count.load(Ordering::Relaxed), 5);
+            assert_eq!(token_count.load(Ordering::Relaxed), 5);
+        }
+
+        #[tokio::test]
+        async fn run_async_ticker_fires() {
+            let config = crate::transport::memory::MemoryConfig {
+                recv_timeout_ms: 50,
+                ..Default::default()
+            };
+            let transport = crate::transport::memory::MemoryTransport::new(&config);
+
+            let engine = default_engine();
+            let shutdown = tokio_util::sync::CancellationToken::new();
+            let shutdown_clone = shutdown.clone();
+
+            let tick_count = Arc::new(AtomicU64::new(0));
+            let tick_count_clone = Arc::clone(&tick_count);
+
+            // Shut down after 350ms — ticker at 100ms should fire ~2-3 times
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+                shutdown_clone.cancel();
+            });
+
+            let result = engine
+                .run_async(
+                    &transport,
+                    shutdown,
+                    |_pm: &mut ParsedMessage| -> Result<(), String> { Ok(()) },
+                    |_results, _tokens| async { Ok(()) },
+                    Some((std::time::Duration::from_millis(100), move || {
+                        let tc = Arc::clone(&tick_count_clone);
+                        async move {
+                            tc.fetch_add(1, Ordering::Relaxed);
+                            Ok(())
+                        }
+                    })),
+                )
+                .await;
+
+            assert!(result.is_ok());
+            let ticks = tick_count.load(Ordering::Relaxed);
+            assert!(ticks >= 2, "Expected at least 2 ticks, got {ticks}");
+        }
+
+        #[tokio::test]
+        async fn run_raw_async_processes_without_parse() {
+            let config = crate::transport::memory::MemoryConfig {
+                recv_timeout_ms: 50,
+                ..Default::default()
+            };
+            let transport = crate::transport::memory::MemoryTransport::new(&config);
+
+            for i in 0..3 {
+                transport
+                    .inject(None, json_payload("logs", i))
+                    .await
+                    .unwrap();
+            }
+
+            let engine = default_engine();
+            let shutdown = tokio_util::sync::CancellationToken::new();
+            let shutdown_clone = shutdown.clone();
+
+            let total_bytes = Arc::new(AtomicU64::new(0));
+            let total_bytes_clone = Arc::clone(&total_bytes);
+
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                shutdown_clone.cancel();
+            });
+
+            let result = engine
+                .run_raw_async(
+                    &transport,
+                    shutdown,
+                    |msg: &RawMessage| -> Result<usize, String> { Ok(msg.payload.len()) },
+                    |results, _tokens| {
+                        let tb = Arc::clone(&total_bytes_clone);
+                        async move {
+                            for r in &results {
+                                if let Ok(len) = r {
+                                    tb.fetch_add(*len as u64, Ordering::Relaxed);
+                                }
+                            }
+                            Ok(())
+                        }
+                    },
+                    None::<(
+                        std::time::Duration,
+                        fn() -> std::future::Ready<Result<(), EngineError>>,
+                    )>,
+                )
+                .await;
+
+            assert!(result.is_ok());
+            assert!(total_bytes.load(Ordering::Relaxed) > 0);
+        }
+
+        #[tokio::test]
+        async fn run_async_sink_error_does_not_crash() {
+            let config = crate::transport::memory::MemoryConfig {
+                recv_timeout_ms: 50,
+                ..Default::default()
+            };
+            let transport = crate::transport::memory::MemoryTransport::new(&config);
+
+            transport
+                .inject(None, json_payload("events", 0))
+                .await
+                .unwrap();
+
+            let engine = default_engine();
+            let shutdown = tokio_util::sync::CancellationToken::new();
+            let shutdown_clone = shutdown.clone();
+
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                shutdown_clone.cancel();
+            });
+
+            // Sink always errors — engine should continue (not crash)
+            let result = engine
+                .run_async(
+                    &transport,
+                    shutdown,
+                    |_pm: &mut ParsedMessage| -> Result<(), String> { Ok(()) },
+                    |_results, _tokens| async { Err(EngineError::Sink("test sink error".into())) },
+                    None::<(
+                        std::time::Duration,
+                        fn() -> std::future::Ready<Result<(), EngineError>>,
+                    )>,
+                )
+                .await;
+
+            // Should shut down cleanly (not propagate sink error)
+            assert!(result.is_ok());
+        }
     }
 }

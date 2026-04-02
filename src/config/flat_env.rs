@@ -24,14 +24,14 @@
 //! The helper functions are designed to be called by `#[derive(FlatEnvOverrides)]`
 //! generated code, but are also usable standalone:
 //!
-//! ```rust
+//! ```rust,no_run
 //! use hyperi_rustlib::config::flat_env::*;
 //!
-//! # std::env::set_var("MYAPP_HOST", "example.com");
+//! // In production, env vars are set by the container/K8s ConfigMap.
+//! // std::env::set_var is unsafe in edition 2024 — use temp_env in tests.
 //! if let Some(host) = flat_env_string("MYAPP", "HOST") {
 //!     println!("Host override: {host}");
 //! }
-//! # std::env::remove_var("MYAPP_HOST");
 //! ```
 
 use std::str::FromStr;
