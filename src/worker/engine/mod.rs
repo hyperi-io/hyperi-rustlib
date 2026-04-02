@@ -8,12 +8,31 @@
 
 pub mod config;
 pub mod intern;
+pub mod metrics;
 pub mod parse;
 pub mod pre_route;
 pub mod types;
 
 pub use config::{BatchProcessingConfig, ParseErrorAction, PreRouteFilterConfig};
+pub use intern::FieldInterner;
 pub use types::{MessageMetadata, ParsedMessage, PreRouteResult, RawMessage};
+
+/// Errors returned by [`BatchEngine::run`] and [`BatchEngine::run_raw`].
+///
+/// Only available when the `transport` feature is enabled.
+#[cfg(feature = "transport")]
+#[derive(Debug, thiserror::Error)]
+pub enum EngineError {
+    /// Transport receive or commit failed.
+    #[error("transport error: {0}")]
+    Transport(#[from] crate::TransportError),
+    /// Sink callback returned an error.
+    #[error("sink error: {0}")]
+    Sink(String),
+    /// Shutdown was requested via cancellation token.
+    #[error("shutdown")]
+    Shutdown,
+}
 
 use std::sync::Arc;
 
@@ -22,7 +41,6 @@ use rayon::prelude::*;
 use super::pool::AdaptiveWorkerPool;
 use super::stats::PipelineStats;
 
-use self::intern::FieldInterner;
 use self::pre_route::{PreRouteOutcome, apply_filters, extract_routing_field, filters_from_config};
 use self::types::PayloadFormat;
 use super::config::WorkerPoolConfig;
@@ -115,10 +133,11 @@ impl BatchEngine {
     /// Called by `ServiceRuntime::build()`. Apps never call this directly.
     pub fn auto_wire(
         &mut self,
-        _metrics: &crate::metrics::MetricsManager,
+        metrics_manager: &crate::metrics::MetricsManager,
         #[cfg(feature = "memory")] memory_guard: Option<&Arc<crate::memory::MemoryGuard>>,
     ) {
-        // Metrics registration will be implemented in Task 12 — for now wire memory guard.
+        metrics::register(metrics_manager, &self.config);
+
         #[cfg(feature = "memory")]
         if let Some(guard) = memory_guard {
             self.memory_guard = Some(Arc::clone(guard));
@@ -352,6 +371,144 @@ impl BatchEngine {
         }
 
         all_results
+    }
+
+    /// Transport-wired async run loop for mid-tier (parsed JSON) processing.
+    ///
+    /// Receives up to `config.max_chunk_size` messages per iteration, converts them
+    /// to `RawMessage`, runs [`process_mid_tier`](Self::process_mid_tier), calls the
+    /// sink, then commits transport tokens only on sink success.
+    ///
+    /// Stops cleanly when `shutdown` is cancelled.
+    ///
+    /// # Errors
+    ///
+    /// Returns `EngineError::Transport` if recv or commit fails fatally.
+    /// Returns `EngineError::Sink` if the sink callback errors (commit skipped).
+    #[cfg(feature = "transport")]
+    pub async fn run<R, O, E, Transform, Sink>(
+        &self,
+        receiver: &R,
+        shutdown: tokio_util::sync::CancellationToken,
+        transform: Transform,
+        mut sink: Sink,
+    ) -> Result<(), EngineError>
+    where
+        R: crate::transport::TransportReceiver,
+        O: Send + 'static,
+        E: Send + From<String> + std::fmt::Display + 'static,
+        Transform: Fn(&mut ParsedMessage) -> Result<O, E> + Sync,
+        Sink: FnMut(Vec<Result<O, E>>) -> Result<(), EngineError>,
+    {
+        tracing::info!(
+            chunk_size = self.config.max_chunk_size,
+            routing_field = ?self.config.routing_field,
+            "BatchEngine starting"
+        );
+
+        loop {
+            tokio::select! {
+                biased;
+                () = shutdown.cancelled() => {
+                    tracing::info!("BatchEngine shutting down");
+                    return Ok(());
+                }
+                recv_result = receiver.recv(self.config.max_chunk_size) => {
+                    let messages = recv_result.map_err(EngineError::Transport)?;
+                    if messages.is_empty() {
+                        continue;
+                    }
+
+                    // Collect commit tokens before converting (move happens below).
+                    let tokens: Vec<R::Token> = messages.iter()
+                        .map(|m| m.token.clone())
+                        .collect();
+
+                    // Convert to RawMessage (type-erased).
+                    let raw: Vec<RawMessage> = messages.into_iter()
+                        .map(RawMessage::from)
+                        .collect();
+
+                    // Process: pre-route + parse + parallel transform.
+                    let results = self.process_mid_tier(&raw, &transform);
+
+                    // Sink: commit only on success.
+                    if let Err(e) = sink(results) {
+                        tracing::error!(error = %e, "Sink failed, skipping commit");
+                        continue;
+                    }
+
+                    if let Err(e) = receiver.commit(&tokens).await {
+                        tracing::error!(error = %e, "Commit failed");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Transport-wired async run loop for raw byte processing.
+    ///
+    /// Like [`run`](Self::run) but uses [`process_raw`](Self::process_raw): the
+    /// transform closure receives `&RawMessage` bytes without JSON parsing.
+    ///
+    /// # Errors
+    ///
+    /// Returns `EngineError::Transport` if recv or commit fails fatally.
+    /// Returns `EngineError::Sink` if the sink callback errors (commit skipped).
+    #[cfg(feature = "transport")]
+    pub async fn run_raw<R, O, E, Transform, Sink>(
+        &self,
+        receiver: &R,
+        shutdown: tokio_util::sync::CancellationToken,
+        transform: Transform,
+        mut sink: Sink,
+    ) -> Result<(), EngineError>
+    where
+        R: crate::transport::TransportReceiver,
+        O: Send + 'static,
+        E: Send + From<String> + std::fmt::Display + 'static,
+        Transform: Fn(&RawMessage) -> Result<O, E> + Sync,
+        Sink: FnMut(Vec<Result<O, E>>) -> Result<(), EngineError>,
+    {
+        tracing::info!(
+            chunk_size = self.config.max_chunk_size,
+            "BatchEngine (raw) starting"
+        );
+
+        loop {
+            tokio::select! {
+                biased;
+                () = shutdown.cancelled() => {
+                    tracing::info!("BatchEngine (raw) shutting down");
+                    return Ok(());
+                }
+                recv_result = receiver.recv(self.config.max_chunk_size) => {
+                    let messages = recv_result.map_err(EngineError::Transport)?;
+                    if messages.is_empty() {
+                        continue;
+                    }
+
+                    let tokens: Vec<R::Token> = messages.iter()
+                        .map(|m| m.token.clone())
+                        .collect();
+
+                    let raw: Vec<RawMessage> = messages.into_iter()
+                        .map(RawMessage::from)
+                        .collect();
+
+                    let results = self.process_raw(&raw, &transform);
+
+                    if let Err(e) = sink(results) {
+                        tracing::error!(error = %e, "Sink failed (raw), skipping commit");
+                        continue;
+                    }
+
+                    if let Err(e) = receiver.commit(&tokens).await {
+                        tracing::error!(error = %e, "Commit failed (raw)");
+                    }
+                }
+            }
+        }
     }
 
     /// Pause between chunks when memory pressure is detected.
