@@ -298,6 +298,46 @@ impl MetricsManager {
         })
     }
 
+    /// Create a metrics manager for tests without installing a global recorder.
+    ///
+    /// The global Prometheus recorder can only be installed once per process.
+    /// Tests that call `MetricsManager::new()` in parallel all race to install
+    /// it and all but the first panic with `SetRecorderError`.
+    ///
+    /// This constructor skips recorder installation entirely. `metrics!` macros
+    /// become no-ops (the crate's documented behaviour when no recorder is set),
+    /// but manifest registry tracking, descriptor push, and namespace logic all
+    /// work normally — which is what the tests actually verify.
+    #[cfg(test)]
+    pub(crate) fn new_for_test(namespace: &str) -> Self {
+        let config = MetricsConfig {
+            namespace: namespace.to_string(),
+            enable_process_metrics: false,
+            enable_container_metrics: false,
+            ..Default::default()
+        };
+
+        let registry = MetricRegistry::new(&config.namespace);
+
+        Self {
+            #[cfg(feature = "metrics")]
+            handle: None,
+            registry,
+            config,
+            shutdown_tx: None,
+            process_metrics: None,
+            container_metrics: None,
+            readiness_fn: None,
+            started: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            #[cfg(all(feature = "metrics", feature = "scaling"))]
+            scaling_pressure: None,
+            #[cfg(all(feature = "metrics", feature = "memory"))]
+            memory_guard: None,
+            #[cfg(feature = "otel-metrics")]
+            otel_provider: None,
+        }
+    }
+
     /// Create a metrics manager with custom configuration.
     ///
     /// Installs the appropriate recorder(s) based on enabled features:

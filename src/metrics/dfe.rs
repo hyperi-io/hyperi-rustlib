@@ -513,13 +513,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_register_does_not_panic() {
-        let mgr = super::super::MetricsManager::new("test_app");
+        let mgr = super::super::MetricsManager::new_for_test("test_app");
         let _dfe = DfeMetrics::register(&mgr);
     }
 
     #[tokio::test]
     async fn test_register_populates_registry() {
-        let mgr = super::super::MetricsManager::new("test_app");
+        let mgr = super::super::MetricsManager::new_for_test("test_app");
         let _dfe = DfeMetrics::register(&mgr);
         let manifest = mgr.registry().manifest();
         let names: Vec<&str> = manifest.metrics.iter().map(|m| m.name.as_str()).collect();

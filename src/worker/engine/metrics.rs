@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn register_does_not_panic() {
-        let manager = MetricsManager::new("test_engine_metrics");
+        let manager = MetricsManager::new_for_test("test_engine_metrics");
         let config = BatchProcessingConfig::default();
         // Should complete without panic even with no recorder installed.
         register(&manager, &config);
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn register_returns_handles() {
-        let manager = MetricsManager::new("test_engine_metrics_handles");
+        let manager = MetricsManager::new_for_test("test_engine_metrics_handles");
         let config = BatchProcessingConfig::default();
         // Calling twice should be idempotent.
         register(&manager, &config);
