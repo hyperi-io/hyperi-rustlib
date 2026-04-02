@@ -123,7 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         enable_container_metrics: environment.is_container(),
         update_interval: Duration::from_secs(15),
         #[cfg(feature = "otel-metrics")]
-        otel: Default::default(),
+        otel: hyperi_rustlib::OtelMetricsConfig::default(),
     };
 
     let mut manager = MetricsManager::with_config(metrics_config);
