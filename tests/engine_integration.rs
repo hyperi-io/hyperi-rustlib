@@ -70,11 +70,7 @@ async fn run_processes_injected_messages_then_shuts_down() {
             },
             |results| {
                 let mut guard = collected_clone.lock().unwrap();
-                for r in results {
-                    if let Ok(s) = r {
-                        guard.push(s);
-                    }
-                }
+                guard.extend(results.into_iter().flatten());
                 Ok(())
             },
         )
