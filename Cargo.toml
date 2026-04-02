@@ -298,3 +298,8 @@ harness = false
 [[bench]]
 name = "logger_benchmark"
 harness = false
+
+[[bench]]
+name = "engine_benchmark"
+harness = false
+required-features = ["worker"]
