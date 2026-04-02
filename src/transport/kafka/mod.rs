@@ -55,6 +55,7 @@ mod config;
 mod metrics;
 mod producer;
 mod token;
+pub mod topic_resolver;
 
 pub use admin::{KafkaAdmin, TopicInfo};
 #[allow(deprecated)]
