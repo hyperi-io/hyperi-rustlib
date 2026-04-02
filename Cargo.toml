@@ -98,7 +98,7 @@ config-postgres = ["config", "sqlx", "tokio", "serde_json"]
 # Transport features
 transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait"]
 transport-memory = ["transport"]
-transport-kafka = ["transport", "rdkafka"]
+transport-kafka = ["transport", "rdkafka", "regex"]
 transport-grpc = ["transport", "dep:tonic", "dep:tonic-prost", "dep:prost", "dep:prost-types", "dep:tonic-prost-build", "dep:prost-build"]
 transport-grpc-vector-compat = ["transport-grpc"]
 transport-file = ["transport", "io"]
@@ -229,6 +229,9 @@ snap = { version = ">=1.1.1, <2", optional = true }
 
 # SIMD JSON (BatchEngine — 2-4x faster than serde_json)
 sonic-rs = { version = ">=0.5, <1", optional = true }
+
+# Regex (topic resolver include/exclude filters)
+regex = { version = ">=1.11, <2", optional = true }
 
 # Async trait (for tiered-sink Sink trait)
 async-trait = { version = ">=0.1.88, <0.2", optional = true }
