@@ -52,7 +52,12 @@ mod stats;
 pub use accumulator::{AccumulatorConfig, AccumulatorFull, BatchAccumulator, BatchDrainer};
 pub use batch::{BatchPipeline, BatchProcessor};
 pub use config::WorkerPoolConfig;
-pub use engine::BatchEngine;
+#[cfg(feature = "transport")]
+pub use engine::EngineError;
+pub use engine::{
+    BatchEngine, BatchProcessingConfig, FieldInterner, MessageMetadata, ParsedMessage,
+    PreRouteFilterConfig, RawMessage,
+};
 pub use pool::AdaptiveWorkerPool;
 pub use scaler::{ScalingDecision, ScalingInput};
 pub use stats::{PipelineStats, PipelineStatsSnapshot};
