@@ -1137,10 +1137,8 @@ mod engine_tests {
                     |results, _tokens| {
                         let tb = Arc::clone(&total_bytes_clone);
                         async move {
-                            for r in &results {
-                                if let Ok(len) = r {
-                                    tb.fetch_add(*len as u64, Ordering::Relaxed);
-                                }
+                            for len in results.iter().flatten() {
+                                tb.fetch_add(*len as u64, Ordering::Relaxed);
                             }
                             Ok(())
                         }
