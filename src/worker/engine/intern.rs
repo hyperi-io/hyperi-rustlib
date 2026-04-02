@@ -34,6 +34,7 @@ pub struct FieldInterner {
 
 impl FieldInterner {
     /// Create a new, empty interner.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             table: DashMap::new(),
@@ -44,10 +45,11 @@ impl FieldInterner {
     ///
     /// Callers should pass the `known_fields` from [`super::config::BatchProcessingConfig`]
     /// so that common fields never hit the slow-path allocation during a batch.
+    #[must_use]
     pub fn with_known_fields(fields: &[&str]) -> Self {
         let interner = Self::new();
         for f in fields {
-            interner.intern(f);
+            let _ = interner.intern(f);
         }
         interner
     }
@@ -61,6 +63,7 @@ impl FieldInterner {
     ///
     /// The slow path is taken at most once per unique field name per `FieldInterner` instance.
     #[inline]
+    #[must_use]
     pub fn intern(&self, name: &str) -> Arc<str> {
         // Fast path: field already interned — borrow the existing Arc.
         // Arc<str>: Borrow<str> is in std, so DashMap::get accepts &str directly.
@@ -92,10 +95,11 @@ impl FieldInterner {
     /// 6 known × 15 keys = 90 string comparisons per message.
     ///
     /// Returns an empty map if `value` is not a JSON object.
+    #[must_use]
     pub fn extract_known(&self, value: &sonic_rs::Value) -> HashMap<Arc<str>, sonic_rs::Value> {
         let mut extracted = HashMap::new();
         if let Some(obj) = value.as_object() {
-            for (key, val) in obj.iter() {
+            for (key, val) in obj {
                 if let Some(entry) = self.table.get(key) {
                     let v: sonic_rs::Value = val.clone();
                     extracted.insert(Arc::clone(entry.key()), v);
@@ -106,11 +110,13 @@ impl FieldInterner {
     }
 
     /// Return the number of interned field names.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.table.len()
     }
 
     /// Return `true` if no field names have been interned yet.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.table.is_empty()
     }
@@ -183,7 +189,7 @@ mod tests {
         );
         // Unknown field was not extracted.
         let unknown_key: Arc<str> = Arc::from("unknown");
-        assert!(extracted.get(&unknown_key).is_none());
+        assert!(!extracted.contains_key(&unknown_key));
     }
 
     #[test]
@@ -198,7 +204,7 @@ mod tests {
     #[test]
     fn extract_known_on_non_object_returns_empty() {
         let interner = FieldInterner::with_known_fields(&["_table"]);
-        let value: sonic_rs::Value = sonic_rs::from_str(r#"[1, 2, 3]"#).unwrap();
+        let value: sonic_rs::Value = sonic_rs::from_str("[1, 2, 3]").unwrap();
         let extracted = interner.extract_known(&value);
         assert!(extracted.is_empty());
     }
@@ -237,13 +243,13 @@ mod tests {
     fn len_and_is_empty() {
         let interner = FieldInterner::new();
         assert!(interner.is_empty());
-        interner.intern("a");
+        let _ = interner.intern("a");
         assert_eq!(interner.len(), 1);
         assert!(!interner.is_empty());
-        interner.intern("b");
+        let _ = interner.intern("b");
         assert_eq!(interner.len(), 2);
         // Repeated intern of existing key does not grow the table.
-        interner.intern("a");
+        let _ = interner.intern("a");
         assert_eq!(interner.len(), 2);
     }
 }

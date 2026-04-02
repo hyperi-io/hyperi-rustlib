@@ -9,10 +9,10 @@
 //! Parse phase: convert raw bytes into a `sonic_rs::Value` using SIMD
 //! acceleration. This is the most CPU-intensive phase (~1–5 µs per message).
 //!
-//! - JSON:     `sonic_rs::from_slice` (AVX2/NEON SIMD, 2–4× faster than serde_json)
-//! - MsgPack:  `rmp_serde` → `serde_json::Value` → JSON bytes → `sonic_rs::Value`
-//!             (slower, but MsgPack messages are a small minority in practice)
-//! - Auto:     byte-sniff via [`PayloadFormat::detect`], then dispatch
+//! - JSON: `sonic_rs::from_slice` (AVX2/NEON SIMD, 2–4× faster than serde_json)
+//! - MsgPack: `rmp_serde` → `serde_json::Value` → JSON bytes → `sonic_rs::Value`
+//!   (slower, but MsgPack messages are a small minority in practice)
+//! - Auto: byte-sniff via [`PayloadFormat::detect`], then dispatch
 
 use super::types::PayloadFormat;
 

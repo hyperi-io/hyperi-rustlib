@@ -67,8 +67,7 @@ pub fn extract_routing_field(payload: &[u8], field_name: &str) -> PreRouteExtrac
             // used as a routing key).
             let value = lv
                 .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| lv.as_raw_str().to_owned());
+                .map_or_else(|| lv.as_raw_str().to_owned(), str::to_owned);
             PreRouteExtraction::Found(value)
         }
         Err(e) if e.is_not_found() => PreRouteExtraction::Missing,
@@ -80,6 +79,7 @@ pub fn extract_routing_field(payload: &[u8], field_name: &str) -> PreRouteExtrac
 ///
 /// Filters are evaluated in order — first match wins. If no filter matches
 /// the message continues.
+#[must_use]
 pub fn apply_filters(
     extraction: &PreRouteExtraction,
     filters: &[PreRouteFilter],
@@ -96,7 +96,7 @@ pub fn apply_filters(
                 },
                 PreRouteExtraction::Found(actual),
             ) if actual == expected => {
-                return PreRouteOutcome::Dlq(format!("field value '{}' matches DLQ rule", actual));
+                return PreRouteOutcome::Dlq(format!("field value '{actual}' matches DLQ rule"));
             }
             _ => {}
         }
@@ -108,6 +108,7 @@ pub fn apply_filters(
 }
 
 /// Convert config-layer filter definitions to runtime filters.
+#[must_use]
 pub fn filters_from_config(configs: &[PreRouteFilterConfig]) -> Vec<PreRouteFilter> {
     configs
         .iter()

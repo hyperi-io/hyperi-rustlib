@@ -369,9 +369,7 @@ fn test_process_batch_panic_in_closure_does_not_crash_pool() {
     let items: Vec<i32> = vec![1, 2, 3];
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         pool.process_batch(&items, |&item| -> Result<i32, String> {
-            if item == 2 {
-                panic!("deliberate panic in closure");
-            }
+            assert!(item != 2, "deliberate panic in closure");
             Ok(item)
         })
     }));
@@ -422,7 +420,7 @@ fn test_process_batch_large_batch_stress() {
     assert_eq!(results.len(), 10_000);
     // Verify ordering preserved
     for (i, result) in results.iter().enumerate() {
-        let expected = (i as i64) * (i as i64);
+        let expected = i64::try_from(i).unwrap() * i64::try_from(i).unwrap();
         assert_eq!(
             *result.as_ref().unwrap(),
             expected,

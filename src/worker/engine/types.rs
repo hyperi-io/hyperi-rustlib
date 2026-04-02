@@ -260,7 +260,6 @@ pub enum PreRouteResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sonic_rs::JsonValueTrait as _;
 
     #[test]
     fn raw_message_construction() {

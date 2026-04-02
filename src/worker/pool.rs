@@ -261,6 +261,7 @@ impl AdaptiveWorkerPool {
     }
 
     /// Current number of active worker threads (permits in use).
+    #[must_use]
     pub fn active_threads(&self) -> usize {
         let cfg = self.config.read();
         cfg.max_threads
@@ -268,6 +269,7 @@ impl AdaptiveWorkerPool {
     }
 
     /// Maximum thread count (pool size).
+    #[must_use]
     pub fn max_threads(&self) -> usize {
         self.config.read().max_threads
     }

@@ -124,6 +124,7 @@ impl<T: Send + 'static> BatchAccumulator<T> {
     }
 
     /// Check if the accumulator has been closed (drainer dropped).
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         self.tx.is_closed()
     }

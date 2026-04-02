@@ -76,9 +76,12 @@ pub fn count_lines(payload: &[u8]) -> usize {
         return 0;
     }
 
+    // Count newline bytes — bytecount crate would be marginally faster but is
+    // not worth a dependency for a non-hot-path utility function.
+    #[allow(clippy::naive_bytecount)]
     let newlines = payload.iter().filter(|&&b| b == b'\n').count();
     // If the payload doesn't end with \n, there's one more line
-    let trailing = if payload.last() == Some(&b'\n') { 0 } else { 1 };
+    let trailing = usize::from(payload.last() != Some(&b'\n'));
     newlines + trailing
 }
 
