@@ -18,37 +18,44 @@
 > **No SEP rule:** Every warning, clippy lint, doc-test failure, or bug
 > encountered during this remediation is OUR problem. We own every line we
 > touch AND every pre-existing issue in files we modify. Fix it there and then.
+>
+> **Trust but verify:** Plan assessments are hypotheses. Read actual code before
+> starting each app. Update the plan with what you find. If code contradicts
+> the plan, trust the code.
+>
+> **Release discipline:** CI pass ≠ done. EVERY project (rustlib + all dfe-*)
+> must be PUBLISHED (rustlib → crates.io, dfe-* → JFrog) before marking
+> complete. Push + CI + semantic-release tag + `hyperi-ci release <tag>` +
+> verify in registry. Can continue other work while waiting, but must track
+> and complete releases.
 
 Phase 1 done (all 6 apps on rustlib >=2.4.3, ServiceRuntime, released).
 Phase 2 plan: `docs/superpowers/plans/2026-04-03-dfe-phase2-deep-integration.md`
 
-**Phase 2A: Evolve BatchEngine API (rustlib)**
-- [ ] Async sink for run() / run_raw() (enables loader's async CH inserts)
-- [ ] Optional ticker callback (enables flush timers inside engine loop)
-- [ ] TransportReceiver impl for loader's TransportBackend (clean adapter)
-- [ ] Publish rustlib with engine changes
+**Phase 2A: Evolve BatchEngine API (rustlib)** — DONE
+- [x] run_async() + run_raw_async(): async sink, commit tokens, optional ticker
+- [x] Doc-test fixes (No SEP: flat_env unsafe set_var, registry MyConfig)
+- [x] rustlib v2.4.4 published to crates.io
 
-**Phase 2B: Per-App Integration**
-- [ ] dfe-loader: engine.process_mid_tier() replaces MessageProcessor
-  - SIMD parse (sonic-rs), pre-route routing_field="_table", field interning
-  - Transform closure wraps existing pipeline (route→extract→enrich)
-  - BatchCoordinator stays (sequential buffer push, DLQ)
-  - Orchestrator select! loop stays (5 arms: shutdown, config, flush, schema, recv)
-- [ ] dfe-transform-vrl: engine.process_mid_tier() replaces deser+VRL phases
-  - Benchmark: sonic_rs::Value → vrl::Value conversion cost first
-  - Single engine call replaces two pool.process_batch() calls
-  - Produce stays sequential (async I/O)
-- [ ] dfe-archiver: engine.run_raw() or process_raw() + TopicResolver
-  - Pre-route routing_field="_destination", TopicResolver auto-discovery
-  - Flush timer as separate task (or engine ticker if evolved)
-- [ ] dfe-receiver: BatchAccumulator for Splunk HEC only (additive)
-  - DO NOT replace zero-copy hot path (validation, routing, enrichment)
-  - Existing optimisations proven faster than generic alternatives
-- [ ] dfe-fetcher: fan_out_async() + engine.process_raw() for post-fetch
-  - JoinSet in each Source impl (AWS/Azure/M365/GCP)
-  - Parallel enrich+filter via engine
-- [ ] dfe-transform-vector: generate-artefacts only
-- [ ] ALL apps: run `generate-artefacts` for deployment contract
+**Phase 2B: Per-App Integration** — ALL CODE DONE, RELEASING `[IN PROGRESS]`
+- [x] dfe-loader: BatchEngine pre-route SIMD filtering + SOC2 audit
+  - 592 tests pass (all against real ClickHouse). Publish pipeline running.
+- [x] dfe-receiver: process_batch() for HEC/OTLP/fluent/prometheus_rw
+  - 408 tests pass. CI re-triggered, awaiting semantic-release tag.
+- [x] dfe-archiver: concurrent batch writes + parallel routing + SOC2
+  - 80 tests pass. Publish pipeline running.
+- [x] dfe-fetcher: concurrent within-source service fetching (AWS/Azure/M365/GCP)
+  - 164 tests pass. Clippy fix pushed, CI re-running.
+- [x] dfe-transform-vrl: sonic-rs SIMD JSON parse (drop-in serde_json replacement)
+  - 295 tests pass. CI running.
+- [x] dfe-transform-vector: no changes needed (subprocess wrapper)
+- [ ] ALL apps: verify released (rustlib → crates.io, dfe-* → JFrog)
+  - rustlib v2.4.4: RELEASED to crates.io
+  - dfe-loader v1.16.5: publish dispatched, pipeline running
+  - dfe-archiver v1.6.2: publish dispatched, pipeline running
+  - dfe-receiver: awaiting CI pass → semantic-release → publish
+  - dfe-fetcher: awaiting CI pass → semantic-release → publish
+  - dfe-transform-vrl: awaiting CI pass → semantic-release → publish
 
 **Phase 1 DONE (all apps):**
 - [x] Bump rustlib to >=2.4.3
@@ -79,24 +86,18 @@ Phase 2 plan: `docs/superpowers/plans/2026-04-03-dfe-phase2-deep-integration.md`
 - [ ] Phase 3: dfe-transform-wasm, dfe-transform-elastic, dfe-transform-splunk
 - [ ] Debug/trace logging increasing detail levels (all repos)
 
-### Completed This Session
+### Completed This Session (Phase 2 Deep Integration)
 
-- [x] **BatchEngine** — 15 commits, SIMD batch processing framework
-- [x] **TopicResolver** — Kafka topic auto-discovery with suppression rules
-- [x] **PipelineStats.filtered** counter
-- [x] **AdaptiveWorkerPool.install()** exposure
-- [x] **Prometheus recorder test fix** — test-safe MetricsManager
-- [x] **Rustlib v2.4.3** published to crates.io
-- [x] **clickhouse-rs schema-cache-strong** branch — 3 commits + Nullable(JSON) fix
-- [x] **Upstream PR** ClickHouse/clickhouse-rs#414
-- [x] **dfe-loader** v1.16.4 — ServiceRuntime, TopicResolver deletion, schema cache fix, logging
-- [x] **dfe-receiver** v1.14.8 — ServiceRuntime, logging, target symlink + orphan ci fix
-- [x] **dfe-archiver** v1.6.1 — ServiceRuntime, logging, deployment contract fields
-- [x] **dfe-fetcher** v1.1.8 — ServiceRuntime, logging, SensitiveString fix
-- [x] **dfe-transform-vector** — ServiceRuntime, logging, SensitiveString fix
-- [x] **dfe-transform-vrl** — rustlib bump, logging (CI pending)
-- [x] **Target symlink fix** across 4 repos (receiver, archiver, fetcher, vrl)
-- [x] **Orphan ci submodule** removed from dfe-receiver
+- [x] **BatchEngine API evolution** — run_async(), run_raw_async(), ticker, doc-test fixes
+- [x] **Rustlib v2.4.4** published to crates.io
+- [x] **dfe-loader** — SIMD pre-route filtering, engine pool, SOC2 audit, clippy fixes
+- [x] **dfe-receiver** — process_batch() for HEC/OTLP/fluent/prometheus_rw batching
+- [x] **dfe-archiver** — concurrent batch writes via join_all, parallel routing, SOC2
+- [x] **dfe-fetcher** — concurrent within-source service fetching (AWS/Azure/M365/GCP)
+- [x] **dfe-transform-vrl** — sonic-rs SIMD JSON parse (drop-in serde_json replacement)
+- [x] **Rust standards** — added useless .into() AI pitfall to RUST.md
+- [x] **No SEP fixes** — clippy warnings in loader tests, doc-test failures in rustlib,
+  unused imports, missing semicolons, formatting across all repos
 
 ### Completed Previous Sessions
 
