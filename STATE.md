@@ -34,6 +34,11 @@ Modular library with feature-gated components. Each module can be enabled/disabl
 10. **transport** - Kafka/gRPC/Memory transport abstraction
 11. **http-server** - Axum-based HTTP server with health endpoints
 12. **secrets** - Secrets management (OpenBao/Vault, AWS Secrets Manager)
+13. **worker** - AdaptiveWorkerPool (rayon-backed parallel processing with pressure-based scaling)
+14. **batch-engine** - BatchEngine: SIMD parse (sonic-rs), pre-route filtering, field interning, chunked rayon. APIs: process_mid_tier(), process_raw(), run_async(), run_raw_async()
+15. **memory** - MemoryGuard: cgroup-aware memory backpressure with auto-detection
+16. **scaling** - ScalingPressure: KEDA autoscaling signal calculation
+17. **cli** - DfeApp trait, ServiceRuntime (pre-wired metrics + worker pool + batch engine + memory guard + shutdown)
 
 ### Tech Stack
 
@@ -94,9 +99,12 @@ matching packages. The Confluent APT repo is added automatically when
 
 | Project | Dep version | Features |
 |---------|------------|----------|
-| dfe-loader | `>=1.2.2` | transport-kafka |
-| dfe-archiver | `>=1.3` | config, logger, metrics, transport-kafka, spool, tiered-sink |
-| dfe-receiver | `1.3` | config, logger, metrics, http-server, transport-kafka, spool, tiered-sink, runtime, secrets |
+| dfe-loader | `>=2.4.3` | transport-kafka, transport-grpc, dlq-kafka, config, config-reload, deployment, version-check, scaling, cli, top, logger, metrics, metrics-dfe, expression, memory, worker |
+| dfe-archiver | `>=2.4.3` | config, config-reload, logger, metrics, metrics-dfe, transport-kafka, http-server, tiered-sink, spool, scaling, deployment, cli, memory, health, shutdown, dlq, worker |
+| dfe-receiver | `>=2.4.3` | config, config-reload, logger, metrics, metrics-dfe, transport-kafka, http-server, tiered-sink, spool, scaling, deployment, cli, memory, health, shutdown, dlq, worker |
+| dfe-fetcher | `>=2.0.0` | config, config-reload, logger, metrics, metrics-dfe, transport-kafka, transport-grpc, http-server, scaling, deployment, cli, memory, health, shutdown, dlq, expression, worker |
+| dfe-transform-vrl | `>=2.4.3` | cli, config, config-reload, deployment, logger, metrics, metrics-dfe, scaling, memory, worker, version-check |
+| dfe-transform-vector | `>=2.0.0` | cli, config-reload, deployment, http-server, logger, metrics, metrics-dfe, version-check |
 
 ---
 
@@ -144,7 +152,8 @@ spool, cache, secrets, HTTP client, DLQ — with zero additional wiring.
 - **Config cascade unified spec** — rustlib and pylib must be identical. Both search `./`, `./config/`, `/config/`, `~/.config/{app_name}/`. Home `.env` opt-in. PG layer is built-for-not-with (YAML gitops already centralised). See [CONFIG-CASCADE.md](docs/CONFIG-CASCADE.md)
 - **Common patterns in rustlib first** — if all 6 DFE projects will use the same pattern, implement it in rustlib first, publish, then consume. Never duplicate common logic across downstream projects. This applies to: worker pool, batch pipeline, pipeline stats, DLQ routing, metrics groups, config cascade, CLI framework.
 - **DFE parallelisation pattern** — split sequential hot loops into parallel (pure `&self` computation via rayon) and sequential (mutable state: buffer push, mark_pending, stats, DLQ) phases. The `BatchProcessor` trait + `BatchPipeline` struct in rustlib provide the common framework. Each DFE app implements `BatchProcessor` for its domain. See `src/pipeline/` module.
-- **ServiceRuntime** — pre-built infrastructure for DFE service apps. Created by `run_app()` before `run_service()`. Contains MetricsManager, DfeMetrics, MemoryGuard (optional), shutdown token (with K8s pre-stop delay), worker pool (optional), scaling pressure (optional), RuntimeContext. Apps receive it fully wired. See `src/cli/runtime.rs`.
+- **ServiceRuntime** — pre-built infrastructure for DFE service apps. Created by `run_app()` before `run_service()`. Contains MetricsManager, DfeMetrics, MemoryGuard (optional), shutdown token (with K8s pre-stop delay), worker pool (optional), batch engine (optional), scaling pressure (optional), RuntimeContext. Apps receive it fully wired. See `src/cli/runtime.rs`.
+- **BatchEngine** — SIMD-optimised batch processing for DFE pipelines. Two modes: `process_mid_tier()` (parse JSON via sonic-rs + parallel transform via rayon) and `process_raw()` (skip parsing, parallel transform on raw bytes). Transport-wired: `run_async()` / `run_raw_async()` with async sink, sink-managed commit tokens, and optional ticker callback. See `src/worker/engine/`.
 - **RuntimeContext** — rich runtime metadata detected once at startup (pod_name, namespace, node_name, container_id, memory_limit_bytes, cpu_quota_cores). Global singleton via OnceLock. All modules read from this instead of doing their own env var lookups. No-ops on bare metal. See `src/env.rs`.
 - **K8s pre-stop compliance** — shutdown handler sleeps `PRESTOP_DELAY_SECS` (default 5 in K8s, 0 elsewhere) before cancelling the token. Prevents traffic routing to a draining pod.
 - **Deployment contract CI bridge** — `container-manifest.json` (minimal CI subset), `Dockerfile.runtime` (runtime stage fragment for CI composition), OCI labels (static from contract, dynamic injected by CI), `from_cargo_toml()` for auto-detecting native deps, `schema_version` field.
