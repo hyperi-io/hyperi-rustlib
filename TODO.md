@@ -39,23 +39,23 @@ Phase 2 plan: `docs/superpowers/plans/2026-04-03-dfe-phase2-deep-integration.md`
 
 **Phase 2B: Per-App Integration** — ALL CODE DONE, RELEASING `[IN PROGRESS]`
 - [x] dfe-loader: BatchEngine pre-route SIMD filtering + SOC2 audit
-  - 592 tests pass (all against real ClickHouse). Publish pipeline running.
+  - 592 tests pass (all against real ClickHouse). Published v1.16.5.
 - [x] dfe-receiver: process_batch() for HEC/OTLP/fluent/prometheus_rw
-  - 408 tests pass. CI re-triggered, awaiting semantic-release tag.
+  - 408 tests pass. Published v1.14.9.
 - [x] dfe-archiver: concurrent batch writes + parallel routing + SOC2
-  - 80 tests pass. Publish pipeline running.
+  - 80 tests pass. Published v1.6.2.
 - [x] dfe-fetcher: concurrent within-source service fetching (AWS/Azure/M365/GCP)
-  - 164 tests pass. Clippy fix pushed, CI re-running.
+  - 164 tests pass. Published v1.1.9.
 - [x] dfe-transform-vrl: sonic-rs SIMD JSON parse (drop-in serde_json replacement)
-  - 295 tests pass. CI running.
+  - 295 tests pass. Released v1.0.2.
 - [x] dfe-transform-vector: no changes needed (subprocess wrapper)
-- [ ] ALL apps: verify released (rustlib → crates.io, dfe-* → JFrog)
-  - rustlib v2.4.4: RELEASED to crates.io
-  - dfe-loader v1.16.5: publish dispatched, pipeline running
-  - dfe-archiver v1.6.2: publish dispatched, pipeline running
-  - dfe-receiver: awaiting CI pass → semantic-release → publish
-  - dfe-fetcher: awaiting CI pass → semantic-release → publish
-  - dfe-transform-vrl: awaiting CI pass → semantic-release → publish
+- [x] ALL apps: verified released
+  - rustlib v2.4.4: crates.io
+  - dfe-loader v1.16.5: JFrog (publish pipeline completed)
+  - dfe-receiver v1.14.9: JFrog (publish pipeline completed)
+  - dfe-archiver v1.6.2: JFrog (publish pipeline completed)
+  - dfe-fetcher v1.1.9: JFrog (publish pipeline completed)
+  - dfe-transform-vrl v1.0.2: GH Release
 
 **Phase 1 DONE (all apps):**
 - [x] Bump rustlib to >=2.4.3
