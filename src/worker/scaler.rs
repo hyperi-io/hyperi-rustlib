@@ -157,7 +157,7 @@ impl ScalingController {
                 "Worker pool steady"
             );
         } else {
-            tracing::info!(
+            tracing::debug!(
                 cpu = format!("{cpu_util:.2}"),
                 mem = format!("{effective_memory_pressure:.2}"),
                 current = current_permits,

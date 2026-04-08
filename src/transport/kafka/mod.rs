@@ -122,6 +122,11 @@ pub struct KafkaTransport {
     healthy: Arc<AtomicBool>,
     /// Topics we're subscribed to (for cache warming).
     subscribed_topics: Vec<String>,
+    /// Shutdown token — cancelled on close() to stop background tasks.
+    shutdown_token: tokio_util::sync::CancellationToken,
+    /// Periodic topic refresh handle (auto-discovery mode only).
+    /// Checked on each recv() call to detect new/removed topics.
+    topic_refresh: Option<std::sync::Mutex<TopicRefreshHandle>>,
 }
 
 impl KafkaTransport {
@@ -217,20 +222,45 @@ impl KafkaTransport {
             .create_with_context(StatsContext::new())
             .map_err(|e| TransportError::Connection(format!("Failed to create consumer: {e}")))?;
 
-        // Resolve effective topics: use explicit list or auto-discover from broker
-        let effective_topics = if config.topics.is_empty() {
-            tracing::info!("Topics empty — auto-discovering from broker");
-            let resolver = topic_resolver::TopicResolver::new(config)?;
-            let discovered = resolver.resolve()?;
-            if discovered.is_empty() {
-                return Err(TransportError::Config(
-                    "Auto-discovery found no matching topics".into(),
-                ));
-            }
-            discovered
-        } else {
-            config.topics.clone()
-        };
+        // Resolve effective topics:
+        // - Explicit list → subscribe to those
+        // - Empty + auto_discover → auto-discover from broker
+        // - Empty + !auto_discover → no subscription (producer-only)
+        let (effective_topics, topic_refresh, shutdown_token) =
+            if config.topics.is_empty() && config.auto_discover {
+                tracing::info!("Topics empty — auto-discovering from broker");
+                let resolver = topic_resolver::TopicResolver::new(config)?;
+                let discovered = resolver.resolve()?;
+                if discovered.is_empty() {
+                    return Err(TransportError::Config(
+                        "Auto-discovery found no matching topics".into(),
+                    ));
+                }
+
+                let token = tokio_util::sync::CancellationToken::new();
+                let refresh = if config.topic_refresh_secs > 0 {
+                    let refresh_resolver = topic_resolver::TopicResolver::new(config)?;
+                    let handle = refresh_resolver.start_refresh_loop(
+                        Duration::from_secs(config.topic_refresh_secs),
+                        token.clone(),
+                    );
+                    tracing::info!(
+                        interval_secs = config.topic_refresh_secs,
+                        "Started periodic topic refresh"
+                    );
+                    Some(std::sync::Mutex::new(handle))
+                } else {
+                    None
+                };
+
+                (discovered, refresh, token)
+            } else {
+                (
+                    config.topics.clone(),
+                    None,
+                    tokio_util::sync::CancellationToken::new(),
+                )
+            };
 
         // Subscribe to topics
         let subscribed_topics = effective_topics;
@@ -273,6 +303,8 @@ impl KafkaTransport {
             closed: AtomicBool::new(false),
             healthy,
             subscribed_topics,
+            shutdown_token,
+            topic_refresh,
         })
     }
 
@@ -290,6 +322,7 @@ impl TransportBase for KafkaTransport {
     async fn close(&self) -> TransportResult<()> {
         self.closed.store(true, Ordering::Relaxed);
         self.healthy.store(false, Ordering::Relaxed);
+        self.shutdown_token.cancel();
         // rdkafka handles cleanup on drop
         Ok(())
     }
@@ -384,6 +417,23 @@ impl TransportReceiver for KafkaTransport {
     async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
+        }
+
+        // Check for topic changes from the background refresh loop
+        if let Some(ref refresh) = self.topic_refresh {
+            if let Ok(mut handle) = refresh.lock() {
+                if let Some(new_topics) = handle.check_changed() {
+                    let topics: Vec<&str> = new_topics.iter().map(String::as_str).collect();
+                    match self.consumer.subscribe(&topics) {
+                        Ok(()) => {
+                            tracing::info!(?new_topics, "Re-subscribed after topic refresh");
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "Failed to re-subscribe after topic refresh");
+                        }
+                    }
+                }
+            }
         }
 
         let timeout = Duration::from_millis(tuning::POLL_TIMEOUT_MS);
@@ -542,6 +592,7 @@ impl std::fmt::Debug for KafkaTransport {
             .field("subscribed_topics", &self.subscribed_topics)
             .field("closed", &self.closed.load(Ordering::Relaxed))
             .field("healthy", &self.healthy.load(Ordering::Relaxed))
+            .field("topic_refresh_active", &self.topic_refresh.is_some())
             .finish_non_exhaustive()
     }
 }
