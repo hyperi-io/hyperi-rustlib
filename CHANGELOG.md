@@ -1,3 +1,12 @@
+## [2.4.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.4...v2.4.5) (2026-04-09)
+
+
+### Bug Fixes
+
+* address PR review — clippy, parking_lot, subscribed_topics update ([d79a5a8](https://github.com/hyperi-io/hyperi-rustlib/commit/d79a5a81530c6a750bff8c13040fea01f7247c9a))
+* wire kafka topic refresh and make auto-discovery opt-in ([#32](https://github.com/hyperi-io/hyperi-rustlib/issues/32)) ([90791d0](https://github.com/hyperi-io/hyperi-rustlib/commit/90791d02f1d62fd5540f959deccb8553984cb67c))
+* wire up kafka topic refresh loop and make auto-discovery opt-in ([3e5305e](https://github.com/hyperi-io/hyperi-rustlib/commit/3e5305e8ba3f1e8a82dc641acd895e2d60f3d3f9))
+
 ## [2.4.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.3...v2.4.4) (2026-04-02)
 
 
