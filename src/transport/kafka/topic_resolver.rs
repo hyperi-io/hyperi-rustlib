@@ -243,6 +243,18 @@ impl TopicRefreshHandle {
     pub fn current(&self) -> Vec<String> {
         self.rx.borrow().clone()
     }
+
+    /// Create a handle from a watch receiver (for testing without a background task).
+    #[cfg(test)]
+    #[must_use]
+    pub fn new_for_test(rx: tokio::sync::watch::Receiver<Vec<String>>) -> Self {
+        let last_seen = rx.borrow().clone();
+        Self {
+            rx,
+            last_seen,
+            _task: tokio::task::spawn(async {}),
+        }
+    }
 }
 
 impl std::fmt::Debug for TopicRefreshHandle {

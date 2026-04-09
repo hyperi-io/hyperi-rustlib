@@ -120,13 +120,16 @@ pub struct KafkaTransport {
     closed: AtomicBool,
     /// Shared healthy flag — read by health registry closure, written by close().
     healthy: Arc<AtomicBool>,
-    /// Topics we're subscribed to (for cache warming).
-    subscribed_topics: Vec<String>,
+    /// Topics we're subscribed to (for cache warming and Debug).
+    /// Behind RwLock so recv() can update after topic refresh re-subscribe.
+    subscribed_topics: parking_lot::RwLock<Vec<String>>,
     /// Shutdown token — cancelled on close() to stop background tasks.
     shutdown_token: tokio_util::sync::CancellationToken,
     /// Periodic topic refresh handle (auto-discovery mode only).
     /// Checked on each recv() call to detect new/removed topics.
-    topic_refresh: Option<std::sync::Mutex<TopicRefreshHandle>>,
+    /// Uses parking_lot::Mutex (no poisoning, faster uncontended) since this
+    /// is on the recv() hot path.
+    topic_refresh: Option<parking_lot::Mutex<TopicRefreshHandle>>,
 }
 
 impl KafkaTransport {
@@ -248,7 +251,7 @@ impl KafkaTransport {
                         interval_secs = config.topic_refresh_secs,
                         "Started periodic topic refresh"
                     );
-                    Some(std::sync::Mutex::new(handle))
+                    Some(parking_lot::Mutex::new(handle))
                 } else {
                     None
                 };
@@ -302,7 +305,7 @@ impl KafkaTransport {
             topic_cache,
             closed: AtomicBool::new(false),
             healthy,
-            subscribed_topics,
+            subscribed_topics: parking_lot::RwLock::new(subscribed_topics),
             shutdown_token,
             topic_refresh,
         })
@@ -420,18 +423,17 @@ impl TransportReceiver for KafkaTransport {
         }
 
         // Check for topic changes from the background refresh loop
-        if let Some(ref refresh) = self.topic_refresh {
-            if let Ok(mut handle) = refresh.lock() {
-                if let Some(new_topics) = handle.check_changed() {
-                    let topics: Vec<&str> = new_topics.iter().map(String::as_str).collect();
-                    match self.consumer.subscribe(&topics) {
-                        Ok(()) => {
-                            tracing::info!(?new_topics, "Re-subscribed after topic refresh");
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "Failed to re-subscribe after topic refresh");
-                        }
-                    }
+        if let Some(ref refresh) = self.topic_refresh
+            && let Some(new_topics) = refresh.lock().check_changed()
+        {
+            let topics: Vec<&str> = new_topics.iter().map(String::as_str).collect();
+            match self.consumer.subscribe(&topics) {
+                Ok(()) => {
+                    tracing::info!(?new_topics, "Re-subscribed after topic refresh");
+                    *self.subscribed_topics.write() = new_topics;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to re-subscribe after topic refresh");
                 }
             }
         }
@@ -589,7 +591,7 @@ fn get_or_insert_topic(cache: &mut HashMap<String, Arc<str>>, topic: &str) -> Ar
 impl std::fmt::Debug for KafkaTransport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("KafkaTransport")
-            .field("subscribed_topics", &self.subscribed_topics)
+            .field("subscribed_topics", &*self.subscribed_topics.read())
             .field("closed", &self.closed.load(Ordering::Relaxed))
             .field("healthy", &self.healthy.load(Ordering::Relaxed))
             .field("topic_refresh_active", &self.topic_refresh.is_some())
@@ -634,5 +636,44 @@ mod tests {
         let config = KafkaConfig::default();
         assert_eq!(config.fetch_max_bytes, 52_428_800); // 50MB
         assert!(!config.enable_auto_commit); // Manual commit
+    }
+
+    #[tokio::test]
+    async fn test_topic_refresh_check_changed_detects_updates() {
+        // Simulate the watch channel that TopicRefreshHandle uses internally
+        let (tx, rx) = tokio::sync::watch::channel(vec!["events_load".to_string()]);
+
+        let mut handle = topic_resolver::TopicRefreshHandle::new_for_test(rx);
+
+        // Initially no change (first check sees initial value as "no change")
+        assert!(handle.check_changed().is_none());
+
+        // Send new topics
+        tx.send(vec!["events_load".to_string(), "logs_load".to_string()])
+            .unwrap();
+
+        // Now check_changed should return the new list
+        let changed = handle.check_changed();
+        assert!(changed.is_some());
+        let topics = changed.unwrap();
+        assert_eq!(topics.len(), 2);
+        assert!(topics.contains(&"logs_load".to_string()));
+
+        // Second check with no new changes should return None
+        assert!(handle.check_changed().is_none());
+    }
+
+    #[test]
+    fn test_subscribed_topics_rwlock_update() {
+        // Verify the RwLock pattern used in recv() for subscribed_topics
+        let topics = parking_lot::RwLock::new(vec!["events_load".to_string()]);
+
+        // Read path (Debug, metrics)
+        assert_eq!(topics.read().len(), 1);
+
+        // Write path (after topic refresh re-subscribe)
+        *topics.write() = vec!["events_load".to_string(), "logs_load".to_string()];
+        assert_eq!(topics.read().len(), 2);
+        assert_eq!(topics.read()[1], "logs_load");
     }
 }

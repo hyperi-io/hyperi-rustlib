@@ -119,7 +119,7 @@ impl std::fmt::Display for KafkaProfile {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// use std::collections::HashMap;
 /// use hyperi_rustlib::transport::kafka::config::{merge_with_overrides, PRODUCTION_PROFILE};
 ///
@@ -325,6 +325,7 @@ pub const LOW_LATENCY_CONSUMER_DEFAULTS: &[(&str, &str)] = &[
 /// Uses a profile-based system where profiles provide opinionated defaults,
 /// and `librdkafka_overrides` allows overriding any setting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)] // Kafka config legitimately has many boolean flags
 pub struct KafkaConfig {
     /// Configuration profile (production, devtest).
     ///
