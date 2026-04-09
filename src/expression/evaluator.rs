@@ -6,8 +6,6 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-#![allow(clippy::implicit_hasher)] // Public API uses HashMap<String, JsonValue> intentionally
-
 //! Core CEL expression operations — compile, evaluate, validate.
 //!
 //! Wraps the [`cel_interpreter`] crate, enforcing the DFE expression
@@ -155,7 +153,10 @@ pub fn compile_with_config(expr: &str, config: &ProfileConfig) -> ExpressionResu
 ///
 /// Returns an error if the expression is invalid, violates the DFE profile,
 /// or evaluation fails (missing fields, type mismatch).
-pub fn evaluate(expr: &str, data: &HashMap<String, JsonValue>) -> ExpressionResult<Value> {
+pub fn evaluate<'a>(
+    expr: &str,
+    data: impl IntoIterator<Item = (&'a String, &'a JsonValue)>,
+) -> ExpressionResult<Value> {
     let program = compile(expr)?;
     let context = build_context(data)?;
     program
@@ -163,12 +164,18 @@ pub fn evaluate(expr: &str, data: &HashMap<String, JsonValue>) -> ExpressionResu
         .map_err(|e| ExpressionError::Evaluation(format!("{e}")))
 }
 
-/// Build a CEL [`Context`] from a JSON-compatible data map.
+/// Build a CEL [`Context`] from any iterable of `(key, value)` pairs.
 ///
-/// Each key-value pair from the map is added as a top-level variable
-/// in the CEL execution context. Supports all JSON types via the
-/// `cel-interpreter` json feature (serde integration).
-pub fn build_context(data: &HashMap<String, JsonValue>) -> ExpressionResult<Context<'_>> {
+/// Accepts `&HashMap<String, Value>`, `&serde_json::Map<String, Value>`,
+/// or any other type that iterates over `(&String, &Value)`. This avoids
+/// unnecessary cloning when converting between map types.
+///
+/// Each key-value pair is added as a top-level variable in the CEL
+/// execution context. Supports all JSON types via the `cel-interpreter`
+/// json feature (serde integration).
+pub fn build_context<'a>(
+    data: impl IntoIterator<Item = (&'a String, &'a JsonValue)>,
+) -> ExpressionResult<Context<'a>> {
     let mut context = Context::default();
     for (key, value) in data {
         context.add_variable_from_value(key, json_to_cel(value));
@@ -188,7 +195,10 @@ pub fn build_context(data: &HashMap<String, JsonValue>) -> ExpressionResult<Cont
 /// Non-boolean results are coerced: non-zero integers are truthy,
 /// zero and errors are falsy.
 #[must_use]
-pub fn evaluate_condition(expr: &str, data: &HashMap<String, JsonValue>) -> bool {
+pub fn evaluate_condition<'a>(
+    expr: &str,
+    data: impl IntoIterator<Item = (&'a String, &'a JsonValue)>,
+) -> bool {
     match evaluate(expr, data) {
         Ok(Value::Bool(b)) => b,
         Ok(Value::Int(n)) => n != 0,
