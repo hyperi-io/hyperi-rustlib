@@ -1,3 +1,10 @@
+## [2.4.6](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.5...v2.4.6) (2026-04-09)
+
+
+### Bug Fixes
+
+* make CEL build_context generic over any (&String, &Value) iterator ([7fe0652](https://github.com/hyperi-io/hyperi-rustlib/commit/7fe06526a4c7e5d1acc8f9e3c75ced1a72d441c8))
+
 ## [2.4.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.4...v2.4.5) (2026-04-09)
 
 
