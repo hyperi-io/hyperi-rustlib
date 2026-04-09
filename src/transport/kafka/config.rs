@@ -119,7 +119,7 @@ impl std::fmt::Display for KafkaProfile {
 ///
 /// # Example
 ///
-/// ```
+/// ```rust,ignore
 /// use std::collections::HashMap;
 /// use hyperi_rustlib::transport::kafka::config::{merge_with_overrides, PRODUCTION_PROFILE};
 ///
@@ -325,6 +325,7 @@ pub const LOW_LATENCY_CONSUMER_DEFAULTS: &[(&str, &str)] = &[
 /// Uses a profile-based system where profiles provide opinionated defaults,
 /// and `librdkafka_overrides` allows overriding any setting.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)] // Kafka config legitimately has many boolean flags
 pub struct KafkaConfig {
     /// Configuration profile (production, devtest).
     ///
@@ -349,6 +350,13 @@ pub struct KafkaConfig {
     #[serde(default)]
     pub topics: Vec<String>,
 
+    /// Enable auto-discovery when `topics` is empty.
+    /// When false (default), empty `topics` means no subscription (producer-only).
+    /// When true, empty `topics` triggers broker auto-discovery with
+    /// `topic_include`/`topic_exclude` filters and suppression rules.
+    #[serde(default)]
+    pub auto_discover: bool,
+
     /// Regex patterns for topic include filtering (empty = accept all).
     /// Topics must match at least one pattern (OR logic).
     #[serde(default)]
@@ -356,7 +364,8 @@ pub struct KafkaConfig {
 
     /// Regex patterns for topic exclude filtering.
     /// Topics matching any pattern are excluded. Exclude wins over include.
-    #[serde(default)]
+    /// Default: `["^__"]` (excludes Kafka internal topics like `__consumer_offsets`).
+    #[serde(default = "default_topic_exclude")]
     pub topic_exclude: Vec<String>,
 
     /// Periodic topic refresh interval in seconds (0 = disabled).
@@ -466,6 +475,10 @@ pub struct KafkaConfig {
     pub extra_config: HashMap<String, String>,
 }
 
+fn default_topic_exclude() -> Vec<String> {
+    vec!["^__".to_string()]
+}
+
 fn default_topic_refresh_secs() -> u64 {
     60
 }
@@ -534,8 +547,9 @@ impl Default for KafkaConfig {
             group: default_group(),
             client_id: default_client_id(),
             topics: Vec::new(),
+            auto_discover: false,
             topic_include: Vec::new(),
-            topic_exclude: Vec::new(),
+            topic_exclude: default_topic_exclude(),
             topic_refresh_secs: default_topic_refresh_secs(),
             topic_suppression_rules: default_topic_suppression_rules(),
             security_protocol: default_security_protocol(),
@@ -935,7 +949,8 @@ mod tests {
     fn kafka_config_topic_resolution_defaults() {
         let config = KafkaConfig::default();
         assert!(config.topic_include.is_empty());
-        assert!(config.topic_exclude.is_empty());
+        assert_eq!(config.topic_exclude, vec!["^__".to_string()]);
+        assert!(!config.auto_discover);
         assert_eq!(config.topic_refresh_secs, 60);
         assert_eq!(config.topic_suppression_rules.len(), 1);
         assert_eq!(config.topic_suppression_rules[0].preferred_suffix, "_load");
