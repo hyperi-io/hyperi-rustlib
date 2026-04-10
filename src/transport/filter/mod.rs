@@ -319,7 +319,7 @@ mod tests {
 
     #[test]
     fn engine_no_filters_always_passes() {
-        let engine = TransportFilterEngine::new(&[], &[], &Default::default()).unwrap();
+        let engine = TransportFilterEngine::new(&[], &[], &TransportFilterTierConfig::default()).unwrap();
         assert!(!engine.has_inbound_filters());
         assert!(!engine.has_outbound_filters());
         assert_eq!(
@@ -334,7 +334,7 @@ mod tests {
             expression: r#"status == "poison""#.into(),
             action: FilterAction::Drop,
         }];
-        let engine = TransportFilterEngine::new(&rules, &[], &Default::default()).unwrap();
+        let engine = TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
         assert!(engine.has_inbound_filters());
 
         assert_eq!(
@@ -359,7 +359,7 @@ mod tests {
                 action: FilterAction::Dlq,
             },
         ];
-        let engine = TransportFilterEngine::new(&rules, &[], &Default::default()).unwrap();
+        let engine = TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
         // First filter matches → Drop, not Dlq
         assert_eq!(
             engine.apply_inbound(br#"{"status":"drop_me"}"#),
@@ -373,7 +373,7 @@ mod tests {
             expression: r#"severity > 3 && source != "internal""#.into(),
             action: FilterAction::Drop,
         }];
-        let result = TransportFilterEngine::new(&rules, &[], &Default::default());
+        let result = TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default());
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Tier 2"), "Error should mention tier: {err}");
@@ -401,7 +401,7 @@ mod tests {
             expression: "this is not valid ((( CEL".into(),
             action: FilterAction::Drop,
         }];
-        let result = TransportFilterEngine::new(&rules, &[], &Default::default());
+        let result = TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default());
         assert!(result.is_err());
     }
 
@@ -411,7 +411,7 @@ mod tests {
             expression: "has(field)".into(),
             action: FilterAction::Dlq,
         }];
-        let engine = TransportFilterEngine::new(&rules, &[], &Default::default()).unwrap();
+        let engine = TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
         assert!(engine.has_dlq_filters_in());
         assert!(!engine.has_dlq_filters_out());
     }
@@ -422,7 +422,7 @@ mod tests {
             expression: "has(_table)".into(),
             action: FilterAction::Drop,
         }];
-        let engine = TransportFilterEngine::new(&rules, &[], &Default::default()).unwrap();
+        let engine = TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
         // MsgPack fixmap header (0x81)
         let msgpack = &[
             0x81, 0xa6, 0x5f, 0x74, 0x61, 0x62, 0x6c, 0x65, 0xa6, 0x65, 0x76, 0x65, 0x6e, 0x74,
@@ -442,7 +442,7 @@ mod tests {
             action: FilterAction::Drop,
         }];
         let engine =
-            TransportFilterEngine::new(&in_rules, &out_rules, &Default::default()).unwrap();
+            TransportFilterEngine::new(&in_rules, &out_rules, &TransportFilterTierConfig::default()).unwrap();
 
         let payload_in = br#"{"drop_in":true}"#;
         assert_eq!(engine.apply_inbound(payload_in), FilterDisposition::Drop);
