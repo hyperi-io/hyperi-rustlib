@@ -130,6 +130,8 @@ pub struct KafkaTransport {
     /// Uses parking_lot::Mutex (no poisoning, faster uncontended) since this
     /// is on the recv() hot path.
     topic_refresh: Option<parking_lot::Mutex<TopicRefreshHandle>>,
+    /// Transport-level message filter engine.
+    filter_engine: super::filter::TransportFilterEngine,
 }
 
 impl KafkaTransport {
@@ -287,6 +289,12 @@ impl KafkaTransport {
 
         let healthy = Arc::new(AtomicBool::new(true));
 
+        let filter_engine = super::filter::TransportFilterEngine::new(
+            &config.filters_in,
+            &config.filters_out,
+            &crate::transport::filter::TransportFilterTierConfig::default(),
+        )?;
+
         #[cfg(feature = "health")]
         {
             let h = Arc::clone(&healthy);
@@ -308,6 +316,7 @@ impl KafkaTransport {
             subscribed_topics: parking_lot::RwLock::new(subscribed_topics),
             shutdown_token,
             topic_refresh,
+            filter_engine,
         })
     }
 
@@ -343,6 +352,15 @@ impl TransportSender for KafkaTransport {
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
+        }
+
+        // Outbound filter check
+        if self.filter_engine.has_outbound_filters() {
+            match self.filter_engine.apply_outbound(payload) {
+                super::filter::FilterDisposition::Pass => {}
+                super::filter::FilterDisposition::Drop => return SendResult::Ok,
+                super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
+            }
         }
 
         let record: FutureRecord<'_, str, [u8]> = FutureRecord::to(key).payload(payload);
@@ -529,6 +547,16 @@ impl TransportReceiver for KafkaTransport {
                 }
                 None => break,
             }
+        }
+
+        // Apply inbound filters — remove messages that match drop/dlq filters
+        if self.filter_engine.has_inbound_filters() {
+            messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
+                super::filter::FilterDisposition::Pass => true,
+                super::filter::FilterDisposition::Drop | super::filter::FilterDisposition::Dlq => {
+                    false
+                }
+            });
         }
 
         Ok(messages)

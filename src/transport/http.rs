@@ -126,6 +126,14 @@ pub struct HttpTransportConfig {
     /// Receive timeout in milliseconds. Default: 100.
     #[serde(default = "default_recv_timeout_ms")]
     pub recv_timeout_ms: u64,
+
+    /// Inbound message filters (applied on recv before caller sees messages).
+    #[serde(default)]
+    pub filters_in: Vec<super::filter::FilterRule>,
+
+    /// Outbound message filters (applied on send before transport dispatches).
+    #[serde(default)]
+    pub filters_out: Vec<super::filter::FilterRule>,
 }
 
 impl Default for HttpTransportConfig {
@@ -136,6 +144,8 @@ impl Default for HttpTransportConfig {
             recv_path: default_recv_path(),
             recv_buffer_size: default_buffer_size(),
             recv_timeout_ms: default_recv_timeout_ms(),
+            filters_in: Vec::new(),
+            filters_out: Vec::new(),
         }
     }
 }
@@ -204,6 +214,9 @@ pub struct HttpTransport {
     /// Receive timeout in milliseconds (used by receive side).
     #[cfg(feature = "http-server")]
     recv_timeout_ms: u64,
+
+    /// Transport-level message filter engine.
+    filter_engine: super::filter::TransportFilterEngine,
 }
 
 impl HttpTransport {
@@ -262,6 +275,16 @@ impl HttpTransport {
             "HTTP transport opened"
         );
 
+        let filter_engine = super::filter::TransportFilterEngine::new(
+            &config.filters_in,
+            &config.filters_out,
+            &crate::transport::filter::TransportFilterTierConfig::default(),
+        )
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "Failed to compile transport filters, filtering disabled");
+            super::filter::TransportFilterEngine::empty()
+        });
+
         let closed = Arc::new(AtomicBool::new(false));
 
         #[cfg(feature = "health")]
@@ -288,6 +311,7 @@ impl HttpTransport {
             closed,
             #[cfg(feature = "http-server")]
             recv_timeout_ms: config.recv_timeout_ms,
+            filter_engine,
         })
     }
 }
@@ -393,6 +417,15 @@ impl TransportSender for HttpTransport {
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
+        }
+
+        // Outbound filter check
+        if self.filter_engine.has_outbound_filters() {
+            match self.filter_engine.apply_outbound(payload) {
+                super::filter::FilterDisposition::Pass => {}
+                super::filter::FilterDisposition::Drop => return SendResult::Ok,
+                super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
+            }
         }
 
         let Some(base_url) = &self.endpoint else {
@@ -530,6 +563,15 @@ impl TransportReceiver for HttpTransport {
                 if let Some(msg) = result {
                     messages.push(msg);
                 }
+            }
+
+            // Apply inbound filters — remove messages that match drop/dlq filters
+            if self.filter_engine.has_inbound_filters() {
+                messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
+                    super::filter::FilterDisposition::Pass => true,
+                    super::filter::FilterDisposition::Drop
+                    | super::filter::FilterDisposition::Dlq => false,
+                });
             }
 
             #[cfg(feature = "logger")]
@@ -740,6 +782,7 @@ mod tests {
             recv_path: "/custom".into(),
             recv_buffer_size: 5000,
             recv_timeout_ms: 250,
+            ..Default::default()
         };
 
         let json = serde_json::to_string(&config).unwrap();

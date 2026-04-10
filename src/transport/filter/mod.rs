@@ -167,6 +167,16 @@ impl TransportFilterEngine {
         })
     }
 
+    /// Create an empty filter engine (no filters, zero overhead).
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            filters_in: Vec::new(),
+            filters_out: Vec::new(),
+            metrics: FilterMetrics::new(),
+        }
+    }
+
     /// Check if any inbound filters are configured.
     #[inline]
     #[must_use]

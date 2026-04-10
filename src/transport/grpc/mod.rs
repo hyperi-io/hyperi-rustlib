@@ -76,6 +76,9 @@ pub struct GrpcTransport {
     /// In-flight send count (for metrics).
     #[cfg(feature = "metrics")]
     inflight: AtomicU64,
+
+    /// Transport-level message filter engine.
+    filter_engine: super::filter::TransportFilterEngine,
 }
 
 impl GrpcTransport {
@@ -175,6 +178,12 @@ impl GrpcTransport {
 
         let healthy = Arc::new(AtomicBool::new(true));
 
+        let filter_engine = super::filter::TransportFilterEngine::new(
+            &config.filters_in,
+            &config.filters_out,
+            &crate::transport::filter::TransportFilterTierConfig::default(),
+        )?;
+
         #[cfg(feature = "health")]
         {
             let h = Arc::clone(&healthy);
@@ -197,6 +206,7 @@ impl GrpcTransport {
             recv_timeout_ms: config.recv_timeout_ms,
             #[cfg(feature = "metrics")]
             inflight: AtomicU64::new(0),
+            filter_engine,
         })
     }
 }
@@ -232,6 +242,15 @@ impl TransportSender for GrpcTransport {
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
+        }
+
+        // Outbound filter check
+        if self.filter_engine.has_outbound_filters() {
+            match self.filter_engine.apply_outbound(payload) {
+                super::filter::FilterDisposition::Pass => {}
+                super::filter::FilterDisposition::Drop => return SendResult::Ok,
+                super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
+            }
         }
 
         let Some(client) = &self.client else {
@@ -358,6 +377,16 @@ impl TransportReceiver for GrpcTransport {
             if let Some(msg) = result {
                 messages.push(msg);
             }
+        }
+
+        // Apply inbound filters — remove messages that match drop/dlq filters
+        if self.filter_engine.has_inbound_filters() {
+            messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
+                super::filter::FilterDisposition::Pass => true,
+                super::filter::FilterDisposition::Drop | super::filter::FilterDisposition::Dlq => {
+                    false
+                }
+            });
         }
 
         Ok(messages)

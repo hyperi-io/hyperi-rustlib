@@ -473,6 +473,14 @@ pub struct KafkaConfig {
     #[serde(default)]
     #[deprecated(since = "1.3.0", note = "Use `librdkafka_overrides` instead")]
     pub extra_config: HashMap<String, String>,
+
+    /// Inbound message filters (applied on recv before caller sees messages).
+    #[serde(default)]
+    pub filters_in: Vec<crate::transport::filter::FilterRule>,
+
+    /// Outbound message filters (applied on send before transport dispatches).
+    #[serde(default)]
+    pub filters_out: Vec<crate::transport::filter::FilterRule>,
 }
 
 fn default_topic_exclude() -> Vec<String> {
@@ -572,6 +580,8 @@ impl Default for KafkaConfig {
             enable_partition_eof: false,
             librdkafka_overrides: HashMap::new(),
             extra_config: HashMap::new(),
+            filters_in: Vec::new(),
+            filters_out: Vec::new(),
         }
     }
 }
