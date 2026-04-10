@@ -386,7 +386,7 @@ mod tests {
 
     #[test]
     fn classify_whitespace_tolerance() {
-        let result = classify(r#"  has( _table )  "#).unwrap();
+        let result = classify("  has( _table )  ").unwrap();
         assert_eq!(result.tier(), FilterTier::Tier1);
     }
 
