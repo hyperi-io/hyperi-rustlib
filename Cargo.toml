@@ -96,7 +96,7 @@ config-reload = ["config", "parking_lot", "tokio", "tracing"]
 config-postgres = ["config", "sqlx", "tokio", "serde_json"]
 
 # Transport features
-transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait"]
+transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait", "regex"]
 transport-memory = ["transport"]
 transport-kafka = ["transport", "rdkafka", "regex", "tokio-util"]
 transport-grpc = ["transport", "dep:tonic", "dep:tonic-prost", "dep:prost", "dep:prost-types", "dep:tonic-prost-build", "dep:prost-build"]
