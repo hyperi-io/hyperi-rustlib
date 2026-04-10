@@ -47,6 +47,12 @@ pub struct GrpcConfig {
     /// Requires the `transport-grpc-vector-compat` feature.
     #[cfg(feature = "transport-grpc-vector-compat")]
     pub vector_compat: bool,
+
+    /// Inbound message filters (applied on recv before caller sees messages).
+    pub filters_in: Vec<crate::transport::filter::FilterRule>,
+
+    /// Outbound message filters (applied on send before transport dispatches).
+    pub filters_out: Vec<crate::transport::filter::FilterRule>,
 }
 
 impl Default for GrpcConfig {
@@ -60,6 +66,8 @@ impl Default for GrpcConfig {
             compression: false,
             #[cfg(feature = "transport-grpc-vector-compat")]
             vector_compat: false,
+            filters_in: Vec::new(),
+            filters_out: Vec::new(),
         }
     }
 }

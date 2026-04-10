@@ -25,7 +25,7 @@
 //! ```rust,ignore
 //! use hyperi_rustlib::transport::file::{FileTransport, FileTransportConfig};
 //!
-//! let config = FileTransportConfig { path: "/tmp/events.ndjson".into(), append: true };
+//! let config = FileTransportConfig { path: "/tmp/events.ndjson".into(), append: true, ..Default::default() };
 //! let transport = FileTransport::new(&config).await?;
 //! transport.send("events", b"{\"msg\":\"hello\"}").await;
 //! ```
@@ -66,6 +66,14 @@ pub struct FileTransportConfig {
     /// Append mode (default true for send).
     #[serde(default = "default_append")]
     pub append: bool,
+
+    /// Inbound message filters (applied on recv before caller sees messages).
+    #[serde(default)]
+    pub filters_in: Vec<super::filter::FilterRule>,
+
+    /// Outbound message filters (applied on send before transport dispatches).
+    #[serde(default)]
+    pub filters_out: Vec<super::filter::FilterRule>,
 }
 
 fn default_append() -> bool {
@@ -77,6 +85,8 @@ impl Default for FileTransportConfig {
         Self {
             path: String::new(),
             append: true,
+            filters_in: Vec::new(),
+            filters_out: Vec::new(),
         }
     }
 }
@@ -119,6 +129,7 @@ pub struct FileTransport {
     writer: Mutex<Option<WriteState>>,
     reader: Mutex<Option<ReadState>>,
     closed: Arc<AtomicBool>,
+    filter_engine: super::filter::TransportFilterEngine,
 }
 
 impl FileTransport {
@@ -134,6 +145,16 @@ impl FileTransport {
 
         #[cfg(feature = "logger")]
         tracing::info!(path = %config.path, append = config.append, "File transport opened");
+
+        let filter_engine = super::filter::TransportFilterEngine::new(
+            &config.filters_in,
+            &config.filters_out,
+            &crate::transport::filter::TransportFilterTierConfig::default(),
+        )
+        .unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "Failed to compile transport filters, filtering disabled");
+            super::filter::TransportFilterEngine::empty()
+        });
 
         let closed = Arc::new(AtomicBool::new(false));
 
@@ -154,6 +175,7 @@ impl FileTransport {
             writer: Mutex::new(None),
             reader: Mutex::new(None),
             closed,
+            filter_engine,
         })
     }
 
@@ -273,6 +295,15 @@ impl TransportSender for FileTransport {
             return SendResult::Fatal(TransportError::Closed);
         }
 
+        // Outbound filter check
+        if self.filter_engine.has_outbound_filters() {
+            match self.filter_engine.apply_outbound(payload) {
+                super::filter::FilterDisposition::Pass => {}
+                super::filter::FilterDisposition::Drop => return SendResult::Ok,
+                super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
+            }
+        }
+
         if let Err(e) = self.ensure_writer().await {
             return SendResult::Fatal(e);
         }
@@ -362,6 +393,16 @@ impl TransportReceiver for FileTransport {
             });
         }
 
+        // Apply inbound filters — remove messages that match drop/dlq filters
+        if self.filter_engine.has_inbound_filters() {
+            messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
+                super::filter::FilterDisposition::Pass => true,
+                super::filter::FilterDisposition::Drop | super::filter::FilterDisposition::Dlq => {
+                    false
+                }
+            });
+        }
+
         #[cfg(feature = "logger")]
         if !messages.is_empty() {
             tracing::debug!(lines = messages.len(), "File transport: batch received");
@@ -401,6 +442,7 @@ mod tests {
         let config = FileTransportConfig {
             path: path.to_str().unwrap().to_string(),
             append: true,
+            ..Default::default()
         };
         FileTransport::new(&config).await.unwrap()
     }
@@ -415,6 +457,7 @@ mod tests {
         let config = FileTransportConfig {
             path: path_str.clone(),
             append: true,
+            ..Default::default()
         };
         let sender = FileTransport::new(&config).await.unwrap();
 
@@ -428,6 +471,7 @@ mod tests {
         let reader_config = FileTransportConfig {
             path: path_str,
             append: true,
+            ..Default::default()
         };
         let reader = FileTransport::new(&reader_config).await.unwrap();
         let messages = reader.recv(10).await.unwrap();
@@ -450,6 +494,7 @@ mod tests {
         let config = FileTransportConfig {
             path: path_str.clone(),
             append: true,
+            ..Default::default()
         };
         let sender = FileTransport::new(&config).await.unwrap();
         sender.send("k", b"line1").await;
@@ -461,6 +506,7 @@ mod tests {
         let r1 = FileTransport::new(&FileTransportConfig {
             path: path_str.clone(),
             append: true,
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -478,6 +524,7 @@ mod tests {
         let r2 = FileTransport::new(&FileTransportConfig {
             path: path_str,
             append: true,
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -517,6 +564,7 @@ mod tests {
         let config = FileTransportConfig {
             path: path_str.clone(),
             append: true,
+            ..Default::default()
         };
         let transport = FileTransport::new(&config).await.unwrap();
         transport.send("k", b"only_line").await;
@@ -526,6 +574,7 @@ mod tests {
         let reader = FileTransport::new(&FileTransportConfig {
             path: path_str,
             append: true,
+            ..Default::default()
         })
         .await
         .unwrap();

@@ -117,6 +117,14 @@ pub struct RedisTransportConfig {
     /// Block timeout in milliseconds for `XREADGROUP`. Default: 5000.
     #[serde(default = "default_block_ms")]
     pub block_ms: usize,
+
+    /// Inbound message filters (applied on recv before caller sees messages).
+    #[serde(default)]
+    pub filters_in: Vec<super::filter::FilterRule>,
+
+    /// Outbound message filters (applied on send before transport dispatches).
+    #[serde(default)]
+    pub filters_out: Vec<super::filter::FilterRule>,
 }
 
 impl Default for RedisTransportConfig {
@@ -128,6 +136,8 @@ impl Default for RedisTransportConfig {
             consumer: default_consumer(),
             max_stream_len: None,
             block_ms: default_block_ms(),
+            filters_in: Vec::new(),
+            filters_out: Vec::new(),
         }
     }
 }
@@ -158,6 +168,8 @@ pub struct RedisTransport {
     closed: Arc<AtomicBool>,
     /// Whether the consumer group has been ensured for a given stream.
     group_created: Mutex<std::collections::HashSet<String>>,
+    /// Transport-level message filter engine.
+    filter_engine: super::filter::TransportFilterEngine,
 }
 
 impl RedisTransport {
@@ -192,6 +204,12 @@ impl RedisTransport {
             "Redis transport opened"
         );
 
+        let filter_engine = super::filter::TransportFilterEngine::new(
+            &config.filters_in,
+            &config.filters_out,
+            &crate::transport::filter::TransportFilterTierConfig::default(),
+        )?;
+
         let closed = Arc::new(AtomicBool::new(false));
 
         #[cfg(feature = "health")]
@@ -211,6 +229,7 @@ impl RedisTransport {
             config: config.clone(),
             closed,
             group_created: Mutex::new(std::collections::HashSet::new()),
+            filter_engine,
         })
     }
 
@@ -282,6 +301,15 @@ impl TransportSender for RedisTransport {
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
+        }
+
+        // Outbound filter check
+        if self.filter_engine.has_outbound_filters() {
+            match self.filter_engine.apply_outbound(payload) {
+                super::filter::FilterDisposition::Pass => {}
+                super::filter::FilterDisposition::Drop => return SendResult::Ok,
+                super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
+            }
         }
 
         let stream = match self.resolve_stream(key) {
@@ -386,6 +414,16 @@ impl TransportReceiver for RedisTransport {
                     format,
                 });
             }
+        }
+
+        // Apply inbound filters — remove messages that match drop/dlq filters
+        if self.filter_engine.has_inbound_filters() {
+            messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
+                super::filter::FilterDisposition::Pass => true,
+                super::filter::FilterDisposition::Drop | super::filter::FilterDisposition::Dlq => {
+                    false
+                }
+            });
         }
 
         #[cfg(feature = "logger")]
@@ -584,6 +622,7 @@ block_ms: 2000
             consumer: consumer.into(),
             max_stream_len: Some(1000),
             block_ms: 1000,
+            ..Default::default()
         };
 
         let transport = RedisTransport::new(&config).await.unwrap();

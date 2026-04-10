@@ -72,7 +72,7 @@ pub enum CompiledFilter {
     // Tier 2/3 — CEL expression (feature-gated)
     #[cfg(feature = "expression")]
     CelExpression {
-        program: crate::expression::Program,
+        program: cel_interpreter::Program,
         fields: Vec<String>,
         expression_text: String,
         tier: FilterTier,
@@ -127,10 +127,11 @@ impl CompiledFilter {
             }
             #[cfg(feature = "expression")]
             ClassifyResult::Tier3 { fields } => {
-                let mut profile = crate::expression::ProfileConfig::default();
-                profile.allow_regex = true;
-                profile.allow_iteration = true;
-                profile.allow_time = true;
+                let profile = crate::expression::ProfileConfig {
+                    allow_regex: true,
+                    allow_iteration: true,
+                    allow_time: true,
+                };
                 let program = crate::expression::compile_with_config(expr, &profile)
                     .map_err(|e| format!("CEL compilation failed: {e}"))?;
                 Ok(Self::CelExpression {
@@ -438,7 +439,7 @@ fn extract_string_value(lv: &sonic_rs::LazyValue<'_>) -> String {
 #[cfg(feature = "expression")]
 fn evaluate_cel(
     payload: &[u8],
-    program: &crate::expression::Program,
+    program: &cel_interpreter::Program,
     fields: &[String],
     action: FilterAction,
 ) -> Option<FilterAction> {
@@ -448,16 +449,16 @@ fn evaluate_cel(
     let mut context_data: HashMap<String, serde_json::Value> = HashMap::with_capacity(fields.len());
     for field in fields {
         let path: Vec<&str> = field.split('.').collect();
-        if let Ok(lv) = sonic_rs::get_from_slice(payload, path.as_slice()) {
-            if let Ok(v) = sonic_rs::from_str::<serde_json::Value>(lv.as_raw_str()) {
-                context_data.insert(field.clone(), v);
-            }
+        if let Ok(lv) = sonic_rs::get_from_slice(payload, path.as_slice())
+            && let Ok(v) = sonic_rs::from_str::<serde_json::Value>(lv.as_raw_str())
+        {
+            context_data.insert(field.clone(), v);
         }
     }
 
     let ctx = crate::expression::build_context(&context_data).ok()?;
     match program.execute(&ctx) {
-        Ok(val) if val == cel_interpreter::Value::Bool(true) => Some(action),
+        Ok(cel_interpreter::Value::Bool(true)) => Some(action),
         _ => None,
     }
 }
@@ -472,7 +473,7 @@ mod tests {
             "has(_table)",
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(
@@ -487,7 +488,7 @@ mod tests {
             "has(_table)",
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(filter.evaluate(br#"{"host":"web1","id":1}"#), None);
@@ -499,7 +500,7 @@ mod tests {
             "!has(_internal)",
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(
@@ -514,7 +515,7 @@ mod tests {
             r#"status == "poison""#,
             FilterAction::Dlq,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(
@@ -529,7 +530,7 @@ mod tests {
             r#"status == "poison""#,
             FilterAction::Dlq,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(filter.evaluate(br#"{"status":"healthy","data":"x"}"#), None);
@@ -541,7 +542,7 @@ mod tests {
             r#"source != "trusted""#,
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(
@@ -556,7 +557,7 @@ mod tests {
             r#"source != "trusted""#,
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         // Missing field is not equal to "trusted"
@@ -572,7 +573,7 @@ mod tests {
             r#"host.startsWith("prod-")"#,
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(
@@ -587,7 +588,7 @@ mod tests {
             r#"host.startsWith("prod-")"#,
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(filter.evaluate(br#"{"host":"dev-web01"}"#), None);
@@ -599,7 +600,7 @@ mod tests {
             r#"name.endsWith(".log")"#,
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(
@@ -614,7 +615,7 @@ mod tests {
             r#"path.contains("/api/")"#,
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(
@@ -629,7 +630,7 @@ mod tests {
             r#"metadata.source == "aws""#,
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(
@@ -644,7 +645,7 @@ mod tests {
             "has(_table)",
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(filter.evaluate(b"not json at all {{{"), None);
@@ -656,7 +657,7 @@ mod tests {
             "has(_table)",
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(filter.evaluate(b""), None);
@@ -668,7 +669,7 @@ mod tests {
             "has(x)",
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(filter.tier(), FilterTier::Tier1);
@@ -680,7 +681,7 @@ mod tests {
             "has(x)",
             FilterAction::Dlq,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(filter.action(), FilterAction::Dlq);
@@ -692,7 +693,7 @@ mod tests {
             "has(my_field)",
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         )
         .unwrap();
         assert_eq!(filter.expression_text(), "has(my_field)");
@@ -704,7 +705,7 @@ mod tests {
             r#"severity > 3 && source != "internal""#,
             FilterAction::Drop,
             FilterDirection::In,
-            &Default::default(),
+            &TransportFilterTierConfig::default(),
         );
         assert!(result.is_err());
         let err = result.unwrap_err();
