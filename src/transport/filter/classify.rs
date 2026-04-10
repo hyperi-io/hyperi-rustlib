@@ -237,33 +237,62 @@ fn check_restricted_functions(expr: &str) -> bool {
 /// Extract field references from an expression (for Tier 2/3 CEL context building).
 ///
 /// Scans for identifier patterns that aren't CEL keywords or function names.
-/// Returns unique field names (may include dotted paths).
+/// For method calls like `field.matches("...")`, extracts only the receiver field.
+/// Returns unique field names (may include dotted paths for nested access).
 fn extract_field_references(expr: &str) -> Vec<String> {
-    static RE_IDENT: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"\b([a-zA-Z_][\w.]*)\b").unwrap());
+    // Match dotted identifier (potentially nested) — we'll trim trailing method call
+    // segments after matching.
+    static RE_IDENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[a-zA-Z_][\w.]*").unwrap());
 
     let mut fields: Vec<String> = Vec::new();
-    let mut in_string = false;
 
-    // Track string boundaries
+    // Build a mask of which byte positions are inside string literals
+    let mut in_string_mask = vec![false; expr.len()];
+    let mut in_string = false;
+    let mut prev_was_escape = false;
     for (i, ch) in expr.char_indices() {
-        if ch == '"' {
+        if in_string {
+            in_string_mask[i] = true;
+        }
+        if ch == '"' && !prev_was_escape {
             in_string = !in_string;
         }
-        if in_string {
+        prev_was_escape = ch == '\\' && !prev_was_escape;
+    }
+
+    for m in RE_IDENT.find_iter(expr) {
+        if in_string_mask.get(m.start()).copied().unwrap_or(false) {
             continue;
         }
 
-        // Check if an identifier starts here
-        if let Some(m) = RE_IDENT.find(&expr[i..])
-            && m.start() == 0
-        {
-            let ident = m.as_str();
-            // Skip CEL keywords
-            let base = ident.split('.').next().unwrap_or(ident);
-            if !CEL_KEYWORDS.contains(&base) && !fields.contains(&ident.to_string()) {
-                fields.push(ident.to_string());
+        let mut ident = m.as_str().to_string();
+
+        // If this identifier is immediately followed by '(' (a function call),
+        // strip the last dotted segment (the method name) — the receiver is
+        // the actual field reference.
+        let after = &expr[m.end()..];
+        if after.trim_start().starts_with('(') {
+            if let Some(dot_pos) = ident.rfind('.') {
+                // Method call on a field: keep the receiver
+                ident.truncate(dot_pos);
+            } else {
+                // Bare function call (e.g., has(), size()) — not a field
+                continue;
             }
+        }
+
+        if ident.is_empty() {
+            continue;
+        }
+
+        // Skip CEL keywords (check the leading segment)
+        let base = ident.split('.').next().unwrap_or(&ident);
+        if CEL_KEYWORDS.contains(&base) {
+            continue;
+        }
+
+        if !fields.contains(&ident) {
+            fields.push(ident);
         }
     }
 

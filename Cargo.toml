@@ -96,7 +96,7 @@ config-reload = ["config", "parking_lot", "tokio", "tracing"]
 config-postgres = ["config", "sqlx", "tokio", "serde_json"]
 
 # Transport features
-transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait", "regex"]
+transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait", "regex", "memchr"]
 transport-memory = ["transport"]
 transport-kafka = ["transport", "rdkafka", "regex", "tokio-util"]
 transport-grpc = ["transport", "dep:tonic", "dep:tonic-prost", "dep:prost", "dep:prost-types", "dep:tonic-prost-build", "dep:prost-build"]
@@ -232,6 +232,7 @@ sonic-rs = { version = ">=0.5, <1", optional = true }
 
 # Regex (topic resolver include/exclude filters)
 regex = { version = ">=1.11, <2", optional = true }
+memchr = { version = ">=2.7", optional = true }
 
 # Async trait (for tiered-sink Sink trait)
 async-trait = { version = ">=0.1.88, <0.2", optional = true }
@@ -306,3 +307,8 @@ harness = false
 name = "engine_benchmark"
 harness = false
 required-features = ["worker"]
+
+[[bench]]
+name = "filter_benchmark"
+harness = false
+required-features = ["transport-memory"]
