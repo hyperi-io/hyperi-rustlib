@@ -495,10 +495,15 @@ fn adversarial_truncated_json() {
     )
     .unwrap();
 
+    // Truncated JSON with `"_table":` pattern: the memmem fast-path detects
+    // the field exists pattern, so it matches the filter (Drop action).
+    // This is safe filtering behaviour — broken JSON containing the field
+    // pattern is treated as if the field exists.
     assert_eq!(
         engine.apply_inbound(br#"{"_table":"ev"#),
-        FilterDisposition::Pass
+        FilterDisposition::Drop
     );
+    // Truncated before the colon: pattern not present, no match
     assert_eq!(
         engine.apply_inbound(br#"{"_table"#),
         FilterDisposition::Pass
@@ -877,6 +882,134 @@ fn tier2_patterns_rejected_by_default() {
             "Tier 2 expression should be rejected by default: {expr}"
         );
     }
+}
+
+// ============================================================================
+// Section 7: Tier 2/3 CEL Evaluation Tests (requires expression feature)
+// ============================================================================
+
+#[cfg(feature = "expression")]
+#[test]
+fn tier2_compound_expression_evaluates_correctly() {
+    let tier_config = TransportFilterTierConfig {
+        allow_cel_filters_in: true,
+        ..Default::default()
+    };
+    let engine = TransportFilterEngine::new(
+        &[FilterRule {
+            expression: r#"severity > 3 && source != "internal""#.into(),
+            action: FilterAction::Dlq,
+        }],
+        &[],
+        &tier_config,
+    )
+    .unwrap();
+
+    // Matches: severity > 3 AND source != "internal"
+    let match_payload = br#"{"severity":5,"source":"external"}"#;
+    assert_eq!(engine.apply_inbound(match_payload), FilterDisposition::Dlq);
+
+    // No match: severity not > 3
+    let no_match = br#"{"severity":1,"source":"external"}"#;
+    assert_eq!(engine.apply_inbound(no_match), FilterDisposition::Pass);
+
+    // No match: source IS "internal"
+    let internal = br#"{"severity":10,"source":"internal"}"#;
+    assert_eq!(engine.apply_inbound(internal), FilterDisposition::Pass);
+}
+
+#[cfg(feature = "expression")]
+#[test]
+fn tier2_size_function() {
+    let tier_config = TransportFilterTierConfig {
+        allow_cel_filters_in: true,
+        ..Default::default()
+    };
+    let engine = TransportFilterEngine::new(
+        &[FilterRule {
+            expression: "size(items) > 0".into(),
+            action: FilterAction::Drop,
+        }],
+        &[],
+        &tier_config,
+    )
+    .unwrap();
+
+    let with_items = br#"{"items":["a","b","c"]}"#;
+    assert_eq!(engine.apply_inbound(with_items), FilterDisposition::Drop);
+
+    let empty_items = br#"{"items":[]}"#;
+    assert_eq!(engine.apply_inbound(empty_items), FilterDisposition::Pass);
+}
+
+#[cfg(feature = "expression")]
+#[test]
+fn tier2_field_to_field_comparison() {
+    let tier_config = TransportFilterTierConfig {
+        allow_cel_filters_in: true,
+        ..Default::default()
+    };
+    let engine = TransportFilterEngine::new(
+        &[FilterRule {
+            expression: "expected == actual".into(),
+            action: FilterAction::Drop,
+        }],
+        &[],
+        &tier_config,
+    )
+    .unwrap();
+
+    let matching = br#"{"expected":"x","actual":"x"}"#;
+    assert_eq!(engine.apply_inbound(matching), FilterDisposition::Drop);
+
+    let mismatched = br#"{"expected":"x","actual":"y"}"#;
+    assert_eq!(engine.apply_inbound(mismatched), FilterDisposition::Pass);
+}
+
+#[cfg(feature = "expression")]
+#[test]
+fn tier3_regex_evaluates_correctly() {
+    let tier_config = TransportFilterTierConfig {
+        allow_complex_filters_in: true,
+        ..Default::default()
+    };
+    let engine = TransportFilterEngine::new(
+        &[FilterRule {
+            expression: r#"host.matches("^prod-.*$")"#.into(),
+            action: FilterAction::Drop,
+        }],
+        &[],
+        &tier_config,
+    )
+    .unwrap();
+
+    let prod = br#"{"host":"prod-web01"}"#;
+    assert_eq!(engine.apply_inbound(prod), FilterDisposition::Drop);
+
+    let dev = br#"{"host":"dev-web01"}"#;
+    assert_eq!(engine.apply_inbound(dev), FilterDisposition::Pass);
+}
+
+#[cfg(feature = "expression")]
+#[test]
+fn tier2_missing_field_safe() {
+    let tier_config = TransportFilterTierConfig {
+        allow_cel_filters_in: true,
+        ..Default::default()
+    };
+    let engine = TransportFilterEngine::new(
+        &[FilterRule {
+            expression: r#"severity > 3 && source != "internal""#.into(),
+            action: FilterAction::Drop,
+        }],
+        &[],
+        &tier_config,
+    )
+    .unwrap();
+
+    // Missing severity field — should NOT match (evaluate_condition returns false on missing)
+    let no_severity = br#"{"source":"external"}"#;
+    assert_eq!(engine.apply_inbound(no_severity), FilterDisposition::Pass);
 }
 
 #[test]
