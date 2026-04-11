@@ -1012,6 +1012,260 @@ fn tier2_missing_field_safe() {
     assert_eq!(engine.apply_inbound(no_severity), FilterDisposition::Pass);
 }
 
+// ============================================================================
+// Section 8: take_filtered_dlq_entries() — DLQ buffering integration
+// ============================================================================
+
+#[tokio::test]
+async fn dlq_filter_entries_exposed_via_take() {
+    let transport = transport_with_inbound_filters(vec![FilterRule {
+        expression: r#"status == "poison""#.into(),
+        action: FilterAction::Dlq,
+    }]);
+
+    transport
+        .inject(None, br#"{"status":"ok","id":1}"#.to_vec())
+        .await
+        .unwrap();
+    transport
+        .inject(None, br#"{"status":"poison","id":2}"#.to_vec())
+        .await
+        .unwrap();
+    transport
+        .inject(None, br#"{"status":"poison","id":3}"#.to_vec())
+        .await
+        .unwrap();
+
+    let messages = transport.recv(10).await.unwrap();
+    assert_eq!(
+        messages.len(),
+        1,
+        "Only the non-poison message should be in result"
+    );
+
+    // The DLQ entries should be exposed via take_filtered_dlq_entries
+    let dlq_entries = transport.take_filtered_dlq_entries();
+    assert_eq!(dlq_entries.len(), 2, "Two DLQ entries should be staged");
+    assert!(dlq_entries[0].payload.windows(6).any(|w| w == b"poison"));
+    assert!(dlq_entries[1].payload.windows(6).any(|w| w == b"poison"));
+}
+
+#[tokio::test]
+async fn take_filtered_dlq_entries_drains_buffer() {
+    let transport = transport_with_inbound_filters(vec![FilterRule {
+        expression: "has(_internal)".into(),
+        action: FilterAction::Dlq,
+    }]);
+
+    transport
+        .inject(None, br#"{"_internal":true}"#.to_vec())
+        .await
+        .unwrap();
+    let _ = transport.recv(10).await.unwrap();
+
+    // First take returns the entry
+    let first = transport.take_filtered_dlq_entries();
+    assert_eq!(first.len(), 1);
+
+    // Second take returns empty (buffer drained)
+    let second = transport.take_filtered_dlq_entries();
+    assert!(second.is_empty(), "Buffer should be drained after take");
+}
+
+#[tokio::test]
+async fn drop_filter_does_not_populate_dlq_buffer() {
+    let transport = transport_with_inbound_filters(vec![FilterRule {
+        expression: r#"status == "drop_me""#.into(),
+        action: FilterAction::Drop,
+    }]);
+
+    transport
+        .inject(None, br#"{"status":"drop_me"}"#.to_vec())
+        .await
+        .unwrap();
+    transport
+        .inject(None, br#"{"status":"ok"}"#.to_vec())
+        .await
+        .unwrap();
+
+    let messages = transport.recv(10).await.unwrap();
+    assert_eq!(messages.len(), 1);
+
+    // Drop action should NOT populate the DLQ buffer
+    let dlq_entries = transport.take_filtered_dlq_entries();
+    assert!(
+        dlq_entries.is_empty(),
+        "Drop action should not populate DLQ buffer"
+    );
+}
+
+#[tokio::test]
+async fn no_filters_no_dlq_buffer_overhead() {
+    let transport = transport_no_filters();
+    transport
+        .inject(None, br#"{"any":"thing"}"#.to_vec())
+        .await
+        .unwrap();
+    let _ = transport.recv(10).await.unwrap();
+    let dlq_entries = transport.take_filtered_dlq_entries();
+    assert!(dlq_entries.is_empty());
+}
+
+// ============================================================================
+// Section 9: Memmem false positive (documented limitation)
+// ============================================================================
+
+#[test]
+fn memmem_false_positive_nested_field_matches_top_level_filter() {
+    // KNOWN LIMITATION: the memmem fast-path for `has(<single-field>)` searches
+    // for the literal `"<field>":` byte pattern anywhere in the payload. It does
+    // NOT verify that the field appears at the TOP LEVEL of the JSON object.
+    //
+    // If the same field name occurs at a nested level, the fast-path will match
+    // even though a strict CEL `has()` would not.
+    //
+    // Example: filter is `has(_table)` (top-level), payload is
+    //   {"data":{"_table":"events"}}
+    // The bytes contain `"_table":`, so memmem matches and the filter triggers.
+    //
+    // This is a deliberate tradeoff for the ~50% performance gain on the most
+    // common transport filter (existence checks on top-level routing fields).
+    // Workaround for users who need strict top-level matching: use a nested
+    // path like `has(some.nested._table)` which forces the slower sonic-rs path.
+
+    let engine = TransportFilterEngine::new(
+        &[FilterRule {
+            expression: "has(_table)".into(),
+            action: FilterAction::Drop,
+        }],
+        &[],
+        &TransportFilterTierConfig::default(),
+    )
+    .unwrap();
+
+    // Real top-level field — correct match
+    let real_match = br#"{"_table":"events"}"#;
+    assert_eq!(engine.apply_inbound(real_match), FilterDisposition::Drop);
+
+    // Nested field at non-top-level — documented false positive
+    let nested_payload = br#"{"data":{"_table":"events"}}"#;
+    assert_eq!(
+        engine.apply_inbound(nested_payload),
+        FilterDisposition::Drop,
+        "Documented false positive: memmem fast-path matches nested occurrences"
+    );
+
+    // Sound case: well-formed JSON with field name only inside an escaped
+    // string value never triggers a false positive — JSON encoding requires
+    // a `\` before any embedded `\"`, so the literal byte pattern `"_table":`
+    // never appears inside a string value.
+    let escaped_in_value = br#"{"description":"event with \"_table\": substring"}"#;
+    assert_eq!(
+        engine.apply_inbound(escaped_in_value),
+        FilterDisposition::Pass,
+        "Escaped quotes prevent the literal `\"_table\":` pattern from appearing in a string value"
+    );
+}
+
+// ============================================================================
+// Section 10: Concurrency (Send + Sync via tokio::spawn)
+// ============================================================================
+
+#[tokio::test]
+async fn engine_send_sync_concurrent_evaluation() {
+    use std::sync::Arc;
+
+    let engine = Arc::new(
+        TransportFilterEngine::new(
+            &[FilterRule {
+                expression: r#"status == "poison""#.into(),
+                action: FilterAction::Drop,
+            }],
+            &[],
+            &TransportFilterTierConfig::default(),
+        )
+        .unwrap(),
+    );
+
+    let mut handles = Vec::new();
+    for i in 0..32 {
+        let engine = Arc::clone(&engine);
+        handles.push(tokio::spawn(async move {
+            let mut drops = 0u32;
+            let mut passes = 0u32;
+            for j in 0..1000 {
+                let payload = if j % 3 == 0 {
+                    br#"{"status":"poison","id":1}"#.to_vec()
+                } else {
+                    format!(r#"{{"id":{j},"thread":{i}}}"#).into_bytes()
+                };
+                match engine.apply_inbound(&payload) {
+                    FilterDisposition::Drop => drops += 1,
+                    FilterDisposition::Pass => passes += 1,
+                    FilterDisposition::Dlq => {}
+                }
+            }
+            (drops, passes)
+        }));
+    }
+
+    let mut total_drops = 0u32;
+    let mut total_passes = 0u32;
+    for h in handles {
+        let (d, p) = h.await.unwrap();
+        total_drops += d;
+        total_passes += p;
+    }
+
+    // 32 threads × 1000 messages = 32000 total
+    assert_eq!(total_drops + total_passes, 32_000);
+    // ~33% are poison
+    assert!(total_drops > 10_000 && total_drops < 12_000);
+}
+
+#[test]
+fn filter_action_is_send_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<TransportFilterEngine>();
+    assert_send_sync::<FilterRule>();
+    assert_send_sync::<FilterAction>();
+    assert_send_sync::<FilterDisposition>();
+}
+
+// ============================================================================
+// Section 11: Per-transport smoke (verify field_engine field exists in all)
+// ============================================================================
+
+#[tokio::test]
+async fn smoke_memory_transport_filters_field_present() {
+    // Construct MemoryTransport with filter config — verifies field exists
+    let transport = MemoryTransport::new(&MemoryConfig {
+        buffer_size: 100,
+        recv_timeout_ms: 50,
+        filters_in: vec![FilterRule {
+            expression: "has(_drop_me)".into(),
+            action: FilterAction::Drop,
+        }],
+        filters_out: vec![FilterRule {
+            expression: "has(_drop_me)".into(),
+            action: FilterAction::Drop,
+        }],
+    });
+
+    // Filter actually works
+    transport
+        .inject(None, br#"{"_drop_me":true}"#.to_vec())
+        .await
+        .unwrap();
+    transport
+        .inject(None, br#"{"keep":true}"#.to_vec())
+        .await
+        .unwrap();
+
+    let messages = transport.recv(10).await.unwrap();
+    assert_eq!(messages.len(), 1, "Filter must be wired in MemoryTransport");
+}
+
 #[test]
 fn tier3_patterns_rejected_by_default() {
     let expressions = [
@@ -1032,5 +1286,141 @@ fn tier3_patterns_rejected_by_default() {
             result.is_err(),
             "Tier 3 expression should be rejected by default: {expr}"
         );
+    }
+}
+
+// ============================================================================
+// Section 12: Python <-> Rust classifier parity (shared fixture)
+// ============================================================================
+//
+// Loads tests/fixtures/cel_classifier_parity.json and verifies the Rust
+// classifier produces the same tier, op, and field results as the fixture
+// expects. The dfe-engine Python test in
+// `/projects/dfe-engine/tests/unit/test_cel/test_parity.py` runs the SAME
+// fixture through the Python classifier in `dfe_engine.cel.classify`.
+//
+// If both tests pass on their respective sides, the UI validator and the
+// runtime engine agree on classification — no drift.
+//
+// To add a new test case, edit the fixture in BOTH:
+//   * /projects/hyperi-rustlib/tests/fixtures/cel_classifier_parity.json
+//   * /projects/dfe-engine/tests/fixtures/cel_classifier_parity.json
+// They must remain byte-identical.
+
+#[test]
+fn classifier_matches_python_fixture() {
+    use hyperi_rustlib::transport::filter::classify::{ClassifyResult, Tier1Op, classify};
+
+    #[derive(serde::Deserialize)]
+    struct Fixture {
+        cases: Vec<Case>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Case {
+        expression: String,
+        tier: u8,
+        #[serde(default)]
+        op_kind: Option<String>,
+        #[serde(default)]
+        op_field: Option<String>,
+        #[serde(default)]
+        op_value: Option<String>,
+        #[serde(default)]
+        fields: Option<Vec<String>>,
+    }
+
+    let raw =
+        std::fs::read_to_string("tests/fixtures/cel_classifier_parity.json").expect("read fixture");
+    let fixture: Fixture = serde_json::from_str(&raw).expect("parse fixture");
+
+    for case in &fixture.cases {
+        let result = classify(&case.expression)
+            .unwrap_or_else(|e| panic!("classify failed for {:?}: {}", case.expression, e));
+
+        let actual_tier_num: u8 = match result.tier() {
+            hyperi_rustlib::transport::filter::FilterTier::Tier1 => 1,
+            hyperi_rustlib::transport::filter::FilterTier::Tier2 => 2,
+            hyperi_rustlib::transport::filter::FilterTier::Tier3 => 3,
+        };
+        assert_eq!(
+            actual_tier_num, case.tier,
+            "tier mismatch for {:?}: expected={} actual={}",
+            case.expression, case.tier, actual_tier_num
+        );
+
+        if case.tier == 1 {
+            let ClassifyResult::Tier1(op) = &result else {
+                panic!(
+                    "Tier 1 expected for {:?}, got {:?}",
+                    case.expression, result
+                );
+            };
+            let (kind, field, value) = match op {
+                Tier1Op::FieldExists { field } => ("field_exists", field.as_str(), None),
+                Tier1Op::FieldNotExists { field } => ("field_not_exists", field.as_str(), None),
+                Tier1Op::FieldEquals { field, value } => {
+                    ("field_equals", field.as_str(), Some(value.as_str()))
+                }
+                Tier1Op::FieldNotEquals { field, value } => {
+                    ("field_not_equals", field.as_str(), Some(value.as_str()))
+                }
+                Tier1Op::FieldStartsWith { field, prefix } => {
+                    ("field_starts_with", field.as_str(), Some(prefix.as_str()))
+                }
+                Tier1Op::FieldEndsWith { field, suffix } => {
+                    ("field_ends_with", field.as_str(), Some(suffix.as_str()))
+                }
+                Tier1Op::FieldContains { field, substring } => {
+                    ("field_contains", field.as_str(), Some(substring.as_str()))
+                }
+            };
+            let expected_kind = case.op_kind.as_deref().unwrap_or_else(|| {
+                panic!(
+                    "fixture missing op_kind for Tier 1 case {:?}",
+                    case.expression
+                )
+            });
+            assert_eq!(
+                kind, expected_kind,
+                "op_kind mismatch for {:?}",
+                case.expression
+            );
+            let expected_field = case.op_field.as_deref().unwrap_or_else(|| {
+                panic!(
+                    "fixture missing op_field for Tier 1 case {:?}",
+                    case.expression
+                )
+            });
+            assert_eq!(
+                field, expected_field,
+                "op_field mismatch for {:?}",
+                case.expression
+            );
+            if let Some(expected_value) = case.op_value.as_deref() {
+                assert_eq!(
+                    value,
+                    Some(expected_value),
+                    "op_value mismatch for {:?}",
+                    case.expression
+                );
+            }
+        } else {
+            let actual_fields: Vec<String> = match &result {
+                ClassifyResult::Tier2 { fields } | ClassifyResult::Tier3 { fields } => {
+                    fields.clone()
+                }
+                ClassifyResult::Tier1(_) => unreachable!(),
+            };
+            let mut actual_sorted = actual_fields.clone();
+            actual_sorted.sort();
+            let mut expected_sorted = case.fields.clone().unwrap_or_default();
+            expected_sorted.sort();
+            assert_eq!(
+                actual_sorted, expected_sorted,
+                "fields mismatch for {:?}",
+                case.expression
+            );
+        }
     }
 }
