@@ -72,6 +72,41 @@ pub struct FilteredDlqEntry {
     pub reason: String,
 }
 
+/// Result of partitioning a batch of messages through inbound filters.
+///
+/// Returned from `TransportFilterEngine::partition_batch()`. Contains:
+/// - `messages`: messages that passed all filters (or had no filter match)
+/// - `dlq_entries`: messages matched by a filter with `action: dlq`. The
+///   caller is responsible for routing these to a DLQ — the engine does
+///   NOT send to DLQ directly (transports don't have DLQ handles).
+/// - `drop_count`: count of messages matched by `action: drop` filters
+///
+/// Drop and DLQ messages are removed from `messages` — the caller only
+/// processes `messages` for normal pipeline work, and `dlq_entries`
+/// for DLQ routing.
+#[derive(Debug)]
+pub struct FilteredBatch<T> {
+    /// Messages that passed all filters.
+    pub messages: Vec<T>,
+    /// Messages matched by filters with `action: dlq`. Caller routes to DLQ.
+    pub dlq_entries: Vec<FilteredDlqEntry>,
+    /// Count of messages dropped (matched by `action: drop` filters).
+    pub drop_count: u64,
+}
+
+impl<T> FilteredBatch<T> {
+    /// Create a `FilteredBatch` containing only passing messages (no filtering).
+    /// Used when there are no inbound filters configured.
+    #[must_use]
+    pub fn passthrough(messages: Vec<T>) -> Self {
+        Self {
+            messages,
+            dlq_entries: Vec::new(),
+            drop_count: 0,
+        }
+    }
+}
+
 /// Transport-level message filter engine.
 ///
 /// Embedded in every transport. Compiled from config at construction time.
@@ -217,6 +252,58 @@ impl TransportFilterEngine {
         self.apply_filters(payload, &self.filters_in, FilterDirection::In)
     }
 
+    /// Partition a batch of messages through inbound filters.
+    ///
+    /// This is the recommended API for transports — it returns a
+    /// `FilteredBatch` containing both passing messages AND DLQ entries.
+    /// The transport's caller routes DLQ entries via its own DLQ handle.
+    ///
+    /// Two-pass: classify each message, then partition. Drop and DLQ
+    /// messages are removed from `messages`. The function never silently
+    /// loses DLQ-classified messages.
+    ///
+    /// # Type parameter
+    ///
+    /// `T` is the message type (e.g., `Message<KafkaToken>`). The function
+    /// uses a closure to extract the payload bytes and key from each message,
+    /// avoiding tight coupling to a specific message struct.
+    pub fn partition_batch<T>(
+        &self,
+        messages: Vec<T>,
+        get_payload: impl Fn(&T) -> &[u8],
+        get_key: impl Fn(&T) -> Option<std::sync::Arc<str>>,
+    ) -> FilteredBatch<T> {
+        if !self.has_inbound_filters() {
+            return FilteredBatch::passthrough(messages);
+        }
+
+        let mut passing = Vec::with_capacity(messages.len());
+        let mut dlq_entries: Vec<FilteredDlqEntry> = Vec::new();
+        let mut drop_count: u64 = 0;
+
+        for msg in messages {
+            let payload = get_payload(&msg);
+            match self.apply_inbound(payload) {
+                FilterDisposition::Pass => passing.push(msg),
+                FilterDisposition::Drop => drop_count += 1,
+                FilterDisposition::Dlq => {
+                    let key = get_key(&msg);
+                    dlq_entries.push(FilteredDlqEntry {
+                        payload: payload.to_vec(),
+                        key,
+                        reason: "transport filter".to_string(),
+                    });
+                }
+            }
+        }
+
+        FilteredBatch {
+            messages: passing,
+            dlq_entries,
+            drop_count,
+        }
+    }
+
     /// Evaluate outbound filters against a raw payload. First-match-wins.
     #[inline]
     #[must_use]
@@ -319,7 +406,8 @@ mod tests {
 
     #[test]
     fn engine_no_filters_always_passes() {
-        let engine = TransportFilterEngine::new(&[], &[], &TransportFilterTierConfig::default()).unwrap();
+        let engine =
+            TransportFilterEngine::new(&[], &[], &TransportFilterTierConfig::default()).unwrap();
         assert!(!engine.has_inbound_filters());
         assert!(!engine.has_outbound_filters());
         assert_eq!(
@@ -334,7 +422,8 @@ mod tests {
             expression: r#"status == "poison""#.into(),
             action: FilterAction::Drop,
         }];
-        let engine = TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
+        let engine =
+            TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
         assert!(engine.has_inbound_filters());
 
         assert_eq!(
@@ -359,7 +448,8 @@ mod tests {
                 action: FilterAction::Dlq,
             },
         ];
-        let engine = TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
+        let engine =
+            TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
         // First filter matches → Drop, not Dlq
         assert_eq!(
             engine.apply_inbound(br#"{"status":"drop_me"}"#),
@@ -411,7 +501,8 @@ mod tests {
             expression: "has(field)".into(),
             action: FilterAction::Dlq,
         }];
-        let engine = TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
+        let engine =
+            TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
         assert!(engine.has_dlq_filters_in());
         assert!(!engine.has_dlq_filters_out());
     }
@@ -422,7 +513,8 @@ mod tests {
             expression: "has(_table)".into(),
             action: FilterAction::Drop,
         }];
-        let engine = TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
+        let engine =
+            TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
         // MsgPack fixmap header (0x81)
         let msgpack = &[
             0x81, 0xa6, 0x5f, 0x74, 0x61, 0x62, 0x6c, 0x65, 0xa6, 0x65, 0x76, 0x65, 0x6e, 0x74,
@@ -441,8 +533,12 @@ mod tests {
             expression: "has(drop_out)".into(),
             action: FilterAction::Drop,
         }];
-        let engine =
-            TransportFilterEngine::new(&in_rules, &out_rules, &TransportFilterTierConfig::default()).unwrap();
+        let engine = TransportFilterEngine::new(
+            &in_rules,
+            &out_rules,
+            &TransportFilterTierConfig::default(),
+        )
+        .unwrap();
 
         let payload_in = br#"{"drop_in":true}"#;
         assert_eq!(engine.apply_inbound(payload_in), FilterDisposition::Drop);

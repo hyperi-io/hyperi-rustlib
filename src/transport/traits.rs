@@ -7,6 +7,7 @@
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use super::error::TransportResult;
+use super::filter::FilteredDlqEntry;
 use super::types::{Message, SendResult};
 use std::fmt::{Debug, Display};
 use std::future::Future;
@@ -70,6 +71,13 @@ pub trait TransportReceiver: TransportBase {
     ///
     /// Returns immediately with available messages (may be fewer than `max`).
     /// Returns empty vec if no messages are available.
+    ///
+    /// **Filter behaviour:** if the transport has inbound filters configured,
+    /// `recv()` removes messages that match `action: drop` filters and stages
+    /// messages matching `action: dlq` filters into an internal queue. Use
+    /// [`take_filtered_dlq_entries`](Self::take_filtered_dlq_entries) after
+    /// each `recv()` call to retrieve the staged DLQ entries and route them
+    /// via your DLQ handle.
     fn recv(
         &self,
         max: usize,
@@ -83,6 +91,29 @@ pub trait TransportReceiver: TransportBase {
     /// - File: advances read position
     /// - Memory: advances internal sequence
     fn commit(&self, tokens: &[Self::Token]) -> impl Future<Output = TransportResult<()>> + Send;
+
+    /// Drain DLQ entries staged by inbound filtering.
+    ///
+    /// When a transport's inbound filters classify messages as `action: dlq`,
+    /// the messages are removed from the `recv()` result and staged in an
+    /// internal queue. Call this method after each `recv()` to drain the
+    /// staged entries and route them to your DLQ.
+    ///
+    /// Default implementation returns an empty vec — transports without
+    /// filter support don't need to override this.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let messages = transport.recv(100).await?;
+    /// for entry in transport.take_filtered_dlq_entries() {
+    ///     dlq.send(DlqEntry::new("filter", entry.reason, entry.payload)).await?;
+    /// }
+    /// // Process passing messages...
+    /// ```
+    fn take_filtered_dlq_entries(&self) -> Vec<FilteredDlqEntry> {
+        Vec::new()
+    }
 }
 
 /// Combined transport — implements both send and receive.
