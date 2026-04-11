@@ -1,3 +1,18 @@
+# [2.5.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.6...v2.5.0) (2026-04-11)
+
+
+### Features
+
+* **filter:** FilteredBatch + take_filtered_dlq_entries() trait method ([4fe1d1c](https://github.com/hyperi-io/hyperi-rustlib/commit/4fe1d1c080ccd7240cb17e331f7851c8283e302a))
+* **filter:** transport filter engine core — config, classification, SIMD evaluation ([be3351c](https://github.com/hyperi-io/hyperi-rustlib/commit/be3351c682876b45bc4a6bd6f9aacd8c45e6c686))
+* **filter:** wire TransportFilterEngine into all 7 transports ([dc75d25](https://github.com/hyperi-io/hyperi-rustlib/commit/dc75d2580671c3809ff9ee62834142fa0ec76129))
+* transport filter engine — design spec complete ([0632854](https://github.com/hyperi-io/hyperi-rustlib/commit/06328543845164ba54fc94a5b14e545a0f49f8cd))
+
+
+### Performance Improvements
+
+* **filter:** SIMD memmem fast-path for has() — 51% faster, Tier 2/3 CEL ([813da63](https://github.com/hyperi-io/hyperi-rustlib/commit/813da63788e818fad105a326d96716a9ef74655e))
+
 ## [2.4.6](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.5...v2.4.6) (2026-04-09)
 
 
