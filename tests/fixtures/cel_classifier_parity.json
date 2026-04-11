@@ -1,0 +1,31 @@
+{
+  "_comment": "Shared test corpus for the CEL classifier. The Python classifier in dfe_engine.cel.classify and the Rust classifier in hyperi-rustlib src/transport/filter/classify.rs MUST agree on every entry. A copy of this file lives in /projects/hyperi-rustlib/tests/fixtures/cel_classifier_parity.json — keep them identical.",
+  "_columns": "expression: input. tier: 1|2|3. op_kind: optional Tier 1 op kind. op_field: optional Tier 1 field. op_value: optional Tier 1 comparison value. fields: optional sorted list of field references for Tier 2/3.",
+  "cases": [
+    { "expression": "has(_table)", "tier": 1, "op_kind": "field_exists", "op_field": "_table" },
+    { "expression": "has(metadata.source)", "tier": 1, "op_kind": "field_exists", "op_field": "metadata.source" },
+    { "expression": "  has( _internal )  ", "tier": 1, "op_kind": "field_exists", "op_field": "_internal" },
+    { "expression": "!has(_internal)", "tier": 1, "op_kind": "field_not_exists", "op_field": "_internal" },
+    { "expression": "! has(  _table  )", "tier": 1, "op_kind": "field_not_exists", "op_field": "_table" },
+    { "expression": "source == \"internal\"", "tier": 1, "op_kind": "field_equals", "op_field": "source", "op_value": "internal" },
+    { "expression": "source != \"external\"", "tier": 1, "op_kind": "field_not_equals", "op_field": "source", "op_value": "external" },
+    { "expression": "host.startsWith(\"prod-\")", "tier": 1, "op_kind": "field_starts_with", "op_field": "host", "op_value": "prod-" },
+    { "expression": "host.endsWith(\".internal\")", "tier": 1, "op_kind": "field_ends_with", "op_field": "host", "op_value": ".internal" },
+    { "expression": "message.contains(\"error\")", "tier": 1, "op_kind": "field_contains", "op_field": "message", "op_value": "error" },
+    { "expression": "metadata.host.startsWith(\"db-\")", "tier": 1, "op_kind": "field_starts_with", "op_field": "metadata.host", "op_value": "db-" },
+
+    { "expression": "severity > 3", "tier": 2, "fields": ["severity"] },
+    { "expression": "severity > 3 && source != \"internal\"", "tier": 2, "fields": ["severity", "source"] },
+    { "expression": "size(tags) > 0", "tier": 2, "fields": ["tags"] },
+    { "expression": "user.role == admin_role", "tier": 2, "fields": ["user.role", "admin_role"] },
+    { "expression": "count >= 10 || count <= 1", "tier": 2, "fields": ["count"] },
+    { "expression": "field == \"value with == in it\"", "tier": 1, "op_kind": "field_equals", "op_field": "field", "op_value": "value with == in it" },
+
+    { "expression": "host.matches(\"^prod-.*$\")", "tier": 3, "fields": ["host"] },
+    { "expression": "tags.exists(t, t == \"hot\")", "tier": 3, "fields": ["tags", "t"] },
+    { "expression": "items.all(i, i.size > 0)", "tier": 3, "fields": ["i", "i.size", "items"] },
+    { "expression": "tags.filter(t, t.startsWith(\"prod\")).size() > 0", "tier": 3, "fields": ["tags", "t"] },
+    { "expression": "timestamp(created_at) > timestamp(\"2026-01-01\")", "tier": 3, "fields": ["created_at"] },
+    { "expression": "duration(\"5m\") > duration(\"1m\")", "tier": 3, "fields": [] }
+  ]
+}

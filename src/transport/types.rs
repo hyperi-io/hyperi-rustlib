@@ -141,6 +141,9 @@ pub enum SendResult {
     Backpressured,
     /// Fatal error, cannot continue.
     Fatal(TransportError),
+    /// Message matched an outbound filter with `action: dlq`.
+    /// Caller is responsible for DLQ routing.
+    FilteredDlq,
 }
 
 impl SendResult {
@@ -160,6 +163,12 @@ impl SendResult {
     #[must_use]
     pub fn is_fatal(&self) -> bool {
         matches!(self, Self::Fatal(_))
+    }
+
+    /// Returns true if filtered for DLQ routing.
+    #[must_use]
+    pub fn is_filtered_dlq(&self) -> bool {
+        matches!(self, Self::FilteredDlq)
     }
 }
 

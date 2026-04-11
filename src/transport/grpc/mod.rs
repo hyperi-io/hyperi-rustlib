@@ -76,6 +76,13 @@ pub struct GrpcTransport {
     /// In-flight send count (for metrics).
     #[cfg(feature = "metrics")]
     inflight: AtomicU64,
+
+    /// Transport-level message filter engine.
+    filter_engine: super::filter::TransportFilterEngine,
+
+    /// Buffer for messages staged to DLQ by inbound filters.
+    /// Drained by `take_filtered_dlq_entries()`.
+    filtered_dlq_buffer: parking_lot::Mutex<Vec<super::filter::FilteredDlqEntry>>,
 }
 
 impl GrpcTransport {
@@ -175,6 +182,12 @@ impl GrpcTransport {
 
         let healthy = Arc::new(AtomicBool::new(true));
 
+        let filter_engine = super::filter::TransportFilterEngine::new(
+            &config.filters_in,
+            &config.filters_out,
+            &crate::transport::filter::TransportFilterTierConfig::default(),
+        )?;
+
         #[cfg(feature = "health")]
         {
             let h = Arc::clone(&healthy);
@@ -197,6 +210,8 @@ impl GrpcTransport {
             recv_timeout_ms: config.recv_timeout_ms,
             #[cfg(feature = "metrics")]
             inflight: AtomicU64::new(0),
+            filter_engine,
+            filtered_dlq_buffer: parking_lot::Mutex::new(Vec::new()),
         })
     }
 }
@@ -232,6 +247,15 @@ impl TransportSender for GrpcTransport {
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
+        }
+
+        // Outbound filter check
+        if self.filter_engine.has_outbound_filters() {
+            match self.filter_engine.apply_outbound(payload) {
+                super::filter::FilterDisposition::Pass => {}
+                super::filter::FilterDisposition::Drop => return SendResult::Ok,
+                super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
+            }
         }
 
         let Some(client) = &self.client else {
@@ -360,7 +384,31 @@ impl TransportReceiver for GrpcTransport {
             }
         }
 
+        // Apply inbound filters: drop messages, stage DLQ entries
+        if self.filter_engine.has_inbound_filters() {
+            let mut staged_dlq: Vec<super::filter::FilteredDlqEntry> = Vec::new();
+            messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
+                super::filter::FilterDisposition::Pass => true,
+                super::filter::FilterDisposition::Drop => false,
+                super::filter::FilterDisposition::Dlq => {
+                    staged_dlq.push(super::filter::FilteredDlqEntry {
+                        payload: msg.payload.clone(),
+                        key: msg.key.clone(),
+                        reason: "transport filter".to_string(),
+                    });
+                    false
+                }
+            });
+            if !staged_dlq.is_empty() {
+                self.filtered_dlq_buffer.lock().extend(staged_dlq);
+            }
+        }
+
         Ok(messages)
+    }
+
+    fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
+        std::mem::take(&mut *self.filtered_dlq_buffer.lock())
     }
 
     async fn commit(&self, _tokens: &[Self::Token]) -> TransportResult<()> {
