@@ -56,6 +56,8 @@
 //!         "ubuntu:24.04",
 //!     ),
 //!     image_profile: ImageProfile::Production,
+//!     oci_labels: Default::default(),
+//!     schema_version: 1,
 //! };
 //!
 //! // Generate production Dockerfile

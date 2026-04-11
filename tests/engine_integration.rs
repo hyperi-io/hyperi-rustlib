@@ -25,6 +25,7 @@ fn make_transport() -> MemoryTransport {
     MemoryTransport::new(&MemoryConfig {
         buffer_size: 1000,
         recv_timeout_ms: 0,
+        ..Default::default()
     })
 }
 

@@ -52,6 +52,7 @@
 mod detect;
 mod error;
 pub mod factory;
+pub mod filter;
 mod payload;
 pub mod propagation;
 mod traits;

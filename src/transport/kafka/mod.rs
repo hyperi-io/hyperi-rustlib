@@ -130,6 +130,11 @@ pub struct KafkaTransport {
     /// Uses parking_lot::Mutex (no poisoning, faster uncontended) since this
     /// is on the recv() hot path.
     topic_refresh: Option<parking_lot::Mutex<TopicRefreshHandle>>,
+    /// Transport-level message filter engine.
+    filter_engine: super::filter::TransportFilterEngine,
+    /// Buffer for messages staged to DLQ by inbound filters.
+    /// Drained by `take_filtered_dlq_entries()`.
+    filtered_dlq_buffer: parking_lot::Mutex<Vec<super::filter::FilteredDlqEntry>>,
 }
 
 impl KafkaTransport {
@@ -287,6 +292,12 @@ impl KafkaTransport {
 
         let healthy = Arc::new(AtomicBool::new(true));
 
+        let filter_engine = super::filter::TransportFilterEngine::new(
+            &config.filters_in,
+            &config.filters_out,
+            &crate::transport::filter::TransportFilterTierConfig::default(),
+        )?;
+
         #[cfg(feature = "health")]
         {
             let h = Arc::clone(&healthy);
@@ -308,6 +319,8 @@ impl KafkaTransport {
             subscribed_topics: parking_lot::RwLock::new(subscribed_topics),
             shutdown_token,
             topic_refresh,
+            filter_engine,
+            filtered_dlq_buffer: parking_lot::Mutex::new(Vec::new()),
         })
     }
 
@@ -343,6 +356,15 @@ impl TransportSender for KafkaTransport {
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
+        }
+
+        // Outbound filter check
+        if self.filter_engine.has_outbound_filters() {
+            match self.filter_engine.apply_outbound(payload) {
+                super::filter::FilterDisposition::Pass => {}
+                super::filter::FilterDisposition::Drop => return SendResult::Ok,
+                super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
+            }
         }
 
         let record: FutureRecord<'_, str, [u8]> = FutureRecord::to(key).payload(payload);
@@ -531,7 +553,31 @@ impl TransportReceiver for KafkaTransport {
             }
         }
 
+        // Apply inbound filters: drop messages, stage DLQ entries
+        if self.filter_engine.has_inbound_filters() {
+            let mut staged_dlq: Vec<super::filter::FilteredDlqEntry> = Vec::new();
+            messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
+                super::filter::FilterDisposition::Pass => true,
+                super::filter::FilterDisposition::Drop => false,
+                super::filter::FilterDisposition::Dlq => {
+                    staged_dlq.push(super::filter::FilteredDlqEntry {
+                        payload: msg.payload.clone(),
+                        key: msg.key.clone(),
+                        reason: "transport filter".to_string(),
+                    });
+                    false
+                }
+            });
+            if !staged_dlq.is_empty() {
+                self.filtered_dlq_buffer.lock().extend(staged_dlq);
+            }
+        }
+
         Ok(messages)
+    }
+
+    fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
+        std::mem::take(&mut *self.filtered_dlq_buffer.lock())
     }
 
     /// Commit offsets for processed messages.
