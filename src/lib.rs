@@ -11,7 +11,7 @@
 //! Shared utility library for HyperI Rust applications.
 //!
 //! Provides configuration management, structured logging, Prometheus metrics,
-//! and environment detection - matching the functionality of hyperi-pylib (Python)
+//! and environment detection — matching the functionality of hyperi-pylib (Python)
 //! and hyperi-golib (Go).
 //!
 //! ## Quick Start
