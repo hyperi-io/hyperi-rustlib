@@ -1,3 +1,13 @@
+## [2.5.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.0...v2.5.1) (2026-04-15)
+
+
+### Bug Fixes
+
+* add packages:write permission for container job ([108091f](https://github.com/hyperi-io/hyperi-rustlib/commit/108091f04a5ea2a47f8ce73f2a185d38769d1d37))
+* clarify header comment wording ([208fd02](https://github.com/hyperi-io/hyperi-rustlib/commit/208fd02af6e578c66acf783e8e23a369b15d6c6a))
+* revert header comment to original wording ([43b6031](https://github.com/hyperi-io/hyperi-rustlib/commit/43b60314affe47e1a6f7a23a8d970e464a55c41c))
+* use em-dash in doc comment for consistency ([75308d7](https://github.com/hyperi-io/hyperi-rustlib/commit/75308d70b6c95e6e491f3386866b18b2c5f2b48c))
+
 # [2.5.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.4.6...v2.5.0) (2026-04-11)
 
 
