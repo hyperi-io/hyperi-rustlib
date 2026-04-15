@@ -184,7 +184,10 @@ impl AnySender {
         };
 
         #[cfg(not(feature = "config"))]
-        let config = super::TransportConfig::default();
+        let config = {
+            let _ = key;
+            super::TransportConfig::default()
+        };
 
         Self::from_transport_config(&config).await
     }

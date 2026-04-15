@@ -19,16 +19,20 @@ keywords = ["config", "logging", "metrics", "prometheus", "opentelemetry"]
 categories = ["development-tools"]
 exclude = [".claude/", ".github/", "ci/", "ai/", "docs/", "examples/", "benches/", "scripts/"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 default = ["config", "logger", "metrics", "runtime", "shutdown", "health"]
 
 # Core features
 health = []
-shutdown = ["tokio", "tokio-util"]
+shutdown = ["tokio", "tokio-util", "tracing"]
 runtime = ["dirs"]
 config = ["figment", "dotenvy", "serde_yaml_ng", "serde_json", "toml", "dirs", "tracing"]
 logger = ["tracing", "tracing-subscriber", "owo-colors", "serde_json", "tracing-throttle"]
-metrics = ["dep:metrics", "metrics-exporter-prometheus", "sysinfo", "tokio", "serde_json"]
+metrics = ["dep:metrics", "metrics-exporter-prometheus", "sysinfo", "tokio", "serde_json", "tracing"]
 
 # OpenTelemetry support (modern observability)
 otel = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing-opentelemetry", "tracing"]
@@ -44,9 +48,9 @@ directory-config-git = ["directory-config", "git2"]
 
 # Extended features (P2)
 http = ["reqwest", "reqwest-middleware", "reqwest-retry", "serde_json"]
-http-server = ["axum", "tower", "tower-http", "tokio"]
+http-server = ["axum", "tower", "tower-http", "tokio", "tracing"]
 spool = ["yaque", "zstd"]
-tiered-sink = ["yaque", "zstd", "lz4_flex", "snap", "tokio", "tower-resilience", "libc"]
+tiered-sink = ["yaque", "zstd", "lz4_flex", "snap", "tokio", "tower-resilience", "libc", "tracing"]
 resilience = ["tower-resilience", "tower"]
 database = ["serde_json"]
 cache = ["moka", "serde_json"]
@@ -58,13 +62,13 @@ memory = ["sysinfo", "tracing"]
 scaling = ["parking_lot", "tracing"]
 
 # Adaptive worker pool (hybrid rayon + tokio, pressure-based scaling)
-worker = ["rayon", "config", "metrics", "tokio", "sysinfo", "parking_lot", "tracing", "sonic-rs", "dashmap", "bytes"]
+worker = ["rayon", "config", "metrics", "tokio", "tokio-util", "sysinfo", "parking_lot", "tracing", "sonic-rs", "dashmap", "bytes"]
 
 # Worker pool with msgpack batch serialisation support
 worker-msgpack = ["worker", "rmp-serde"]
 
-# Standard CLI framework (clap-based)
-cli = ["clap", "tracing"]
+# Standard CLI framework (clap-based) — ServiceRuntime requires metrics + shutdown
+cli = ["clap", "tracing", "metrics", "shutdown"]
 # TUI metrics dashboard (ratatui + crossterm via ratatui re-export)
 top = ["cli", "ratatui"]
 
@@ -87,7 +91,7 @@ expression = ["cel-interpreter", "serde_json"]
 deployment = ["serde_yaml_ng", "serde_json"]
 
 # Startup version check (calls HyperI version API)
-version-check = ["reqwest", "tokio", "serde_json", "tracing", "uuid", "chrono"]
+version-check = ["reqwest", "tokio", "serde_json", "tracing", "uuid", "chrono", "dirs"]
 
 # Config hot-reload (SharedConfig<T> + ConfigReloader<T>)
 config-reload = ["config", "parking_lot", "tokio", "tracing"]
@@ -96,7 +100,7 @@ config-reload = ["config", "parking_lot", "tokio", "tracing"]
 config-postgres = ["config", "sqlx", "tokio", "serde_json"]
 
 # Transport features
-transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait", "regex", "memchr"]
+transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait", "regex", "memchr", "sonic-rs", "parking_lot", "tracing", "dep:metrics"]
 transport-memory = ["transport"]
 transport-kafka = ["transport", "rdkafka", "regex", "tokio-util"]
 transport-grpc = ["transport", "dep:tonic", "dep:tonic-prost", "dep:prost", "dep:prost-types", "dep:tonic-prost-build", "dep:prost-build"]

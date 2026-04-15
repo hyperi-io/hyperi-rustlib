@@ -49,6 +49,7 @@
 //! See [`docs/CORE-PILLARS.md`] for the auto-wiring architecture.
 
 #![deny(unsafe_code)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::doc_markdown)] // Allow brand names without backticks
@@ -71,81 +72,107 @@ pub mod kafka_config;
 pub mod sensitive;
 
 #[cfg(feature = "runtime")]
+#[cfg_attr(docsrs, doc(cfg(feature = "runtime")))]
 pub mod runtime;
 
 #[cfg(feature = "shutdown")]
+#[cfg_attr(docsrs, doc(cfg(feature = "shutdown")))]
 pub mod shutdown;
 
 #[cfg(feature = "health")]
+#[cfg_attr(docsrs, doc(cfg(feature = "health")))]
 pub mod health;
 
 #[cfg(feature = "config")]
+#[cfg_attr(docsrs, doc(cfg(feature = "config")))]
 pub mod config;
 
 #[cfg(feature = "logger")]
+#[cfg_attr(docsrs, doc(cfg(feature = "logger")))]
 pub mod logger;
 
 #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "metrics", feature = "otel-metrics"))))]
 pub mod metrics;
 
 #[cfg(feature = "transport")]
+#[cfg_attr(docsrs, doc(cfg(feature = "transport")))]
 pub mod transport;
 
 #[cfg(feature = "http")]
+#[cfg_attr(docsrs, doc(cfg(feature = "http")))]
 pub mod http_client;
 
 #[cfg(feature = "http-server")]
+#[cfg_attr(docsrs, doc(cfg(feature = "http-server")))]
 pub mod http_server;
 
 #[cfg(feature = "database")]
+#[cfg_attr(docsrs, doc(cfg(feature = "database")))]
 pub mod database;
 
 #[cfg(feature = "cache")]
+#[cfg_attr(docsrs, doc(cfg(feature = "cache")))]
 pub mod cache;
 
 #[cfg(feature = "spool")]
+#[cfg_attr(docsrs, doc(cfg(feature = "spool")))]
 pub mod spool;
 
 #[cfg(feature = "tiered-sink")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tiered-sink")))]
 pub mod tiered_sink;
 
 #[cfg(feature = "secrets")]
+#[cfg_attr(docsrs, doc(cfg(feature = "secrets")))]
 pub mod secrets;
 
 #[cfg(feature = "directory-config")]
+#[cfg_attr(docsrs, doc(cfg(feature = "directory-config")))]
 pub mod directory_config;
 
 #[cfg(feature = "memory")]
+#[cfg_attr(docsrs, doc(cfg(feature = "memory")))]
 pub mod memory;
 
 #[cfg(feature = "scaling")]
+#[cfg_attr(docsrs, doc(cfg(feature = "scaling")))]
 pub mod scaling;
 
 #[cfg(feature = "worker")]
+#[cfg_attr(docsrs, doc(cfg(feature = "worker")))]
 pub mod worker;
 
 #[cfg(feature = "cli")]
+#[cfg_attr(docsrs, doc(cfg(feature = "cli")))]
 pub mod cli;
 
 #[cfg(feature = "top")]
+#[cfg_attr(docsrs, doc(cfg(feature = "top")))]
 pub mod top;
 
 #[cfg(feature = "io")]
+#[cfg_attr(docsrs, doc(cfg(feature = "io")))]
 pub mod io;
 
 #[cfg(feature = "dlq")]
+#[cfg_attr(docsrs, doc(cfg(feature = "dlq")))]
 pub mod dlq;
 
 #[cfg(feature = "output-file")]
+#[cfg_attr(docsrs, doc(cfg(feature = "output-file")))]
 pub mod output;
 
 #[cfg(feature = "expression")]
+#[cfg_attr(docsrs, doc(cfg(feature = "expression")))]
 pub mod expression;
 
 #[cfg(feature = "deployment")]
+#[cfg_attr(docsrs, doc(cfg(feature = "deployment")))]
 pub mod deployment;
 
 #[cfg(feature = "version-check")]
+#[cfg_attr(docsrs, doc(cfg(feature = "version-check")))]
 pub mod version_check;
 
 // Re-export common types at crate root
@@ -157,85 +184,106 @@ pub use kafka_config::{
 pub use sensitive::SensitiveString;
 
 #[cfg(feature = "runtime")]
+#[cfg_attr(docsrs, doc(cfg(feature = "runtime")))]
 pub use runtime::RuntimePaths;
 
 #[cfg(feature = "health")]
+#[cfg_attr(docsrs, doc(cfg(feature = "health")))]
 pub use health::{HealthRegistry, HealthStatus};
 
 #[cfg(feature = "config")]
+#[cfg_attr(docsrs, doc(cfg(feature = "config")))]
 pub use config::{Config, ConfigError, ConfigOptions};
 
 #[cfg(feature = "config")]
+#[cfg_attr(docsrs, doc(cfg(feature = "config")))]
 pub use config::flat_env::{ApplyFlatEnv, EnvVarDoc, Normalize};
 
 #[cfg(feature = "config-reload")]
+#[cfg_attr(docsrs, doc(cfg(feature = "config-reload")))]
 pub use config::reloader::{ConfigReloader, ReloaderConfig};
 
 #[cfg(feature = "config-reload")]
+#[cfg_attr(docsrs, doc(cfg(feature = "config-reload")))]
 pub use config::shared::SharedConfig;
 
 #[cfg(feature = "config-postgres")]
+#[cfg_attr(docsrs, doc(cfg(feature = "config-postgres")))]
 pub use config::postgres::{
     FallbackMode, PostgresConfig, PostgresConfigError, PostgresConfigSource,
 };
 
 #[cfg(feature = "logger")]
+#[cfg_attr(docsrs, doc(cfg(feature = "logger")))]
 pub use logger::{
     LogFormat, LoggerError, LoggerOptions, SecurityEvent, SecurityOutcome, ThrottleConfig,
 };
 
 #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "metrics", feature = "otel-metrics"))))]
 pub use metrics::{DfeMetrics, MetricsConfig, MetricsError, MetricsManager};
 
 #[cfg(feature = "otel-metrics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "otel-metrics")))]
 pub use metrics::{OtelMetricsConfig, OtelProtocol};
 
 #[cfg(feature = "transport")]
+#[cfg_attr(docsrs, doc(cfg(feature = "transport")))]
 pub use transport::{
     CommitToken, Message, PayloadFormat, SendResult, Transport, TransportConfig, TransportError,
     TransportResult, TransportType,
 };
 
 #[cfg(feature = "http-server")]
+#[cfg_attr(docsrs, doc(cfg(feature = "http-server")))]
 pub use http_server::{HttpServer, HttpServerConfig, HttpServerError};
 
 #[cfg(feature = "spool")]
+#[cfg_attr(docsrs, doc(cfg(feature = "spool")))]
 pub use spool::{Spool, SpoolConfig, SpoolError};
 
 #[cfg(feature = "tiered-sink")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tiered-sink")))]
 pub use tiered_sink::{
     CircuitBreaker, CircuitState, CompressionCodec, DrainStrategy, OrderingMode, Sink, SinkError,
     TieredSink, TieredSinkConfig, TieredSinkError,
 };
 
 #[cfg(feature = "secrets")]
+#[cfg_attr(docsrs, doc(cfg(feature = "secrets")))]
 pub use secrets::{
     CacheConfig, FileProvider, RotationEvent, SecretMetadata, SecretProvider, SecretSource,
     SecretValue, SecretsConfig, SecretsError, SecretsManager, SecretsResult,
 };
 
 #[cfg(feature = "secrets-vault")]
+#[cfg_attr(docsrs, doc(cfg(feature = "secrets-vault")))]
 pub use secrets::{OpenBaoAuth, OpenBaoConfig, OpenBaoProvider};
 
 #[cfg(feature = "secrets-aws")]
+#[cfg_attr(docsrs, doc(cfg(feature = "secrets-aws")))]
 pub use secrets::{AwsConfig, AwsProvider};
 
 #[cfg(feature = "directory-config")]
+#[cfg_attr(docsrs, doc(cfg(feature = "directory-config")))]
 pub use directory_config::{
     ChangeEvent, ChangeOperation, DirectoryConfigError, DirectoryConfigResult,
     DirectoryConfigStore, DirectoryConfigStoreConfig, WriteMode, WriteResult,
 };
 
 #[cfg(feature = "memory")]
+#[cfg_attr(docsrs, doc(cfg(feature = "memory")))]
 pub use memory::{MemoryGuard, MemoryGuardConfig, MemoryPressure, detect_memory_limit};
 
 #[cfg(feature = "scaling")]
+#[cfg_attr(docsrs, doc(cfg(feature = "scaling")))]
 pub use scaling::{
     ComponentSnapshot, GateType, PressureSnapshot, RateWindow, ScalingComponent, ScalingPressure,
     ScalingPressureConfig,
 };
 
 #[cfg(feature = "worker")]
+#[cfg_attr(docsrs, doc(cfg(feature = "worker")))]
 pub use worker::{
     AccumulatorConfig, AccumulatorFull, AdaptiveWorkerPool, BatchAccumulator, BatchDrainer,
     BatchPipeline, BatchProcessor, PipelineStats, PipelineStatsSnapshot, ScalingDecision,
@@ -243,40 +291,50 @@ pub use worker::{
 };
 
 #[cfg(feature = "cli")]
+#[cfg_attr(docsrs, doc(cfg(feature = "cli")))]
 pub use cli::{CliError, CommonArgs, DfeApp, ServiceRuntime, StandardCommand, VersionInfo};
 
 #[cfg(feature = "io")]
+#[cfg_attr(docsrs, doc(cfg(feature = "io")))]
 pub use io::{FileWriterConfig, NdjsonWriter, RotationPeriod};
 
 #[cfg(feature = "dlq")]
+#[cfg_attr(docsrs, doc(cfg(feature = "dlq")))]
 pub use dlq::{
     Dlq, DlqBackend, DlqConfig, DlqEntry, DlqError, DlqMode, DlqSource, FileDlq, FileDlqConfig,
 };
 
 #[cfg(feature = "dlq-kafka")]
+#[cfg_attr(docsrs, doc(cfg(feature = "dlq-kafka")))]
 pub use dlq::{DlqRouting, KafkaDlq, KafkaDlqConfig};
 
 #[cfg(feature = "dlq-http")]
+#[cfg_attr(docsrs, doc(cfg(feature = "dlq-http")))]
 pub use dlq::{HttpDlq, HttpDlqConfig};
 
 #[cfg(feature = "dlq-redis")]
+#[cfg_attr(docsrs, doc(cfg(feature = "dlq-redis")))]
 pub use dlq::{RedisDlq, RedisDlqConfig};
 
 #[cfg(feature = "output-file")]
+#[cfg_attr(docsrs, doc(cfg(feature = "output-file")))]
 pub use output::{FileOutput, FileOutputConfig, OutputError};
 
 #[cfg(feature = "expression")]
+#[cfg_attr(docsrs, doc(cfg(feature = "expression")))]
 pub use expression::{
     ALLOWED_FUNCTIONS, DISALLOWED_FUNCTIONS, ExpressionError, ExpressionResult, build_context,
     compile, evaluate, evaluate_condition, validate,
 };
 
 #[cfg(feature = "deployment")]
+#[cfg_attr(docsrs, doc(cfg(feature = "deployment")))]
 pub use deployment::{
     ContractMismatch, DeploymentContract, DeploymentError, HealthContract, KedaConfig, KedaContract,
 };
 
 #[cfg(feature = "version-check")]
+#[cfg_attr(docsrs, doc(cfg(feature = "version-check")))]
 pub use version_check::{VersionCheck, VersionCheckConfig, VersionCheckResponse};
 
 /// Library version

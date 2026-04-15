@@ -282,7 +282,7 @@ fn generate_artefacts<A: DfeApp>(
     std::fs::create_dir_all(output_dir)
         .map_err(|e| CliError::Service(format!("failed to create output dir: {e}")))?;
 
-    let mut generated = Vec::new();
+    let mut generated: Vec<String> = Vec::new();
 
     // Metrics manifest
     #[cfg(any(feature = "metrics", feature = "otel-metrics"))]

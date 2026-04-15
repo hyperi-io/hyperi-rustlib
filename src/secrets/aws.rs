@@ -48,6 +48,7 @@ impl AwsConfig {
     ///
     /// Note: AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
     /// are automatically loaded by the AWS SDK credential chain.
+    #[cfg(feature = "config")]
     #[must_use]
     pub fn from_env() -> Self {
         use crate::config::env_compat::aws;

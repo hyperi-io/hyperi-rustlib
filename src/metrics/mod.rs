@@ -203,7 +203,9 @@ fn install_recorders(config: &MetricsConfig) -> RecorderSetup {
     {
         let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
         let handle = recorder.handle();
-        metrics::set_global_recorder(recorder).expect("failed to install Prometheus recorder");
+        if let Err(e) = metrics::set_global_recorder(recorder) {
+            tracing::warn!(error = %e, "global metrics recorder already installed; keeping existing");
+        }
         RecorderSetup {
             prom_handle: Some(handle),
         }
@@ -215,8 +217,9 @@ fn install_recorders(config: &MetricsConfig) -> RecorderSetup {
         match otel::build_otel_recorder(&config.namespace, &config.otel) {
             Ok((otel_recorder, provider)) => {
                 opentelemetry::global::set_meter_provider(provider.clone());
-                metrics::set_global_recorder(otel_recorder)
-                    .expect("failed to set OTel metrics recorder");
+                if let Err(e) = metrics::set_global_recorder(otel_recorder) {
+                    tracing::warn!(error = %e, "global metrics recorder already installed; keeping existing");
+                }
                 RecorderSetup {
                     otel_provider: Some(provider),
                 }
@@ -248,7 +251,9 @@ fn install_recorders(config: &MetricsConfig) -> RecorderSetup {
                     .add_recorder(otel_recorder)
                     .build();
 
-                metrics::set_global_recorder(fanout).expect("failed to set Fanout recorder");
+                if let Err(e) = metrics::set_global_recorder(fanout) {
+                    tracing::warn!(error = %e, "global metrics recorder already installed; keeping existing");
+                }
 
                 RecorderSetup {
                     prom_handle: Some(prom_handle),
@@ -258,8 +263,9 @@ fn install_recorders(config: &MetricsConfig) -> RecorderSetup {
             Err(e) => {
                 // Fallback: just Prometheus if OTel fails
                 tracing::warn!(error = %e, "Failed to build OTel recorder, falling back to Prometheus only");
-                metrics::set_global_recorder(prom_recorder)
-                    .expect("failed to set Prometheus recorder");
+                if let Err(e) = metrics::set_global_recorder(prom_recorder) {
+                    tracing::warn!(error = %e, "global metrics recorder already installed; keeping existing");
+                }
                 RecorderSetup {
                     prom_handle: Some(prom_handle),
                     otel_provider: None,

@@ -1,5 +1,10 @@
-// SPDX-License-Identifier: FSL-1.1-ALv2
-// Copyright (c) 2026 HYPERI PTY LIMITED
+// Project:   hyperi-rustlib
+// File:      src/transport/vector_compat/convert.rs
+// Purpose:   Vector ↔ hyperi message conversion
+// Language:  Rust
+//
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Bidirectional conversion between Vector protobuf types and serde_json::Value.
 //!
