@@ -1,6 +1,6 @@
 // Project:   hyperi-rustlib
 // File:      src/lib.rs
-// Purpose:   Main library entry point and public API re-exports
+// Purpose:   Main library entry point and public API exports
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
