@@ -117,6 +117,7 @@ impl OpenBaoConfig {
     ///
     /// Returns `None` if `VAULT_ADDR` is not set or no authentication method
     /// can be determined.
+    #[cfg(feature = "config")]
     #[must_use]
     pub fn from_env() -> Option<Self> {
         use crate::config::env_compat::vault;

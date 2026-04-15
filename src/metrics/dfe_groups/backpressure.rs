@@ -1,5 +1,10 @@
-// SPDX-License-Identifier: FSL-1.1-ALv2
-// Copyright (c) 2026 HYPERI PTY LIMITED
+// Project:   hyperi-rustlib
+// File:      src/metrics/dfe_groups/backpressure.rs
+// Purpose:   DFE backpressure metrics group
+// Language:  Rust
+//
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Backpressure metrics.
 

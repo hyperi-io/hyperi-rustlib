@@ -1,5 +1,10 @@
-// SPDX-License-Identifier: FSL-1.1-ALv2
-// Copyright (c) 2026 HYPERI PTY LIMITED
+// Project:   hyperi-rustlib
+// File:      src/transport/grpc/token.rs
+// Purpose:   gRPC commit token abstraction
+// Language:  Rust
+//
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use super::super::traits::CommitToken;
 use std::fmt;

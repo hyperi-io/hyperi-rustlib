@@ -1,5 +1,10 @@
-// SPDX-License-Identifier: FSL-1.1-ALv2
-// Copyright (c) 2026 HYPERI PTY LIMITED
+// Project:   hyperi-rustlib
+// File:      src/metrics/dfe_groups/buffer.rs
+// Purpose:   DFE buffer metrics group
+// Language:  Rust
+//
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Buffer metrics for apps with batching (receiver, loader, archiver).
 

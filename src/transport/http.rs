@@ -40,7 +40,6 @@ use super::traits::{CommitToken, TransportBase, TransportReceiver, TransportSend
 use super::types::PayloadFormat;
 use super::types::{Message, SendResult};
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "http-server")]
 use std::sync::Arc;
 #[cfg(feature = "http-server")]
 use std::sync::atomic::AtomicU64;

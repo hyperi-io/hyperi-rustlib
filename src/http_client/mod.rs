@@ -53,20 +53,11 @@ pub struct HttpClient {
 impl HttpClient {
     /// Create a new HTTP client with the given config.
     ///
-    /// Panics if the underlying TLS backend fails to initialise.
-    /// Prefer [`try_new`](Self::try_new) for fallible construction.
-    #[must_use]
-    pub fn new(config: HttpClientConfig) -> Self {
-        Self::try_new(config).expect("failed to build reqwest client (TLS init failure)")
-    }
-
-    /// Create a new HTTP client, returning an error on build failure.
-    ///
     /// # Errors
     ///
     /// Returns [`HttpClientError::BuildError`] if the underlying reqwest
     /// client cannot be constructed (typically TLS backend init failure).
-    pub fn try_new(config: HttpClientConfig) -> Result<Self, HttpClientError> {
+    pub fn new(config: HttpClientConfig) -> Result<Self, HttpClientError> {
         let retry_policy = ExponentialBackoff::builder()
             .retry_bounds(
                 std::time::Duration::from_millis(config.min_retry_interval_ms),
@@ -95,8 +86,12 @@ impl HttpClient {
     }
 
     /// Create a client from the config cascade (or defaults).
-    #[must_use]
-    pub fn from_cascade() -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HttpClientError::BuildError`] if the underlying reqwest
+    /// client cannot be constructed.
+    pub fn from_cascade() -> Result<Self, HttpClientError> {
         Self::new(HttpClientConfig::from_cascade())
     }
 

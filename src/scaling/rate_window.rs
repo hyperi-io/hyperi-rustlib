@@ -74,7 +74,7 @@ impl RateWindow {
     pub fn record(&self, counter_value: u64) {
         let now = Instant::now();
         let mut inner = self.inner.write();
-        let cutoff = now.checked_sub(inner.window_size).unwrap();
+        let cutoff = now.checked_sub(inner.window_size).unwrap_or(now);
         inner.samples.retain(|&(t, _)| t >= cutoff);
         inner.samples.push((now, counter_value));
     }

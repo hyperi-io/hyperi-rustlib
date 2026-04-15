@@ -33,6 +33,22 @@ permissions:
   pull-requests: write
 
 jobs:
+  feature-matrix:
+    name: Feature matrix check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install native build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librdkafka-dev libgit2-dev libzstd-dev pkg-config
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+      - name: Check each feature in isolation
+        run: cargo hack --each-feature --no-dev-deps check --lib
+
   ci:
     uses: hyperi-io/hyperi-ci/.github/workflows/rust-ci.yml@main
     with:

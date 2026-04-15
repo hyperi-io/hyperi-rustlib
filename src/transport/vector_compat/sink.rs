@@ -1,5 +1,10 @@
-// SPDX-License-Identifier: FSL-1.1-ALv2
-// Copyright (c) 2026 HYPERI PTY LIMITED
+// Project:   hyperi-rustlib
+// File:      src/transport/vector_compat/sink.rs
+// Purpose:   Vector gRPC sink compatibility wrapper
+// Language:  Rust
+//
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Vector-compatible gRPC sink.
 //!

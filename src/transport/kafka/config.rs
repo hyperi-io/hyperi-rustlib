@@ -849,6 +849,7 @@ impl KafkaConfig {
     ///
     /// Also supports standard `KAFKA_*` environment variables as fallback
     /// when using a custom prefix.
+    #[cfg(feature = "config")]
     #[must_use]
     pub fn from_env(prefix: &str) -> Self {
         use crate::config::env_compat::EnvVar;
@@ -945,6 +946,7 @@ impl KafkaConfig {
     /// - `KAFKA_GROUP_ID`
     /// - `KAFKA_CLIENT_ID`
     /// - `KAFKA_PROFILE`
+    #[cfg(feature = "config")]
     #[must_use]
     pub fn from_env_standard() -> Self {
         Self::from_env("KAFKA")

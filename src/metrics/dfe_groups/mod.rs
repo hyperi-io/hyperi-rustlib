@@ -1,5 +1,10 @@
-// SPDX-License-Identifier: FSL-1.1-ALv2
-// Copyright (c) 2026 HYPERI PTY LIMITED
+// Project:   hyperi-rustlib
+// File:      src/metrics/dfe_groups/mod.rs
+// Purpose:   DFE-specific metric groups
+// Language:  Rust
+//
+// License:   FSL-1.1-ALv2
+// Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Composable DFE metric groups.
 //!
