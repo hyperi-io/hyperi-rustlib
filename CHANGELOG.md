@@ -1,3 +1,10 @@
+## [2.5.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.1...v2.5.2) (2026-04-16)
+
+
+### Bug Fixes
+
+* feature-gating hygiene + panic removal + docs.rs metadata ([ddc358e](https://github.com/hyperi-io/hyperi-rustlib/commit/ddc358eec04767e0c888ce4a62162c4d6126c44c))
+
 ## [2.5.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.0...v2.5.1) (2026-04-15)
 
 
