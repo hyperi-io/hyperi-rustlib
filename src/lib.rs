@@ -46,11 +46,15 @@
 //! }
 //! ```
 //!
-//! See [`docs/CORE-PILLARS.md`] for the auto-wiring architecture.
+//! See `docs/CORE-PILLARS.md` in the repository for the auto-wiring architecture.
 
 #![deny(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::pedantic)]
+#![warn(rustdoc::broken_intra_doc_links)]
+#![warn(rustdoc::private_intra_doc_links)]
+#![warn(rustdoc::invalid_codeblock_attributes)]
+#![warn(rustdoc::bare_urls)]
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::doc_markdown)] // Allow brand names without backticks
 #![allow(clippy::cast_precision_loss)] // Metrics values are fine with f64 precision

@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 /// Payload format for a raw message.
 ///
-/// Mirrors [`crate::transport::types::PayloadFormat`] for use when the `transport`
+/// Mirrors `crate::transport::types::PayloadFormat` for use when the `transport`
 /// feature is not enabled. When `transport` is enabled, conversions between the
 /// two types are provided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]

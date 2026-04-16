@@ -25,7 +25,7 @@ use super::types::{SecretMetadata, SecretValue};
 /// OpenBao/Vault connection configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenBaoConfig {
-    /// Vault address (e.g., "https://vault.example.com:8200").
+    /// Vault address (e.g., `https://vault.example.com:8200`).
     pub address: String,
 
     /// Authentication method.

@@ -62,7 +62,7 @@ pub fn default_sensitive_fields() -> Vec<String> {
 /// Configuration for sensitive field detection.
 ///
 /// Holds the set of field name patterns considered sensitive. Used both as a
-/// standalone detector and as configuration for [`make_masking_writer`].
+/// standalone detector and as configuration for the masking writer factory.
 #[derive(Debug, Clone)]
 pub struct MaskingLayer {
     sensitive_fields: HashSet<String>,
