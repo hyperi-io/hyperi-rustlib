@@ -9,7 +9,7 @@
 //! NDJSON (newline-delimited JSON) batch processing utilities.
 //!
 //! Splits NDJSON byte payloads into individual lines and optionally parses
-//! them in parallel via [`AdaptiveWorkerPool::process_batch`].
+//! them in parallel via [`AdaptiveWorkerPool::process_batch`](crate::worker::AdaptiveWorkerPool::process_batch).
 //!
 //! Does NOT depend on a specific JSON parser — the parse function is a closure.
 //! Use with `sonic-rs`, `serde_json`, or any other parser.

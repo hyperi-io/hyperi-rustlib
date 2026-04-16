@@ -8,7 +8,7 @@
 
 //! Reflectable configuration registry.
 //!
-//! Modules that read config via [`Config::unmarshal_key_registered`] are
+//! Modules that read config via [`Config::unmarshal_key_registered`](crate::config::Config::unmarshal_key_registered) are
 //! automatically recorded in a global registry. This enables:
 //!
 //! - Listing all config sections an application uses
@@ -66,7 +66,7 @@ struct Registry {
 
 /// Register a config section in the global registry.
 ///
-/// Called automatically by [`Config::unmarshal_key_registered`]. Can also
+/// Called automatically by [`Config::unmarshal_key_registered`](crate::config::Config::unmarshal_key_registered). Can also
 /// be called manually for sections that don't go through the cascade.
 ///
 /// Requires `T: Serialize + Default` so we can capture both the default
