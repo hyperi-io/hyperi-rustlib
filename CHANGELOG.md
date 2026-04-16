@@ -1,3 +1,10 @@
+## [2.5.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.2...v2.5.3) (2026-04-16)
+
+
+### Bug Fixes
+
+* install librdkafka from Confluent repo for feature-matrix CI job ([a152001](https://github.com/hyperi-io/hyperi-rustlib/commit/a152001689b8615c9e5f7db92c0b53cd0fc5bc22))
+
 ## [2.5.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.1...v2.5.2) (2026-04-16)
 
 
