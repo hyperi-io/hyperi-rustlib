@@ -1,3 +1,10 @@
+## [2.5.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.3...v2.5.4) (2026-04-16)
+
+
+### Bug Fixes
+
+* rustdoc compliance + revert local feature-matrix job ([7803a71](https://github.com/hyperi-io/hyperi-rustlib/commit/7803a7133d245c736d5d500fd67719b5bbb166ba))
+
 ## [2.5.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.2...v2.5.3) (2026-04-16)
 
 
