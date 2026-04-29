@@ -207,7 +207,7 @@ mod tests {
             channel_capacity: 100,
             max_items: 5,
             max_bytes: usize::MAX,
-            max_wait: Duration::from_secs(60), // won't trigger
+            max_wait: Duration::from_mins(1), // won't trigger
         };
         let (acc, mut drainer) = BatchAccumulator::new(config);
 
@@ -227,7 +227,7 @@ mod tests {
             channel_capacity: 100,
             max_items: 1000, // won't trigger
             max_bytes: 10,   // trigger at 10 bytes
-            max_wait: Duration::from_secs(60),
+            max_wait: Duration::from_mins(1),
         };
         let (acc, mut drainer) = BatchAccumulator::new(config);
 
@@ -265,7 +265,7 @@ mod tests {
             channel_capacity: 3,
             max_items: 100,
             max_bytes: usize::MAX,
-            max_wait: Duration::from_secs(60),
+            max_wait: Duration::from_mins(1),
         };
         let (acc, _drainer) = BatchAccumulator::<i32>::new(config);
 
@@ -285,7 +285,7 @@ mod tests {
             channel_capacity: 100,
             max_items: 1000,
             max_bytes: usize::MAX,
-            max_wait: Duration::from_secs(60),
+            max_wait: Duration::from_mins(1),
         };
         let (acc, mut drainer) = BatchAccumulator::new(config);
 
@@ -310,7 +310,7 @@ mod tests {
             channel_capacity: 100,
             max_items: 3,
             max_bytes: usize::MAX,
-            max_wait: Duration::from_secs(60),
+            max_wait: Duration::from_mins(1),
         };
         let (acc, mut drainer) = BatchAccumulator::new(config);
 
@@ -356,7 +356,7 @@ mod tests {
             channel_capacity: 100,
             max_items: 1000,
             max_bytes: usize::MAX,
-            max_wait: Duration::from_secs(60),
+            max_wait: Duration::from_mins(1),
         };
         let (acc, mut drainer) = BatchAccumulator::new(config);
 

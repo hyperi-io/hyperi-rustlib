@@ -65,7 +65,7 @@ impl RateWindow {
     /// Create a rate window with the default 60-second window.
     #[must_use]
     pub fn default_window() -> Self {
-        Self::new(Duration::from_secs(60))
+        Self::new(Duration::from_mins(1))
     }
 
     /// Record a monotonic counter value at the current time.
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn test_two_samples_rate() {
-        let w = RateWindow::new(Duration::from_secs(60));
+        let w = RateWindow::new(Duration::from_mins(1));
         let now = Instant::now();
         w.record_at(now, 0);
         w.record_at(now + Duration::from_secs(10), 1000);
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_multiple_samples() {
-        let w = RateWindow::new(Duration::from_secs(60));
+        let w = RateWindow::new(Duration::from_mins(1));
         let now = Instant::now();
         w.record_at(now, 0);
         w.record_at(now + Duration::from_secs(5), 500);
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_zero_duration() {
-        let w = RateWindow::new(Duration::from_secs(60));
+        let w = RateWindow::new(Duration::from_mins(1));
         let now = Instant::now();
         // Two samples at the same instant
         w.record_at(now, 0);
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_counter_wraparound() {
-        let w = RateWindow::new(Duration::from_secs(60));
+        let w = RateWindow::new(Duration::from_mins(1));
         let now = Instant::now();
         // Counter value decreases (reset/overflow)
         w.record_at(now, 1000);

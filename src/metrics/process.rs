@@ -33,8 +33,7 @@ impl ProcessMetrics {
 
         let start_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
+            .map_or(0.0, |d| d.as_secs_f64());
 
         let this = Self {
             namespace: namespace.to_string(),
