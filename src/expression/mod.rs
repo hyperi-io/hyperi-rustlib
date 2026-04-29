@@ -9,9 +9,10 @@
 //! CEL expression evaluation — compile, evaluate, validate.
 //!
 //! Provides a DFE-profile-restricted CEL expression evaluator built on the
-//! [`cel_interpreter`] crate. Both Python (via `common-expression-language`
-//! PyO3 bindings) and Rust use the **same** underlying Rust crate, ensuring
-//! identical parsing and evaluation semantics across all DFE components.
+//! [`cel`] crate (renamed from `cel-interpreter`). Both Python (via
+//! `common-expression-language` PyO3 bindings) and Rust use the **same**
+//! underlying Rust crate, ensuring identical parsing and evaluation
+//! semantics across all DFE components.
 //!
 //! # DFE Expression Profile
 //!
