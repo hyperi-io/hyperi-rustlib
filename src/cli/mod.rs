@@ -52,20 +52,29 @@
 //! }
 //! ```
 
-mod app;
 mod args;
 mod commands;
 mod error;
 pub mod output;
-mod runtime;
 mod version;
 
-pub use app::{DfeApp, run_app};
+// DfeApp + ServiceRuntime require the full service infrastructure stack
+// (MetricsManager, MemoryGuard, ScalingPressure, AdaptiveWorkerPool).
+// Gated behind `cli-service`. Bare `cli` exposes only the clap types.
+#[cfg(feature = "cli-service")]
+mod app;
+#[cfg(feature = "cli-service")]
+mod runtime;
+
 pub use args::CommonArgs;
 pub use commands::StandardCommand;
 pub use error::CliError;
-pub use runtime::ServiceRuntime;
 pub use version::VersionInfo;
+
+#[cfg(feature = "cli-service")]
+pub use app::{DfeApp, run_app};
+#[cfg(feature = "cli-service")]
+pub use runtime::ServiceRuntime;
 
 #[cfg(feature = "top")]
 pub use commands::TopArgs;

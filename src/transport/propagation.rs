@@ -22,7 +22,7 @@ pub const TRACEPARENT_HEADER: &str = "traceparent";
 ///
 /// Returns `Some("00-{trace_id}-{span_id}-{flags}")` if there is a valid
 /// span context active, `None` otherwise.
-#[cfg(feature = "otel")]
+#[cfg(feature = "transport-trace")]
 #[must_use]
 pub fn current_traceparent() -> Option<String> {
     use opentelemetry::trace::TraceContextExt;
@@ -42,7 +42,7 @@ pub fn current_traceparent() -> Option<String> {
 ///
 /// `TraceId` and `SpanId` implement `Display` as lowercase hex.
 /// `TraceFlags::to_u8()` returns the raw flags byte.
-#[cfg(feature = "otel")]
+#[cfg(feature = "transport-trace")]
 fn format_traceparent(sc: &opentelemetry::trace::SpanContext) -> String {
     format!(
         "00-{}-{}-{:02x}",
