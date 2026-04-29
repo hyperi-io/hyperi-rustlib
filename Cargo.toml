@@ -24,7 +24,10 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["config", "logger", "metrics", "runtime", "shutdown", "health"]
+# Trimmed in 2.6.0 — was [config, logger, metrics, runtime, shutdown, health],
+# now just [config, logger]. Consumers needing more list explicitly. Shaves
+# ~200 transitive deps off the I-just-want-config use case.
+default = ["config", "logger"]
 
 # Core features
 health = []
@@ -32,7 +35,14 @@ shutdown = ["tokio", "tokio-util", "tracing"]
 runtime = ["dirs"]
 config = ["figment", "dotenvy", "serde_yaml_ng", "serde_json", "dirs", "tracing"]
 logger = ["tracing", "tracing-subscriber", "owo-colors", "serde_json", "tracing-throttle"]
-metrics = ["dep:metrics", "metrics-exporter-prometheus", "sysinfo", "tokio", "serde_json", "tracing"]
+
+# Metrics tiers (2.6.0 split). Consumers pay only for what they use:
+# - metrics-core: emit-only (counter!/gauge!/histogram! macros work)
+# - metrics-process: + cgroup-aware process gauges
+# - metrics: + Prometheus exporter (HTTP /metrics endpoint, manifest dump)
+metrics-core = ["dep:metrics", "tracing"]
+metrics-process = ["metrics-core", "sysinfo"]
+metrics = ["metrics-process", "metrics-exporter-prometheus", "tokio", "serde_json"]
 
 # OpenTelemetry support (modern observability)
 # `otel` is the umbrella enabling all OTel SDK deps. `otel-metrics` exports
@@ -40,9 +50,9 @@ metrics = ["dep:metrics", "metrics-exporter-prometheus", "sysinfo", "tokio", "se
 # `tracing` ecosystem (`tracing::span!`, `#[instrument]`) to OTel spans
 # exported via OTLP — closes the W3C distributed-tracing chain that the
 # transport-layer traceparent propagation alone can't complete.
-otel = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing", "tracing-opentelemetry", "serde_json"]
-otel-metrics = ["otel", "dep:metrics", "metrics-util", "metrics-exporter-opentelemetry", "sysinfo", "tokio"]
-otel-tracing = ["otel", "opentelemetry_sdk/rt-tokio", "tokio"]
+otel = ["dep:opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing", "tracing-opentelemetry", "serde_json"]
+otel-metrics = ["otel", "metrics", "metrics-util", "metrics-exporter-opentelemetry"]
+otel-tracing = ["otel", "opentelemetry_sdk/rt-tokio", "tokio", "tracing-subscriber"]
 
 # DFE-specific metric groups (opt-in, DFE pipeline apps only)
 metrics-dfe = ["metrics"]
@@ -66,16 +76,27 @@ memory = ["sysinfo", "tracing"]
 # Scaling pressure calculation (KEDA autoscaling)
 scaling = ["parking_lot", "tracing"]
 
-# Adaptive worker pool (hybrid rayon + tokio, pressure-based scaling)
-worker = ["rayon", "config", "metrics", "tokio", "tokio-util", "sysinfo", "parking_lot", "tracing", "sonic-rs", "dashmap", "bytes"]
+# Adaptive worker pool tiers (2.6.0 split):
+# - worker-pool: just AdaptiveWorkerPool (rayon + tokio + sysinfo)
+# - worker-batch: + BatchEngine (sonic-rs SIMD JSON, dashmap interning, bytes)
+# - worker: back-compat alias for worker-batch
+worker-pool = ["rayon", "config", "metrics", "tokio", "tokio-util", "sysinfo", "parking_lot", "tracing"]
+worker-batch = ["worker-pool", "sonic-rs", "dashmap", "bytes"]
+worker = ["worker-batch"]
 
 # Worker pool with msgpack batch serialisation support
 worker-msgpack = ["worker", "rmp-serde"]
 
-# Standard CLI framework (clap-based) — ServiceRuntime requires metrics + shutdown
-cli = ["clap", "tracing", "metrics", "shutdown"]
+# CLI tiers (2.6.0 split):
+# - cli: bare clap types — CommonArgs, StandardCommand, VersionInfo, CliError,
+#   output helpers. Useful for tooling-style CLIs that don't need a metrics
+#   server, worker pool, or memory guard.
+# - cli-service: + DfeApp trait, run_app, ServiceRuntime (full DFE app
+#   scaffolding — pulls in metrics + memory + scaling + worker-pool).
+cli = ["clap", "tracing"]
+cli-service = ["cli", "metrics", "memory", "scaling", "worker-pool", "shutdown"]
 # TUI metrics dashboard (ratatui + crossterm via ratatui re-export)
-top = ["cli", "ratatui"]
+top = ["cli-service", "ratatui"]
 
 # Shared NDJSON file I/O (used by dlq + output-file)
 io = ["file-rotate", "parking_lot", "chrono", "tracing"]
@@ -104,8 +125,13 @@ config-reload = ["config", "parking_lot", "tokio", "tracing"]
 # PostgreSQL config source (optional)
 config-postgres = ["config", "sqlx", "tokio", "serde_json"]
 
-# Transport features
-transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait", "regex", "memchr", "sonic-rs", "parking_lot", "tracing", "dep:metrics"]
+# Transport features (2.6.0 split):
+# - transport: bare transport abstraction
+# - transport-trace: + W3C traceparent propagation via opentelemetry
+# Apps that send/receive but don't propagate distributed-trace context
+# avoid pulling in the OpenTelemetry SDK.
+transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait", "regex", "memchr", "sonic-rs", "parking_lot", "tracing", "metrics-core"]
+transport-trace = ["transport", "dep:opentelemetry"]
 transport-memory = ["transport"]
 transport-kafka = ["transport", "rdkafka", "regex", "tokio-util"]
 transport-grpc = ["transport", "dep:tonic", "dep:tonic-prost", "dep:prost", "dep:prost-types", "dep:tonic-prost-build", "dep:prost-build"]
@@ -123,7 +149,7 @@ secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "database", "cache", "transport-all", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "worker", "cli", "io", "dlq", "dlq-kafka", "dlq-http", "dlq-redis", "output-file", "expression"]
+full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "otel-tracing", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "database", "cache", "transport-all", "transport-trace", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "worker", "cli-service", "io", "dlq", "dlq-kafka", "dlq-http", "dlq-redis", "output-file", "expression"]
 
 [dependencies]
 # Serialisation (always needed)

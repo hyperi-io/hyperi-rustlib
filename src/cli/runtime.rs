@@ -101,8 +101,8 @@ impl ServiceRuntime {
         app_name: &str,
         env_prefix: &str,
         metrics_addr: &str,
-        version: &str,
-        commit: &str,
+        #[cfg_attr(not(feature = "metrics-dfe"), allow(unused_variables))] version: &str,
+        #[cfg_attr(not(feature = "metrics-dfe"), allow(unused_variables))] commit: &str,
         #[cfg(feature = "scaling")] scaling_components: Vec<crate::ScalingComponent>,
     ) -> Result<Self, CliError> {
         let ctx = runtime_context();

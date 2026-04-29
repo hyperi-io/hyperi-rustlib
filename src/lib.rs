@@ -300,7 +300,11 @@ pub use worker::{
 
 #[cfg(feature = "cli")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cli")))]
-pub use cli::{CliError, CommonArgs, DfeApp, ServiceRuntime, StandardCommand, VersionInfo};
+pub use cli::{CliError, CommonArgs, StandardCommand, VersionInfo};
+
+#[cfg(feature = "cli-service")]
+#[cfg_attr(docsrs, doc(cfg(feature = "cli-service")))]
+pub use cli::{DfeApp, ServiceRuntime};
 
 #[cfg(feature = "io")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io")))]

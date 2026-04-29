@@ -137,6 +137,15 @@ spool, cache, secrets, HTTP client, DLQ — with zero additional wiring.
 
 ---
 
+## Pre-GA Status
+
+**hyperi-rustlib has NOT reached GA.** Until Derek explicitly says "it's GA",
+every commit is `fix:` (PATCH) or `feat:` (MINOR) — never write
+`BREAKING CHANGE:` in any commit footer, even when removing/renaming public
+APIs or trimming default features. The 6 downstream DFE projects (loader,
+receiver, fetcher, archiver, transform-vrl, transform-vector) migrate in
+lockstep with rustlib; there are no external GA consumers to protect.
+
 ## Decisions
 
 - **Dynamic linking for C deps** — rdkafka, libgit2, zstd, zlib, openssl all link against system libs via pkg-config. Eliminates ~30min C++ build for rdkafka. aws-lc-sys is the one exception (AWS SDK hardcodes it, no opt-out).
