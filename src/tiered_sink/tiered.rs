@@ -273,7 +273,7 @@ impl<S: Sink> TieredSink<S> {
                 .set(self.spool_bytes.load(AtomicOrdering::Relaxed) as f64);
         }
 
-        #[cfg(feature = "logger")]
+        #[cfg(feature = "tracing")]
         tracing::debug!(
             spool_items = self.spool_count.load(AtomicOrdering::Relaxed),
             spool_bytes = self.spool_bytes.load(AtomicOrdering::Relaxed),
@@ -469,7 +469,7 @@ async fn disk_capacity_poller(
     loop {
         tokio::select! {
             () = shutdown.notified() => {
-                #[cfg(feature = "logger")]
+                #[cfg(feature = "tracing")]
                 tracing::debug!("Disk capacity poller shutting down");
                 return;
             }
@@ -490,7 +490,7 @@ async fn disk_capacity_poller(
             }
             let used_ratio = 1.0 - (avail as f64 / total as f64);
             let ok = used_ratio < max_usage_percent;
-            #[cfg(feature = "logger")]
+            #[cfg(feature = "tracing")]
             if !ok {
                 tracing::warn!(
                     used_percent = format!("{:.1}%", used_ratio * 100.0),
