@@ -157,7 +157,7 @@ pub async fn drain_loop<S: Sink>(
         // Check for shutdown (local notify or global shutdown token)
         tokio::select! {
             () = shutdown.notified() => {
-                #[cfg(feature = "logger")]
+                #[cfg(feature = "tracing")]
                 tracing::info!("Drain task shutting down (local notify)");
                 return;
             }
@@ -167,7 +167,7 @@ pub async fn drain_loop<S: Sink>(
                 #[cfg(not(feature = "shutdown"))]
                 std::future::pending::<()>().await;
             } => {
-                #[cfg(feature = "logger")]
+                #[cfg(feature = "tracing")]
                 tracing::info!("Drain task shutting down (global shutdown)");
                 return;
             }
@@ -201,7 +201,7 @@ pub async fn drain_loop<S: Sink>(
                                 Ok(()) => {
                                     // Success - commit to remove from queue
                                     if let Err(e) = guard.commit() {
-                                        #[cfg(feature = "logger")]
+                                        #[cfg(feature = "tracing")]
                                         tracing::error!(error = %e, "Failed to commit after successful send");
                                     }
                                     spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
@@ -221,7 +221,7 @@ pub async fn drain_loop<S: Sink>(
                                 Err(SinkError::Fatal(e)) => {
                                     // Commit to remove unprocessable message
                                     if let Err(commit_err) = guard.commit() {
-                                        #[cfg(feature = "logger")]
+                                        #[cfg(feature = "tracing")]
                                         tracing::error!(error = %commit_err, "Failed to commit after fatal error");
                                     }
                                     spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
@@ -233,7 +233,7 @@ pub async fn drain_loop<S: Sink>(
                         Err(e) => {
                             // Commit to remove corrupted message
                             if let Err(commit_err) = guard.commit() {
-                                #[cfg(feature = "logger")]
+                                #[cfg(feature = "tracing")]
                                 tracing::error!(error = %commit_err, "Failed to commit after decompression error");
                             }
                             spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
@@ -244,7 +244,7 @@ pub async fn drain_loop<S: Sink>(
                 }
                 Err(yaque::TryRecvError::QueueEmpty) => DrainResult::Empty,
                 Err(yaque::TryRecvError::Io(e)) => {
-                    #[cfg(feature = "logger")]
+                    #[cfg(feature = "tracing")]
                     tracing::warn!(error = %e, "I/O error reading from spool");
                     DrainResult::IoError
                 }
@@ -256,26 +256,26 @@ pub async fn drain_loop<S: Sink>(
             DrainResult::Success => {
                 drainer.record_success();
                 circuit.record_success().await;
-                #[cfg(feature = "logger")]
+                #[cfg(feature = "tracing")]
                 tracing::debug!(rate = drainer.current_rate(), "Drained message to sink");
             }
             DrainResult::SinkFull => {
                 drainer.record_failure();
-                #[cfg(feature = "logger")]
+                #[cfg(feature = "tracing")]
                 tracing::debug!("Sink full during drain, will retry");
             }
             DrainResult::SinkUnavailable => {
                 drainer.record_failure();
                 circuit.record_failure().await;
-                #[cfg(feature = "logger")]
+                #[cfg(feature = "tracing")]
                 tracing::debug!("Sink unavailable during drain, circuit may open");
             }
             DrainResult::Fatal(e) => {
-                #[cfg(feature = "logger")]
+                #[cfg(feature = "tracing")]
                 tracing::error!(error = %e, "Fatal error during drain, dropping message");
             }
             DrainResult::DecompressError(e) => {
-                #[cfg(feature = "logger")]
+                #[cfg(feature = "tracing")]
                 tracing::error!(error = %e, "Failed to decompress spooled message, dropping");
             }
             DrainResult::Empty | DrainResult::IoError => {
