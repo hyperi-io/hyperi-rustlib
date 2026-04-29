@@ -42,8 +42,10 @@
 mod accumulator;
 mod batch;
 mod config;
+#[cfg(feature = "worker-batch")]
 pub mod engine;
 pub(crate) mod metrics;
+#[cfg(feature = "worker-batch")]
 pub mod ndjson;
 mod pool;
 pub(crate) mod scaler;
@@ -52,8 +54,9 @@ mod stats;
 pub use accumulator::{AccumulatorConfig, AccumulatorFull, BatchAccumulator, BatchDrainer};
 pub use batch::{BatchPipeline, BatchProcessor};
 pub use config::WorkerPoolConfig;
-#[cfg(feature = "transport")]
+#[cfg(all(feature = "worker-batch", feature = "transport"))]
 pub use engine::EngineError;
+#[cfg(feature = "worker-batch")]
 pub use engine::{
     BatchEngine, BatchProcessingConfig, FieldInterner, MessageMetadata, ParsedMessage,
     PreRouteFilterConfig, RawMessage,

@@ -147,8 +147,11 @@ pub mod memory;
 #[cfg_attr(docsrs, doc(cfg(feature = "scaling")))]
 pub mod scaling;
 
-#[cfg(feature = "worker")]
-#[cfg_attr(docsrs, doc(cfg(feature = "worker")))]
+#[cfg(any(feature = "worker-pool", feature = "worker-batch", feature = "worker"))]
+#[cfg_attr(
+    docsrs,
+    doc(cfg(any(feature = "worker-pool", feature = "worker-batch", feature = "worker")))
+)]
 pub mod worker;
 
 #[cfg(feature = "cli")]
@@ -290,8 +293,11 @@ pub use scaling::{
     ScalingPressureConfig,
 };
 
-#[cfg(feature = "worker")]
-#[cfg_attr(docsrs, doc(cfg(feature = "worker")))]
+#[cfg(any(feature = "worker-pool", feature = "worker-batch", feature = "worker"))]
+#[cfg_attr(
+    docsrs,
+    doc(cfg(any(feature = "worker-pool", feature = "worker-batch", feature = "worker")))
+)]
 pub use worker::{
     AccumulatorConfig, AccumulatorFull, AdaptiveWorkerPool, BatchAccumulator, BatchDrainer,
     BatchPipeline, BatchProcessor, PipelineStats, PipelineStatsSnapshot, ScalingDecision,
