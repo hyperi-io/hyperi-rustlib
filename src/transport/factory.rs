@@ -31,7 +31,17 @@
 
 use super::error::{TransportError, TransportResult};
 use super::traits::{TransportBase, TransportSender};
-use super::types::{SendResult, TransportType};
+use super::types::SendResult;
+#[cfg(any(
+    feature = "transport-kafka",
+    feature = "transport-grpc",
+    feature = "transport-memory",
+    feature = "transport-pipe",
+    feature = "transport-file",
+    feature = "transport-http",
+    feature = "transport-redis"
+))]
+use super::types::TransportType;
 
 /// Type-erased transport sender.
 ///
@@ -131,6 +141,18 @@ impl TransportBase for AnySender {
 }
 
 impl TransportSender for AnySender {
+    #[cfg_attr(
+        not(any(
+            feature = "transport-kafka",
+            feature = "transport-grpc",
+            feature = "transport-memory",
+            feature = "transport-pipe",
+            feature = "transport-file",
+            feature = "transport-http",
+            feature = "transport-redis"
+        )),
+        allow(unused_variables)
+    )]
     async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
         match self {
             #[cfg(feature = "transport-kafka")]
