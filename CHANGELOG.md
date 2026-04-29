@@ -1,3 +1,10 @@
+## [2.5.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.4...v2.5.5) (2026-04-29)
+
+
+### Bug Fixes
+
+* drop reqwest default features + clippy 1.95 lints ([a52d55e](https://github.com/hyperi-io/hyperi-rustlib/commit/a52d55e9e852b863bace41dd72e6a4d441498aa7))
+
 ## [2.5.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.3...v2.5.4) (2026-04-16)
 
 
