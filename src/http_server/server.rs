@@ -17,6 +17,8 @@ use tokio::net::TcpListener;
 #[cfg(not(feature = "shutdown"))]
 use tokio::signal;
 use tokio::sync::watch;
+use tower_http::timeout::TimeoutLayer;
+use tower_http::trace::TraceLayer;
 
 /// High-performance HTTP server built on axum.
 ///
@@ -184,7 +186,13 @@ impl HttpServer {
         Ok((handle, future))
     }
 
-    /// Build the final router with optional health endpoints.
+    /// Build the final router with optional health endpoints + middleware.
+    ///
+    /// Applies `tower_http::TraceLayer` (per-request `tracing` spans, default
+    /// DEBUG level so probe traffic doesn't flood at INFO) and
+    /// `tower_http::TimeoutLayer` (per-request deadline from
+    /// [`HttpServerConfig::request_timeout`]). The layers wrap both the
+    /// user-supplied router and the framework probe/admin routes.
     fn build_router(&self, app: Router) -> Router {
         let mut router = app;
 
@@ -207,6 +215,11 @@ impl HttpServer {
         }
 
         router
+            .layer(TraceLayer::new_for_http())
+            .layer(TimeoutLayer::with_status_code(
+                StatusCode::REQUEST_TIMEOUT,
+                self.config.request_timeout(),
+            ))
     }
 }
 
