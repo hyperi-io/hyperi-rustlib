@@ -75,12 +75,13 @@ pub struct ServiceRuntime {
 
     /// Adaptive worker pool for parallel batch processing (`worker` feature).
     /// `None` if the `worker` feature is not enabled or config fails.
-    #[cfg(feature = "worker")]
+    #[cfg(feature = "worker-pool")]
     pub worker_pool: Option<Arc<crate::worker::AdaptiveWorkerPool>>,
 
-    /// Batch processing engine with SIMD parsing and pre-route filtering (`worker` feature).
-    /// `None` if the `worker` feature is not enabled or worker pool creation failed.
-    #[cfg(feature = "worker")]
+    /// Batch processing engine with SIMD parsing and pre-route filtering
+    /// (`worker-batch` feature). `None` if `worker-batch` is not enabled
+    /// or worker pool creation failed.
+    #[cfg(feature = "worker-batch")]
     pub batch_engine: Option<Arc<crate::worker::BatchEngine>>,
 
     /// Scaling pressure calculator for KEDA autoscaling (`scaling` feature).
@@ -132,7 +133,7 @@ impl ServiceRuntime {
         };
 
         // --- Worker pool ---
-        #[cfg(feature = "worker")]
+        #[cfg(feature = "worker-pool")]
         let worker_pool = {
             match crate::worker::AdaptiveWorkerPool::from_cascade("worker_pool") {
                 Ok(pool) => {
@@ -160,8 +161,8 @@ impl ServiceRuntime {
             }
         };
 
-        // --- Batch engine ---
-        #[cfg(feature = "worker")]
+        // --- Batch engine (worker-batch tier only) ---
+        #[cfg(feature = "worker-batch")]
         let batch_engine = {
             if let Some(ref pool) = worker_pool {
                 let config =
@@ -183,7 +184,7 @@ impl ServiceRuntime {
         let shutdown = crate::shutdown::install_signal_handler();
 
         // Start worker pool scaling loop after shutdown token exists
-        #[cfg(feature = "worker")]
+        #[cfg(feature = "worker-pool")]
         if let Some(ref pool) = worker_pool {
             pool.start_scaling_loop(shutdown.clone());
         }
@@ -219,9 +220,9 @@ impl ServiceRuntime {
             memory_guard,
             shutdown,
             context: ctx,
-            #[cfg(feature = "worker")]
+            #[cfg(feature = "worker-pool")]
             worker_pool,
-            #[cfg(feature = "worker")]
+            #[cfg(feature = "worker-batch")]
             batch_engine,
             #[cfg(feature = "scaling")]
             scaling,
@@ -236,9 +237,9 @@ impl ServiceRuntime {
         self.metrics.set_readiness_check(check);
     }
 
-    /// Return the batch processing engine, if the `worker` feature is enabled
-    /// and the worker pool was successfully created.
-    #[cfg(feature = "worker")]
+    /// Return the batch processing engine, if the `worker-batch` feature is
+    /// enabled and the worker pool was successfully created.
+    #[cfg(feature = "worker-batch")]
     #[must_use]
     pub fn batch_engine(&self) -> Option<&Arc<crate::worker::BatchEngine>> {
         self.batch_engine.as_ref()
