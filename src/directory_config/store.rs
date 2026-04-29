@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use fs4::fs_std::FileExt;
 use tokio::sync::{RwLock, broadcast};
 
 use crate::directory_config::error::{DirectoryConfigError, DirectoryConfigResult};
@@ -628,11 +627,11 @@ fn write_yaml_locked(path: &Path, value: &serde_yaml_ng::Value) -> DirectoryConf
         .truncate(true)
         .open(path)?;
 
-    FileExt::lock_exclusive(&file).map_err(DirectoryConfigError::IoError)?;
+    file.lock().map_err(DirectoryConfigError::IoError)?;
 
     std::fs::write(path, yaml_str.as_bytes())?;
 
-    FileExt::unlock(&file).map_err(DirectoryConfigError::IoError)?;
+    file.unlock().map_err(DirectoryConfigError::IoError)?;
 
     Ok(())
 }

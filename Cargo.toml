@@ -43,7 +43,8 @@ otel-tracing = ["otel"]
 metrics-dfe = ["metrics"]
 
 # Directory config store (YAML directory-backed)
-directory-config = ["serde_yaml_ng", "tokio", "tracing", "fs4"]
+# File locking uses std::fs::File::{lock,unlock} (stable since Rust 1.89).
+directory-config = ["serde_yaml_ng", "tokio", "tracing"]
 directory-config-git = ["directory-config", "git2"]
 
 # Extended features (P2)
@@ -140,9 +141,6 @@ serde_json = { version = ">=1.0.149, <2", optional = true }
 
 # UUID generation (for version-check instance ID)
 uuid = { version = ">=1.10, <2", features = ["v4"], optional = true }
-
-# Advisory file locking (for directory-config writes)
-fs4 = { version = ">=0.12, <0.14", features = ["sync"], optional = true }
 
 # Git operations (for directory-config-git)
 git2 = { version = ">=0.20.0, <0.21", optional = true }
