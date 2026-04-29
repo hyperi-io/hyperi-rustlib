@@ -184,8 +184,7 @@ impl PostgresConfigSource {
 
         Self {
             enabled: std::env::var(format!("{prefix}_CONFIG_POSTGRES_ENABLED"))
-                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-                .unwrap_or(false),
+                .is_ok_and(|v| v.eq_ignore_ascii_case("true") || v == "1"),
             url: std::env::var(format!("{prefix}_CONFIG_POSTGRES_URL")).ok(),
             namespace: std::env::var(format!("{prefix}_CONFIG_POSTGRES_NAMESPACE"))
                 .unwrap_or_else(|_| "default".to_string()),
@@ -208,11 +207,9 @@ impl PostgresConfigSource {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(1000),
             optional: std::env::var(format!("{prefix}_CONFIG_POSTGRES_OPTIONAL"))
-                .map(|v| !v.eq_ignore_ascii_case("false") && v != "0")
-                .unwrap_or(true),
+                .map_or(true, |v| !v.eq_ignore_ascii_case("false") && v != "0"),
             fallback_enabled: std::env::var(format!("{prefix}_CONFIG_FALLBACK_ENABLED"))
-                .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-                .unwrap_or(false),
+                .is_ok_and(|v| v.eq_ignore_ascii_case("true") || v == "1"),
             fallback_file: std::env::var(format!("{prefix}_CONFIG_FALLBACK_FILE"))
                 .ok()
                 .map(PathBuf::from),

@@ -156,9 +156,7 @@ impl WorkerPoolConfig {
     /// - `max_threads > 0` → cap at `min(configured, available_parallelism)`
     ///   to avoid creating more threads than physical cores
     pub fn resolve_max_threads(&mut self) {
-        let available = std::thread::available_parallelism()
-            .map(std::num::NonZero::get)
-            .unwrap_or(4);
+        let available = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
 
         if self.max_threads == 0 {
             self.max_threads = available;

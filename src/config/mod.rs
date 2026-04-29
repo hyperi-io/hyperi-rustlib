@@ -668,19 +668,19 @@ mod tests {
 
     #[test]
     fn test_parse_duration_minutes() {
-        assert_eq!(parse_duration("5m"), Some(Duration::from_secs(300)));
-        assert_eq!(parse_duration("1m"), Some(Duration::from_secs(60)));
+        assert_eq!(parse_duration("5m"), Some(Duration::from_mins(5)));
+        assert_eq!(parse_duration("1m"), Some(Duration::from_mins(1)));
     }
 
     #[test]
     fn test_parse_duration_hours() {
-        assert_eq!(parse_duration("1h"), Some(Duration::from_secs(3600)));
-        assert_eq!(parse_duration("2h"), Some(Duration::from_secs(7200)));
+        assert_eq!(parse_duration("1h"), Some(Duration::from_hours(1)));
+        assert_eq!(parse_duration("2h"), Some(Duration::from_hours(2)));
     }
 
     #[test]
     fn test_parse_duration_plain_number() {
-        assert_eq!(parse_duration("60"), Some(Duration::from_secs(60)));
+        assert_eq!(parse_duration("60"), Some(Duration::from_mins(1)));
     }
 
     #[test]

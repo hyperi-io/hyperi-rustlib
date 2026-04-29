@@ -167,10 +167,8 @@ impl DashboardApp {
             KeyCode::Char('j') | KeyCode::Down => self.table_state.select_next(),
             KeyCode::Char('k') | KeyCode::Up => self.table_state.select_previous(),
             KeyCode::Char('g') | KeyCode::Home => self.table_state.select_first(),
-            KeyCode::Char('G') | KeyCode::End => {
-                if !self.rows.is_empty() {
-                    self.table_state.select(Some(self.rows.len() - 1));
-                }
+            KeyCode::Char('G') | KeyCode::End if !self.rows.is_empty() => {
+                self.table_state.select(Some(self.rows.len() - 1));
             }
             KeyCode::Char('s') => self.cycle_sort(),
             KeyCode::Char('S') => self.toggle_sort_direction(),

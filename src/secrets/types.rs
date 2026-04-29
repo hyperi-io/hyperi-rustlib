@@ -194,8 +194,7 @@ impl SecretValue {
     pub fn is_expired(&self, ttl_secs: u64) -> bool {
         self.fetched_at
             .elapsed()
-            .map(|d| d.as_secs() >= ttl_secs)
-            .unwrap_or(true)
+            .map_or(true, |d| d.as_secs() >= ttl_secs)
     }
 
     /// Check if the secret is within the stale grace period.
@@ -203,8 +202,7 @@ impl SecretValue {
     pub fn is_within_grace(&self, ttl_secs: u64, grace_secs: u64) -> bool {
         self.fetched_at
             .elapsed()
-            .map(|d| d.as_secs() <= ttl_secs + grace_secs)
-            .unwrap_or(false)
+            .is_ok_and(|d| d.as_secs() <= ttl_secs + grace_secs)
     }
 }
 
@@ -259,8 +257,7 @@ impl CacheEntry {
             fetched_at_secs: value
                 .fetched_at
                 .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0),
+                .map_or(0, |d| d.as_secs()),
             metadata: value.metadata.clone(),
         }
     }
