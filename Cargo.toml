@@ -85,7 +85,7 @@ dlq-redis = ["dlq", "transport-redis"]
 output-file = ["io", "serde_json", "tracing"]
 
 # CEL expression evaluation (DFE expression profile)
-expression = ["cel-interpreter", "serde_json"]
+expression = ["dep:cel", "serde_json"]
 
 # Deployment contract validation (Helm chart + Dockerfile sync)
 deployment = ["serde_yaml_ng", "serde_json"]
@@ -146,7 +146,8 @@ uuid = { version = ">=1.10, <2", features = ["v4"], optional = true }
 git2 = { version = ">=0.20.0, <0.21", optional = true }
 
 # CEL expression evaluation
-cel-interpreter = { version = ">=0.10.0, <0.11", features = ["json"], optional = true }
+# Renamed from cel-interpreter — same project, same maintainers, near-identical API.
+cel = { version = ">=0.13, <0.14", features = ["json"], optional = true }
 
 # CLI framework
 clap = { version = ">=4.5, <5", features = ["derive", "env"], optional = true }

@@ -82,7 +82,7 @@ pub enum CompiledFilter {
     // Tier 2/3 — CEL expression (feature-gated)
     #[cfg(feature = "expression")]
     CelExpression {
-        program: cel_interpreter::Program,
+        program: cel::Program,
         fields: Vec<String>,
         expression_text: String,
         tier: FilterTier,
@@ -495,7 +495,7 @@ fn with_path_refs<R>(path: &[String], f: impl FnOnce(&[&str]) -> R) -> R {
 #[cfg(feature = "expression")]
 fn evaluate_cel(
     payload: &[u8],
-    program: &cel_interpreter::Program,
+    program: &cel::Program,
     fields: &[String],
     action: FilterAction,
 ) -> Option<FilterAction> {
@@ -514,7 +514,7 @@ fn evaluate_cel(
 
     let ctx = crate::expression::build_context(&context_data).ok()?;
     match program.execute(&ctx) {
-        Ok(cel_interpreter::Value::Bool(true)) => Some(action),
+        Ok(cel::Value::Bool(true)) => Some(action),
         _ => None,
     }
 }

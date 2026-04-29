@@ -8,9 +8,9 @@
 
 //! Core CEL expression operations — compile, evaluate, validate.
 //!
-//! Wraps the [`cel_interpreter`] crate, enforcing the DFE expression
-//! profile on every compilation path. Both Python (via `common-expression-
-//! language` PyO3 bindings) and Rust share the **same** `cel-interpreter`
+//! Wraps the [`cel`] crate (renamed from `cel-interpreter`), enforcing the
+//! DFE expression profile on every compilation path. Both Python (via
+//! `common-expression-language` PyO3 bindings) and Rust share the **same**
 //! Rust crate — zero behavioural drift between services.
 //!
 //! # Profile Configuration
@@ -57,7 +57,7 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use cel_interpreter::{Context, Program, Value};
+use cel::{Context, Program, Value};
 use serde_json::Value as JsonValue;
 
 use super::error::{ExpressionError, ExpressionResult};
@@ -171,7 +171,7 @@ pub fn evaluate<'a>(
 /// unnecessary cloning when converting between map types.
 ///
 /// Each key-value pair is added as a top-level variable in the CEL
-/// execution context. Supports all JSON types via the `cel-interpreter`
+/// execution context. Supports all JSON types via the `cel`
 /// json feature (serde integration).
 pub fn build_context<'a>(
     data: impl IntoIterator<Item = (&'a String, &'a JsonValue)>,
@@ -230,7 +230,7 @@ fn json_to_cel(json: &JsonValue) -> Value {
             Value::List(arr.iter().map(json_to_cel).collect::<Vec<_>>().into())
         }
         JsonValue::Object(obj) => {
-            let hash: HashMap<cel_interpreter::objects::Key, Value> = obj
+            let hash: HashMap<cel::objects::Key, Value> = obj
                 .iter()
                 .map(|(k, v)| (k.clone().into(), json_to_cel(v)))
                 .collect();
