@@ -1,3 +1,10 @@
+## [2.6.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.6.0...v2.6.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **features:** worker module visible under worker-pool/worker-batch ([fb7ad9e](https://github.com/hyperi-io/hyperi-rustlib/commit/fb7ad9e5706c64b4ed0c5a5b3738829cb6887eec))
+
 # [2.6.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.5...v2.6.0) (2026-04-29)
 
 
