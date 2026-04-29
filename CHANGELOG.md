@@ -1,3 +1,19 @@
+# [2.6.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.5...v2.6.0) (2026-04-29)
+
+
+### Bug Fixes
+
+* **directory-config:** drop fs4 dep, use std::fs::File lock API ([4e9a8ba](https://github.com/hyperi-io/hyperi-rustlib/commit/4e9a8ba12b16206a0a86f45f312c1139810921d7))
+* **tiered-sink:** use tracing feature gate, not logger ([9da9a98](https://github.com/hyperi-io/hyperi-rustlib/commit/9da9a980683b4d76cb56e29b7d9c55ceef0e4e1d))
+* **transport:** gate AnySender bindings + TransportType import ([b7e42e9](https://github.com/hyperi-io/hyperi-rustlib/commit/b7e42e92e426d0f662c2c283180c6a7410a94fa8))
+
+
+### Features
+
+* **features:** five-way granularity split — worker / metrics / cli / transport / default ([31fad72](https://github.com/hyperi-io/hyperi-rustlib/commit/31fad728edaeafceb3b404a68893931076e94ede))
+* **http-server:** wire up TraceLayer + TimeoutLayer middleware ([62bed0a](https://github.com/hyperi-io/hyperi-rustlib/commit/62bed0a4f9bd2a52ee579208ae308d162b6fc821))
+* **otel-tracing:** wire up tracing-opentelemetry span bridge ([44bd6a7](https://github.com/hyperi-io/hyperi-rustlib/commit/44bd6a7750dc4b24410505e790d48d15ea7d2d71))
+
 ## [2.5.5](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.5.4...v2.5.5) (2026-04-29)
 
 
