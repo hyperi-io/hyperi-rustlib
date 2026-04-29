@@ -35,9 +35,14 @@ logger = ["tracing", "tracing-subscriber", "owo-colors", "serde_json", "tracing-
 metrics = ["dep:metrics", "metrics-exporter-prometheus", "sysinfo", "tokio", "serde_json", "tracing"]
 
 # OpenTelemetry support (modern observability)
-otel = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing-opentelemetry", "tracing"]
-otel-metrics = ["otel", "dep:metrics", "metrics-util", "metrics-exporter-opentelemetry", "sysinfo", "tokio", "tracing"]
-otel-tracing = ["otel"]
+# `otel` is the umbrella enabling all OTel SDK deps. `otel-metrics` exports
+# Prometheus + custom metrics through OTLP. `otel-tracing` bridges the
+# `tracing` ecosystem (`tracing::span!`, `#[instrument]`) to OTel spans
+# exported via OTLP — closes the W3C distributed-tracing chain that the
+# transport-layer traceparent propagation alone can't complete.
+otel = ["opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing", "tracing-opentelemetry", "serde_json"]
+otel-metrics = ["otel", "dep:metrics", "metrics-util", "metrics-exporter-opentelemetry", "sysinfo", "tokio"]
+otel-tracing = ["otel", "opentelemetry_sdk/rt-tokio", "tokio"]
 
 # DFE-specific metric groups (opt-in, DFE pipeline apps only)
 metrics-dfe = ["metrics"]
@@ -257,7 +262,10 @@ base64 = { version = ">=0.22, <0.23", optional = true }
 bytes = { version = ">=1.10, <2", optional = true }
 
 # Vault/OpenBao (for secrets-vault)
-vaultrs = { version = ">=0.7, <0.9", optional = true }
+# Pinned to 0.7.x — vaultrs 0.8 requires reqwest 0.13, which we don't yet
+# support (opentelemetry-otlp 0.31 still on reqwest 0.12). When OTel ships
+# OTLP on reqwest 0.13, bump vaultrs to 0.8 in the same migration.
+vaultrs = { version = ">=0.7, <0.8", optional = true }
 
 # AWS (for secrets-aws)
 # NOTE: aws-config and aws-sdk-* transitively pull in aws-lc-sys, which compiles

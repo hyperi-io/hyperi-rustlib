@@ -99,6 +99,10 @@ pub mod logger;
 #[cfg_attr(docsrs, doc(cfg(any(feature = "metrics", feature = "otel-metrics"))))]
 pub mod metrics;
 
+#[cfg(feature = "otel-tracing")]
+#[cfg_attr(docsrs, doc(cfg(feature = "otel-tracing")))]
+pub mod otel_tracing;
+
 #[cfg(feature = "transport")]
 #[cfg_attr(docsrs, doc(cfg(feature = "transport")))]
 pub mod transport;
