@@ -79,6 +79,8 @@ pub mod generate;
 mod keda;
 mod native_deps;
 mod registry;
+#[cfg(feature = "deployment-smoke")]
+pub mod smoke;
 mod validate;
 
 pub use contract::{
