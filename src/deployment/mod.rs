@@ -78,6 +78,7 @@ mod error;
 pub mod generate;
 mod keda;
 mod native_deps;
+mod registry;
 mod validate;
 
 pub use contract::{
@@ -86,9 +87,13 @@ pub use contract::{
 };
 pub use error::{ContractMismatch, DeploymentError};
 pub use generate::{
-    generate_chart, generate_compose_fragment, generate_container_manifest, generate_dockerfile,
-    generate_runtime_stage,
+    ArgocdConfig, generate_argocd_application, generate_chart, generate_compose_fragment,
+    generate_container_manifest, generate_dockerfile, generate_runtime_stage,
 };
 pub use keda::{KedaConfig, KedaContract};
 pub use native_deps::{AptRepoContract, NativeDepsContract};
+pub use registry::{
+    DEFAULT_BASE_IMAGE, DEFAULT_IMAGE_REGISTRY, argocd_repo_url_from_cascade,
+    base_image_from_cascade, image_registry_from_cascade,
+};
 pub use validate::{validate_dockerfile, validate_helm_values};

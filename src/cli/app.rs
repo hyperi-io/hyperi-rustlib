@@ -303,7 +303,19 @@ fn generate_artefacts<A: DfeApp>(
 
     // Deployment contract + container manifest
     #[cfg(feature = "deployment")]
-    if let Some(contract) = app.deployment_contract() {
+    let deployment_contract = app.deployment_contract();
+    #[cfg(feature = "deployment")]
+    if deployment_contract.is_none() {
+        output::print_warn(&format!(
+            "DfeApp::deployment_contract() returned None for `{}` — \
+             only metrics-manifest.json will be generated. \
+             Implement the trait hook to emit deployment-contract.json, \
+             container-manifest.json, and Dockerfile.runtime.",
+            app.name()
+        ));
+    }
+    #[cfg(feature = "deployment")]
+    if let Some(contract) = deployment_contract {
         // Full deployment contract (secrets, KEDA, Helm, everything)
         let path = output_dir.join("deployment-contract.json");
         let json = serde_json::to_string_pretty(&contract)
@@ -328,6 +340,20 @@ fn generate_artefacts<A: DfeApp>(
             CliError::Service(format!("failed to write {}: {e}", rt_path.display()))
         })?;
         generated.push("Dockerfile.runtime".to_string());
+
+        // ArgoCD Application CR (default generation — ArgoCD is the
+        // standard CD tool across the fleet).
+        let argo_path = output_dir.join("argocd-application.yaml");
+        let argo_cfg = crate::deployment::ArgocdConfig {
+            repo_url: crate::deployment::argocd_repo_url_from_cascade(&contract.app_name),
+            ..Default::default()
+        };
+        let argo_content =
+            crate::deployment::generate::generate_argocd_application(&contract, &argo_cfg);
+        std::fs::write(&argo_path, &argo_content).map_err(|e| {
+            CliError::Service(format!("failed to write {}: {e}", argo_path.display()))
+        })?;
+        generated.push("argocd-application.yaml".to_string());
     }
 
     if generated.is_empty() {
