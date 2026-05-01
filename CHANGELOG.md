@@ -1,3 +1,11 @@
+# [2.7.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.6.1...v2.7.0) (2026-05-01)
+
+
+### Features
+
+* **deployment-smoke:** add docker build + run smoke-test helper ([e708a92](https://github.com/hyperi-io/hyperi-rustlib/commit/e708a926a4de0d1cc5c97fc0d6b96f142793fafe))
+* **deployment:** ArgoCD generator + cascade-driven registry config ([dd841bc](https://github.com/hyperi-io/hyperi-rustlib/commit/dd841bce01530a2a3789c859884769cc05a0f753))
+
 ## [2.6.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.6.0...v2.6.1) (2026-04-29)
 
 
