@@ -461,7 +461,7 @@ mod tests {
             auth: OpenBaoAuth::Token {
                 token: "test".into(),
             },
-            namespace: Some("hypersec".into()),
+            namespace: Some("myorg".into()),
             ca_cert: None,
             skip_verify: false,
         };

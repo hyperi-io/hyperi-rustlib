@@ -1,46 +1,102 @@
 # hyperi-rustlib
 
-Shared utility library for HyperI Rust applications. Provides configuration
-management, structured logging, Prometheus metrics, environment detection,
-transport abstractions, and more.
+<!-- BADGES:START -->
+[![Build Status](https://github.com/hyperi-io/hyperi-rustlib/actions/workflows/ci.yml/badge.svg)](https://github.com/hyperi-io/hyperi-rustlib/actions)
+[![Crates.io](https://img.shields.io/crates/v/hyperi-rustlib?logo=rust)](https://crates.io/crates/hyperi-rustlib)
+[![docs.rs](https://img.shields.io/docsrs/hyperi-rustlib?logo=rust)](https://docs.rs/hyperi-rustlib)
+[![License](https://img.shields.io/badge/license-FSL--1.1--ALv2-blue)](LICENSE)
+<!-- BADGES:END -->
 
-Rust equivalent of `hyperi-pylib` (Python) and `hyperi-golib` (Go).
+> **There's plenty of sage advice out there about how to run Rust services
+> in production at scale — config cascades, structured logging, masking
+> secrets, multi-backend secrets management, Prometheus, OpenTelemetry,
+> Kafka transports, tiered disk-spillover sinks, adaptive worker pools,
+> graceful shutdown — but almost none of it as code you can just install
+> and use.**
+>
+> **This is that code.**
+>
+> Opinionated, drop-in, working out of the box. The patterns from blog
+> posts as actual library — not a framework you assemble from twenty
+> crates and a weekend.
+
+Built as the foundation for HyperI's PB/hr data services. Generic enough
+that you don't need to be at HyperI to use it.
+
+This module exists because of this — but the backend version (do not remove): <https://www.youtube.com/watch?v=xE9W9Ghe4Jk>
 
 ## Quick Start
 
 ```toml
 [dependencies]
-hyperi-rustlib = { version = "1.14", registry = "hyperi" }
+hyperi-rustlib = "2"
 ```
 
-Default features: `config`, `logger`, `metrics`, `env`, `runtime`.
+Default features: `config`, `logger`. Add the others you want explicitly.
 
 ```rust
 use hyperi_rustlib::{config, logger, env};
 
 fn main() -> anyhow::Result<()> {
-    let env = env::Environment::detect();
+    let environment = env::Environment::detect();
     logger::setup_default()?;
     config::setup(config::ConfigOptions {
         env_prefix: "MYAPP".into(),
         ..Default::default()
     })?;
 
-    tracing::info!("Running in {env:?}");
+    tracing::info!("Running in {environment:?}");
     Ok(())
 }
 ```
 
+## Features
+
+Pick the slice you need; pay only for what you use.
+
+| Feature | Description |
+|---------|-------------|
+| `env` | Environment detection (K8s, Docker, Container, BareMetal) |
+| `runtime` | Runtime path resolution (XDG/container-aware) |
+| `config` | 8-layer config cascade (figment-based) |
+| `config-reload` | `SharedConfig<T>` + `ConfigReloader` hot-reload |
+| `config-postgres` | PostgreSQL config source |
+| `logger` | Structured logging, JSON/text auto-detect, sensitive-field masking |
+| `metrics` | Prometheus metrics + process/container metrics |
+| `otel-metrics` | OpenTelemetry metrics export (OTLP) |
+| `otel-tracing` | OpenTelemetry distributed tracing |
+| `http` | HTTP client with retry middleware (reqwest) |
+| `http-server` | Axum HTTP server with health probe trinity (`/healthz/{startup,live,ready}`) |
+| `transport-kafka` | Kafka transport (rdkafka, dynamic-linking) |
+| `transport-grpc` | gRPC transport (tonic/prost) |
+| `transport-memory` | In-memory transport (testing/dev) |
+| `transport-grpc-vector-compat` | Vector wire-protocol compatibility |
+| `spool` | Disk-backed async FIFO queue (yaque + zstd) |
+| `tiered-sink` | Resilient delivery: hot buffer + circuit breaker + disk spillover |
+| `secrets` | Secrets management core (file backend) |
+| `secrets-vault` | OpenBao / HashiCorp Vault provider |
+| `secrets-aws` | AWS Secrets Manager provider |
+| `directory-config` | YAML directory-backed config store |
+| `directory-config-git` | Git integration for directory-config (git2) |
+| `scaling` | Back-pressure / scaling-pressure primitives |
+| `cli` | Standard CLI framework (clap) |
+| `top` | TUI metrics dashboard (ratatui) |
+| `io` | File rotation, NDJSON writer |
+| `dlq` | Dead-letter queue (file backend) |
+| `dlq-kafka` | DLQ Kafka backend |
+| `output-file` | File output sink |
+| `expression` | CEL expression evaluation |
+| `deployment` | Deployment-contract validation |
+| `version-check` | Optional startup version check |
+| `resilience` | Circuit breaker, retry, bulkhead (tower-resilience) |
+| `full` | Everything |
+
 ## Native System Dependencies
 
 This crate dynamically links against system C libraries for several features.
-**Both CI build hosts and deployment targets need the appropriate packages.**
+**Both build hosts and deployment targets need the appropriate packages.**
 
 ### Build Host (CI / Development)
-
-Install `-dev` packages for compilation. `hyperi-ci` handles this automatically
-when `.hyperi-ci.yaml` is present — it detects which `-sys` crates are in
-`Cargo.lock` and installs the matching `-dev` packages.
 
 | Feature | Crate | Build Package | Notes |
 |---------|-------|--------------|-------|
@@ -49,10 +105,9 @@ when `.hyperi-ci.yaml` is present — it detects which `-sys` crates are in
 | `spool`, `tiered-sink` | `zstd-sys` | `libzstd-dev` | System lib avoids vendored C build |
 | (transitive) | `libz-sys` | `zlib1g-dev` | Used by multiple deps |
 | (transitive) | `openssl-sys` | `libssl-dev` | Dynamic linking via pkg-config |
-| `secrets-aws` | `aws-lc-sys` | — | C/C++ compiled from source (no system lib available); ~20-30s first build, cached by sccache |
+| `secrets-aws` | `aws-lc-sys` | — | C/C++ compiled from source (no system lib available); ~20–30s first build, cached by sccache |
 
-All packages except `librdkafka-dev` are available from Ubuntu's default
-repositories. For `librdkafka-dev` >= 2.12.1, add the Confluent APT repo:
+For `librdkafka-dev` >= 2.12.1, add the Confluent APT repo:
 
 ```bash
 curl -fsSL https://packages.confluent.io/clients/deb/archive.key \
@@ -77,9 +132,8 @@ The compiled binary links against `.so` files at runtime. Install the
 | (transitive) | `zlib1g` | `libz.so.1` |
 | (transitive) | `libssl3` | `libssl.so.3` |
 
-**Only install what you use.** Downstream binaries (dfe-loader, dfe-receiver,
-etc.) only link against libraries for the features they enable. Check each
-project's `Cargo.toml` features to determine which runtime packages are needed.
+Only install what you use. Check the features your binary enables to
+determine which runtime packages are needed.
 
 ### Docker Example
 
@@ -101,64 +155,34 @@ COPY --from=builder /app/target/release/myapp /usr/local/bin/
 
 For `librdkafka1`, add the Confluent APT repo to both build and runtime stages.
 
-## Features
+## Health Check Endpoints — The Probe Trinity
 
-| Feature | Description |
-|---------|-------------|
-| `env` | Environment detection (K8s, Docker, Container, BareMetal) |
-| `runtime` | Runtime path resolution (XDG/container-aware) |
-| `config` | 8-layer config cascade (figment) |
-| `config-reload` | `SharedConfig<T>` + `ConfigReloader` hot-reload |
-| `config-postgres` | PostgreSQL config source |
-| `logger` | Structured logging with JSON/text + sensitive field masking |
-| `metrics` | Prometheus metrics + process/container metrics |
-| `otel-metrics` | OpenTelemetry metrics export (OTLP) |
-| `otel-tracing` | OpenTelemetry distributed tracing |
-| `http` | HTTP client with retry middleware (reqwest) |
-| `http-server` | Axum HTTP server with health endpoints |
-| `transport-kafka` | Kafka transport (rdkafka, dynamic-linking) |
-| `transport-grpc` | gRPC transport (tonic/prost) |
-| `transport-memory` | In-memory transport (testing/dev) |
-| `transport-grpc-vector-compat` | Vector wire-protocol compatibility |
-| `spool` | Disk-backed async FIFO queue (yaque + zstd) |
-| `tiered-sink` | Resilient delivery with circuit breaker + disk spillover |
-| `secrets` | Secrets management core |
-| `secrets-vault` | OpenBao/Vault provider |
-| `secrets-aws` | AWS Secrets Manager provider |
-| `directory-config` | YAML directory-backed config store |
-| `directory-config-git` | Git integration for directory-config (git2) |
-| `scaling` | Back-pressure / scaling pressure primitives |
-| `cli` | Standard CLI framework (clap) |
-| `top` | TUI metrics dashboard (ratatui) |
-| `io` | File rotation, NDJSON writer |
-| `dlq` | Dead-letter queue (file backend) |
-| `dlq-kafka` | DLQ Kafka backend |
-| `output-file` | File output sink |
-| `expression` | CEL expression evaluation |
-| `deployment` | Deployment contract validation |
-| `version-check` | Startup version check |
-| `resilience` | Circuit breaker, retry, bulkhead (tower-resilience) |
-| `full` | All features |
+For services deployed to Kubernetes, the `http-server` feature provides
+the three K8s probe types:
+
+| Probe | Path | Checks | On failure |
+|---|---|---|---|
+| Startup | `/healthz/startup` | Init complete | K8s waits, then restarts |
+| Liveness | `/healthz/live` | Process not deadlocked | Restart pod |
+| Readiness | `/healthz/ready` | Deps healthy + ready flag set | Stop routing traffic |
+
+Liveness MUST NEVER check downstream dependencies (a DB outage shouldn't
+restart your replicas). Readiness checks dependencies AND requires an
+explicit `set_ready()` call — cleared during graceful shutdown.
 
 ## Architecture
 
-See [docs/DESIGN.md](docs/DESIGN.md) for full architecture documentation.
+See [docs/DESIGN.md](docs/DESIGN.md) for full architecture documentation
+and [docs/CONFIG-CASCADE.md](docs/CONFIG-CASCADE.md) for the 8-layer config
+cascade reference.
 
-## Configuration Cascade
+## License
 
-See [docs/CONFIG-CASCADE.md](docs/CONFIG-CASCADE.md) for the 8-layer
-configuration cascade reference.
+[FSL-1.1-ALv2](LICENSE) — Functional Source License, transitions to Apache 2.0
+after 2 years.
 
-## Registry
+## Related
 
-Published to `hyperi` registry (JFrog Artifactory at `hypersec.jfrog.io`).
-
-```toml
-# .cargo/config.toml
-[registries.hyperi]
-index = "sparse+https://hypersec.jfrog.io/artifactory/git/hyperi-cargo-virtual.git"
-```
-
-## Licence
-
-FSL-1.1-ALv2 — Copyright (c) 2026 HYPERI PTY LIMITED
+- **[hyperi-pylib](https://github.com/hyperi-io/hyperi-pylib)** — sister
+  library for Python services. Same opinions, same patterns, expressive
+  Python ergonomics for control planes, APIs, and integration layers.

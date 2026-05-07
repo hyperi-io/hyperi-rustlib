@@ -11,13 +11,3 @@ rustflags = ["-D", "warnings"]
 
 [alias]
 xtask = "run --package xtask --"
-
-# =============================================================================
-# HyperI Private Cargo Registry (Artifactory)
-# =============================================================================
-#
-# The 'hyperi' registry hosts internal crates.
-# Authentication is handled via ~/.cargo/credentials.toml
-
-[registries.hyperi]
-index = "sparse+https://hypersec.jfrog.io/artifactory/api/cargo/hyperi-cargo-virtual/index/"
