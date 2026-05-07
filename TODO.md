@@ -8,6 +8,20 @@
 
 ## Current Tasks
 
+### De-HyperI-isation for OSS adoption (2026-05-07)
+
+**Plan:** [`docs/superpowers/plans/2026-05-07-de-hyperi-isation.md`](docs/superpowers/plans/2026-05-07-de-hyperi-isation.md)
+
+**Why:** rustlib is on crates.io and the README now positions it as a generic toolkit, but the source still leaks HyperI-internal naming and defaults — `dfe_*` metric prefix hardcoded in transport/dlq modules, `DfeApp` as the headline CLI base class, `DEFAULT_API_URL` pointing at `releases.hyperi.io`, `DEFAULT_IMAGE_REGISTRY` baked to `ghcr.io/hyperi-io`. An OSS adopter sees these and concludes the library isn't really for them.
+
+**Scope:** five phased passes — cosmetic doc-pass → metric prefix decoupling → `version-check` URL mandatory → `DfeApp` rename to `ServiceApp` (with deprecated alias) → deployment defaults mandatory. Each phase ships independently. All commits are `fix:` (PATCH) or `feat:` (MINOR) per pre-GA discipline.
+
+**Status:** plan written. Phase 1 (cosmetic) ready to execute. Sister plan in [hyperi-pylib](../hyperi-pylib/docs/superpowers/plans/2026-05-07-de-hyperi-isation.md).
+
+**Already done in prep (commit `1bd1df8`):** removed JFrog registry config, generalised `directory-config` defaults, README rewrite with positioning manifesto, lib.rs module doc with positioning, sample-namespace strings (`hypersec` → `myorg`).
+
+---
+
 ### DFE Full Remediation — Phase 2: Deep Integration (AMENDED 2026-04-03)
 
 > **Scope directive:** Don't go light. The whole point of BatchEngine and
