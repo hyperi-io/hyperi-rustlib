@@ -29,7 +29,7 @@
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = DirectoryConfigStoreConfig {
-//!     directory: PathBuf::from("/etc/dfe/config"),
+//!     directory: PathBuf::from("/etc/myapp/config"),
 //!     ..Default::default()
 //! };
 //!
@@ -38,8 +38,8 @@
 //!
 //! // Read
 //! let tables = store.list_tables().await;
-//! let value = store.get("dfe-loader").await?;
-//! let host = store.get_key("dfe-loader", "kafka.brokers").await?;
+//! let value = store.get("my-service").await?;
+//! let host = store.get_key("my-service", "kafka.brokers").await?;
 //!
 //! // Write (if not read-only)
 //! store.set("dfe-loader", "kafka.brokers", "broker:9092".into(), None).await?;

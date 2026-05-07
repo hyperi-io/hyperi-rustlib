@@ -92,9 +92,8 @@ matching packages. The Confluent APT repo is added automatically when
 ## Registry
 
 - **Package name:** `hyperi-rustlib` (renamed from `hs-rustlib` in v1.4.3)
-- **Registry:** `hyperi` (JFrog Artifactory at `hypersec.jfrog.io`)
-- **Virtual repo:** `hyperi-cargo-virtual`
-- **Local repo:** `hyperi-cargo-local`
+- **Registry:** [crates.io](https://crates.io/crates/hyperi-rustlib) (primary, public)
+- **Internal mirror:** legacy JFrog mirror retired May 2026 — all consumers now pull from crates.io
 
 ### Downstream consumers
 

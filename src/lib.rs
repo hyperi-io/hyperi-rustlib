@@ -8,11 +8,18 @@
 
 //! # hyperi-rustlib
 //!
-//! Shared utility library for HyperI Rust applications.
+//! There's plenty of sage advice out there about how to run Rust services in
+//! production at scale — config cascades, structured logging, masking secrets,
+//! multi-backend secrets management, Prometheus, OpenTelemetry, Kafka transports,
+//! tiered disk-spillover sinks, adaptive worker pools, graceful shutdown — but
+//! almost none of it as code you can just install and use.
 //!
-//! Provides configuration management, structured logging, Prometheus metrics,
-//! and environment detection — matching the functionality of hyperi-pylib (Python)
-//! and hyperi-golib (Go).
+//! **This is that code.** Opinionated, drop-in, working out of the box. The
+//! patterns from blog posts as actual library — not a framework you assemble
+//! from twenty crates and a weekend.
+//!
+//! Built as the foundation for HyperI's PB/hr data services. Generic enough
+//! that you don't need to be at HyperI to use it.
 //!
 //! ## Quick Start
 //!

@@ -306,12 +306,12 @@ mod vault_env {
         let _guard = EnvGuard::new(&[
             ("VAULT_ADDR", "https://vault:8200"),
             ("VAULT_TOKEN", "test"),
-            ("VAULT_NAMESPACE", "hypersec"),
+            ("VAULT_NAMESPACE", "myorg"),
         ]);
 
         let config = OpenBaoConfig::from_env().expect("Should load from env");
 
-        assert_eq!(config.namespace, Some("hypersec".to_string()));
+        assert_eq!(config.namespace, Some("myorg".to_string()));
     }
 
     #[test]

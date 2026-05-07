@@ -37,12 +37,12 @@ pub struct DirectoryConfigStoreConfig {
 impl Default for DirectoryConfigStoreConfig {
     fn default() -> Self {
         Self {
-            directory: PathBuf::from("/etc/dfe/config"),
+            directory: PathBuf::from("./config"),
             refresh_interval: Duration::from_secs(30),
             git_enabled: true,
             git_push: false,
             git_author_name: "DirectoryConfigStore".to_string(),
-            git_author_email: "config@hyperi.io".to_string(),
+            git_author_email: "directory-config@localhost".to_string(),
         }
     }
 }
