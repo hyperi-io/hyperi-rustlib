@@ -10,7 +10,7 @@
 name = "hyperi-rustlib"
 version = "2.7.0"
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.95"
 description = "Opinionated, drop-in Rust toolkit for production services at scale. The patterns from blog posts as actual code: 8-layer config cascade, structured logging with PII masking, Prometheus + OpenTelemetry, Kafka/gRPC transports, tiered disk-spillover, adaptive worker pools, graceful shutdown."
 license = "FSL-1.1-ALv2"
 repository = "https://github.com/hyperi-io/hyperi-rustlib"
@@ -193,34 +193,34 @@ owo-colors = { version = ">=4.2.3, <5", optional = true }
 tracing-throttle = { version = ">=0.4.2, <0.5", default-features = false, optional = true }
 
 # OpenTelemetry (modern observability - OTLP native)
+# Held at 0.31 because tracing-opentelemetry 0.32.1 (latest) only supports
+# otel 0.31. Bump once tracing-opentelemetry ships a release compatible
+# with otel 0.32+.
 opentelemetry = { version = ">=0.31.0, <0.32", optional = true }
 opentelemetry_sdk = { version = ">=0.31.0, <0.32", features = ["rt-tokio"], optional = true }
 opentelemetry-otlp = { version = ">=0.31.0, <0.32", features = ["grpc-tonic", "http-proto", "metrics", "logs"], optional = true }
 tracing-opentelemetry = { version = ">=0.32.1, <0.33", optional = true }
 
 # Metrics (Prometheus-native)
-metrics = { version = ">=0.24.3, <0.25", optional = true }
-metrics-exporter-prometheus = { version = ">=0.16, <0.19", optional = true }
-metrics-util = { version = ">=0.20.1, <0.21", optional = true }
+metrics = { version = ">=0.24.5, <0.25", optional = true }
+metrics-exporter-prometheus = { version = ">=0.18.3, <0.19", optional = true }
+metrics-util = { version = ">=0.20.3, <0.21", optional = true }
 metrics-exporter-opentelemetry = { version = ">=0.2.1, <0.3", optional = true }
-sysinfo = { version = ">=0.38.0, <0.39", optional = true }
+sysinfo = { version = ">=0.39, <0.40", optional = true }
 
 # Async runtime (for metrics server, http-server, shutdown)
 tokio = { version = ">=1.50.0, <2", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "fs", "io-std", "io-util"], optional = true }
 tokio-util = { version = ">=0.7.14, <0.8", optional = true }
 
-# HTTP client — pinned to reqwest 0.12 until opentelemetry-otlp 0.32 ships on
-# reqwest 0.13. vaultrs 0.8 also requires reqwest 0.13 so the migration is a
-# single coordinated change once OTLP catches up. reqwest-middleware 0.5 and
-# reqwest-retry 0.9 force reqwest 0.13, so we hold middleware at 0.4 and bump
-# retry only to 0.8 (which dropped the wasm-timer/instant chain — closes
-# RUSTSEC-2024-0384 transitively while staying on reqwest 0.12).
+# HTTP client — bumped 2026-05-08 to reqwest 0.13 + middleware 0.5 + retry 0.9.
+# opentelemetry-otlp 0.32 and vaultrs 0.8 both moved to reqwest 0.13, so the
+# coordinated migration is now possible.
 # `default-features = false` drops the `default-tls` feature (which pulls
 # native-tls + openssl). HyperI standard is rustls everywhere — `rustls-tls`
 # is enabled explicitly so the resulting client still talks HTTPS.
-reqwest = { version = ">=0.12, <0.13", default-features = false, features = ["json", "rustls-tls"], optional = true }
-reqwest-middleware = { version = ">=0.4, <0.5", optional = true }
-reqwest-retry = { version = ">=0.8, <0.9", optional = true }
+reqwest = { version = ">=0.13.3, <0.14", default-features = false, features = ["json", "rustls"], optional = true }
+reqwest-middleware = { version = ">=0.5.1, <0.6", optional = true }
+reqwest-retry = { version = ">=0.9.1, <0.10", optional = true }
 
 # In-memory cache (TinyLFU, async, concurrent)
 moka = { version = ">=0.12, <0.13", features = ["future"], optional = true }
@@ -291,10 +291,8 @@ base64 = { version = ">=0.22, <0.23", optional = true }
 bytes = { version = ">=1.10, <2", optional = true }
 
 # Vault/OpenBao (for secrets-vault)
-# Pinned to 0.7.x — vaultrs 0.8 requires reqwest 0.13, which we don't yet
-# support (opentelemetry-otlp 0.31 still on reqwest 0.12). When OTel ships
-# OTLP on reqwest 0.13, bump vaultrs to 0.8 in the same migration.
-vaultrs = { version = ">=0.7, <0.8", optional = true }
+# Bumped to 0.8 in the 2026-05-08 reqwest-0.13 migration (see reqwest above).
+vaultrs = { version = ">=0.8, <0.9", optional = true }
 
 # AWS (for secrets-aws)
 # NOTE: aws-config and aws-sdk-* transitively pull in aws-lc-sys, which compiles
@@ -304,8 +302,13 @@ vaultrs = { version = ">=0.7, <0.8", optional = true }
 # apparently the AWS SDK team think we all enjoy watching cmake run. ~20-30s on
 # first build, cached by sccache after that. Revisit when they offer a ring-only
 # build — or when we find a reason to drop the AWS secrets backend entirely.
-aws-config = { version = ">=1.8, <2", optional = true }
-aws-sdk-secretsmanager = { version = ">=1.102, <2", optional = true }
+# Default features disabled to skip the aws-sdk `rustls` feature, which is
+# confusingly named — it actually enables `aws-smithy-runtime/tls-rustls` and
+# pulls in rustls 0.21 + rustls-webpki 0.101 (RUSTSEC-2026-0098, -0099, -0104).
+# `default-https-client` uses the modern aws-smithy-http-client/rustls-aws-lc
+# path with rustls 0.23 + rustls-webpki 0.103 — that's what we want.
+aws-config = { version = ">=1.8, <2", default-features = false, features = ["default-https-client", "rt-tokio", "credentials-process", "sso"], optional = true }
+aws-sdk-secretsmanager = { version = ">=1.102, <2", default-features = false, features = ["default-https-client", "rt-tokio"], optional = true }
 
 [build-dependencies]
 tonic-prost-build = { version = ">=0.14.5, <0.15", optional = true }
