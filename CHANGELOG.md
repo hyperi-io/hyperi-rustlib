@@ -1,3 +1,12 @@
+## [2.7.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.7.0...v2.7.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* **deps:** bleeding-edge update + close 3 rustls-webpki CVEs ([a9a2f59](https://github.com/hyperi-io/hyperi-rustlib/commit/a9a2f591b7254c56be1e607460debe41613b108f))
+* introduce concurrency primitives; reshape DLQ around BackgroundSink ([13e1c1c](https://github.com/hyperi-io/hyperi-rustlib/commit/13e1c1cb3f2cd3a6ec2fabcf35935ad72b7efe6d))
+* open-source cleanup — drop JFrog refs, pin positioning ([1bd1df8](https://github.com/hyperi-io/hyperi-rustlib/commit/1bd1df895c40115beaa72f830c928e1dbe4250c5))
+
 # [2.7.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.6.1...v2.7.0) (2026-05-01)
 
 
