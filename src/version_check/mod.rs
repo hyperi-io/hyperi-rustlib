@@ -227,7 +227,7 @@ pub struct VersionCheckResponse {
 async fn do_version_check(
     config: &VersionCheckConfig,
 ) -> Result<VersionCheckResponse, VersionCheckError> {
-    let instance_id = get_or_create_instance_id();
+    let instance_id = get_or_create_instance_id().await;
 
     let payload = CheckPayload {
         product: config.product.clone(),
@@ -339,45 +339,66 @@ fn format_age(published_at: &str) -> Option<String> {
     }
 }
 
-/// Get or create a persistent instance ID.
+/// Resolve the on-disk instance-id path. Prefers
+/// `dirs::cache_dir()/hyperi/instance_id` (XDG cache on Linux,
+/// `~/Library/Caches/hyperi/...` on macOS, `%LOCALAPPDATA%\hyperi\...`
+/// on Windows), falling back to `$HOME/.cache/hyperi/instance_id`.
 ///
-/// Tries to read from `~/.config/hyperi/instance_id`. If it doesn't exist,
-/// generates a new UUIDv4 and persists it. Falls back to an ephemeral UUID
-/// if the file can't be written.
+/// Never returns a `/tmp/...` path — that location is world-readable
+/// and unreliably cleaned across hosts.
+fn instance_id_path() -> Option<std::path::PathBuf> {
+    if let Some(d) = dirs::cache_dir() {
+        return Some(d.join("hyperi").join("instance_id"));
+    }
+    std::env::var_os("HOME").map(|h| {
+        std::path::PathBuf::from(h)
+            .join(".cache")
+            .join("hyperi")
+            .join("instance_id")
+    })
+}
+
+/// Sync core of the instance-id resolver. Returns the id and the path
+/// (if any) it should be persisted to.
+fn resolve_instance_id_sync() -> String {
+    let Some(id_path) = instance_id_path() else {
+        // No cache location resolvable — generate ephemeral.
+        return uuid::Uuid::new_v4().to_string();
+    };
+
+    // Try to read existing.
+    if let Ok(id) = std::fs::read_to_string(&id_path) {
+        let id = id.trim().to_string();
+        if !id.is_empty() {
+            return id;
+        }
+    }
+
+    // Generate new + persist (best-effort).
+    let id = uuid::Uuid::new_v4().to_string();
+    if let Some(parent) = id_path.parent()
+        && std::fs::create_dir_all(parent).is_ok()
+    {
+        let _ = std::fs::write(&id_path, &id);
+    }
+    id
+}
+
+/// Get or create a persistent instance ID (async-safe).
 ///
-/// The result is cached in-process via `OnceLock` — the file is read at most
-/// once per process, eliminating TOCTOU races between parallel callers.
-fn get_or_create_instance_id() -> String {
+/// First call does sync FS work on a `spawn_blocking` thread so the
+/// caller's tokio runtime is never stalled. Subsequent calls return
+/// the cached value from the in-process `OnceLock` (atomic load, no
+/// I/O).
+async fn get_or_create_instance_id() -> String {
     static INSTANCE_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-
-    INSTANCE_ID
-        .get_or_init(|| {
-            let config_dir = dirs::config_dir().map_or_else(
-                || std::path::PathBuf::from("/tmp/hyperi"),
-                |d| d.join("hyperi"),
-            );
-
-            let id_path = config_dir.join("instance_id");
-
-            // Try to read existing
-            if let Ok(id) = std::fs::read_to_string(&id_path) {
-                let id = id.trim().to_string();
-                if !id.is_empty() {
-                    return id;
-                }
-            }
-
-            // Generate new
-            let id = uuid::Uuid::new_v4().to_string();
-
-            // Try to persist (best-effort)
-            if std::fs::create_dir_all(&config_dir).is_ok() {
-                let _ = std::fs::write(&id_path, &id);
-            }
-
-            id
-        })
-        .clone()
+    if let Some(id) = INSTANCE_ID.get() {
+        return id.clone();
+    }
+    let id = tokio::task::spawn_blocking(resolve_instance_id_sync)
+        .await
+        .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
+    INSTANCE_ID.get_or_init(|| id.clone()).clone()
 }
 
 /// Errors during version check (internal, never exposed to caller).
@@ -413,19 +434,32 @@ mod tests {
         assert!(config.product.is_empty());
     }
 
-    #[test]
-    fn test_instance_id_stable() {
+    #[tokio::test]
+    async fn test_instance_id_stable() {
         // Multiple calls return the same ID
-        let id1 = get_or_create_instance_id();
-        let id2 = get_or_create_instance_id();
+        let id1 = get_or_create_instance_id().await;
+        let id2 = get_or_create_instance_id().await;
         assert_eq!(id1, id2);
         assert!(!id1.is_empty());
     }
 
-    #[test]
-    fn test_instance_id_is_uuid() {
-        let id = get_or_create_instance_id();
+    #[tokio::test]
+    async fn test_instance_id_is_uuid() {
+        let id = get_or_create_instance_id().await;
         assert!(uuid::Uuid::parse_str(&id).is_ok(), "not a valid UUID: {id}");
+    }
+
+    #[test]
+    fn test_instance_id_path_never_in_tmp() {
+        // Rule: never use /tmp for persistent state.
+        let path = instance_id_path();
+        if let Some(p) = path {
+            assert!(
+                !p.starts_with("/tmp"),
+                "instance_id_path returned /tmp path: {}",
+                p.display()
+            );
+        }
     }
 
     #[test]

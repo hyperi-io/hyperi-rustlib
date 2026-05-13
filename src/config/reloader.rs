@@ -281,8 +281,10 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
         let shutdown_token = crate::shutdown::token();
 
         // File polling state
-        let mut last_modified: Option<SystemTime> =
-            self.config.config_path.as_ref().and_then(|p| file_mtime(p));
+        let mut last_modified: Option<SystemTime> = match self.config.config_path.as_ref() {
+            Some(p) => file_mtime_async(p).await,
+            None => None,
+        };
         let mut last_reload = Instant::now();
 
         // Set up poll timer (for file watching)
@@ -402,7 +404,7 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
                 ReloadTrigger::FileChanged => {
                     // Check if file actually changed (mtime comparison)
                     if let Some(ref path) = self.config.config_path {
-                        let current_mtime = file_mtime(path);
+                        let current_mtime = file_mtime_async(path).await;
                         let changed = match (&*last_modified, &current_mtime) {
                             (Some(last), Some(current)) => current > last,
                             (None, Some(_)) => true,
@@ -523,7 +525,17 @@ enum ReloadTrigger {
     Sighup,
 }
 
-/// Get the modification time of a file.
+/// Get the modification time of a file. Used inside `run_loop` so the
+/// periodic poll doesn't block the runtime thread.
+async fn file_mtime_async(path: &PathBuf) -> Option<SystemTime> {
+    tokio::fs::metadata(path)
+        .await
+        .ok()
+        .and_then(|m| m.modified().ok())
+}
+
+/// Sync mtime helper — used only by the sync-context test below.
+#[cfg(test)]
 fn file_mtime(path: &PathBuf) -> Option<SystemTime> {
     std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }

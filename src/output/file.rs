@@ -11,6 +11,20 @@
 //! Writes raw JSON bytes to rotating files using the shared [`NdjsonWriter`].
 //! Used for testing and bare-metal deployments where Kafka is not available.
 //!
+//! ## Sync vs async API
+//!
+//! - [`FileOutput::write`] / [`FileOutput::write_batch`] are SYNC — they
+//!   call into the parking_lot-protected `NdjsonWriter` directly. Cheap
+//!   (~µs) but block the calling thread. Safe from sync code, tests, and
+//!   pre-runtime startup.
+//! - [`FileOutput::write_async`] / [`FileOutput::write_batch_async`] are
+//!   ASYNC — they hand the sync work to `tokio::task::spawn_blocking` so
+//!   the tokio runtime is never stalled. Use these from `async fn`
+//!   bodies.
+//!
+//! Both APIs share the same underlying `Arc<NdjsonWriter>`, so counters
+//! and rotation state are consistent regardless of which path is taken.
+//!
 //! ## File Layout
 //!
 //! ```text
@@ -19,6 +33,8 @@
 //! ├── events.ndjson.20260302T14  # Rotated (hourly)
 //! └── events.ndjson.20260302T13.gz  # Compressed
 //! ```
+
+use std::sync::Arc;
 
 use tracing::debug;
 
@@ -30,8 +46,10 @@ use super::error::OutputError;
 /// File output sink for raw NDJSON events.
 ///
 /// Wraps [`NdjsonWriter`] with output-specific configuration and logging.
+/// Cheap to `Clone` — the inner writer is shared via `Arc`.
+#[derive(Clone)]
 pub struct FileOutput {
-    writer: NdjsonWriter,
+    writer: Arc<NdjsonWriter>,
 }
 
 impl std::fmt::Debug for FileOutput {
@@ -73,13 +91,14 @@ impl FileOutput {
             "File output sink initialised"
         );
 
-        Ok(Self { writer })
+        Ok(Self {
+            writer: Arc::new(writer),
+        })
     }
 
-    /// Write a single raw JSON bytes line.
-    ///
-    /// The data should be a complete JSON object. A trailing newline is
-    /// appended automatically if not present.
+    /// Write a single raw JSON bytes line (sync). Blocks the calling
+    /// thread on disk I/O. Safe from sync code; **never call from an
+    /// `async fn` body** — use [`Self::write_async`] instead.
     pub fn write(&self, data: &[u8]) -> Result<(), OutputError> {
         if data.last() == Some(&b'\n') {
             self.writer.write_line(data)?;
@@ -92,10 +111,8 @@ impl FileOutput {
         Ok(())
     }
 
-    /// Write a batch of raw JSON bytes lines.
-    ///
-    /// Each entry should be a complete JSON object. Newlines are appended
-    /// automatically between entries.
+    /// Write a batch of raw JSON bytes lines (sync). Same caveats as
+    /// [`Self::write`] — use [`Self::write_batch_async`] from `async fn`.
     pub fn write_batch(&self, data: &[&[u8]]) -> Result<(), OutputError> {
         if data.is_empty() {
             return Ok(());
@@ -115,14 +132,78 @@ impl FileOutput {
         Ok(())
     }
 
+    /// Async write — runs the rotate-and-write on a blocking thread via
+    /// `tokio::task::spawn_blocking`. Hot-path safe for async callers.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying [`OutputError`] from the sync writer, or
+    /// an `OutputError::Io` if the blocking thread panicked.
+    pub async fn write_async(&self, data: Vec<u8>) -> Result<(), OutputError> {
+        let writer = Arc::clone(&self.writer);
+        tokio::task::spawn_blocking(move || -> Result<(), OutputError> {
+            let line: &[u8] = if data.last() == Some(&b'\n') {
+                &data
+            } else {
+                // Borrow check: build the owned buffer in the same scope.
+                return {
+                    let mut line = Vec::with_capacity(data.len() + 1);
+                    line.extend_from_slice(&data);
+                    line.push(b'\n');
+                    writer.write_line(&line).map_err(OutputError::from)
+                };
+            };
+            writer.write_line(line).map_err(OutputError::from)
+        })
+        .await
+        .map_err(|e| OutputError::Io(std::io::Error::other(e)))?
+    }
+
+    /// Async batch write — coalesces lines into a single buffer and runs
+    /// the rotate-and-write on a blocking thread.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::write_async`].
+    pub async fn write_batch_async(&self, data: Vec<Vec<u8>>) -> Result<(), OutputError> {
+        if data.is_empty() {
+            return Ok(());
+        }
+        let writer = Arc::clone(&self.writer);
+        tokio::task::spawn_blocking(move || -> Result<(), OutputError> {
+            let total_len: usize = data.iter().map(|d| d.len() + 1).sum();
+            let mut buf = Vec::with_capacity(total_len);
+            for entry in &data {
+                buf.extend_from_slice(entry);
+                if entry.last() != Some(&b'\n') {
+                    buf.push(b'\n');
+                }
+            }
+            let count = data.len() as u64;
+            writer.write_buf(&buf, count).map_err(OutputError::from)
+        })
+        .await
+        .map_err(|e| OutputError::Io(std::io::Error::other(e)))?
+    }
+
     /// Number of lines successfully written.
+    #[must_use]
     pub fn lines_written(&self) -> u64 {
         self.writer.lines_written()
     }
 
     /// Number of write errors encountered.
+    #[must_use]
     pub fn write_errors(&self) -> u64 {
         self.writer.write_errors()
+    }
+
+    /// Shared `Arc<NdjsonWriter>` for callers that need both sync and
+    /// async access to the same underlying writer (e.g. building an
+    /// [`crate::io::AsyncNdjsonWriter`] view).
+    #[must_use]
+    pub fn shared_writer(&self) -> Arc<NdjsonWriter> {
+        Arc::clone(&self.writer)
     }
 }
 
@@ -218,5 +299,107 @@ mod tests {
         let debug = format!("{output:?}");
         assert!(debug.contains("FileOutput"));
         assert!(debug.contains("lines_written"));
+    }
+
+    #[tokio::test]
+    async fn write_async_writes_to_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = test_config(dir.path());
+        let output = FileOutput::new(&cfg, "async-svc").expect("create");
+
+        output
+            .write_async(b"{\"k\":\"v\"}".to_vec())
+            .await
+            .expect("write_async");
+        assert_eq!(output.lines_written(), 1);
+
+        let body =
+            std::fs::read_to_string(dir.path().join("async-svc/events.ndjson")).expect("read");
+        assert_eq!(body.trim(), r#"{"k":"v"}"#);
+    }
+
+    #[tokio::test]
+    async fn write_batch_async_writes_to_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = test_config(dir.path());
+        let output = FileOutput::new(&cfg, "ab-svc").expect("create");
+
+        let batch: Vec<Vec<u8>> = (0..3)
+            .map(|i| format!("{{\"n\":{i}}}").into_bytes())
+            .collect();
+        output.write_batch_async(batch).await.expect("batch async");
+        assert_eq!(output.lines_written(), 3);
+
+        let body = std::fs::read_to_string(dir.path().join("ab-svc/events.ndjson")).expect("read");
+        assert_eq!(body.trim().lines().count(), 3);
+    }
+
+    #[tokio::test]
+    async fn write_batch_async_empty_is_noop() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = test_config(dir.path());
+        let output = FileOutput::new(&cfg, "empty-async").expect("create");
+        output.write_batch_async(vec![]).await.expect("empty async");
+        assert_eq!(output.lines_written(), 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn write_async_does_not_block_runtime() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = test_config(dir.path());
+        let output = FileOutput::new(&cfg, "nb-svc").expect("create");
+
+        let ticks = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let tc = ticks.clone();
+        let ticker = tokio::spawn(async move {
+            let mut t = tokio::time::interval(std::time::Duration::from_millis(2));
+            t.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            t.tick().await;
+            for _ in 0..15 {
+                t.tick().await;
+                tc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+
+        let mut writers = Vec::new();
+        for _ in 0..4 {
+            let o = output.clone();
+            writers.push(tokio::spawn(async move {
+                for i in 0..50_u32 {
+                    o.write_async(format!("{{\"n\":{i}}}").into_bytes())
+                        .await
+                        .expect("write");
+                }
+            }));
+        }
+        for h in writers {
+            h.await.expect("writer task");
+        }
+        ticker.await.expect("ticker");
+
+        assert_eq!(output.lines_written(), 200);
+        let t = ticks.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            t >= 8,
+            "ticker fired only {t} times — FileOutput starved the runtime",
+        );
+    }
+
+    #[tokio::test]
+    async fn clone_shares_writer() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cfg = test_config(dir.path());
+        let a = FileOutput::new(&cfg, "share").expect("create");
+        let b = a.clone();
+
+        a.write_async(b"{\"a\":1}".to_vec()).await.expect("a");
+        b.write_async(b"{\"b\":2}".to_vec()).await.expect("b");
+
+        assert_eq!(a.lines_written(), 2);
+        assert_eq!(b.lines_written(), 2);
+        assert!(std::sync::Arc::ptr_eq(
+            &a.shared_writer(),
+            &b.shared_writer()
+        ));
     }
 }

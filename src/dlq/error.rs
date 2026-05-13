@@ -41,4 +41,13 @@ pub enum DlqError {
     /// DLQ is disabled or not configured.
     #[error("DLQ not configured")]
     NotConfigured,
+
+    /// In-memory queue is full. Caller submitted faster than the drain
+    /// can write; the entry was rejected.
+    #[error("DLQ queue is full")]
+    QueueFull,
+
+    /// DLQ has been shut down — no further entries accepted.
+    #[error("DLQ has shut down")]
+    Closed,
 }

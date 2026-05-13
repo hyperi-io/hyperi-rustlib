@@ -1,6 +1,6 @@
 // Project:   hyperi-rustlib
 // File:      src/dlq/file.rs
-// Purpose:   File-based DLQ backend using NDJSON with rotation
+// Purpose:   File-based DLQ backend using AsyncNdjsonWriter
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
@@ -8,9 +8,10 @@
 
 //! File-based DLQ backend.
 //!
-//! Writes failed messages as NDJSON (one JSON line per entry) with automatic
-//! file rotation via the `file-rotate` crate. Files are rotated by time
-//! (hourly or daily) and optionally compressed after rotation.
+//! Writes failed messages as NDJSON to a rotating file via
+//! [`AsyncNdjsonWriter`]. The async wrapper runs the sync rotate-and-write
+//! on `tokio::task::spawn_blocking` so the runtime thread is never
+//! stalled.
 //!
 //! ## File Layout
 //!
@@ -20,42 +21,35 @@
 //! ├── dlq.ndjson.20260302T14  # Rotated (hourly)
 //! └── dlq.ndjson.20260302T13.gz  # Compressed
 //! ```
-//!
-//! ## Thread Safety
-//!
-//! Delegates to [`NdjsonWriter`] which uses `Mutex<FileRotate>` for safe
-//! concurrent writes.
 
-use async_trait::async_trait;
 use tracing::debug;
 
+use crate::io::AsyncNdjsonWriter;
 use crate::io::NdjsonWriter;
 
-use super::backend::DlqBackend;
 use super::config::FileDlqConfig;
 use super::entry::DlqEntry;
 use super::error::DlqError;
 
-/// File-based DLQ backend using NDJSON format.
-pub struct FileDlq {
-    writer: NdjsonWriter,
+/// File backend — internal variant carried by [`super::DlqBackend::File`].
+pub struct FileDlqInner {
+    writer: AsyncNdjsonWriter,
     service_name: String,
 }
 
-impl std::fmt::Debug for FileDlq {
+impl std::fmt::Debug for FileDlqInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FileDlq")
+        f.debug_struct("FileDlqInner")
             .field("service_name", &self.service_name)
-            .field("entries_written", &self.writer.lines_written())
+            .field("output_path", &self.writer.output_path())
+            .field("lines_written", &self.writer.lines_written())
             .field("write_errors", &self.writer.write_errors())
             .finish_non_exhaustive()
     }
 }
 
-impl FileDlq {
-    /// Create a new file-based DLQ backend.
-    ///
-    /// Creates the output directory if it doesn't exist.
+impl FileDlqInner {
+    /// Create the file backend. Creates the output directory if needed.
     ///
     /// # Errors
     ///
@@ -70,80 +64,57 @@ impl FileDlq {
             })?;
 
         Ok(Self {
-            writer,
+            writer: AsyncNdjsonWriter::new(writer),
             service_name: service_name.to_string(),
         })
     }
 
-    /// Number of entries successfully written.
-    pub fn entries_written(&self) -> u64 {
-        self.writer.lines_written()
-    }
-
-    /// Number of write errors.
-    pub fn write_errors(&self) -> u64 {
-        self.writer.write_errors()
-    }
-}
-
-#[async_trait]
-impl DlqBackend for FileDlq {
-    async fn send(&self, entry: &DlqEntry) -> Result<(), DlqError> {
-        // Serialise outside the lock
-        let mut line = serde_json::to_vec(entry)
-            .map_err(|e| DlqError::Serialization(format!("failed to serialise DLQ entry: {e}")))?;
-        line.push(b'\n');
-
-        if let Err(e) = self.writer.write_line(&line) {
-            #[cfg(feature = "metrics")]
-            metrics::counter!("dfe_dlq_write_errors_total").increment(1);
-            return Err(e.into());
+    /// Send a batch of entries. Serialises each entry to NDJSON, then
+    /// hands the buffer to the async writer (which moves the sync I/O
+    /// to a blocking thread via `spawn_blocking`).
+    pub async fn send_batch(&mut self, batch: &[DlqEntry]) -> Result<(), DlqError> {
+        if batch.is_empty() {
+            return Ok(());
         }
+
+        let mut buf = Vec::with_capacity(batch.len() * 256);
+        for entry in batch {
+            serde_json::to_writer(&mut buf, entry)
+                .map_err(|e| DlqError::Serialization(format!("DLQ serialise: {e}")))?;
+            buf.push(b'\n');
+        }
+
+        let count = batch.len() as u64;
+        self.writer
+            .write_buf(buf, count)
+            .await
+            .map_err(|e| DlqError::File(format!("DLQ write_buf: {e}")))?;
 
         #[cfg(feature = "metrics")]
         {
-            metrics::counter!("dfe_dlq_entries_total").increment(1);
+            metrics::counter!("dfe_dlq_entries_total").increment(count);
             metrics::gauge!("dfe_dlq_entries_written").set(self.writer.lines_written() as f64);
         }
 
         debug!(
             service = %self.service_name,
-            reason = %entry.reason,
-            destination = entry.destination.as_deref().unwrap_or("-"),
-            "DLQ entry written to file"
-        );
-
-        Ok(())
-    }
-
-    async fn send_batch(&self, entries: &[DlqEntry]) -> Result<(), DlqError> {
-        if entries.is_empty() {
-            return Ok(());
-        }
-
-        // Serialise all entries outside the lock
-        let mut buf = Vec::with_capacity(entries.len() * 256);
-        for entry in entries {
-            serde_json::to_writer(&mut buf, entry).map_err(|e| {
-                DlqError::Serialization(format!("failed to serialise DLQ entry: {e}"))
-            })?;
-            buf.push(b'\n');
-        }
-
-        let count = entries.len() as u64;
-        self.writer.write_buf(&buf, count)?;
-
-        debug!(
-            service = %self.service_name,
-            count = entries.len(),
+            count = batch.len(),
             "DLQ batch written to file"
         );
 
         Ok(())
     }
 
-    fn name(&self) -> &'static str {
-        "file"
+    /// Number of entries successfully written.
+    #[must_use]
+    pub fn entries_written(&self) -> u64 {
+        self.writer.lines_written()
+    }
+
+    /// Number of write errors.
+    #[must_use]
+    pub fn write_errors(&self) -> u64 {
+        self.writer.write_errors()
     }
 }
 
@@ -153,82 +124,75 @@ mod tests {
     use crate::dlq::config::RotationPeriod;
     use crate::dlq::entry::DlqSource;
 
-    #[tokio::test]
-    async fn test_file_dlq_write() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let config = FileDlqConfig {
+    fn cfg(dir: &std::path::Path) -> FileDlqConfig {
+        FileDlqConfig {
             enabled: true,
-            path: dir.path().to_path_buf(),
+            path: dir.to_path_buf(),
             rotation: RotationPeriod::Daily,
             max_age_days: 1,
             compress_rotated: false,
-        };
-
-        let dlq = FileDlq::new(&config, "test-service").expect("create");
-        assert_eq!(dlq.name(), "file");
-
-        let entry = DlqEntry::new("test-service", "parse_error", b"bad data".to_vec())
-            .with_destination("acme.auth")
-            .with_source(DlqSource::kafka("events", 1, 42));
-
-        dlq.send(&entry).await.expect("send");
-        assert_eq!(dlq.entries_written(), 1);
-
-        // Read and verify NDJSON format
-        let content =
-            std::fs::read_to_string(dir.path().join("test-service/dlq.ndjson")).expect("read");
-        let parsed: DlqEntry = serde_json::from_str(content.trim()).expect("parse");
-        assert_eq!(parsed.service, "test-service");
-        assert_eq!(parsed.reason, "parse_error");
-        assert_eq!(parsed.payload, b"bad data");
-        assert_eq!(parsed.destination.as_deref(), Some("acme.auth"));
-    }
-
-    #[tokio::test]
-    async fn test_file_dlq_batch() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let config = FileDlqConfig {
-            enabled: true,
-            path: dir.path().to_path_buf(),
-            rotation: RotationPeriod::Daily,
-            max_age_days: 1,
-            compress_rotated: false,
-        };
-
-        let dlq = FileDlq::new(&config, "batch-svc").expect("create");
-
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let entries: Vec<DlqEntry> = (0..5)
-            .map(|i| DlqEntry::new("batch-svc", format!("error_{i}"), vec![i as u8]))
-            .collect();
-
-        dlq.send_batch(&entries).await.expect("batch send");
-        assert_eq!(dlq.entries_written(), 5);
-
-        // Verify each line is valid JSON
-        let content =
-            std::fs::read_to_string(dir.path().join("batch-svc/dlq.ndjson")).expect("read");
-        let lines: Vec<&str> = content.trim().lines().collect();
-        assert_eq!(lines.len(), 5);
-        for (i, line) in lines.iter().enumerate() {
-            let parsed: DlqEntry = serde_json::from_str(line).expect("parse line");
-            assert_eq!(parsed.reason, format!("error_{i}"));
         }
     }
 
     #[tokio::test]
-    async fn test_file_dlq_empty_batch() {
+    async fn send_batch_writes_to_file() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let config = FileDlqConfig {
-            enabled: true,
-            path: dir.path().to_path_buf(),
-            rotation: RotationPeriod::Daily,
-            max_age_days: 1,
-            compress_rotated: false,
-        };
+        let mut backend = FileDlqInner::new(&cfg(dir.path()), "svc").expect("create");
 
-        let dlq = FileDlq::new(&config, "empty").expect("create");
-        dlq.send_batch(&[]).await.expect("empty batch");
-        assert_eq!(dlq.entries_written(), 0);
+        let entries = vec![
+            DlqEntry::new("svc", "parse_error", b"a".to_vec())
+                .with_destination("acme.auth")
+                .with_source(DlqSource::kafka("events", 1, 42)),
+            DlqEntry::new("svc", "parse_error", b"b".to_vec()),
+        ];
+
+        backend.send_batch(&entries).await.expect("send");
+        assert_eq!(backend.entries_written(), 2);
+
+        let body = std::fs::read_to_string(dir.path().join("svc/dlq.ndjson")).expect("read");
+        let lines: Vec<&str> = body.trim().lines().collect();
+        assert_eq!(lines.len(), 2);
+        let parsed: DlqEntry = serde_json::from_str(lines[0]).expect("parse");
+        assert_eq!(parsed.reason, "parse_error");
+    }
+
+    #[tokio::test]
+    async fn send_batch_empty_is_noop() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut backend = FileDlqInner::new(&cfg(dir.path()), "empty").expect("create");
+        backend.send_batch(&[]).await.expect("empty");
+        assert_eq!(backend.entries_written(), 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn file_backend_does_not_block_runtime() {
+        // Concurrent backends + ticker on the same runtime — ticker must
+        // keep firing while writes are happening.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ticks = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let tc = ticks.clone();
+        let ticker = tokio::spawn(async move {
+            let mut t = tokio::time::interval(std::time::Duration::from_millis(2));
+            t.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            t.tick().await;
+            for _ in 0..15 {
+                t.tick().await;
+                tc.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+
+        let mut backend = FileDlqInner::new(&cfg(dir.path()), "nb").expect("create");
+        for _ in 0..30 {
+            let batch: Vec<DlqEntry> = (0..10)
+                .map(|i| DlqEntry::new("nb", "err", vec![i]))
+                .collect();
+            backend.send_batch(&batch).await.expect("send");
+        }
+        ticker.await.expect("ticker");
+        let t = ticks.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            t >= 8,
+            "ticker fired only {t} times — file backend starved runtime",
+        );
     }
 }

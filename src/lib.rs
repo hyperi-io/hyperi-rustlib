@@ -58,6 +58,13 @@
 #![deny(unsafe_code)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(clippy::pedantic)]
+// Crate-wide hard-deny for the most pernicious async footgun. Holding a
+// sync `Mutex`/`RwLock` guard across `.await` is the canonical way to
+// deadlock a tokio runtime under contention. The lint catches this at
+// compile time. Integration tests that legitimately serialise via a
+// sync mutex opt out file-locally with `#![allow(...)]` and a comment
+// explaining the safety reasoning.
+#![deny(clippy::await_holding_lock)]
 #![warn(rustdoc::broken_intra_doc_links)]
 #![warn(rustdoc::private_intra_doc_links)]
 #![warn(rustdoc::invalid_codeblock_attributes)]
@@ -193,6 +200,10 @@ pub mod deployment;
 #[cfg_attr(docsrs, doc(cfg(feature = "version-check")))]
 pub mod version_check;
 
+#[cfg(feature = "concurrency")]
+#[cfg_attr(docsrs, doc(cfg(feature = "concurrency")))]
+pub mod concurrency;
+
 // Re-export common types at crate root
 pub use env::{Environment, RuntimeContext, runtime_context};
 pub use kafka_config::{
@@ -321,25 +332,23 @@ pub use cli::{DfeApp, ServiceRuntime};
 
 #[cfg(feature = "io")]
 #[cfg_attr(docsrs, doc(cfg(feature = "io")))]
-pub use io::{FileWriterConfig, NdjsonWriter, RotationPeriod};
+pub use io::{AsyncNdjsonWriter, FileWriterConfig, NdjsonWriter, RotationPeriod};
 
 #[cfg(feature = "dlq")]
 #[cfg_attr(docsrs, doc(cfg(feature = "dlq")))]
-pub use dlq::{
-    Dlq, DlqBackend, DlqConfig, DlqEntry, DlqError, DlqMode, DlqSource, FileDlq, FileDlqConfig,
-};
+pub use dlq::{Dlq, DlqBackend, DlqConfig, DlqEntry, DlqError, DlqMode, DlqSource, FileDlqConfig};
 
 #[cfg(feature = "dlq-kafka")]
 #[cfg_attr(docsrs, doc(cfg(feature = "dlq-kafka")))]
-pub use dlq::{DlqRouting, KafkaDlq, KafkaDlqConfig};
+pub use dlq::{DlqRouting, KafkaDlqConfig};
 
 #[cfg(feature = "dlq-http")]
 #[cfg_attr(docsrs, doc(cfg(feature = "dlq-http")))]
-pub use dlq::{HttpDlq, HttpDlqConfig};
+pub use dlq::HttpDlqConfig;
 
 #[cfg(feature = "dlq-redis")]
 #[cfg_attr(docsrs, doc(cfg(feature = "dlq-redis")))]
-pub use dlq::{RedisDlq, RedisDlqConfig};
+pub use dlq::RedisDlqConfig;
 
 #[cfg(feature = "output-file")]
 #[cfg_attr(docsrs, doc(cfg(feature = "output-file")))]
@@ -361,6 +370,14 @@ pub use deployment::{
 #[cfg(feature = "version-check")]
 #[cfg_attr(docsrs, doc(cfg(feature = "version-check")))]
 pub use version_check::{VersionCheck, VersionCheckConfig, VersionCheckResponse};
+
+#[cfg(feature = "concurrency")]
+#[cfg_attr(docsrs, doc(cfg(feature = "concurrency")))]
+pub use concurrency::{
+    Actor, ActorConfig, ActorError, ActorHandle, ActorJoinHandle, BackgroundSink,
+    BackgroundSinkConfig, BackgroundSinkHandle, DrainError, Overflow, PeriodicTask, PeriodicWorker,
+    SinkDrain, TickError,
+};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
