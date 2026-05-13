@@ -66,12 +66,33 @@ pub struct DlqConfig {
     /// Backend routing mode.
     pub mode: DlqMode,
 
+    /// Bounded mpsc capacity. When the queue is full, `try_send` returns
+    /// `QueueFull` (overflow=Drop). Sized for failure-burst tolerance.
+    /// Default 10_000.
+    pub queue_capacity: usize,
+
+    /// Drain coalesces up to this many entries into one backend write.
+    /// Default 256.
+    pub batch_size: usize,
+
+    /// Flush a partial batch after this duration, even if not full.
+    /// Default 100 ms.
+    pub flush_interval_ms: u64,
+
     /// File backend configuration.
     pub file: FileDlqConfig,
 
     /// Kafka backend configuration.
     #[cfg(feature = "dlq-kafka")]
     pub kafka: KafkaDlqConfig,
+
+    /// HTTP backend configuration.
+    #[cfg(feature = "dlq-http")]
+    pub http: super::http::HttpDlqConfig,
+
+    /// Redis backend configuration.
+    #[cfg(feature = "dlq-redis")]
+    pub redis: super::redis_dlq::RedisDlqConfig,
 }
 
 impl Default for DlqConfig {
@@ -79,9 +100,16 @@ impl Default for DlqConfig {
         Self {
             enabled: true,
             mode: DlqMode::default(),
+            queue_capacity: 10_000,
+            batch_size: 256,
+            flush_interval_ms: 100,
             file: FileDlqConfig::default(),
             #[cfg(feature = "dlq-kafka")]
             kafka: KafkaDlqConfig::default(),
+            #[cfg(feature = "dlq-http")]
+            http: super::http::HttpDlqConfig::default(),
+            #[cfg(feature = "dlq-redis")]
+            redis: super::redis_dlq::RedisDlqConfig::default(),
         }
     }
 }
@@ -200,7 +228,6 @@ mod tests {
     #[test]
     fn test_config_serde_roundtrip() {
         let config = DlqConfig {
-            enabled: true,
             mode: DlqMode::FanOut,
             file: FileDlqConfig {
                 enabled: true,
@@ -209,14 +236,19 @@ mod tests {
                 max_age_days: 7,
                 compress_rotated: false,
             },
-            #[cfg(feature = "dlq-kafka")]
-            kafka: KafkaDlqConfig::default(),
+            queue_capacity: 50_000,
+            batch_size: 128,
+            flush_interval_ms: 250,
+            ..DlqConfig::default()
         };
         let json = serde_json::to_string(&config).expect("serialise");
         let parsed: DlqConfig = serde_json::from_str(&json).expect("deserialise");
         assert_eq!(parsed.mode, DlqMode::FanOut);
         assert_eq!(parsed.file.rotation, RotationPeriod::Daily);
         assert_eq!(parsed.file.max_age_days, 7);
+        assert_eq!(parsed.queue_capacity, 50_000);
+        assert_eq!(parsed.batch_size, 128);
+        assert_eq!(parsed.flush_interval_ms, 250);
     }
 
     #[test]

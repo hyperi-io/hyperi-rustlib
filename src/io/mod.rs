@@ -26,4 +26,4 @@ mod config;
 mod ndjson_writer;
 
 pub use config::{FileWriterConfig, RotationPeriod};
-pub use ndjson_writer::NdjsonWriter;
+pub use ndjson_writer::{AsyncNdjsonWriter, NdjsonWriter};

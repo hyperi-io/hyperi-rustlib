@@ -201,7 +201,7 @@ impl DirectoryConfigStore {
         if let Some(parent) = file_path.parent()
             && !parent.exists()
         {
-            std::fs::create_dir_all(parent)?;
+            tokio::fs::create_dir_all(parent).await?;
         }
 
         // Load current content or start with empty mapping

@@ -6,8 +6,7 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Smoke-test helper for [`generate_dockerfile`](super::generate_dockerfile)
-//! output.
+//! Smoke-test helper for [`super::generate_dockerfile`] output.
 //!
 //! Builds a docker image from the contract-generated Dockerfile + a binary,
 //! then runs the container with a probe command (`version` by default) and

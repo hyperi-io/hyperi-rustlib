@@ -36,6 +36,12 @@ runtime = ["dirs"]
 config = ["figment", "dotenvy", "serde_yaml_ng", "serde_json", "dirs", "tracing"]
 logger = ["tracing", "tracing-subscriber", "owo-colors", "serde_json", "tracing-throttle"]
 
+# Three generic async primitives (BackgroundSink, PeriodicWorker, ActorHandle).
+# Foundational helpers for any module that does fire-and-forget durable
+# writes, timer-driven loops, or stateful command-queue actors. See
+# `src/concurrency/mod.rs` for the decision matrix.
+concurrency = ["tokio", "tokio-util", "tracing", "metrics-core"]
+
 # Metrics tiers (2.6.0 split). Consumers pay only for what they use:
 # - metrics-core: emit-only (counter!/gauge!/histogram! macros work)
 # - metrics-process: + cgroup-aware process gauges
@@ -99,10 +105,10 @@ cli-service = ["cli", "metrics", "memory", "scaling", "worker-pool", "shutdown"]
 top = ["cli-service", "ratatui"]
 
 # Shared NDJSON file I/O (used by dlq + output-file)
-io = ["file-rotate", "parking_lot", "chrono", "tracing"]
+io = ["file-rotate", "parking_lot", "chrono", "tracing", "tokio"]
 
 # Dead letter queue (file backend always available)
-dlq = ["io", "base64", "serde_json", "tokio", "async-trait", "tracing"]
+dlq = ["io", "concurrency", "base64", "serde_json", "tokio", "tokio-util", "tracing"]
 dlq-kafka = ["dlq", "transport-kafka"]
 dlq-http = ["dlq", "reqwest"]
 dlq-redis = ["dlq", "transport-redis"]
@@ -358,3 +364,8 @@ required-features = ["worker"]
 name = "filter_benchmark"
 harness = false
 required-features = ["transport-memory"]
+
+[[bench]]
+name = "concurrency_patterns"
+harness = false
+required-features = ["concurrency"]

@@ -14,16 +14,22 @@
 //!
 //! ## Backends
 //!
-//! - **File** (`FileDlq`): NDJSON files with automatic rotation and cleanup.
-//!   Always available, no external dependencies.
-//! - **Kafka** (`KafkaDlq`): Routes to Kafka topics with per-table or common
+//! - **File**: NDJSON files with automatic rotation and cleanup. Always
+//!   available, no external dependencies.
+//! - **Kafka**: Routes to Kafka topics with per-table or common
 //!   routing. Requires the `dlq-kafka` feature.
-//! - **Custom**: Implement [`DlqBackend`] and register via [`Dlq::add_backend`].
+//! - **HTTP**: POSTs entries as NDJSON. Requires the `dlq-http` feature.
+//! - **Redis**: XADDs entries to a Redis Stream. Requires the
+//!   `dlq-redis` feature.
+//!
+//! Backends are selected and configured via [`DlqConfig`]; consumers
+//! never construct backend types directly. To add a new backend, extend
+//! the [`DlqBackend`] enum in rustlib itself.
 //!
 //! ## Modes
 //!
-//! - **Cascade** (default): Try Kafka first, fall back to file on failure.
-//! - **Fan-out**: Write to all backends for belt-and-suspenders.
+//! - **Cascade** (default): Try backends in order, stop on first success.
+//! - **Fan-out**: Write to all backends, succeed if any succeed.
 //! - **FileOnly**: File backend only (no Kafka dependency).
 //! - **KafkaOnly**: Kafka backend only.
 //!
@@ -31,18 +37,21 @@
 //!
 //! ```rust,no_run
 //! use hyperi_rustlib::dlq::{Dlq, DlqConfig, DlqEntry, DlqSource};
+//! use tokio_util::sync::CancellationToken;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! // File-only DLQ (no Kafka needed)
 //! let config = DlqConfig::default();
-//! let dlq = Dlq::file_only(&config, "my-service")?;
+//! let shutdown = CancellationToken::new();
+//! let dlq = Dlq::spawn(&config, "my-service", None, shutdown.clone())?;
 //!
-//! // Route a failed message
 //! let entry = DlqEntry::new("my-service", "parse_error", b"bad data".to_vec())
 //!     .with_destination("acme.auth")
 //!     .with_source(DlqSource::kafka("events", 1, 42));
 //!
-//! dlq.send(entry).await?;
+//! dlq.send(entry).await?;       // queued (non-blocking)
+//! dlq.flush().await?;           // wait for durable write
+//! shutdown.cancel();
+//! dlq.shutdown().await?;        // drain + exit
 //! # Ok(())
 //! # }
 //! ```
@@ -68,22 +77,19 @@ pub use backend::DlqBackend;
 pub use config::{DlqConfig, DlqMode, FileDlqConfig, RotationPeriod};
 pub use entry::{DlqEntry, DlqSource};
 pub use error::DlqError;
-pub use file::FileDlq;
 pub use orchestrator::Dlq;
 
 // Kafka types (only with `dlq-kafka` feature)
 #[cfg(feature = "dlq-kafka")]
 pub use config::{DlqRouting, KafkaDlqConfig};
-#[cfg(feature = "dlq-kafka")]
-pub use kafka::KafkaDlq;
 
 // HTTP types (only with `dlq-http` feature)
 #[cfg(feature = "dlq-http")]
-pub use http::{HttpDlq, HttpDlqConfig};
+pub use http::HttpDlqConfig;
 
 // Redis types (only with `dlq-redis` feature)
 #[cfg(feature = "dlq-redis")]
-pub use redis_dlq::{RedisDlq, RedisDlqConfig};
+pub use redis_dlq::RedisDlqConfig;
 
 /// Result type for DLQ operations.
 pub type Result<T> = std::result::Result<T, DlqError>;

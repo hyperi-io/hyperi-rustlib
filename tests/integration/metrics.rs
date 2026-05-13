@@ -10,6 +10,14 @@
 //!
 //! These tests must run serially because the metrics crate uses a global recorder.
 //! Run with: `cargo test --test integration_tests -- --test-threads=1`
+//!
+//! `clippy::await_holding_lock` is deliberately allowed here: the suite uses a
+//! `std::sync::Mutex` to externally serialise tests that touch the global
+//! recorder. The lock is held across `.await` points by design — there is no
+//! second task that can contend (tests are serialised, the lock has no cross-
+//! task purpose). Switching to `tokio::sync::Mutex` would change nothing
+//! semantically and just churn 30 call sites.
+#![allow(clippy::await_holding_lock)]
 
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
