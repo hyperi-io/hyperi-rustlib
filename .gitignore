@@ -43,6 +43,7 @@ coverage.lcov
 docs/superpowers/
 
 
+STATE.md
 
 # Git worktrees
 .worktrees/
