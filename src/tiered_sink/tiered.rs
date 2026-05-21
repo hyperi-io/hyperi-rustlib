@@ -452,10 +452,23 @@ fn check_disk_space(path: &std::path::Path) -> Option<(u64, u64)> {
         stat
     };
 
-    let block_size = stat.f_frsize;
-    let total = stat.f_blocks * block_size;
-    let available = stat.f_bavail * block_size;
-    Some((total, available))
+    // Portability: libc::statvfs field widths differ across platforms.
+    // Linux: f_blocks/f_bavail/f_frsize are u64. aarch64-apple-darwin: u32.
+    // Cast on macOS to bridge the type difference; no-op on Linux. Fixes #39.
+    #[cfg(target_os = "macos")]
+    {
+        let block_size: u64 = u64::from(stat.f_frsize);
+        let total: u64 = u64::from(stat.f_blocks) * block_size;
+        let available: u64 = u64::from(stat.f_bavail) * block_size;
+        Some((total, available))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let block_size = stat.f_frsize;
+        let total = stat.f_blocks * block_size;
+        let available = stat.f_bavail * block_size;
+        Some((total, available))
+    }
 }
 
 /// Background poller that checks disk usage and sets a flag.
