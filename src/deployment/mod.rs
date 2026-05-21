@@ -82,6 +82,7 @@ mod registry;
 #[cfg(feature = "deployment-smoke")]
 pub mod smoke;
 mod validate;
+pub mod waves;
 
 pub use contract::{
     DeploymentContract, HealthContract, ImageProfile, OciLabels, PortContract, SecretEnvContract,
@@ -99,3 +100,4 @@ pub use registry::{
     base_image_from_cascade, image_registry_from_cascade,
 };
 pub use validate::{validate_dockerfile, validate_helm_values};
+pub use waves::{WAVE_APPS, WAVE_CRDS, WAVE_OPERATORS, WAVE_POST, WAVE_TOPICS};
