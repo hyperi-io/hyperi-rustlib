@@ -148,7 +148,7 @@ pub fn smoke_test_build(
     set_executable(&dst)?;
 
     // Write Dockerfile.
-    let dockerfile = generate_dockerfile(contract);
+    let dockerfile = generate_dockerfile(contract, None);
     std::fs::write(context.join("Dockerfile"), dockerfile)?;
 
     // Build.

@@ -14,3 +14,6 @@ mod kafka;
 
 #[cfg(feature = "transport-grpc-vector-compat")]
 mod vector_compat;
+
+#[cfg(feature = "deployment")]
+mod contract_artefacts;

@@ -29,8 +29,17 @@ use super::error::DeploymentError;
 /// the generated Dockerfile automatically includes custom APT repo setup and
 /// runtime package installation. If `native_deps` is empty, only base utilities
 /// are installed.
+///
+/// `identity`, when provided, stamps three `io.hyperi.contract.*` LABEL
+/// lines on the image per the Contract Identity Annotation Scheme v1
+/// (see [`ContractIdentity`](crate::deployment::ContractIdentity)). Phase 1
+/// rollout: optional; callers SHOULD pass `Some(&identity)`. Phase 2 will
+/// flip this to a required parameter.
 #[must_use]
-pub fn generate_dockerfile(contract: &DeploymentContract) -> String {
+pub fn generate_dockerfile(
+    contract: &DeploymentContract,
+    identity: Option<&crate::deployment::ContractIdentity>,
+) -> String {
     let binary = contract.binary();
 
     // EXPOSE line: metrics_port + extra ports
@@ -62,6 +71,12 @@ pub fn generate_dockerfile(contract: &DeploymentContract) -> String {
         ImageProfile::Development => "development",
     };
 
+    // Contract Identity Annotation Scheme v1 -- three LABEL lines.
+    // Phase 1: silent on None for backwards compat (see module doc).
+    let identity_block = identity
+        .map(|id| format!("\n{labels}", labels = id.as_dockerfile_labels()))
+        .unwrap_or_default();
+
     format!(
         r#"# Project:   {app_name}
 # File:      Dockerfile
@@ -78,7 +93,7 @@ pub fn generate_dockerfile(contract: &DeploymentContract) -> String {
 
 FROM {base_image}
 
-LABEL io.hyperi.profile="{profile_label}"
+LABEL io.hyperi.profile="{profile_label}"{identity_block}
 
 {apt_block}
 COPY {binary} /usr/local/bin/{binary}
@@ -105,6 +120,7 @@ ENTRYPOINT ["{binary}"]{cmd}
         liveness_path = contract.health.liveness_path,
         cmd = cmd,
         schema_version = contract.schema_version,
+        identity_block = identity_block,
     )
 }
 
@@ -456,12 +472,18 @@ pub fn generate_compose_fragment(contract: &DeploymentContract) -> String {
 ///
 /// Writes `Chart.yaml`, `values.yaml`, and all template files to `output_dir`.
 ///
+/// `identity`, when provided, stamps the three `io.hyperi.contract.*`
+/// annotations into `Chart.yaml`'s top-level `annotations:` block per the
+/// Contract Identity Annotation Scheme v1. Phase 1 rollout: optional;
+/// callers SHOULD pass `Some(&identity)`.
+///
 /// # Errors
 ///
 /// Returns `DeploymentError` if files or directories cannot be created.
 pub fn generate_chart(
     contract: &DeploymentContract,
     output_dir: impl AsRef<Path>,
+    identity: Option<&crate::deployment::ContractIdentity>,
 ) -> Result<(), DeploymentError> {
     let dir = output_dir.as_ref();
     let templates_dir = dir.join("templates");
@@ -473,7 +495,7 @@ pub fn generate_chart(
     })?;
 
     // Write all chart files
-    write_file(dir.join("Chart.yaml"), &gen_chart_yaml(contract))?;
+    write_file(dir.join("Chart.yaml"), &gen_chart_yaml(contract, identity))?;
     write_file(dir.join("values.yaml"), &gen_values_yaml(contract))?;
     write_file(
         templates_dir.join("_helpers.tpl"),
@@ -521,7 +543,15 @@ pub fn generate_chart(
 // Chart file generators
 // ============================================================================
 
-fn gen_chart_yaml(c: &DeploymentContract) -> String {
+fn gen_chart_yaml(
+    c: &DeploymentContract,
+    identity: Option<&crate::deployment::ContractIdentity>,
+) -> String {
+    // Contract Identity Annotation Scheme v1 -- top-level annotations block.
+    let identity_block = identity
+        .map(|id| format!("\nannotations:\n{ann}\n", ann = id.as_yaml_annotations(2)))
+        .unwrap_or_default();
+
     format!(
         "apiVersion: v2\n\
          name: {name}\n\
@@ -529,7 +559,7 @@ fn gen_chart_yaml(c: &DeploymentContract) -> String {
          type: application\n\
          version: 0.1.0\n\
          appVersion: \"1.0.0\"\n\
-         \n\
+         {identity_block}\n\
          keywords:\n\
          \x20 - hyperi\n\
          \x20 - dfe\n\
@@ -543,9 +573,11 @@ fn gen_chart_yaml(c: &DeploymentContract) -> String {
         } else {
             &c.description
         },
+        identity_block = identity_block,
     )
 }
 
+#[allow(clippy::too_many_lines)]
 fn gen_values_yaml(c: &DeploymentContract) -> String {
     let mut out = String::with_capacity(2048);
 
@@ -663,7 +695,12 @@ fn gen_values_yaml(c: &DeploymentContract) -> String {
         out.push('\n');
     }
 
-    // KEDA section
+    // KEDA section. Always emit a `keda:` block in values.yaml even when
+    // the contract has no KEDA config -- templates reference
+    // `.Values.keda.enabled` unconditionally, so the key must exist or
+    // `helm lint` panics with "nil pointer evaluating interface
+    // {}.enabled". When the contract opts out, the block is just
+    // `enabled: false`.
     if let Some(ref keda) = c.keda {
         out.push_str(&format!(
             "# -- KEDA autoscaling (requires KEDA operator installed)\n\
@@ -696,6 +733,13 @@ fn gen_values_yaml(c: &DeploymentContract) -> String {
             cpu_enabled = keda.cpu_enabled,
             cpu_threshold = keda.cpu_threshold,
         ));
+    } else {
+        out.push_str(
+            "# -- KEDA autoscaling disabled by contract; HPA fallback below.\n\
+             keda:\n\
+             \x20 enabled: false\n\
+             \n",
+        );
     }
 
     // HPA fallback
@@ -1327,10 +1371,21 @@ impl Default for ArgocdConfig {
 ///     repo_url: "https://github.com/hyperi-io/dfe-loader".into(),
 ///     ..Default::default()
 /// };
-/// let yaml = generate_argocd_application(&contract, &argo);
+/// let yaml = generate_argocd_application(&contract, &argo, None);
 /// ```
 #[must_use]
-pub fn generate_argocd_application(contract: &DeploymentContract, argo: &ArgocdConfig) -> String {
+pub fn generate_argocd_application(
+    contract: &DeploymentContract,
+    argo: &ArgocdConfig,
+    identity: Option<&crate::deployment::ContractIdentity>,
+) -> String {
+    // Contract Identity Annotation Scheme v1 -- three extra annotations
+    // alongside the existing sync-wave entry. Indented to match the
+    // 4-space `metadata.annotations:` block below.
+    let identity_block = identity
+        .map(|id| format!("\n{ann}", ann = id.as_yaml_annotations(4)))
+        .unwrap_or_default();
+
     // Build the extras block: each entry is a raw YAML fragment starting with
     // `- group: ...`. Indent every line by 4 spaces to nest under
     // `ignoreDifferences:`.
@@ -1360,7 +1415,7 @@ metadata:
   name: {app_name}
   namespace: {argocd_namespace}
   annotations:
-    argocd.argoproj.io/sync-wave: "{sync_wave}"
+    argocd.argoproj.io/sync-wave: "{sync_wave}"{identity_block}
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -1421,6 +1476,7 @@ spec:
         dest_server = argo.dest_server,
         dest_namespace = argo.dest_namespace,
         extras_block = extras_block,
+        identity_block = identity_block,
     )
 }
 
@@ -1520,7 +1576,7 @@ mod tests {
     #[test]
     fn test_generate_dockerfile() {
         let contract = test_contract();
-        let dockerfile = generate_dockerfile(&contract);
+        let dockerfile = generate_dockerfile(&contract, None);
 
         assert!(dockerfile.contains("FROM ubuntu:24.04"));
         assert!(dockerfile.contains("COPY dfe-loader /usr/local/bin/dfe-loader"));
@@ -1538,7 +1594,7 @@ mod tests {
             "ubuntu:24.04",
         );
 
-        let dockerfile = generate_dockerfile(&contract);
+        let dockerfile = generate_dockerfile(&contract, None);
 
         // Should contain Confluent APT repo setup
         assert!(dockerfile.contains("packages.confluent.io"));
@@ -1559,7 +1615,7 @@ mod tests {
             "ubuntu:24.04",
         );
 
-        let dockerfile = generate_dockerfile(&contract);
+        let dockerfile = generate_dockerfile(&contract, None);
 
         // No Confluent repo, no runtime packages
         assert!(!dockerfile.contains("confluent"));
@@ -1574,14 +1630,14 @@ mod tests {
         contract.native_deps =
             NativeDepsContract::for_rustlib_features(&["transport-kafka"], "debian:bookworm-slim");
 
-        let dockerfile = generate_dockerfile(&contract);
+        let dockerfile = generate_dockerfile(&contract, None);
         assert!(dockerfile.contains("bookworm main"));
     }
 
     #[test]
     fn test_generate_dockerfile_production_profile() {
         let contract = test_contract();
-        let dockerfile = generate_dockerfile(&contract);
+        let dockerfile = generate_dockerfile(&contract, None);
 
         assert!(dockerfile.contains("Purpose:   production container image"));
         assert!(dockerfile.contains("io.hyperi.profile=\"production\""));
@@ -1592,7 +1648,7 @@ mod tests {
     #[test]
     fn test_generate_dockerfile_dev_profile() {
         let contract = test_contract().with_dev_profile();
-        let dockerfile = generate_dockerfile(&contract);
+        let dockerfile = generate_dockerfile(&contract, None);
 
         assert!(dockerfile.contains("Purpose:   development container image"));
         assert!(dockerfile.contains("io.hyperi.profile=\"development\""));
@@ -1609,7 +1665,7 @@ mod tests {
         contract.native_deps =
             NativeDepsContract::for_rustlib_features(&["transport-kafka", "spool"], "ubuntu:24.04");
         let dev = contract.with_dev_profile();
-        let dockerfile = generate_dockerfile(&dev);
+        let dockerfile = generate_dockerfile(&dev, None);
 
         // Dev tools present alongside native deps
         assert!(dockerfile.contains("strace"));
@@ -1638,7 +1694,7 @@ mod tests {
             protocol: "TCP".into(),
         }];
 
-        let dockerfile = generate_dockerfile(&contract);
+        let dockerfile = generate_dockerfile(&contract, None);
         assert!(dockerfile.contains("EXPOSE 9090 8080"));
     }
 
@@ -1661,7 +1717,7 @@ mod tests {
         let contract = test_contract();
         let dir = tempfile::tempdir().unwrap();
 
-        generate_chart(&contract, dir.path()).unwrap();
+        generate_chart(&contract, dir.path(), None).unwrap();
 
         // Verify files exist
         assert!(dir.path().join("Chart.yaml").exists());
@@ -1682,7 +1738,7 @@ mod tests {
     fn test_chart_yaml_content() {
         let contract = test_contract();
         let dir = tempfile::tempdir().unwrap();
-        generate_chart(&contract, dir.path()).unwrap();
+        generate_chart(&contract, dir.path(), None).unwrap();
 
         let content = std::fs::read_to_string(dir.path().join("Chart.yaml")).unwrap();
         assert!(content.contains("name: dfe-loader"));
@@ -1693,7 +1749,7 @@ mod tests {
     fn test_values_yaml_content() {
         let contract = test_contract();
         let dir = tempfile::tempdir().unwrap();
-        generate_chart(&contract, dir.path()).unwrap();
+        generate_chart(&contract, dir.path(), None).unwrap();
 
         let content = std::fs::read_to_string(dir.path().join("values.yaml")).unwrap();
         assert!(content.contains("port: 9090"));
@@ -1709,7 +1765,7 @@ mod tests {
     fn test_helpers_contain_secret_helpers() {
         let contract = test_contract();
         let dir = tempfile::tempdir().unwrap();
-        generate_chart(&contract, dir.path()).unwrap();
+        generate_chart(&contract, dir.path(), None).unwrap();
 
         let content = std::fs::read_to_string(dir.path().join("templates/_helpers.tpl")).unwrap();
         assert!(content.contains("kafkaSecretName"));
@@ -1720,7 +1776,7 @@ mod tests {
     fn test_deployment_contains_env_vars() {
         let contract = test_contract();
         let dir = tempfile::tempdir().unwrap();
-        generate_chart(&contract, dir.path()).unwrap();
+        generate_chart(&contract, dir.path(), None).unwrap();
 
         let content =
             std::fs::read_to_string(dir.path().join("templates/deployment.yaml")).unwrap();
@@ -1739,7 +1795,7 @@ mod tests {
             repo_url: "https://github.com/hyperi-io/dfe-loader".into(),
             ..Default::default()
         };
-        let yaml = generate_argocd_application(&contract, &argo);
+        let yaml = generate_argocd_application(&contract, &argo, None);
 
         assert!(yaml.contains("apiVersion: argoproj.io/v1alpha1"));
         assert!(yaml.contains("kind: Application"));
@@ -1763,7 +1819,7 @@ mod tests {
             sync_wave: 5,
             ..Default::default()
         };
-        let yaml = generate_argocd_application(&contract, &argo);
+        let yaml = generate_argocd_application(&contract, &argo, None);
         assert!(yaml.contains("namespace: production"));
         assert!(yaml.contains("path: deploy/chart"));
         assert!(yaml.contains("targetRevision: v1.0.0"));
@@ -1789,7 +1845,7 @@ mod tests {
             repo_url: "https://github.com/hyperi-io/dfe-loader".into(),
             ..Default::default()
         };
-        let yaml = generate_argocd_application(&contract, &argo);
+        let yaml = generate_argocd_application(&contract, &argo, None);
         assert!(yaml.contains("ignoreDifferences:"));
         assert!(yaml.contains("/spec/replicas"));
         assert!(yaml.contains("/spec/clusterIP"));
@@ -1806,7 +1862,7 @@ mod tests {
             ],
             ..Default::default()
         };
-        let yaml = generate_argocd_application(&contract, &argo);
+        let yaml = generate_argocd_application(&contract, &argo, None);
         assert!(yaml.contains("/spec/template/spec/containers/0/image"));
     }
 
@@ -1818,7 +1874,7 @@ mod tests {
             sync_wave: crate::deployment::WAVE_TOPICS,
             ..Default::default()
         };
-        let yaml = generate_argocd_application(&contract, &argo);
+        let yaml = generate_argocd_application(&contract, &argo, None);
         assert!(yaml.contains(r#"argocd.argoproj.io/sync-wave: "-5""#));
     }
 
@@ -1828,7 +1884,7 @@ mod tests {
         contract.keda = None;
 
         let dir = tempfile::tempdir().unwrap();
-        generate_chart(&contract, dir.path()).unwrap();
+        generate_chart(&contract, dir.path(), None).unwrap();
 
         assert!(!dir.path().join("templates/keda-scaledobject.yaml").exists());
         assert!(!dir.path().join("templates/keda-triggerauth.yaml").exists());
@@ -1840,5 +1896,110 @@ mod tests {
         assert_eq!(to_camel_suffix("clickhouse"), "clickhouse");
         assert_eq!(to_camel_suffix("click_house"), "clickHouse");
         assert_eq!(to_camel_suffix("my-service"), "myService");
+    }
+
+    // ============================================================================
+    // Contract Identity Annotation Scheme v1 -- end-to-end wiring tests.
+    // The unit tests for ContractIdentity itself live in
+    // src/deployment/contract_identity.rs; these verify the three
+    // generators each emit the three keys in the right surface.
+    // ============================================================================
+
+    fn test_identity() -> crate::deployment::ContractIdentity {
+        crate::deployment::ContractIdentity::new(
+            "0123456789abcdef0123456789abcdef01234567",
+            "ghcr.io/hyperi-io/dfe-loader:v2.7.2",
+        )
+        .expect("test fixture must be valid")
+    }
+
+    #[test]
+    fn dockerfile_omits_identity_block_when_none() {
+        let dockerfile = generate_dockerfile(&test_contract(), None);
+        assert!(!dockerfile.contains("io.hyperi.contract"));
+    }
+
+    #[test]
+    fn dockerfile_emits_three_identity_labels_when_some() {
+        let id = test_identity();
+        let dockerfile = generate_dockerfile(&test_contract(), Some(&id));
+        assert!(dockerfile.contains("LABEL io.hyperi.contract.version=\"v1\""));
+        assert!(dockerfile.contains(
+            "LABEL io.hyperi.contract.source-commit=\"0123456789abcdef0123456789abcdef01234567\""
+        ));
+        assert!(dockerfile.contains(
+            "LABEL io.hyperi.contract.image-ref=\"ghcr.io/hyperi-io/dfe-loader:v2.7.2\""
+        ));
+        // The existing io.hyperi.profile label is unaffected.
+        assert!(dockerfile.contains("LABEL io.hyperi.profile=\"production\""));
+    }
+
+    #[test]
+    fn chart_yaml_omits_identity_block_when_none() {
+        let dir = tempfile::tempdir().unwrap();
+        generate_chart(&test_contract(), dir.path(), None).unwrap();
+        let chart = std::fs::read_to_string(dir.path().join("Chart.yaml")).unwrap();
+        assert!(!chart.contains("io.hyperi.contract"));
+    }
+
+    #[test]
+    fn chart_yaml_emits_three_identity_annotations_when_some() {
+        let id = test_identity();
+        let dir = tempfile::tempdir().unwrap();
+        generate_chart(&test_contract(), dir.path(), Some(&id)).unwrap();
+        let chart = std::fs::read_to_string(dir.path().join("Chart.yaml")).unwrap();
+        // Top-level annotations block present.
+        assert!(chart.contains("\nannotations:\n"));
+        assert!(chart.contains("io.hyperi.contract.version: \"v1\""));
+        assert!(chart.contains(
+            "io.hyperi.contract.source-commit: \"0123456789abcdef0123456789abcdef01234567\""
+        ));
+        assert!(
+            chart.contains("io.hyperi.contract.image-ref: \"ghcr.io/hyperi-io/dfe-loader:v2.7.2\"")
+        );
+    }
+
+    #[test]
+    fn argocd_application_omits_identity_block_when_none() {
+        let argo = ArgocdConfig::default();
+        let yaml = generate_argocd_application(&test_contract(), &argo, None);
+        assert!(!yaml.contains("io.hyperi.contract"));
+        // sync-wave is unaffected.
+        assert!(yaml.contains("argocd.argoproj.io/sync-wave:"));
+    }
+
+    #[test]
+    fn argocd_application_emits_three_identity_annotations_when_some() {
+        let id = test_identity();
+        let argo = ArgocdConfig::default();
+        let yaml = generate_argocd_application(&test_contract(), &argo, Some(&id));
+        // Both the existing sync-wave AND the three identity keys must appear
+        // under the same metadata.annotations block.
+        assert!(yaml.contains("argocd.argoproj.io/sync-wave:"));
+        assert!(yaml.contains("io.hyperi.contract.version: \"v1\""));
+        assert!(yaml.contains(
+            "io.hyperi.contract.source-commit: \"0123456789abcdef0123456789abcdef01234567\""
+        ));
+        assert!(
+            yaml.contains("io.hyperi.contract.image-ref: \"ghcr.io/hyperi-io/dfe-loader:v2.7.2\"")
+        );
+    }
+
+    #[test]
+    fn all_three_surfaces_share_the_same_key_prefix() {
+        let id = test_identity();
+        let argo = ArgocdConfig::default();
+        let dir = tempfile::tempdir().unwrap();
+
+        let dockerfile = generate_dockerfile(&test_contract(), Some(&id));
+        generate_chart(&test_contract(), dir.path(), Some(&id)).unwrap();
+        let chart = std::fs::read_to_string(dir.path().join("Chart.yaml")).unwrap();
+        let app = generate_argocd_application(&test_contract(), &argo, Some(&id));
+
+        // The documented grep payoff: every surface mentions the prefix
+        // exactly three times (once per key).
+        assert_eq!(dockerfile.matches("io.hyperi.contract").count(), 3);
+        assert_eq!(chart.matches("io.hyperi.contract").count(), 3);
+        assert_eq!(app.matches("io.hyperi.contract").count(), 3);
     }
 }

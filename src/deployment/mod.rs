@@ -60,11 +60,13 @@
 //!     schema_version: 1,
 //! };
 //!
-//! // Generate production Dockerfile
-//! let dockerfile = generate_dockerfile(&contract);
+//! // Generate production Dockerfile (without identity annotations -- Phase 1
+//! // backwards-compat. New callers should pass `Some(&identity)`; see
+//! // `ContractIdentity::new` and `ContractIdentity::detect`.)
+//! let dockerfile = generate_dockerfile(&contract, None);
 //!
 //! // Generate development Dockerfile (same binary, adds debug tools)
-//! let dev_dockerfile = generate_dockerfile(&contract.with_dev_profile());
+//! let dev_dockerfile = generate_dockerfile(&contract.with_dev_profile(), None);
 //!
 //! // Generate Helm chart directory
 //! // generate_chart(&contract, "chart/").unwrap();
@@ -75,6 +77,7 @@
 
 pub mod app_project;
 mod contract;
+pub mod contract_identity;
 mod error;
 pub mod generate;
 mod keda;
@@ -90,6 +93,7 @@ pub use contract::{
     DeploymentContract, HealthContract, ImageProfile, OciLabels, PortContract, SecretEnvContract,
     SecretGroupContract,
 };
+pub use contract_identity::{ContractIdentity, IdentityError, KEY_PREFIX, VERSION};
 pub use error::{ContractMismatch, DeploymentError};
 pub use generate::{
     ArgocdConfig, generate_argocd_application, generate_chart, generate_compose_fragment,

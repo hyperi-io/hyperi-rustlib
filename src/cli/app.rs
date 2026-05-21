@@ -349,7 +349,7 @@ fn generate_artefacts<A: DfeApp>(
             ..Default::default()
         };
         let argo_content =
-            crate::deployment::generate::generate_argocd_application(&contract, &argo_cfg);
+            crate::deployment::generate::generate_argocd_application(&contract, &argo_cfg, None);
         std::fs::write(&argo_path, &argo_content).map_err(|e| {
             CliError::Service(format!("failed to write {}: {e}", argo_path.display()))
         })?;
