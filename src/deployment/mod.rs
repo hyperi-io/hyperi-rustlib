@@ -73,6 +73,7 @@
 //! let compose = generate_compose_fragment(&contract);
 //! ```
 
+pub mod app_project;
 mod contract;
 mod error;
 pub mod generate;
@@ -84,6 +85,7 @@ pub mod smoke;
 mod validate;
 pub mod waves;
 
+pub use app_project::{AppProjectContract, AppProjectDestination, generate_argocd_app_project};
 pub use contract::{
     DeploymentContract, HealthContract, ImageProfile, OciLabels, PortContract, SecretEnvContract,
     SecretGroupContract,
