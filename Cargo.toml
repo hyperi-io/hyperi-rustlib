@@ -202,9 +202,9 @@ tracing-throttle = { version = ">=0.4.2, <0.5", default-features = false, option
 # Held at 0.31 because tracing-opentelemetry 0.32.1 (latest) only supports
 # otel 0.31. Bump once tracing-opentelemetry ships a release compatible
 # with otel 0.32+.
-opentelemetry = { version = ">=0.31.0, <0.32", optional = true }
-opentelemetry_sdk = { version = ">=0.31.0, <0.32", features = ["rt-tokio"], optional = true }
-opentelemetry-otlp = { version = ">=0.31.0, <0.32", features = ["grpc-tonic", "http-proto", "metrics", "logs"], optional = true }
+opentelemetry = { version = ">=0.31.0, <0.33", optional = true }
+opentelemetry_sdk = { version = ">=0.31.0, <0.33", features = ["rt-tokio"], optional = true }
+opentelemetry-otlp = { version = ">=0.31.0, <0.33", features = ["grpc-tonic", "http-proto", "metrics", "logs"], optional = true }
 tracing-opentelemetry = { version = ">=0.32.1, <0.33", optional = true }
 
 # Metrics (Prometheus-native)
