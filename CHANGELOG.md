@@ -1,3 +1,13 @@
+## [2.7.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.7.1...v2.7.2) (2026-05-21)
+
+
+### Bug Fixes
+
+* **deployment:** add AppProject generator ([5e1ceae](https://github.com/hyperi-io/hyperi-rustlib/commit/5e1ceaecbc24cbe1cb63aaa44b55018ff4d8795a))
+* **deployment:** add argocd::waves module with sync-wave constants ([87d7c5d](https://github.com/hyperi-io/hyperi-rustlib/commit/87d7c5db3192c0c25166398f6ccbeab7a1a39a5f))
+* **deployment:** emit default ignoreDifferences block + WAVE_APPS default sync_wave ([d785919](https://github.com/hyperi-io/hyperi-rustlib/commit/d785919719c2d1cda6e3163054f3c183f5e65505))
+* **tiered_sink:** cast statvfs fields to u64 for aarch64-apple-darwin ([2bca687](https://github.com/hyperi-io/hyperi-rustlib/commit/2bca687bc7fc431ff7e4923c511a2aab25bb963a))
+
 ## [2.7.1](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.7.0...v2.7.1) (2026-05-13)
 
 
