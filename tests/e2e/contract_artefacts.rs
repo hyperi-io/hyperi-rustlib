@@ -1,11 +1,28 @@
 // Project:   hyperi-rustlib
 // File:      tests/e2e/contract_artefacts.rs
-// Purpose:   E2E tests for generated container contract artefacts
+// Purpose:   E2E tests for generated container contract artefacts (TEMPLATE)
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
+//! ============================================================================
+//! TEMPLATE -- copy this file into your DFE consumer's `tests/e2e/` and
+//! adapt the FIXTURE section. The probe/skip/cluster helpers live in
+//! `hyperi_rustlib::deployment::test_support` so each consumer's copy
+//! stays short and benefits from any bug fixes pushed to rustlib.
+//!
+//! Bring the test_support helpers into scope by adding a dev-dependency
+//! on hyperi-rustlib version 2.7.3 or higher with the
+//! `deployment-test-support` feature enabled.
+//!
+//! Then in your consumer's tests/e2e/contract_artefacts.rs, replace this
+//! file's `test_contract()` / `test_identity()` fixtures with your own
+//! `Config::deployment_contract()` (or whatever your app uses to build
+//! its `DeploymentContract`) and `ContractIdentity::detect(image_ref)`.
+//! Everything else -- the Tier A + Tier B test bodies -- stays the same.
+//! ============================================================================
+//!
 //! E2E tests for the artefacts emitted by `crate::deployment` -- the
 //! Dockerfile, Helm chart, and ArgoCD Application. Two tiers:
 //!
@@ -15,31 +32,32 @@
 //!     the image actually starts.
 //!   - Helm chart: `helm lint` + `helm template` -- proves the chart
 //!     renders. (Without a cluster, deployment manifests can't "execute".)
-//!   - ArgoCD Application: `kubeconform` against downloaded ArgoCD CRD
-//!     schemas -- proves the manifest is schema-valid.
+//!   - ArgoCD Application: `kubeconform` -- proves the manifest is
+//!     schema-valid.
 //! - **Tier B** (env-gated by `HYPERI_E2E_CLUSTER=1`): heavy-weight checks
 //!   that bring up a local kind cluster.
-//!   - Helm: `helm install` on the kind cluster, assert pod becomes Ready.
+//!   - Helm: `helm install` on the kind cluster, assert the release lands.
 //!   - ArgoCD: install ArgoCD into the cluster, apply the generated
-//!     Application, assert it reaches `Healthy` + `Synced`.
+//!     Application, verify the live object carries the identity annotations.
 //!
 //! # Skip policy
 //!
 //! Every test that needs an external tool / daemon / cluster probes first
-//! and skips cleanly when the dependency is absent. Skip emissions use the
-//! prefix `HYPERCI-SKIP[contract-e2e][tier-a|tier-b]:` so downstream test
+//! via `hyperi_rustlib::deployment::test_support` and skips cleanly when
+//! the dependency is absent. Skip emissions use the canonical prefix
+//! `HYPERCI-SKIP[contract-e2e][tier-a|tier-b]:` so downstream test
 //! runners can grep, count, and emit a summary line at the end of a CI
-//! run. This is the same shape as `vector_compat`'s skip path but
-//! standardised so other rustlib + pylib tests can adopt it.
+//! run.
 //!
 //! # Why a mock binary?
 //!
-//! `generate_dockerfile()` produces a Dockerfile that `COPY`s the consumer
-//! app's binary into the image. rustlib itself isn't an app, so for Tier A
-//! we drop a tiny POSIX shell script into the build context that responds
-//! to `--help`. The Dockerfile sees it as a binary and the `docker run`
-//! step exercises the entrypoint flow. This validates the Dockerfile
-//! shape end-to-end without depending on any specific consumer crate.
+//! `generate_dockerfile()` produces a Dockerfile that `COPY`s the
+//! consumer app's binary into the image. rustlib itself isn't an app, so
+//! for Tier A this template drops a tiny POSIX shell script into the
+//! build context that responds to `--help`. Real consumer copies of this
+//! template should REPLACE the mock with `cargo build --release --bin
+//! <name>` and copy the produced binary into the docker build context.
+//! See dfe-receiver's adaptation for the canonical example.
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::expect_used)]
@@ -47,114 +65,20 @@
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
-use std::sync::OnceLock;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use hyperi_rustlib::deployment::test_support::{
+    docker_available, docker_empty_creds_json, ensure_kind_cluster, helm_available,
+    kubeconform_available, skip, tier_b_enabled, wait_until,
+};
 use hyperi_rustlib::deployment::{
     ArgocdConfig, ContractIdentity, DeploymentContract, HealthContract, ImageProfile, OciLabels,
     generate_argocd_application, generate_chart, generate_dockerfile,
 };
 
 // ============================================================================
-// Tool probes -- each returns true iff the dependency is reachable.
-// Cached via OnceLock so a tool that's slow to probe (docker info) only
-// gets probed once per test binary.
-// ============================================================================
-
-fn docker_available() -> bool {
-    static OK: OnceLock<bool> = OnceLock::new();
-    *OK.get_or_init(|| {
-        Command::new("docker")
-            .args(["info", "--format", "{{.ServerVersion}}"])
-            .output()
-            .is_ok_and(|o| o.status.success())
-    })
-}
-
-fn helm_available() -> bool {
-    static OK: OnceLock<bool> = OnceLock::new();
-    *OK.get_or_init(|| {
-        Command::new("helm")
-            .arg("version")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    })
-}
-
-fn kubeconform_available() -> bool {
-    static OK: OnceLock<bool> = OnceLock::new();
-    *OK.get_or_init(|| {
-        Command::new("kubeconform")
-            .arg("-v")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    })
-}
-
-fn kind_available() -> bool {
-    static OK: OnceLock<bool> = OnceLock::new();
-    *OK.get_or_init(|| {
-        Command::new("kind")
-            .arg("version")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    })
-}
-
-fn kubectl_available() -> bool {
-    static OK: OnceLock<bool> = OnceLock::new();
-    *OK.get_or_init(|| {
-        Command::new("kubectl")
-            .args(["version", "--client=true"])
-            .output()
-            .is_ok_and(|o| o.status.success())
-    })
-}
-
-/// Tier B opt-in gate. Set `HYPERI_E2E_CLUSTER=1` to enable cluster-based
-/// tests. Cluster spin-up costs 60-120 s so this stays off by default;
-/// developers and CI explicitly opt in.
-fn tier_b_enabled() -> bool {
-    std::env::var("HYPERI_E2E_CLUSTER").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-}
-
-// ============================================================================
-// Skip-emission helper -- standardised prefix so a test runner can grep.
-// ============================================================================
-
-/// Emit a skip notice with the canonical prefix and return. Use via:
-///
-/// ```ignore
-/// if !docker_available() {
-///     skip("tier-a", "dockerfile_builds_and_runs", "docker daemon not reachable");
-///     return;
-/// }
-/// ```
-///
-/// Output goes to BOTH stderr (visible with `cargo nextest run --no-capture`
-/// and to a side-channel file at `target/contract-e2e-skips.log` (always
-/// visible to the test runner). The runner aggregates the log file into a
-/// summary block at the end of the test stage.
-fn skip(tier: &str, test_name: &str, reason: &str) {
-    let line = format!("HYPERCI-SKIP[contract-e2e][{tier}]: {test_name}: {reason}");
-    eprintln!("{line}");
-    // Side-channel: append to a known path. CARGO_TARGET_TMPDIR is the
-    // recommended scratch dir for integration tests.
-    let log = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("contract-e2e-skips.log");
-    if let Some(parent) = log.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log)
-    {
-        let _ = writeln!(f, "{line}");
-    }
-}
-
-// ============================================================================
-// Test fixtures -- a deployment contract + identity reused by every test.
+// FIXTURE -- replace `test_contract()` and `test_identity()` in your
+// consumer's copy with calls to your app's real contract / identity.
 // ============================================================================
 
 fn test_contract() -> DeploymentContract {
@@ -190,11 +114,9 @@ fn test_identity() -> ContractIdentity {
     .expect("fixture identity must validate")
 }
 
-// ============================================================================
-// Mock binary -- a tiny shell script that the generated Dockerfile COPYs in.
-// Responds to `--help` so the docker run step has something to exec.
-// ============================================================================
-
+/// Drop a tiny POSIX script into the build context to stand in for the
+/// real consumer binary. Real consumer copies of this template should
+/// REPLACE this with `cargo build` of their actual binary.
 fn write_mock_binary(build_ctx: &Path, binary_name: &str) -> std::io::Result<()> {
     let path = build_ctx.join(binary_name);
     let mut f = std::fs::File::create(&path)?;
@@ -206,12 +128,10 @@ fn write_mock_binary(build_ctx: &Path, binary_name: &str) -> std::io::Result<()>
           \x20 echo \"hyperi-contract-test: ok\"\n\
           \x20 exit 0\n\
           fi\n\
-          # Without --help we'd be running a service; pretend to start and exit.\n\
           echo \"hyperi-contract-test: started (mock)\"\n\
           exit 0\n",
     )?;
     drop(f);
-    // Make executable.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -223,7 +143,7 @@ fn write_mock_binary(build_ctx: &Path, binary_name: &str) -> std::io::Result<()>
 }
 
 // ============================================================================
-// Tier A -- Dockerfile: docker build + docker run --help.
+// Tier A -- Dockerfile: docker build + docker run --help
 // ============================================================================
 
 #[test]
@@ -247,14 +167,13 @@ fn tier_a_dockerfile_builds_and_image_runs() {
     std::fs::write(&dockerfile_path, &dockerfile).expect("write Dockerfile");
     write_mock_binary(ctx, contract.binary()).expect("write mock binary");
 
-    // Empty DOCKER_CONFIG so the daemon doesn't reach for a credential
-    // helper that may not be on PATH on this machine. ubuntu:24.04 base
-    // is public; no auth required.
     let docker_config = tempfile::tempdir().expect("docker config tempdir");
-    std::fs::write(docker_config.path().join("config.json"), "{\"auths\": {}}")
-        .expect("write empty docker config");
+    std::fs::write(
+        docker_config.path().join("config.json"),
+        docker_empty_creds_json(),
+    )
+    .expect("write empty docker config");
 
-    // Tag the image uniquely so parallel test runs don't collide.
     let tag = format!("hyperi-contract-test:e2e-{}", std::process::id());
 
     let build = Command::new("docker")
@@ -271,9 +190,6 @@ fn tier_a_dockerfile_builds_and_image_runs() {
         String::from_utf8_lossy(&build.stderr),
     );
 
-    // Now actually run the image and verify the entrypoint executes.
-    // The generated Dockerfile sets ENTRYPOINT to the binary; --help is a
-    // common safe arg that the mock binary handles.
     let entrypoint = format!("/usr/local/bin/{}", contract.binary());
     let run = Command::new("docker")
         .env("DOCKER_CONFIG", docker_config.path())
@@ -291,7 +207,6 @@ fn tier_a_dockerfile_builds_and_image_runs() {
         "container ran but did not produce expected output: stdout={stdout} stderr={stderr}",
     );
 
-    // Verify the identity labels are baked in via `docker inspect`.
     let inspect = Command::new("docker")
         .env("DOCKER_CONFIG", docker_config.path())
         .args(["inspect", "--format", "{{json .Config.Labels}}", &tag])
@@ -307,7 +222,6 @@ fn tier_a_dockerfile_builds_and_image_runs() {
         "docker inspect did not show all three io.hyperi.contract.* labels: {labels}",
     );
 
-    // Clean up image so the daemon doesn't accrue test cruft.
     let _ = Command::new("docker")
         .env("DOCKER_CONFIG", docker_config.path())
         .args(["rmi", "-f", &tag])
@@ -315,7 +229,7 @@ fn tier_a_dockerfile_builds_and_image_runs() {
 }
 
 // ============================================================================
-// Tier A -- Helm chart: helm lint + helm template.
+// Tier A -- Helm chart: helm lint + helm template
 // ============================================================================
 
 #[test]
@@ -337,8 +251,6 @@ fn tier_a_chart_lint_and_template() {
     std::fs::create_dir_all(&chart_dir).expect("create chart dir");
     generate_chart(&contract, &chart_dir, Some(&identity)).expect("generate_chart");
 
-    // `helm lint` is the canonical semantic check -- catches missing values,
-    // bad structure, deprecated API versions.
     let lint = Command::new("helm")
         .arg("lint")
         .arg(&chart_dir)
@@ -351,9 +263,6 @@ fn tier_a_chart_lint_and_template() {
         String::from_utf8_lossy(&lint.stderr),
     );
 
-    // `helm template` renders the chart to stdout WITHOUT contacting a
-    // cluster. Catches template errors and missing values that lint may
-    // miss.
     let template = Command::new("helm")
         .args(["template", "test-release"])
         .arg(&chart_dir)
@@ -365,16 +274,12 @@ fn tier_a_chart_lint_and_template() {
         String::from_utf8_lossy(&template.stdout),
         String::from_utf8_lossy(&template.stderr),
     );
-
-    // The rendered output should be valid YAML and reference the app name.
     let rendered = String::from_utf8_lossy(&template.stdout);
     assert!(
         rendered.contains("hyperi-contract-test"),
         "rendered template missing app name: {rendered}",
     );
 
-    // Identity annotations land on `Chart.yaml`, not on rendered manifests.
-    // Verify them by reading Chart.yaml directly.
     let chart_yaml =
         std::fs::read_to_string(chart_dir.join("Chart.yaml")).expect("read Chart.yaml");
     assert!(chart_yaml.contains("io.hyperi.contract.version: \"v1\""));
@@ -389,7 +294,7 @@ fn tier_a_chart_lint_and_template() {
 }
 
 // ============================================================================
-// Tier A -- ArgoCD Application: kubeconform with cluster-less validation.
+// Tier A -- ArgoCD Application: kubeconform
 // ============================================================================
 
 #[test]
@@ -412,10 +317,6 @@ fn tier_a_argocd_application_kubeconform() {
     let path = tmp.path().join("application.yaml");
     std::fs::write(&path, &yaml).expect("write application.yaml");
 
-    // kubeconform with --ignore-missing-schemas because ArgoCD's Application
-    // CRD isn't in kubeconform's default schema bundle. For a stricter
-    // check we'd download the CRD schema and pass --schema-location; that's
-    // a Tier B enhancement.
     let out = Command::new("kubeconform")
         .args(["-strict", "-summary", "-ignore-missing-schemas"])
         .arg(&path)
@@ -432,9 +333,6 @@ fn tier_a_argocd_application_kubeconform() {
         "kubeconform summary missing 0-error line: {stdout}",
     );
 
-    // Sanity-check the identity is in the file (the unit tests also check
-    // this; here we confirm the byte stream that kubeconform validated is
-    // what we expected).
     let raw = std::fs::read_to_string(&path).unwrap();
     assert_eq!(raw.matches("io.hyperi.contract").count(), 3);
 }
@@ -442,85 +340,6 @@ fn tier_a_argocd_application_kubeconform() {
 // ============================================================================
 // Tier B -- kind cluster + real helm install. Env-gated.
 // ============================================================================
-
-/// Bring up a uniquely-named kind cluster for the calling test and return
-/// (cluster_name, kubeconfig_path, _tempdir_guard). Cluster is torn down
-/// when the guard is dropped via the helper's `tear_down` flag.
-fn ensure_kind_cluster(test_name: &str) -> Option<KindClusterGuard> {
-    if !kind_available() {
-        skip(
-            "tier-b",
-            test_name,
-            "kind CLI not on PATH (install: https://kind.sigs.k8s.io/)",
-        );
-        return None;
-    }
-    if !kubectl_available() {
-        skip("tier-b", test_name, "kubectl not on PATH");
-        return None;
-    }
-    if !docker_available() {
-        skip(
-            "tier-b",
-            test_name,
-            "docker daemon not reachable (kind requires docker)",
-        );
-        return None;
-    }
-
-    // Per-test cluster name avoids collisions when nextest runs parallel.
-    // Hash the test name to a short suffix.
-    let suffix = test_name.bytes().fold(0u32, |acc, b| {
-        acc.wrapping_mul(31).wrapping_add(u32::from(b))
-    });
-    let cluster = format!("hctest-{suffix:08x}");
-
-    let create = Command::new("kind")
-        .args(["create", "cluster", "--name", &cluster, "--wait", "120s"])
-        .output()
-        .ok()?;
-    if !create.status.success() {
-        skip(
-            "tier-b",
-            test_name,
-            &format!(
-                "kind create cluster failed: {}",
-                String::from_utf8_lossy(&create.stderr).trim()
-            ),
-        );
-        return None;
-    }
-
-    // Write kubeconfig to a per-test file.
-    let kubeconfig_dir = tempfile::tempdir().ok()?;
-    let kubeconfig = kubeconfig_dir.path().join("kubeconfig");
-    let kc = Command::new("kind")
-        .args(["get", "kubeconfig", "--name", &cluster])
-        .output()
-        .ok()?;
-    std::fs::write(&kubeconfig, &kc.stdout).ok()?;
-
-    Some(KindClusterGuard {
-        name: cluster,
-        kubeconfig,
-        _kubeconfig_dir: kubeconfig_dir,
-    })
-}
-
-struct KindClusterGuard {
-    name: String,
-    kubeconfig: std::path::PathBuf,
-    _kubeconfig_dir: tempfile::TempDir,
-}
-
-impl Drop for KindClusterGuard {
-    fn drop(&mut self) {
-        // Best-effort teardown; ignore errors (cluster may already be gone).
-        let _ = Command::new("kind")
-            .args(["delete", "cluster", "--name", &self.name])
-            .output();
-    }
-}
 
 #[test]
 fn tier_b_helm_install_on_kind() {
@@ -553,11 +372,6 @@ fn tier_b_helm_install_on_kind() {
     std::fs::create_dir_all(&chart_dir).expect("create chart dir");
     generate_chart(&contract, &chart_dir, Some(&identity)).expect("generate_chart");
 
-    // Install the chart with image.repository pointed at a public image so
-    // the pod can actually pull. We override values to bypass the
-    // unbuilt-image-in-kind problem -- this test verifies the CHART
-    // INSTALLS, not the consumer image runs. (Image-runs verification is
-    // Tier A's tier_a_dockerfile_builds_and_image_runs.)
     let install = Command::new("helm")
         .env("KUBECONFIG", &cluster.kubeconfig)
         .args([
@@ -578,13 +392,7 @@ fn tier_b_helm_install_on_kind() {
         .expect("helm install invocation");
     let stdout = String::from_utf8_lossy(&install.stdout);
     let stderr = String::from_utf8_lossy(&install.stderr);
-    // The install may fail because the chart's deployment template assumes
-    // specific args/env -- that's OK; the test verifies the chart can be
-    // SUBMITTED to a cluster (passes schema + template + initial admission).
     if !install.status.success() {
-        // If it failed for the expected "binary not in image" reason, that's
-        // still a successful test from the CHART perspective -- helm got far
-        // enough to template + apply. Distinguish from chart-structure errors.
         assert!(
             !(stderr.contains("Error: INSTALLATION FAILED") && stderr.contains("template:")),
             "helm install failed at template stage: {stderr}",
@@ -596,7 +404,6 @@ fn tier_b_helm_install_on_kind() {
         "helm install produced no output -- something is very wrong",
     );
 
-    // Verify the Helm release exists.
     let list = Command::new("helm")
         .env("KUBECONFIG", &cluster.kubeconfig)
         .args(["list", "--all-namespaces", "-o", "json"])
@@ -608,7 +415,6 @@ fn tier_b_helm_install_on_kind() {
         "helm release 'test-release' not found post-install: {out}",
     );
 
-    // Cleanup (best effort).
     let _ = Command::new("helm")
         .env("KUBECONFIG", &cluster.kubeconfig)
         .args(["uninstall", "test-release"])
@@ -630,8 +436,8 @@ fn tier_b_argocd_application_sync_on_kind() {
         return;
     };
 
-    // Install ArgoCD into the cluster (upstream manifest).
-    let install_argocd = Command::new("kubectl")
+    // Install ArgoCD into the cluster.
+    let ns_yaml = Command::new("kubectl")
         .env("KUBECONFIG", &cluster.kubeconfig)
         .args([
             "create",
@@ -642,7 +448,7 @@ fn tier_b_argocd_application_sync_on_kind() {
             "yaml",
         ])
         .output()
-        .expect("kubectl create ns");
+        .expect("kubectl ns yaml");
     let ns_apply = Command::new("kubectl")
         .env("KUBECONFIG", &cluster.kubeconfig)
         .args(["apply", "-f", "-"])
@@ -651,11 +457,7 @@ fn tier_b_argocd_application_sync_on_kind() {
         .spawn()
         .and_then(|mut child| {
             use std::io::Write;
-            child
-                .stdin
-                .as_mut()
-                .unwrap()
-                .write_all(&install_argocd.stdout)?;
+            child.stdin.as_mut().unwrap().write_all(&ns_yaml.stdout)?;
             child.wait_with_output()
         })
         .expect("kubectl apply namespace");
@@ -685,11 +487,10 @@ fn tier_b_argocd_application_sync_on_kind() {
     }
 
     // Wait for argocd-server Deployment to become Available.
-    let wait_start = Instant::now();
-    let mut server_ready = false;
-    while wait_start.elapsed() < Duration::from_mins(5) {
-        let out = Command::new("kubectl")
-            .env("KUBECONFIG", &cluster.kubeconfig)
+    let kubeconfig = cluster.kubeconfig.clone();
+    let server_ready = wait_until(Duration::from_mins(5), Duration::from_secs(5), || {
+        Command::new("kubectl")
+            .env("KUBECONFIG", &kubeconfig)
             .args([
                 "-n",
                 "argocd",
@@ -698,15 +499,9 @@ fn tier_b_argocd_application_sync_on_kind() {
                 "--timeout=10s",
                 "deploy/argocd-server",
             ])
-            .output();
-        if let Ok(o) = out
-            && o.status.success()
-        {
-            server_ready = true;
-            break;
-        }
-        std::thread::sleep(Duration::from_secs(5));
-    }
+            .output()
+            .is_ok_and(|o| o.status.success())
+    });
     if !server_ready {
         skip(
             "tier-b",
@@ -716,10 +511,8 @@ fn tier_b_argocd_application_sync_on_kind() {
         return;
     }
 
-    // Generate the Application manifest with identity stamped on, and
-    // apply it. Since this is a kind cluster with no upstream repo, we
-    // verify only that the Application is created and admission accepts
-    // it -- full sync would require a real Git source.
+    // Apply the generated Application + verify identity annotations on the
+    // live object.
     let contract = test_contract();
     let identity = test_identity();
     let argo = ArgocdConfig::default();
@@ -741,7 +534,6 @@ fn tier_b_argocd_application_sync_on_kind() {
         String::from_utf8_lossy(&apply.stderr),
     );
 
-    // Verify the identity annotations made it onto the live object.
     let get = Command::new("kubectl")
         .env("KUBECONFIG", &cluster.kubeconfig)
         .args([

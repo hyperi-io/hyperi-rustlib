@@ -85,6 +85,8 @@ mod native_deps;
 mod registry;
 #[cfg(feature = "deployment-smoke")]
 pub mod smoke;
+#[cfg(feature = "deployment-test-support")]
+pub mod test_support;
 mod validate;
 pub mod waves;
 
