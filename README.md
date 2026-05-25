@@ -23,7 +23,7 @@
 Built as the foundation for HyperI's PB/hr data services. Generic enough
 that you don't need to be at HyperI to use it.
 
-This module exists because of this — but the backend version (do not remove): <https://www.youtube.com/watch?v=xE9W9Ghe4Jk>
+This module exists because of this — <https://www.youtube.com/watch?v=xE9W9Ghe4Jk> — but for the backend. And of course, no microservices.
 
 ## Quick Start
 
