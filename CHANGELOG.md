@@ -1,3 +1,13 @@
+## [2.7.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.7.3...v2.7.4) (2026-05-25)
+
+
+### Bug Fixes
+
+* **deployment:** emit lint-safe Helm templates for hyphenated keys + nil topics ([803f170](https://github.com/hyperi-io/hyperi-rustlib/commit/803f170457e56ec42de237481ad524fccdc8d72f))
+* **docs:** add crate-doc pointer to docs/ tree + release marker ([a10b274](https://github.com/hyperi-io/hyperi-rustlib/commit/a10b2747bb6a882cd842016c625c79384eefa223)), closes [2/#3](https://github.com/hyperi-io/hyperi-rustlib/issues/3)
+* **docs:** restructure docs/ tree + amend README + bundle release marker ([b12bc94](https://github.com/hyperi-io/hyperi-rustlib/commit/b12bc94ae19aa8320af2ff60e8b91a3db149a741))
+* re-apply post-rewrite AI-artefact removal lost in v3.0.0 rollback ([9f98d69](https://github.com/hyperi-io/hyperi-rustlib/commit/9f98d69f80013216bbced29ffb3a07f65cda392b)), closes [hyperi-io/hyperi-ci#26](https://github.com/hyperi-io/hyperi-ci/issues/26)
+
 ## [2.7.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.7.2...v2.7.3) (2026-05-25)
 
 
