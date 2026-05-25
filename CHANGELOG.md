@@ -1,3 +1,11 @@
+## [2.7.3](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.7.2...v2.7.3) (2026-05-25)
+
+
+### Bug Fixes
+
+* **deployment:** contract identity annotation scheme v1 + e2e tests ([a01f588](https://github.com/hyperi-io/hyperi-rustlib/commit/a01f588111e04724376a6e3441a814d76ad69a97))
+* **deployment:** extract test_support module + mark e2e tests as TEMPLATE ([6a24acc](https://github.com/hyperi-io/hyperi-rustlib/commit/6a24acc86c6ee034e30487066009bf0a3893a333))
+
 ## [2.7.2](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.7.1...v2.7.2) (2026-05-21)
 
 

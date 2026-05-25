@@ -8,7 +8,7 @@
 
 [package]
 name = "hyperi-rustlib"
-version = "2.7.2"
+version = "2.7.3"
 edition = "2024"
 rust-version = "1.95"
 description = "Opinionated, drop-in Rust toolkit for production services at scale. The patterns from blog posts as actual code: 8-layer config cascade, structured logging with PII masking, Prometheus + OpenTelemetry, Kafka/gRPC transports, tiered disk-spillover, adaptive worker pools, graceful shutdown."
