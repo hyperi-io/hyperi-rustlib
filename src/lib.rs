@@ -208,6 +208,10 @@ pub mod version_check;
 #[cfg_attr(docsrs, doc(cfg(feature = "concurrency")))]
 pub mod concurrency;
 
+#[cfg(feature = "strmatch")]
+#[cfg_attr(docsrs, doc(cfg(feature = "strmatch")))]
+pub mod strmatch;
+
 // Re-export common types at crate root
 pub use env::{Environment, RuntimeContext, runtime_context};
 pub use kafka_config::{

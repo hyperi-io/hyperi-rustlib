@@ -34,7 +34,7 @@ flowchart TB
         MEM["memory<br/>MemoryGuard"]
         SCA["scaling<br/>ScalingPressure"]
         CON["concurrency<br/>BackgroundSink · PeriodicWorker · ActorHandle"]
-        CACHE["cache · database"]
+        CACHE["cache · database · strmatch"]
         EXP["expression (CEL)"]
     end
 
@@ -93,11 +93,8 @@ Pillars are singletons. Modules in higher layers call into them via macros
 | `concurrency` | `concurrency` | `BackgroundSink`, `PeriodicWorker`, `ActorHandle` — fire-and-forget, timer, command-queue primitives |
 | `cache` | `cache` | Moka TinyLFU async cache |
 | `database` | `database` | URL builders, connection-string helpers |
+| `strmatch` | `strmatch` | 4-tier string matcher: `Byte`, `Literal`, `LiteralSet`, `Regex` |
 | `expression` | `expression` | CEL evaluator (used by transport filters) |
-
-> **Planned for next release** (not in v2.7.4): `strmatch` — 4-tier
-> regex→fast-path matcher. See
-> [`pipeline/STRMATCH.md`](pipeline/STRMATCH.md) for the API preview.
 
 ### L3 — Transport & I/O
 
@@ -142,7 +139,7 @@ Pillars are singletons. Modules in higher layers call into them via macros
    required.** `metrics` uses `tracing` for its own logging, but does not
    know `config` exists.
 3. **L2 modules can be used standalone.** `MemoryGuard`, `ScalingPressure`,
-   `cache` all work without the L4 pipeline above them.
+   `cache`, `strmatch` all work without the L4 pipeline above them.
 4. **L3 transports always embed the filter engine.** Even when no filters
    are configured the engine is present as a no-op (a single
    `has_inbound_filters()` branch on every send/recv). Zero-cost when empty.

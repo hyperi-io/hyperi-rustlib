@@ -20,7 +20,33 @@ categories = ["asynchronous", "config", "network-programming", "concurrency", "d
 exclude = [".claude/", ".github/", "ci/", "ai/", "docs/", "examples/", "benches/", "scripts/"]
 
 [package.metadata.docs.rs]
-all-features = true
+# `all-features = true` triggers transport-kafka (needs librdkafka-dev),
+# directory-config-git (libgit2-dev), secrets-aws (aws-lc-sys cmake),
+# config-postgres (live Postgres), deployment-smoke (Docker daemon).
+# None of these are installed in the docs.rs sandbox. Enumerate the set
+# of features that builds without system libraries instead. When a new
+# pure-Rust feature lands, add it here.
+features = [
+    "config", "config-reload", "logger",
+    "metrics-core", "metrics-process", "metrics", "metrics-dfe",
+    "otel", "otel-metrics", "otel-tracing",
+    "runtime", "shutdown", "health",
+    "concurrency", "strmatch", "memory", "scaling",
+    "io", "spool", "tiered-sink",
+    "worker-pool", "worker-batch", "worker", "worker-msgpack",
+    "cli", "cli-service",
+    "http", "http-server",
+    "transport", "transport-trace",
+    "transport-memory", "transport-grpc", "transport-file",
+    "transport-pipe", "transport-http", "transport-redis",
+    "directory-config",
+    "secrets", "secrets-vault",
+    "dlq", "dlq-http", "dlq-redis",
+    "output-file",
+    "cache", "database",
+    "deployment",
+    "expression", "version-check",
+]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
@@ -41,6 +67,7 @@ logger = ["tracing", "tracing-subscriber", "owo-colors", "serde_json", "tracing-
 # writes, timer-driven loops, or stateful command-queue actors. See
 # `src/concurrency/mod.rs` for the decision matrix.
 concurrency = ["tokio", "tokio-util", "tracing", "metrics-core"]
+strmatch = ["regex", "regex-automata", "regex-syntax", "aho-corasick", "memchr", "tracing", "metrics-core"]
 
 # Metrics tiers (2.6.0 split). Consumers pay only for what they use:
 # - metrics-core: emit-only (counter!/gauge!/histogram! macros work)
@@ -281,8 +308,11 @@ snap = { version = ">=1.1.1, <2", optional = true }
 # SIMD JSON (BatchEngine — 2-4x faster than serde_json)
 sonic-rs = { version = ">=0.5, <1", optional = true }
 
-# Regex (topic resolver include/exclude filters)
+# Regex (topic resolver include/exclude filters, strmatch)
 regex = { version = ">=1.11, <2", optional = true }
+regex-automata = { version = ">=0.4, <0.5", optional = true }
+regex-syntax = { version = ">=0.8, <0.9", optional = true }
+aho-corasick = { version = ">=1.1, <2", optional = true }
 memchr = { version = ">=2.7", optional = true }
 
 # Async trait (for tiered-sink Sink trait)
@@ -374,3 +404,8 @@ required-features = ["transport-memory"]
 name = "concurrency_patterns"
 harness = false
 required-features = ["concurrency"]
+
+[[bench]]
+name = "strmatch"
+harness = false
+required-features = ["strmatch"]
