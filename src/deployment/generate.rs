@@ -935,17 +935,20 @@ spec:
                 group.group_name
             ));
             for env in &group.env_vars {
+                // See gen_secret_yaml — hyphenated keys must use index form.
+                let key_lookup = safe_template_lookup(
+                    &format!(".Values.{}.secretKeys", group.group_name),
+                    &env.key_name,
+                );
                 out.push_str(&format!(
                     "            - name: {env_var}\n\
                      \x20             valueFrom:\n\
                      \x20               secretKeyRef:\n\
                      \x20                 name: {{{{ include \"{app}.{helper}\" . }}}}\n\
-                     \x20                 key: {{{{ .Values.{group}.secretKeys.{key} }}}}\n",
+                     \x20                 key: {{{{ {key_lookup} }}}}\n",
                     env_var = env.env_var,
                     app = app,
                     helper = helper_name,
-                    group = group.group_name,
-                    key = env.key_name,
                 ));
             }
         }
@@ -1132,10 +1135,17 @@ fn gen_secret_yaml(c: &DeploymentContract) -> String {
         ));
 
         for env in &group.env_vars {
+            // Hyphenated or otherwise non-Go-identifier-safe key names
+            // require `(index .Values.x "key")` form instead of
+            // `.Values.x.key` — Go-template parser rejects hyphens etc.
+            let key_lookup = safe_template_lookup(
+                &format!(".Values.{}.secretKeys", group.group_name),
+                &env.key_name,
+            );
+            let val_lookup =
+                safe_template_lookup(&format!(".Values.{}", group.group_name), &env.key_name);
             out.push_str(&format!(
-                "  {{{{ .Values.{group}.secretKeys.{key} }}}}: {{{{ .Values.{group}.{key} | b64enc | quote }}}}\n",
-                group = group.group_name,
-                key = env.key_name,
+                "  {{{{ {key_lookup} }}}}: {{{{ {val_lookup} | b64enc | quote }}}}\n"
             ));
         }
 
@@ -1216,7 +1226,15 @@ spec:
 {auth_ref}      metadata:
         bootstrapServers: {{{{ .Values.config.kafka.brokers | quote }}}}
         consumerGroup: {{{{ .Values.keda.kafka.consumerGroup | default .Values.config.kafka.group_id | quote }}}}
-        topic: {{{{ .Values.keda.kafka.topic | default (index .Values.config.kafka.topics 0) | quote }}}}
+        {{{{- /* `default (index X 0)` would eagerly evaluate `index nil 0` and fail
+            lint when no topics are set. Use explicit conditional instead. */}}}}
+        {{{{- if .Values.keda.kafka.topic }}}}
+        topic: {{{{ .Values.keda.kafka.topic | quote }}}}
+        {{{{- else if .Values.config.kafka.topics }}}}
+        topic: {{{{ (index .Values.config.kafka.topics 0) | quote }}}}
+        {{{{- else }}}}
+        topic: ""
+        {{{{- end }}}}
         lagThreshold: {{{{ .Values.keda.kafka.lagThreshold | quote }}}}
         activationLagThreshold: {{{{ .Values.keda.kafka.activationLagThreshold | quote }}}}
         saslType: scram_sha512
@@ -1503,6 +1521,41 @@ fn to_camel_suffix(name: &str) -> String {
     result
 }
 
+/// True if `s` is a valid Go-template identifier (matches
+/// `[A-Za-z_][A-Za-z0-9_]*`). Go templates accept the dot-walked
+/// `.foo.bar` syntax only for keys matching this shape; any other
+/// key (hyphens, dots, digit-leading, etc.) must use the
+/// `(index .foo "key")` form or `helm lint` fails with
+/// `bad character U+002D '-'` (and similar).
+fn is_go_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Render a Go-template lookup expression that's safe for any key.
+///
+/// `base` must be a dot-prefixed path that itself only contains
+/// Go-safe identifiers (e.g. `.Values.auth.secretKeys`). `key` may
+/// contain anything; the function picks the dot-walked form when
+/// it's safe and the `(index ... "key")` form otherwise.
+///
+/// Examples:
+///   - `safe_template_lookup(".Values.auth", "username")`
+///     → `.Values.auth.username`
+///   - `safe_template_lookup(".Values.auth", "bearer-tokens")`
+///     → `(index .Values.auth "bearer-tokens")`
+fn safe_template_lookup(base: &str, key: &str) -> String {
+    if is_go_identifier(key) {
+        format!("{base}.{key}")
+    } else {
+        format!("(index {base} \"{key}\")")
+    }
+}
+
 fn write_file(path: impl AsRef<Path>, content: &str) -> Result<(), DeploymentError> {
     let path = path.as_ref();
     std::fs::write(path, content).map_err(|e| DeploymentError::WriteFile {
@@ -1786,6 +1839,135 @@ mod tests {
         assert!(content.contains("path: /healthz"));
         assert!(content.contains("path: /readyz"));
         assert!(content.contains("/etc/dfe"));
+    }
+
+    #[test]
+    fn test_is_go_identifier() {
+        // Valid Go identifiers
+        assert!(is_go_identifier("foo"));
+        assert!(is_go_identifier("FOO"));
+        assert!(is_go_identifier("foo_bar"));
+        assert!(is_go_identifier("_underscore_start"));
+        assert!(is_go_identifier("foo123"));
+        assert!(is_go_identifier("a"));
+
+        // Invalid — would break Go templates
+        assert!(!is_go_identifier("bearer-tokens")); // hyphen
+        assert!(!is_go_identifier("foo.bar")); // dot
+        assert!(!is_go_identifier("123foo")); // digit-leading
+        assert!(!is_go_identifier("")); // empty
+        assert!(!is_go_identifier("foo bar")); // space
+        assert!(!is_go_identifier("foo:bar")); // colon
+    }
+
+    #[test]
+    fn test_safe_template_lookup_chooses_form() {
+        assert_eq!(
+            safe_template_lookup(".Values.auth", "username"),
+            ".Values.auth.username"
+        );
+        assert_eq!(
+            safe_template_lookup(".Values.auth", "bearer-tokens"),
+            "(index .Values.auth \"bearer-tokens\")"
+        );
+        assert_eq!(
+            safe_template_lookup(".Values.kafka.secretKeys", "kafka-username"),
+            "(index .Values.kafka.secretKeys \"kafka-username\")"
+        );
+    }
+
+    /// Regression for the dfe-receiver canary 2026-05-25 finding:
+    /// keda-scaledobject.yaml previously used
+    /// `default (index .Values.config.kafka.topics 0)` which `helm lint`
+    /// rejects with `error calling index: index of untyped nil` because
+    /// Sprig's `default` evaluates both operands. The render must now
+    /// use a conditional `if/else if/else` block instead.
+    #[test]
+    fn test_keda_scaledobject_topic_lookup_is_lint_safe() {
+        let contract = test_contract();
+        let dir = tempfile::tempdir().unwrap();
+        generate_chart(&contract, dir.path(), None).unwrap();
+
+        let keda_yaml =
+            std::fs::read_to_string(dir.path().join("templates/keda-scaledobject.yaml")).unwrap();
+
+        // Old broken form must not appear
+        assert!(
+            !keda_yaml.contains(
+                ".Values.keda.kafka.topic | default (index .Values.config.kafka.topics 0)"
+            ),
+            "keda-scaledobject.yaml still uses the eagerly-evaluated `default (index ...)` form:\n{keda_yaml}"
+        );
+
+        // New conditional form must appear
+        assert!(
+            keda_yaml.contains("if .Values.keda.kafka.topic"),
+            "keda-scaledobject.yaml missing if/else guard for topic lookup:\n{keda_yaml}"
+        );
+        assert!(
+            keda_yaml.contains("else if .Values.config.kafka.topics"),
+            "keda-scaledobject.yaml missing fallback branch for config.kafka.topics:\n{keda_yaml}"
+        );
+    }
+
+    /// Regression for the dfe-receiver canary 2026-05-25 finding:
+    /// secret.yaml previously emitted `.Values.x.bearer-tokens` which
+    /// Go templates reject ("bad character U+002D '-'"). The render
+    /// must now use the `(index .Values.x "bearer-tokens")` form.
+    #[test]
+    fn test_secret_yaml_handles_hyphenated_key_names() {
+        let mut contract = test_contract();
+        // dfe-receiver-style hyphenated key_name (token group)
+        contract.secrets.push(SecretGroupContract {
+            group_name: "auth".into(),
+            env_vars: vec![SecretEnvContract {
+                env_var: "DFE_RECEIVER__AUTH__BEARER_TOKENS".into(),
+                key_name: "bearer-tokens".into(),
+                secret_key: "bearer-tokens".into(),
+            }],
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        generate_chart(&contract, dir.path(), None).unwrap();
+
+        let secret_yaml =
+            std::fs::read_to_string(dir.path().join("templates/secret.yaml")).unwrap();
+        let deployment_yaml =
+            std::fs::read_to_string(dir.path().join("templates/deployment.yaml")).unwrap();
+
+        // Old broken form must not appear anywhere
+        assert!(
+            !secret_yaml.contains(".Values.auth.bearer-tokens"),
+            "secret.yaml still uses broken dot-walked form for hyphenated key:\n{secret_yaml}"
+        );
+        assert!(
+            !secret_yaml.contains(".Values.auth.secretKeys.bearer-tokens"),
+            "secret.yaml still uses broken dot-walked form for hyphenated secretKeys lookup:\n{secret_yaml}"
+        );
+        assert!(
+            !deployment_yaml.contains(".Values.auth.secretKeys.bearer-tokens"),
+            "deployment.yaml still uses broken dot-walked form for hyphenated secretKeys lookup:\n{deployment_yaml}"
+        );
+
+        // Safe index form must appear
+        assert!(
+            secret_yaml.contains("(index .Values.auth.secretKeys \"bearer-tokens\")"),
+            "secret.yaml missing index-form lookup for secretKeys.bearer-tokens:\n{secret_yaml}"
+        );
+        assert!(
+            secret_yaml.contains("(index .Values.auth \"bearer-tokens\")"),
+            "secret.yaml missing index-form lookup for value bearer-tokens:\n{secret_yaml}"
+        );
+        assert!(
+            deployment_yaml.contains("(index .Values.auth.secretKeys \"bearer-tokens\")"),
+            "deployment.yaml missing index-form lookup for secretKeys.bearer-tokens:\n{deployment_yaml}"
+        );
+
+        // Sanity: Go-safe keys (e.g. existing kafka.username) still use dot form
+        assert!(
+            secret_yaml.contains(".Values.kafka.secretKeys.username"),
+            "Go-safe key 'username' should still use dot-walked form:\n{secret_yaml}"
+        );
     }
 
     #[test]
