@@ -153,6 +153,10 @@ pub mod tiered_sink;
 #[cfg_attr(docsrs, doc(cfg(feature = "secrets")))]
 pub mod secrets;
 
+#[cfg(feature = "credential")]
+#[cfg_attr(docsrs, doc(cfg(feature = "credential")))]
+pub mod credential;
+
 #[cfg(feature = "directory-config")]
 #[cfg_attr(docsrs, doc(cfg(feature = "directory-config")))]
 pub mod directory_config;
@@ -288,6 +292,10 @@ pub use secrets::{
     CacheConfig, FileProvider, RotationEvent, SecretMetadata, SecretProvider, SecretSource,
     SecretValue, SecretsConfig, SecretsError, SecretsManager, SecretsResult,
 };
+
+#[cfg(feature = "credential")]
+#[cfg_attr(docsrs, doc(cfg(feature = "credential")))]
+pub use credential::{resolve, resolve_optional, CredentialError};
 
 #[cfg(feature = "secrets-vault")]
 #[cfg_attr(docsrs, doc(cfg(feature = "secrets-vault")))]
