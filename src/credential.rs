@@ -87,14 +87,14 @@ async fn resolve_vault(path_key: &str) -> Result<String, CredentialError> {
     };
 
     let secrets = SecretsManager::new(config)
-        .map_err(|e| CredentialError::Vault(format!("init failed: {e}")))?;
+        .map_err(|e| CredentialError::Vault(format!("failed to initialise secrets manager: {e}")))?;
     let value = secrets
         .get("_vault_lookup")
         .await
         .map_err(|e| CredentialError::Vault(format!("lookup failed for {path}:{key}: {e}")))?;
     let text = value
         .as_str()
-        .map_err(|e| CredentialError::Vault(format!("not UTF-8: {e}")))?;
+        .map_err(|e| CredentialError::Vault(format!("vault secret not valid UTF-8: {e}")))?;
     tracing::debug!(path = path, key = key, "resolved vault credential");
     Ok(text.to_string())
 }
@@ -117,7 +117,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_env_set() {
-        // SAFETY: test-only, single-threaded
+        // SAFETY: test-only; uses a unique var name to avoid interference with parallel tests
         unsafe { std::env::set_var("HYPERI_RUSTLIB_TEST_CRED", "value-123") };
         let v = resolve("env:HYPERI_RUSTLIB_TEST_CRED").await.unwrap();
         assert_eq!(v, "value-123");
