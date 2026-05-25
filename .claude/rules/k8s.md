@@ -1,1 +1,0 @@
-../../hyperi-ai/standards/rules/k8s.md

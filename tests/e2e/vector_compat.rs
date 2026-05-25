@@ -84,6 +84,28 @@ async fn find_available_port() -> u16 {
     listener.local_addr().unwrap().port()
 }
 
+/// Poll until `port` accepts a TCP connection on 127.0.0.1, bounded by
+/// `timeout`. Replaces a fixed `sleep` after spawning Vector: the binary
+/// can take anywhere from ~50 ms to several seconds to bind under load,
+/// and a sleep that's "usually enough" produces flakes when CI is busy.
+async fn wait_for_port_bind(port: u16, timeout: Duration) -> Result<(), String> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    let mut backoff = Duration::from_millis(50);
+    loop {
+        if tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .is_ok()
+        {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(format!("port {port} not bound within {timeout:?}"));
+        }
+        tokio::time::sleep(backoff).await;
+        backoff = (backoff * 2).min(Duration::from_millis(500));
+    }
+}
+
 /// Write a Vector YAML config to a file.
 fn write_vector_config(path: &Path, config_yaml: &str) {
     let mut file = std::fs::File::create(path).expect("Failed to create Vector config file");
@@ -536,8 +558,13 @@ sinks:
         .spawn()
         .expect("Failed to spawn vector binary");
 
-    // Wait for Vector to start listening
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // Wait for Vector to bind the gRPC port. Polling instead of a fixed
+    // sleep -- Vector startup varies from ~50 ms to several seconds under
+    // CI contention, and the previous 2 s sleep was the source of the
+    // flake when the full test suite was running in parallel.
+    wait_for_port_bind(port, Duration::from_secs(15))
+        .await
+        .expect("vector failed to bind gRPC port within 15s");
 
     // Send events via our VectorCompatClient
     let client = VectorCompatClient::connect_lazy(&format!("http://127.0.0.1:{port}"))

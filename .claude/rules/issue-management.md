@@ -1,1 +1,0 @@
-../../hyperi-ai/standards/rules/issue-management.md

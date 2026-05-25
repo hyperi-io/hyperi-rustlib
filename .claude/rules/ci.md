@@ -1,1 +1,0 @@
-../../hyperi-ai/standards/rules/ci.md

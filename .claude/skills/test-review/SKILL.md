@@ -1,1 +1,0 @@
-../../../hyperi-ai/skills/test-review/SKILL.md

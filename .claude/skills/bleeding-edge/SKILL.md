@@ -1,1 +1,0 @@
-../../../hyperi-ai/skills/bleeding-edge/SKILL.md

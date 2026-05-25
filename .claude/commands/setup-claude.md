@@ -1,1 +1,0 @@
-../../hyperi-ai/commands/setup-claude.md

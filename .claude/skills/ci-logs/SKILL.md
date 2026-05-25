@@ -1,1 +1,0 @@
-../../../hyperi-ai/skills/ci-logs/SKILL.md
