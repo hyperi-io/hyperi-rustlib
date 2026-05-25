@@ -21,6 +21,10 @@
 //! Built as the foundation for HyperI's PB/hr data services. Generic enough
 //! that you don't need to be at HyperI to use it.
 //!
+//! Full reference docs live under [`docs/`](https://github.com/hyperi-io/hyperi-rustlib/tree/main/docs).
+//! Start at [`docs/README.md`](https://github.com/hyperi-io/hyperi-rustlib/blob/main/docs/README.md)
+//! for the entry-point index.
+//!
 //! ## Quick Start
 //!
 //! ```rust,no_run
