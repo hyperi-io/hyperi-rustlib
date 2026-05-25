@@ -133,7 +133,6 @@ sub-components (filter engine lives inside every transport).
 - [pipeline/TIERED-SINK.md](pipeline/TIERED-SINK.md) — resilient delivery, disk spillover, circuit breaker
 - [pipeline/DLQ.md](pipeline/DLQ.md) — file, Kafka, HTTP, Redis backends
 - [pipeline/SPOOL.md](pipeline/SPOOL.md) — disk-backed async FIFO (yaque)
-- [pipeline/STRMATCH.md](pipeline/STRMATCH.md) — 4-tier string matcher (Byte / Literal / LiteralSet / Regex)
 - [pipeline/SCALING.md](pipeline/SCALING.md) — `ScalingPressure`, KEDA external scaler signal
 
 ### Less-common subsystems
@@ -144,6 +143,19 @@ sub-components (filter engine lives inside every transport).
 - [api/CACHE.md](api/CACHE.md) — moka TinyLFU cache
 - [api/DIRECTORY-CONFIG.md](api/DIRECTORY-CONFIG.md) — YAML directory store with optional `git2`
 - [api/CONCURRENCY.md](api/CONCURRENCY.md) — `BackgroundSink`, `PeriodicWorker`, `ActorHandle`
+
+### Planned (not in current release)
+
+These docs describe modules that are designed and largely written but
+have not yet landed on `main` / `crates.io`. Treat as design previews,
+not as functionality you can `cargo add`.
+
+- [pipeline/STRMATCH.md](pipeline/STRMATCH.md) — 4-tier regex→fast-path
+  matcher (Byte / Literal / LiteralSet / Regex).
+- **Content-based log scrubbing** (gitleaks rules + PII validators).
+  v2.7.4 ships field-name masking via `MaskingWriter` only — see
+  [core-pillars/LOGGING.md](core-pillars/LOGGING.md) for what's
+  shipped.
 
 ### Workflow artefacts (not user docs)
 
