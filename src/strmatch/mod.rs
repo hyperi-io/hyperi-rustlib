@@ -387,44 +387,43 @@ impl StrMatcherBuilder {
     /// Returns `Err` if the pattern fails to parse or violates the
     /// `min_tier` policy with `on_below_min = Reject`.
     pub fn build(&self, pattern: &str) -> Result<StrMatcher, BuildError> {
-        let Classified { plan, descriptor } =
-            classify::classify(pattern, self.ascii_case_insensitive)?;
+        let classified = classify::classify(pattern, self.ascii_case_insensitive)?;
+        let tier = classified.descriptor.tier;
 
-        let tier = descriptor.tier;
         if let Some(min) = self.min_tier
             && tier.rank() < min.rank()
         {
-            return self.apply_below_min(pattern, tier, min, descriptor.reason, descriptor.hint);
+            return self.apply_below_min(pattern, min, classified);
         }
 
-        // Anti-spam protocol: if this is a Meta-tier compile, run the
-        // warn-once helper. The helper handles dedup and capping.
         if tier == MatcherTier::Regex {
             warn::on_regex_fallback(
                 pattern,
-                descriptor.reason,
-                descriptor.hint,
+                classified.descriptor.reason,
+                classified.descriptor.hint,
                 /*force=*/ false,
             );
             metrics_inc_fallback();
         }
 
         Ok(StrMatcher {
-            plan,
+            plan: classified.plan,
             tier,
             pattern: pattern.to_string(),
-            reason: descriptor.reason,
+            reason: classified.descriptor.reason,
         })
     }
 
     fn apply_below_min(
         &self,
         pattern: &str,
-        got: MatcherTier,
         wanted: MatcherTier,
-        reason: &'static str,
-        hint: &'static str,
+        classified: Classified,
     ) -> Result<StrMatcher, BuildError> {
+        let got = classified.descriptor.tier;
+        let reason = classified.descriptor.reason;
+        let hint = classified.descriptor.hint;
+
         match self.on_below_min {
             OnBelowMin::Reject => Err(BuildError::TierTooLow {
                 pattern: pattern.to_string(),
@@ -434,21 +433,13 @@ impl StrMatcherBuilder {
                 hint,
             }),
             OnBelowMin::Warn => {
-                // Force the warn — bypass the anti-spam cap because
-                // the caller explicitly opted in.
                 warn::on_regex_fallback(pattern, reason, hint, /*force=*/ true);
                 metrics_inc_fallback();
-                // Re-classify and return — the plan was already built
-                // by classify(). Re-run is wasteful, but we need to
-                // keep the API simple. Cost is at construction time
-                // only.
-                let Classified { plan, descriptor } =
-                    classify::classify(pattern, self.ascii_case_insensitive)?;
                 Ok(StrMatcher {
-                    plan,
-                    tier: descriptor.tier,
+                    plan: classified.plan,
+                    tier: got,
                     pattern: pattern.to_string(),
-                    reason: descriptor.reason,
+                    reason,
                 })
             }
             OnBelowMin::Allow => {
@@ -456,13 +447,11 @@ impl StrMatcherBuilder {
                     warn::on_regex_fallback(pattern, reason, hint, /*force=*/ false);
                     metrics_inc_fallback();
                 }
-                let Classified { plan, descriptor } =
-                    classify::classify(pattern, self.ascii_case_insensitive)?;
                 Ok(StrMatcher {
-                    plan,
-                    tier: descriptor.tier,
+                    plan: classified.plan,
+                    tier: got,
                     pattern: pattern.to_string(),
-                    reason: descriptor.reason,
+                    reason,
                 })
             }
         }

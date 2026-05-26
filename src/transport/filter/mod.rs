@@ -323,8 +323,18 @@ impl TransportFilterEngine {
             return FilterDisposition::Pass;
         }
 
-        // MsgPack payloads bypass filters (SIMD extraction is JSON-only)
+        // MsgPack bypasses filters (SIMD extraction is JSON-only).
+        // Warn once per direction so operators don't silently pass
+        // every MsgPack message; emit a metric every time so the
+        // bypass rate is visible.
         if is_likely_msgpack(payload) {
+            #[cfg(feature = "metrics")]
+            ::metrics::counter!(
+                "dfe_transport_filter_msgpack_bypass_total",
+                "direction" => direction.to_string()
+            )
+            .increment(1);
+            warn_msgpack_bypass_once(direction);
             return FilterDisposition::Pass;
         }
 
@@ -384,6 +394,27 @@ impl TransportFilterEngine {
                 lowest_seen = tier;
             }
         }
+    }
+}
+
+/// Log a one-shot warning per direction when filters skip MsgPack.
+/// Counter increments every call; the log fires once per process.
+fn warn_msgpack_bypass_once(direction: FilterDirection) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static WARNED_IN: AtomicBool = AtomicBool::new(false);
+    static WARNED_OUT: AtomicBool = AtomicBool::new(false);
+    let flag = match direction {
+        FilterDirection::In => &WARNED_IN,
+        FilterDirection::Out => &WARNED_OUT,
+    };
+    if !flag.swap(true, Ordering::AcqRel) {
+        tracing::warn!(
+            target: "hyperi_rustlib::transport::filter",
+            direction = %direction,
+            "transport filters skipped a MsgPack payload — \
+             filters are JSON-only. Scrape \
+             dfe_transport_filter_msgpack_bypass_total for the rate."
+        );
     }
 }
 

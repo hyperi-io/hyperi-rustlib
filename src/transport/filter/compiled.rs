@@ -281,12 +281,7 @@ impl CompiledFilter {
                 // declaring the field present. Without this, Tier-1 returns
                 // false positives that violate `has(field)` semantics.
                 if let Some(n) = needle {
-                    for hit in n.find_iter(payload) {
-                        if is_at_structural_position(payload, hit) {
-                            return Some(*action);
-                        }
-                    }
-                    return None;
+                    return first_structural_hit(payload, n.find_iter(payload)).map(|_| *action);
                 }
                 // Slow path: nested field, use sonic-rs
                 with_path_refs(path, |refs| {
@@ -301,16 +296,11 @@ impl CompiledFilter {
                 action,
                 ..
             } => {
-                // Mirror of FieldExists: the field is "absent" only if NO
-                // memmem hit is at a JSON-structural position. Hits inside
-                // string values do not count as the field being present.
                 if let Some(n) = needle {
-                    for hit in n.find_iter(payload) {
-                        if is_at_structural_position(payload, hit) {
-                            return None;
-                        }
-                    }
-                    return Some(*action);
+                    return match first_structural_hit(payload, n.find_iter(payload)) {
+                        Some(_) => None,
+                        None => Some(*action),
+                    };
                 }
                 with_path_refs(path, |refs| {
                     sonic_rs::get_from_slice(payload, refs)
@@ -465,32 +455,34 @@ fn split_field_path(field: &str) -> Vec<String> {
 /// Cost: O(pos), dominated by SIMD `memchr` finds. ~5ns per quote; total
 /// stays well under 100ns for sub-kilobyte payloads. Keeps Tier-1 in its
 /// typical 50-200ns budget.
+/// Walks `payload` once, tracking JSON string-state via unescaped
+/// quotes, and returns the first SIMD hit at a structural (out-of-
+/// string) position. O(payload_len) total, regardless of hit count.
 #[inline]
-fn is_at_structural_position(payload: &[u8], pos: usize) -> bool {
-    let mut quotes = 0usize;
-    let mut i = 0usize;
-    while i < pos {
-        match memchr::memchr(b'"', &payload[i..pos]) {
-            Some(rel) => {
-                let q = i + rel;
-                // Count contiguous backslashes immediately preceding the
-                // quote. Odd count => escaped quote (does not toggle the
-                // in-string state); even count => real string boundary.
+fn first_structural_hit(payload: &[u8], hits: impl IntoIterator<Item = usize>) -> Option<usize> {
+    let mut in_string = false;
+    let mut walk = 0usize;
+    for hit in hits {
+        while walk < hit {
+            if payload[walk] == b'"' {
+                // Count contiguous backslashes immediately preceding.
                 let mut bs = 0usize;
-                let mut k = q;
+                let mut k = walk;
                 while k > 0 && payload[k - 1] == b'\\' {
                     bs += 1;
                     k -= 1;
                 }
                 if bs.is_multiple_of(2) {
-                    quotes += 1;
+                    in_string = !in_string;
                 }
-                i = q + 1;
             }
-            None => break,
+            walk += 1;
+        }
+        if !in_string {
+            return Some(hit);
         }
     }
-    quotes.is_multiple_of(2)
+    None
 }
 
 /// Build a memmem Finder for a single-segment field name. Returns `None`
@@ -503,7 +495,7 @@ fn is_at_structural_position(payload: &[u8], pos: usize) -> bool {
 /// A raw memmem hit is not a sufficient yes/no answer: the pattern can also
 /// occur inside a string VALUE. The Tier-1 evaluator (`FieldExists` /
 /// `FieldNotExists`) therefore verifies every hit via
-/// [`is_at_structural_position`] before declaring the field present, so the
+/// [`first_structural_hit`] before declaring the field present, so the
 /// fast path is correct under `has(field)` semantics rather than approximate.
 fn build_field_needle(path: &[String]) -> Option<memchr::memmem::Finder<'static>> {
     if path.len() != 1 {
@@ -694,30 +686,25 @@ mod tests {
         assert_eq!(filter.evaluate(payload), None);
     }
 
-    /// Direct unit test of [`is_at_structural_position`] with hand-rolled
-    /// byte sequences. Valid JSON cannot actually contain the literal bytes
-    /// `"key":` inside a string value (the leading `"` would terminate the
-    /// string), but the helper still has to be correct for malformed /
-    /// non-JSON byte streams that share the transport (defence in depth).
+    /// `first_structural_hit` returns the first hit at an unquoted
+    /// position. Hits inside strings are skipped; escaped quotes do
+    /// not toggle string state.
     #[test]
-    fn is_at_structural_position_counts_unescaped_quotes() {
+    fn first_structural_hit_skips_in_string_hits() {
+        // `{` at 0 (structural), `k` at 2 (in string), `v` at 8
+        // (in string), `}` at 14 (structural).
         let payload = br#"{"key":"value"}"#;
-        // Byte 0 is `{` — zero quotes before -> structural.
-        assert!(is_at_structural_position(payload, 0));
-        // Byte 2 (`k` inside property-name string) -> NOT structural.
-        assert!(!is_at_structural_position(payload, 2));
-        // Byte 8 (`v` inside value string) -> NOT structural.
-        assert!(!is_at_structural_position(payload, 8));
-        // Byte 14 (closing `}`) -> structural again.
-        assert!(is_at_structural_position(payload, 14));
+        assert_eq!(first_structural_hit(payload, [0]), Some(0));
+        assert_eq!(first_structural_hit(payload, [2]), None);
+        assert_eq!(first_structural_hit(payload, [8]), None);
+        assert_eq!(first_structural_hit(payload, [14]), Some(14));
+        // First hit at 2 is in-string and skipped; 14 is structural.
+        assert_eq!(first_structural_hit(payload, [2, 8, 14]), Some(14));
 
         // Escaped quotes do not toggle string state.
-        // Bytes: `"hi \" there"x` — open quote, escaped quote, close quote.
         let payload = b"\"hi \\\" there\"x";
-        // `h` at index 1 -> inside string.
-        assert!(!is_at_structural_position(payload, 1));
-        // `x` at index 13 -> after the close quote, structural (count = 2).
-        assert!(is_at_structural_position(payload, 13));
+        assert_eq!(first_structural_hit(payload, [1]), None);
+        assert_eq!(first_structural_hit(payload, [13]), Some(13));
     }
 
     #[test]
