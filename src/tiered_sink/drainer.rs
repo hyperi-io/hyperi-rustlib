@@ -132,10 +132,10 @@ enum DrainResult {
     IoError,
 }
 
-/// Run the drain loop.
+/// Drain loop. Runs until shutdown signalled.
 ///
-/// This function runs until the notify is triggered or the spool is empty
-/// and the circuit is closed.
+/// `fifo_gate`: `Some` in StrictFifo, acquired per delivery cycle
+/// to serialise with senders. `None` in Interleaved (lock-free).
 #[allow(clippy::too_many_arguments)]
 pub async fn drain_loop<S: Sink>(
     sink: Arc<S>,
@@ -147,6 +147,7 @@ pub async fn drain_loop<S: Sink>(
     strategy: DrainStrategy,
     interval: Duration,
     shutdown: Arc<Notify>,
+    fifo_gate: Option<Arc<Mutex<()>>>,
 ) {
     let mut drainer = Drainer::new(strategy);
 
@@ -178,6 +179,12 @@ pub async fn drain_loop<S: Sink>(
         if circuit.is_open().await {
             continue;
         }
+
+        // StrictFifo: hold the gate across dequeue + send + commit.
+        let _gate = match &fifo_gate {
+            Some(gate) => Some(gate.lock().await),
+            None => None,
+        };
 
         // Try to receive, decompress, send, and commit all within the lock
         // This is necessary because RecvGuard borrows the Receiver
