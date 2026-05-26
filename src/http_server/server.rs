@@ -10,6 +10,7 @@
 
 use crate::http_server::{HttpServerConfig, HttpServerError, Result};
 use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
+use std::future::IntoFuture;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,6 +18,7 @@ use tokio::net::TcpListener;
 #[cfg(not(feature = "shutdown"))]
 use tokio::signal;
 use tokio::sync::watch;
+use tower::limit::ConcurrencyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
@@ -106,6 +108,7 @@ impl HttpServer {
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
+        let shutdown_timeout = self.config.shutdown_timeout();
         let app = self.build_router(app);
 
         let addr: SocketAddr =
@@ -127,10 +130,36 @@ impl HttpServer {
         #[cfg(feature = "logger")]
         tracing::info!(address = %addr, "HTTP server listening");
 
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown)
-            .await
-            .map_err(HttpServerError::Io)?;
+        // Two-phase: unbounded wait for shutdown, then bounded drain.
+        // If drain exceeds shutdown_timeout, drop the serve future
+        // so K8s terminationGracePeriodSeconds isn't blown.
+        let (drain_started_tx, drain_started_rx) = tokio::sync::oneshot::channel();
+        let drain_started_tx = std::sync::Mutex::new(Some(drain_started_tx));
+        let signal = async move {
+            shutdown.await;
+            if let Some(tx) = drain_started_tx.lock().ok().and_then(|mut g| g.take()) {
+                let _ = tx.send(());
+            }
+        };
+        // WithGracefulShutdown is IntoFuture, not Future.
+        let serve = axum::serve(listener, app)
+            .with_graceful_shutdown(signal)
+            .into_future();
+        tokio::pin!(serve);
+
+        tokio::select! {
+            result = &mut serve => result.map_err(HttpServerError::Io)?,
+            () = async {
+                let _ = drain_started_rx.await;
+                tokio::time::sleep(shutdown_timeout).await;
+            } => {
+                #[cfg(feature = "logger")]
+                tracing::warn!(
+                    timeout_ms = u64::try_from(shutdown_timeout.as_millis()).unwrap_or(u64::MAX),
+                    "HTTP server graceful drain timed out — forcing exit"
+                );
+            }
+        }
 
         #[cfg(feature = "logger")]
         tracing::info!("HTTP server shut down gracefully");
@@ -149,10 +178,7 @@ impl HttpServer {
         let (tx, rx) = watch::channel(());
         let handle = ShutdownHandle { sender: tx };
 
-        let shutdown = async move {
-            let _ = rx.clone().changed().await;
-        };
-
+        let shutdown_timeout = self.config.shutdown_timeout();
         let app = self.build_router(app);
 
         let addr: SocketAddr =
@@ -174,12 +200,38 @@ impl HttpServer {
         #[cfg(feature = "logger")]
         tracing::info!(address = %addr, "HTTP server listening");
 
+        // Two-phase shutdown, matching `serve_with_shutdown`.
+        let (drain_started_tx, drain_started_rx) = tokio::sync::oneshot::channel();
+        let drain_started_tx = std::sync::Mutex::new(Some(drain_started_tx));
+        let signal = async move {
+            let _ = rx.clone().changed().await;
+            if let Some(tx) = drain_started_tx.lock().ok().and_then(|mut g| g.take()) {
+                let _ = tx.send(());
+            }
+        };
+
         let future = ServerFuture {
             inner: Box::pin(async move {
-                axum::serve(listener, app)
-                    .with_graceful_shutdown(shutdown)
-                    .await
-                    .map_err(HttpServerError::Io)
+                let serve = axum::serve(listener, app)
+                    .with_graceful_shutdown(signal)
+                    .into_future();
+                tokio::pin!(serve);
+
+                tokio::select! {
+                    result = &mut serve => result.map_err(HttpServerError::Io)?,
+                    () = async {
+                        let _ = drain_started_rx.await;
+                        tokio::time::sleep(shutdown_timeout).await;
+                    } => {
+                        #[cfg(feature = "logger")]
+                        tracing::warn!(
+                            timeout_ms = u64::try_from(shutdown_timeout.as_millis()).unwrap_or(u64::MAX),
+                            "HTTP server graceful drain timed out — forcing exit"
+                        );
+                    }
+                }
+
+                Ok(())
             }),
         };
 
@@ -220,6 +272,9 @@ impl HttpServer {
                 StatusCode::REQUEST_TIMEOUT,
                 self.config.request_timeout(),
             ))
+            // Cap in-flight requests. Queue fills under load;
+            // upstream should see backpressure via send-timeout.
+            .layer(ConcurrencyLimitLayer::new(self.config.max_connections))
     }
 }
 
