@@ -108,11 +108,17 @@ pub(crate) enum ShapeOp {
 /// Boxing them keeps `Plan` itself one cache line — the Shape variant
 /// stays inline because it's used directly on the hottest path.
 pub(crate) enum Plan {
-    /// `aho-corasick` over a finite, exact literal set with optional
-    /// uniform anchor. Regex engine is never invoked at match time.
+    /// AC over a finite literal set with optional uniform anchor.
+    /// Regex engine never runs at match time.
+    ///
+    /// `literals` + `case_insensitive` are kept so `StrMatcherSet`
+    /// can fold them into a cross-pattern merged AC without
+    /// re-parsing.
     LiteralOnly {
         ac: Box<AhoCorasick>,
         anchor: Anchor,
+        literals: Box<[Box<[u8]>]>,
+        case_insensitive: bool,
     },
 
     /// Shape tier: single-pattern direct byte dispatch.
@@ -128,7 +134,7 @@ impl Plan {
     #[inline]
     pub(crate) fn is_match(&self, hay: &[u8]) -> bool {
         match self {
-            Self::LiteralOnly { ac, anchor } => match_set_is(ac, *anchor, hay),
+            Self::LiteralOnly { ac, anchor, .. } => match_set_is(ac, *anchor, hay),
             Self::Shape(op) => match_shape_is(op, hay),
             Self::Meta(r) => r.is_match(hay),
         }
@@ -138,7 +144,7 @@ impl Plan {
     #[inline]
     pub(crate) fn find(&self, hay: &[u8]) -> Option<Match> {
         match self {
-            Self::LiteralOnly { ac, anchor } => match_set_find(ac, *anchor, hay),
+            Self::LiteralOnly { ac, anchor, .. } => match_set_find(ac, *anchor, hay),
             Self::Shape(op) => match_shape_find(op, hay),
             Self::Meta(r) => r.find(hay).map(|m| Match {
                 start: m.start(),
@@ -155,7 +161,7 @@ impl Plan {
     /// "redact all matches" workloads (0-3 matches per log line).
     pub(crate) fn collect_matches(&self, hay: &[u8], out: &mut Vec<Match>) {
         match self {
-            Self::LiteralOnly { ac, anchor } => collect_set(ac, *anchor, hay, out),
+            Self::LiteralOnly { ac, anchor, .. } => collect_set(ac, *anchor, hay, out),
             Self::Shape(op) => collect_shape(op, hay, out),
             Self::Meta(r) => {
                 for m in r.find_iter(hay) {
@@ -165,6 +171,30 @@ impl Plan {
                     });
                 }
             }
+        }
+    }
+
+    /// Literals + case flag for [`super::StrMatcherSet`] AC-merge.
+    /// `None` for anchored, regex, or any other position-sensitive
+    /// shape.
+    pub(crate) fn merge_literals(&self) -> Option<(Vec<Vec<u8>>, bool)> {
+        match self {
+            Self::LiteralOnly {
+                anchor: Anchor::Anywhere,
+                literals,
+                case_insensitive,
+                ..
+            } => Some((
+                literals.iter().map(|l| l.to_vec()).collect(),
+                *case_insensitive,
+            )),
+            Self::Shape(ShapeOp::ContainsByte(b)) => Some((vec![vec![*b]], false)),
+            Self::Shape(ShapeOp::ByteSet(s)) => {
+                let n = s.n() as usize;
+                Some(((0..n).map(|i| vec![s.byte(i)]).collect(), false))
+            }
+            Self::Shape(ShapeOp::Contains(f)) => Some((vec![f.needle().to_vec()], false)),
+            Self::LiteralOnly { .. } | Self::Shape(_) | Self::Meta(_) => None,
         }
     }
 }

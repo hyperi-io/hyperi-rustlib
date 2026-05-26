@@ -475,31 +475,33 @@ impl StrMatcherBuilder {
 
 /// Multi-pattern matcher.
 ///
-/// **Current implementation.** Each pattern is compiled independently
-/// into a [`StrMatcher`] (preserving its tier and anchor) and stored in
-/// a `Vec`. `is_match` / `find` / `find_iter` iterate every matcher and
-/// merge results. For N patterns over a haystack of length M the cost
-/// is therefore O(N · cost_of_each_matcher), not O(M) total.
+/// Build-time partition:
 ///
-/// **Planned enhancement.** A future revision will extract the literal
-/// bytes from every pattern that compiles to the [`Byte`], [`Literal`],
-/// or [`LiteralSet`][MatcherTier::LiteralSet] tier and merge them into a
-/// single shared `aho-corasick` automaton — one linear scan over the
-/// haystack at cost O(M + total_matches). Anchored variants and patterns
-/// at the [`Regex`][MatcherTier::Regex] tier will continue to run as
-/// per-pattern matchers (no general AC merge possible there).
+/// - Unanchored `Byte` / `Literal` / `LiteralSet` patterns fold into
+///   one shared aho-corasick. One linear scan covers them all —
+///   O(M + total_matches).
+/// - Anchored patterns (`^foo`, `bar$`, `^baz$`) and `Regex` fall-
+///   throughs stay as per-pattern matchers.
 ///
-/// Until that lands, this set type is a convenience wrapper, not a
-/// performance multiplier. Document any per-pattern budget assumptions
-/// at the call site accordingly. See
-/// `docs/superpowers/specs/2026-05-26-strmatcher-set-ac-merge.md` for
-/// the design (lives in the project working-files area).
-///
-/// [`Byte`]: MatcherTier::Byte
-/// [`Literal`]: MatcherTier::Literal
+/// The merged AC runs `MatchKind::LeftmostLongest` — overlapping
+/// literals like `AKIA` vs `AKIA1234` resolve to the longer match.
+/// Pattern indices survive the merge: `SetMatch.pattern_idx`
+/// always matches the caller's input order.
 pub struct StrMatcherSet {
-    /// Compiled per-pattern matchers, in input order.
-    matchers: Vec<StrMatcher>,
+    merged: Option<MergedAc>,
+    /// Anchored / regex-tier patterns, paired with input index.
+    individual: Vec<(usize, StrMatcher)>,
+    /// Tier per input pattern, in input order. Used for `tier_counts`.
+    tiers: Vec<MatcherTier>,
+}
+
+/// Cross-pattern AC. `pattern_indices[ac_id]` maps an AC pattern ID
+/// back to the caller's input index — one input pattern can
+/// contribute multiple literals (alternation, byte-set), so indices
+/// repeat.
+struct MergedAc {
+    ac: aho_corasick::AhoCorasick,
+    pattern_indices: Vec<usize>,
 }
 
 impl StrMatcherSet {
@@ -527,7 +529,12 @@ impl StrMatcherSet {
     /// `true` if any pattern matches anywhere in the haystack.
     #[must_use]
     pub fn is_match(&self, hay: &[u8]) -> bool {
-        self.matchers.iter().any(|m| m.is_match(hay))
+        if let Some(m) = &self.merged
+            && m.ac.find(hay).is_some()
+        {
+            return true;
+        }
+        self.individual.iter().any(|(_, m)| m.is_match(hay))
     }
 
     /// Find the earliest match across all patterns (lowest `start`
@@ -535,16 +542,28 @@ impl StrMatcherSet {
     #[must_use]
     pub fn earliest_match(&self, hay: &[u8]) -> Option<SetMatch> {
         let mut best: Option<SetMatch> = None;
-        for (i, m) in self.matchers.iter().enumerate() {
-            if let Some(found) = m.find(hay) {
+        if let Some(m) = &self.merged
+            && let Some(hit) = m.ac.find(hay)
+        {
+            best = Some(SetMatch {
+                start: hit.start(),
+                end: hit.end(),
+                pattern_idx: m.pattern_indices[hit.pattern().as_usize()],
+            });
+        }
+        for (idx, matcher) in &self.individual {
+            if let Some(found) = matcher.find(hay) {
                 let cand = SetMatch {
                     start: found.start,
                     end: found.end,
-                    pattern_idx: i,
+                    pattern_idx: *idx,
                 };
                 best = match best {
                     None => Some(cand),
                     Some(b) if cand.start < b.start => Some(cand),
+                    Some(b) if cand.start == b.start && cand.pattern_idx < b.pattern_idx => {
+                        Some(cand)
+                    }
                     Some(b) => Some(b),
                 };
             }
@@ -557,17 +576,25 @@ impl StrMatcherSet {
     ///
     /// When multiple patterns match at the same position, the
     /// lower-indexed pattern wins (consistent with the input order).
-    /// Matches are non-overlapping per individual pattern; overlap
-    /// across different patterns is allowed and surfaces both.
+    /// Matches across different patterns may overlap.
     #[must_use]
     pub fn find_iter(&self, hay: &[u8]) -> std::vec::IntoIter<SetMatch> {
         let mut all: Vec<SetMatch> = Vec::new();
-        for (i, m) in self.matchers.iter().enumerate() {
-            for hit in m.find_iter(hay) {
+        if let Some(m) = &self.merged {
+            for hit in m.ac.find_iter(hay) {
+                all.push(SetMatch {
+                    start: hit.start(),
+                    end: hit.end(),
+                    pattern_idx: m.pattern_indices[hit.pattern().as_usize()],
+                });
+            }
+        }
+        for (idx, matcher) in &self.individual {
+            for hit in matcher.find_iter(hay) {
                 all.push(SetMatch {
                     start: hit.start,
                     end: hit.end,
-                    pattern_idx: i,
+                    pattern_idx: *idx,
                 });
             }
         }
@@ -580,8 +607,8 @@ impl StrMatcherSet {
     #[must_use]
     pub fn tier_counts(&self) -> [usize; 4] {
         let mut counts = [0_usize; 4];
-        for m in &self.matchers {
-            let idx = match m.tier {
+        for t in &self.tiers {
+            let idx = match t {
                 MatcherTier::Byte => 0,
                 MatcherTier::Literal => 1,
                 MatcherTier::LiteralSet => 2,
@@ -595,34 +622,71 @@ impl StrMatcherSet {
     /// Number of patterns in the set.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.matchers.len()
+        self.tiers.len()
     }
 
     /// `true` if the set has no patterns.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.matchers.is_empty()
+        self.tiers.is_empty()
     }
 }
 
 impl StrMatcherBuilder {
-    /// Build a [`StrMatcherSet`] from an iterator of pattern strings.
+    /// Build a [`StrMatcherSet`] from an iterator of patterns.
     ///
-    /// Per-pattern construction follows the same policy as the
-    /// single-pattern `build`: `min_tier` + `on_below_min` apply to
-    /// every input pattern. The first pattern that fails
-    /// classification returns `Err`; remaining patterns are not
-    /// built. (No `collect_errors` mode yet — add when asked.)
+    /// `min_tier` + `on_below_min` apply per pattern. First failure
+    /// short-circuits the build. Unanchored literals fold into a
+    /// merged AC; anchored / regex patterns stay individual.
+    ///
+    /// # Errors
+    ///
+    /// As [`StrMatcherBuilder::build`].
     pub fn build_set<I, S>(&self, patterns: I) -> Result<StrMatcherSet, BuildError>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let mut matchers: Vec<StrMatcher> = Vec::new();
-        for pat in patterns {
-            matchers.push(self.build(pat.as_ref())?);
+        let mut individual: Vec<(usize, StrMatcher)> = Vec::new();
+        let mut merge_lits: Vec<Vec<u8>> = Vec::new();
+        let mut pattern_indices: Vec<usize> = Vec::new();
+        let mut tiers: Vec<MatcherTier> = Vec::new();
+
+        for (idx, pat) in patterns.into_iter().enumerate() {
+            let m = self.build(pat.as_ref())?;
+            tiers.push(m.tier);
+            match m.plan.merge_literals() {
+                Some((lits, ci)) if ci == self.ascii_case_insensitive => {
+                    for lit in lits {
+                        pattern_indices.push(idx);
+                        merge_lits.push(lit);
+                    }
+                }
+                _ => individual.push((idx, m)),
+            }
         }
-        Ok(StrMatcherSet { matchers })
+
+        // AC build is infallible on a pre-validated literal set —
+        // empty merge_lits short-circuits to None above, and the
+        // classifier already enforces LITERAL_SET_CAP. A failure
+        // here would mean a contract violation, so panic.
+        let merged = (!merge_lits.is_empty()).then(|| {
+            let ac = aho_corasick::AhoCorasickBuilder::new()
+                .ascii_case_insensitive(self.ascii_case_insensitive)
+                .match_kind(aho_corasick::MatchKind::LeftmostLongest)
+                .build(&merge_lits)
+                .expect("strmatch: merged AC build failed on a pre-validated literal set");
+            MergedAc {
+                ac,
+                pattern_indices,
+            }
+        });
+
+        Ok(StrMatcherSet {
+            merged,
+            individual,
+            tiers,
+        })
     }
 }
 

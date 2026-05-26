@@ -786,3 +786,56 @@ fn set_find_iter_merges_across_patterns_sorted_by_position() {
     assert_eq!(hits[2].start, 12);
     assert_eq!(hits[2].pattern_idx, 2);
 }
+
+/// 50 literals merge into one AC; pattern_idx maps to input order.
+#[test]
+fn set_merged_ac_pattern_indices_survive_across_merge_boundary() {
+    let patterns: Vec<String> = (0..50).map(|i| format!("tok{i:03}")).collect();
+    let set = StrMatcherSet::new(patterns.iter()).unwrap();
+    assert_eq!(set.len(), 50);
+
+    let hits: Vec<SetMatch> = set.find_iter(b"tok042 ... tok007").collect();
+    assert_eq!(hits.len(), 2);
+    assert_eq!(hits[0].pattern_idx, 42);
+    assert_eq!(hits[1].pattern_idx, 7);
+}
+
+/// One alternation pattern → N literals, all mapping back to the
+/// same caller index.
+#[test]
+fn set_merged_ac_alternation_patterns_map_to_one_input_index() {
+    let set = StrMatcherSet::new(["foo|bar|baz", "qux"]).unwrap();
+    let hits: Vec<SetMatch> = set.find_iter(b"--foo-- --qux-- --baz--").collect();
+    assert_eq!(hits.len(), 3);
+    assert_eq!(hits[0].pattern_idx, 0); // foo
+    assert_eq!(hits[1].pattern_idx, 1); // qux
+    assert_eq!(hits[2].pattern_idx, 0); // baz
+}
+
+/// Anchored patterns stay individual; unanchored fold into merged.
+#[test]
+fn set_merged_and_individual_partitions_both_yield_correct_matches() {
+    let set = StrMatcherSet::new(["AKIA", "^/api/", "ghp_", "_END$"]).unwrap();
+    let hits: Vec<SetMatch> = set.find_iter(b"/api/foo AKIA1234 ghp_xyz _END").collect();
+    let idxs: Vec<usize> = hits.iter().map(|h| h.pattern_idx).collect();
+    assert!(idxs.contains(&0));
+    assert!(idxs.contains(&1));
+    assert!(idxs.contains(&2));
+    assert!(idxs.contains(&3));
+
+    let hits: Vec<SetMatch> = set
+        .find_iter(b"prefix /api/foo")
+        .filter(|h| h.pattern_idx == 1)
+        .collect();
+    assert!(hits.is_empty(), "^/api/ must not fire mid-string");
+}
+
+/// LeftmostLongest: `AKIA1234` wins over `AKIA`.
+#[test]
+fn set_merged_ac_leftmost_longest_returns_the_longer_literal() {
+    let set = StrMatcherSet::new(["AKIA", "AKIA1234"]).unwrap();
+    let hits: Vec<SetMatch> = set.find_iter(b"prefix AKIA1234 suffix").collect();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].pattern_idx, 1);
+    assert_eq!(hits[0].end - hits[0].start, "AKIA1234".len());
+}

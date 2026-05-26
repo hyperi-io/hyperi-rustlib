@@ -112,7 +112,7 @@ pub fn classify(pattern: &str, case_insensitive: bool) -> Result<Classified, Bui
 
     // 3. Top-level alternation of literals (and Concat-wrapped
     //    anchored alternation: `^(?:foo|bar)$`).
-    if let Some((ac, anchor)) = try_literal_alternation(&hir, case_insensitive) {
+    if let Some((ac, anchor, literals)) = try_literal_alternation(&hir, case_insensitive) {
         let descriptor = Descriptor {
             tier: MatcherTier::LiteralSet,
             reason: "literal-only:alternation",
@@ -122,6 +122,8 @@ pub fn classify(pattern: &str, case_insensitive: bool) -> Result<Classified, Bui
             plan: Plan::LiteralOnly {
                 ac: Box::new(ac),
                 anchor,
+                literals: literals_to_boxed(literals),
+                case_insensitive,
             },
             descriptor,
         });
@@ -131,7 +133,9 @@ pub fn classify(pattern: &str, case_insensitive: bool) -> Result<Classified, Bui
     //    refused the Shape tier above, but the pattern may still
     //    reduce to a single literal byte sequence — route it through
     //    a one-element AC so the case-folding happens at match time.
-    if case_insensitive && let Some((ac, anchor)) = try_single_literal_for_case_insensitive(&hir) {
+    if case_insensitive
+        && let Some((ac, anchor, literals)) = try_single_literal_for_case_insensitive(&hir)
+    {
         let descriptor = Descriptor {
             tier: MatcherTier::LiteralSet,
             reason: "literal-only:case-insensitive",
@@ -141,13 +145,15 @@ pub fn classify(pattern: &str, case_insensitive: bool) -> Result<Classified, Bui
             plan: Plan::LiteralOnly {
                 ac: Box::new(ac),
                 anchor,
+                literals: literals_to_boxed(literals),
+                case_insensitive,
             },
             descriptor,
         });
     }
 
     // 5. Extractor fallback: literals are exact and finite.
-    if let Some((ac, anchor)) = try_extractor_fallback(&hir, case_insensitive) {
+    if let Some((ac, anchor, literals)) = try_extractor_fallback(&hir, case_insensitive) {
         let descriptor = Descriptor {
             tier: MatcherTier::LiteralSet,
             reason: "literal-only:extracted",
@@ -157,6 +163,8 @@ pub fn classify(pattern: &str, case_insensitive: bool) -> Result<Classified, Bui
             plan: Plan::LiteralOnly {
                 ac: Box::new(ac),
                 anchor,
+                literals: literals_to_boxed(literals),
+                case_insensitive,
             },
             descriptor,
         });
@@ -401,7 +409,10 @@ fn collect_class_bytes(cls: &Class) -> Option<Vec<u8>> {
 // Top-level literal alternation
 // ---------------------------------------------------------------------------
 
-fn try_literal_alternation(hir: &Hir, case_insensitive: bool) -> Option<(AhoCorasick, Anchor)> {
+fn try_literal_alternation(
+    hir: &Hir,
+    case_insensitive: bool,
+) -> Option<(AhoCorasick, Anchor, Vec<Vec<u8>>)> {
     // The pattern shape we accept here:
     //   Alternation([foo, bar])             → Anchor::Anywhere
     //   Concat([^, Alternation, $])         → Anchor inferred from outer ^/$
@@ -443,7 +454,7 @@ fn try_literal_alternation(hir: &Hir, case_insensitive: bool) -> Option<(AhoCora
         .build(&literals)
         .ok()?;
 
-    Some((ac, outer_anchor))
+    Some((ac, outer_anchor, literals))
 }
 
 /// Strip optional `^` start and `$` end anchors from a top-level
@@ -474,7 +485,9 @@ fn strip_outer_concat_anchors(hir: &Hir) -> Option<(Anchor, &Hir)> {
 /// For the case-insensitive path: accept a top-level literal (possibly
 /// anchored) and route it through a one-element AC so the case-fold
 /// happens at match time.
-fn try_single_literal_for_case_insensitive(hir: &Hir) -> Option<(AhoCorasick, Anchor)> {
+fn try_single_literal_for_case_insensitive(
+    hir: &Hir,
+) -> Option<(AhoCorasick, Anchor, Vec<Vec<u8>>)> {
     let (anchor, inner) = strip_outer_concat_anchors(hir)?;
     let body_bytes = match inner.kind() {
         HirKind::Literal(Literal(b)) => b.to_vec(),
@@ -490,14 +503,17 @@ fn try_single_literal_for_case_insensitive(hir: &Hir) -> Option<(AhoCorasick, An
         .ascii_case_insensitive(true)
         .build([&body_bytes])
         .ok()?;
-    Some((ac, anchor))
+    Some((ac, anchor, vec![body_bytes]))
 }
 
 // ---------------------------------------------------------------------------
 // Extractor fallback (last-chance literal-only path)
 // ---------------------------------------------------------------------------
 
-fn try_extractor_fallback(hir: &Hir, case_insensitive: bool) -> Option<(AhoCorasick, Anchor)> {
+fn try_extractor_fallback(
+    hir: &Hir,
+    case_insensitive: bool,
+) -> Option<(AhoCorasick, Anchor, Vec<Vec<u8>>)> {
     let mut ex = Extractor::new();
     ex.kind(ExtractKind::Prefix);
     ex.limit_class(CLASS_BYTE_CAP);
@@ -514,16 +530,14 @@ fn try_extractor_fallback(hir: &Hir, case_insensitive: bool) -> Option<(AhoCoras
     if literals.len() < 2 || literals.len() > LITERAL_SET_CAP {
         return None;
     }
-    let bytes: Vec<&[u8]> = literals
-        .iter()
-        .map(regex_syntax::hir::literal::Literal::as_bytes)
-        .collect();
+    let owned: Vec<Vec<u8>> = literals.iter().map(|l| l.as_bytes().to_vec()).collect();
+    let bytes: Vec<&[u8]> = owned.iter().map(Vec::as_slice).collect();
     let ac = AhoCorasick::builder()
         .match_kind(MatchKind::LeftmostFirst)
         .ascii_case_insensitive(case_insensitive)
         .build(&bytes)
         .ok()?;
-    Some((ac, Anchor::Anywhere))
+    Some((ac, Anchor::Anywhere, owned))
 }
 
 // ---------------------------------------------------------------------------
@@ -579,4 +593,12 @@ fn tier_for_shape(shape: &ShapeOp) -> MatcherTier {
         | ShapeOp::EndsWith(_)
         | ShapeOp::ExactMatch(_) => MatcherTier::Literal,
     }
+}
+
+/// Compact `Vec<Vec<u8>>` for storage on `Plan::LiteralOnly`.
+fn literals_to_boxed(lits: Vec<Vec<u8>>) -> Box<[Box<[u8]>]> {
+    lits.into_iter()
+        .map(Vec::into_boxed_slice)
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
 }
