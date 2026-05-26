@@ -87,6 +87,8 @@ pub enum CompiledFilter {
         expression_text: String,
         tier: FilterTier,
         action: FilterAction,
+        /// Runtime payload cap (Gate 2). Larger payloads skip CEL and pass.
+        max_payload_bytes: usize,
     },
 }
 
@@ -125,6 +127,8 @@ impl CompiledFilter {
             ClassifyResult::Tier1(op) => Ok(Self::from_tier1_op(op, action, expression_text)),
             #[cfg(feature = "expression")]
             ClassifyResult::Tier2 { fields } => {
+                super::budget::check_static_budget(expr, &tier_config.budget)
+                    .map_err(|e| e.to_string())?;
                 let program = crate::expression::compile(expr)
                     .map_err(|e| format!("CEL compilation failed: {e}"))?;
                 Ok(Self::CelExpression {
@@ -133,10 +137,13 @@ impl CompiledFilter {
                     expression_text,
                     tier: FilterTier::Tier2,
                     action,
+                    max_payload_bytes: tier_config.budget.max_payload_bytes,
                 })
             }
             #[cfg(feature = "expression")]
             ClassifyResult::Tier3 { fields } => {
+                super::budget::check_static_budget(expr, &tier_config.budget)
+                    .map_err(|e| e.to_string())?;
                 // Honour the cascade's ProfileConfig instead of fabricating a
                 // permissive one. The previous behaviour (force
                 // allow_regex/iteration/time = true) bypassed the operator's
@@ -159,6 +166,7 @@ impl CompiledFilter {
                     expression_text,
                     tier: FilterTier::Tier3,
                     action,
+                    max_payload_bytes: tier_config.budget.max_payload_bytes,
                 })
             }
             #[cfg(not(feature = "expression"))]
@@ -368,8 +376,9 @@ impl CompiledFilter {
                 program,
                 fields,
                 action,
+                max_payload_bytes,
                 ..
-            } => evaluate_cel(payload, program, fields, *action),
+            } => evaluate_cel(payload, program, fields, *action, *max_payload_bytes),
         }
     }
 
@@ -581,7 +590,16 @@ fn evaluate_cel(
     program: &cel::Program,
     fields: &[String],
     action: FilterAction,
+    max_payload_bytes: usize,
 ) -> Option<FilterAction> {
+    // Gate 2: skip oversized payloads (pass-through). Data-driven
+    // CEL cost scales with payload size — caps the worst case.
+    if payload.len() > max_payload_bytes {
+        #[cfg(feature = "metrics")]
+        metrics::counter!("dfe_transport_filter_cel_payload_skip_total").increment(1);
+        return None;
+    }
+
     let mut extracted: Vec<(&String, serde_json::Value)> = Vec::with_capacity(fields.len());
     for field in fields {
         let path: Vec<&str> = field.split('.').collect();

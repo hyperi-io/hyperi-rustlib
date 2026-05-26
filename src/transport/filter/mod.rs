@@ -32,11 +32,13 @@
 //!       action: dlq
 //! ```
 
+pub mod budget;
 pub mod classify;
 pub mod compiled;
 pub mod config;
 pub mod metrics;
 
+pub use budget::{BudgetError, FilterBudget};
 pub use config::{
     FilterAction, FilterDirection, FilterRule, FilterTier, TransportFilterTierConfig,
 };

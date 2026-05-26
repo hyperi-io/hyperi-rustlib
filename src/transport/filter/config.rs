@@ -14,6 +14,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::budget::FilterBudget;
+
 /// A single filter rule — CEL expression + disposition action.
 ///
 /// Written in CEL syntax regardless of execution tier. The engine determines
@@ -110,6 +112,10 @@ pub struct TransportFilterTierConfig {
     /// Implies `allow_cel_filters_out`.
     #[serde(default)]
     pub allow_complex_filters_out: bool,
+
+    /// Static + runtime budget for Tier 2/3 evaluation.
+    #[serde(default)]
+    pub budget: FilterBudget,
 }
 
 impl TransportFilterTierConfig {
