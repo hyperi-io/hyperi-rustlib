@@ -475,10 +475,28 @@ impl StrMatcherBuilder {
 
 /// Multi-pattern matcher.
 ///
-/// Patterns that compile to Tier `Literal` are merged into a single
-/// `aho-corasick` automaton — one linear scan of the haystack covers
-/// all of them. Tier `Shape` and Tier `Meta` patterns get their own
-/// per-pattern matchers and run after the AC pass.
+/// **Current implementation.** Each pattern is compiled independently
+/// into a [`StrMatcher`] (preserving its tier and anchor) and stored in
+/// a `Vec`. `is_match` / `find` / `find_iter` iterate every matcher and
+/// merge results. For N patterns over a haystack of length M the cost
+/// is therefore O(N · cost_of_each_matcher), not O(M) total.
+///
+/// **Planned enhancement.** A future revision will extract the literal
+/// bytes from every pattern that compiles to the [`Byte`], [`Literal`],
+/// or [`LiteralSet`][MatcherTier::LiteralSet] tier and merge them into a
+/// single shared `aho-corasick` automaton — one linear scan over the
+/// haystack at cost O(M + total_matches). Anchored variants and patterns
+/// at the [`Regex`][MatcherTier::Regex] tier will continue to run as
+/// per-pattern matchers (no general AC merge possible there).
+///
+/// Until that lands, this set type is a convenience wrapper, not a
+/// performance multiplier. Document any per-pattern budget assumptions
+/// at the call site accordingly. See
+/// `docs/superpowers/specs/2026-05-26-strmatcher-set-ac-merge.md` for
+/// the design (lives in the project working-files area).
+///
+/// [`Byte`]: MatcherTier::Byte
+/// [`Literal`]: MatcherTier::Literal
 pub struct StrMatcherSet {
     /// Compiled per-pattern matchers, in input order.
     matchers: Vec<StrMatcher>,

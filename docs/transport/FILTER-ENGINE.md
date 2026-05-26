@@ -102,35 +102,101 @@ See [src/transport/filter/classify.rs](../../src/transport/filter/classify.rs).
 
 ## Config
 
-```yaml
-kafka:
-  brokers: ["kafka.devex.hyperi.io:9092"]
-  topics: ["events"]
-  filters_in:
-    - expression: 'has(_internal)'
-      action: drop
-    - expression: 'status == "poison"'
-      action: dlq
-    - expression: 'severity > 3 && source != "internal"'
-      action: dlq
-  filters_out:
-    - expression: 'has(debug)'
-      action: drop
+Two distinct cascade keys gate filter behaviour. Operators have to set
+both correctly because they apply at different layers.
 
-expression:
-  allow_cel_filters_in: false
-  allow_cel_filters_out: false
-  allow_complex_filters_in: false
-  allow_complex_filters_out: false
+### `transport.<backend>.filters_{in,out}` — the rules themselves
+
+Per-transport rule lists. Each rule has an `expression` (CEL text) and
+an `action` (`drop` or `dlq`). Rules apply at the named transport, in
+the named direction.
+
+```yaml
+transport:
+  kafka:
+    brokers: ["kafka.devex.hyperi.io:9092"]
+    topics: ["events"]
+    filters_in:
+      - expression: 'has(_internal)'
+        action: drop
+      - expression: 'status == "poison"'
+        action: dlq
+      - expression: 'severity > 3 && source != "internal"'
+        action: dlq
+    filters_out:
+      - expression: 'has(debug)'
+        action: drop
 ```
 
-The `filters_in` / `filters_out` arrays live alongside the transport's
-own config (kafka, grpc, etc.). The `expression` block is global and
-gates which tiers are allowed in or out.
+### `transport.filter_tiers.*` — the tier gates
 
-A first-time deployment should start with all `expression.*` flags off
-— only tier-1 filters work. Bump flags on once tier-2 or tier-3 is
-genuinely needed and operators have reviewed the cost.
+Top-level gate controlling which tiers any transport is allowed to
+compile. Defaults to all Tier 2/3 gates closed — first-time deployments
+get Tier 1 only.
+
+```yaml
+transport:
+  filter_tiers:
+    allow_cel_filters_in: false       # Tier 2 (compiled CEL) inbound
+    allow_cel_filters_out: false      # Tier 2 outbound
+    allow_complex_filters_in: false   # Tier 3 (regex/iteration/time) inbound
+    allow_complex_filters_out: false  # Tier 3 outbound
+```
+
+If a configured filter rule classifies above the allowed tier, the
+transport's constructor returns `TransportError::FilterCompile(...)`
+and the transport fails to start. **Fail-loud, not fail-silently** —
+the previous behaviour of substituting an empty filter engine has
+been removed (a misconfigured drop/dlq rule would otherwise let every
+message through).
+
+### `expression.*` — the CEL function gates (layered with the tier gates)
+
+Top-level gate controlling which CEL functions are usable anywhere in
+the app (filters, transforms, validators). Tier 2 and Tier 3 filter
+compilation honour this on top of the tier-gate above.
+
+```yaml
+expression:
+  allow_regex: false        # regex matches() function
+  allow_iteration: false    # filter/map/all/exists/exists_one
+  allow_time: false         # time-related functions
+```
+
+### Both layers must allow
+
+A filter rule like `'tag.matches("^prod-")'` compiles successfully
+only when **both**:
+
+1. `transport.filter_tiers.allow_complex_filters_in` is `true` (the
+   tier gate — "this transport accepts Tier 3 inbound").
+2. `expression.allow_regex` is `true` (the function gate — "regex is
+   allowed in CEL anywhere in this app").
+
+Either gate set to `false` rejects the filter at config-load. This
+gives operators two independent levers — they can turn off all regex
+filters across the app with one flag, or turn off Tier 3 for a single
+transport while leaving regex enabled elsewhere.
+
+### Reload semantics
+
+The tier-gate config (`transport.filter_tiers.*`) is read **at
+transport construction time** via
+`TransportFilterTierConfig::from_cascade()`. A `ConfigReloader` update
+to those keys does **not** propagate to an already-running transport
+— the old gates remain in effect until the transport is reconstructed.
+
+This is intentional: a misconfigured reload that flips a gate would
+otherwise tear down a working transport mid-stream. Operators wanting
+the new gate config to take effect should restart the service (or, in
+K8s, roll the pod). Per-rule reload (adding/removing rules while
+keeping the same tier policy) is a separate workstream not yet
+shipped.
+
+A first-time deployment should start with all gates off — only Tier 1
+filters work. Flip a gate on once Tier 2 or Tier 3 is genuinely needed
+and the operator has reviewed the cost (Tier 3 is unbounded CPU; see
+[Known limitations](#known-limitations)).
 
 ---
 
@@ -222,6 +288,7 @@ The post-spec follow-up items from earlier work, with current status:
 | 9 | Pre-quoted bytes fast path for `field == "value"` | Partial | `FieldExists` / `FieldNotExists` already use pre-compiled `memmem::Finder`; `FieldEquals` still uses SIMD extract + string compare |
 | 10 | MsgPack payloads silently pass | Acknowledged | Design choice; cheap fix would be a one-shot warn + metric on first MsgPack seen |
 | 11 | Preserve original `expression_text` through reload cycles | Pending | Current code re-allocates on reload; allocator-hygiene item, no functional impact |
+| 12 | Tier 3 CEL has no evaluation budget | Open — design spec'd | `program.execute(&ctx)` runs with no time/recursion/payload cap. A bad filter can wedge the ingest thread. Static AST budget + payload size cap + degraded-mode fallback design spec'd in the project working area; must land before Phase 3 of the log-scrub landing plan (gitleaks rules are regex-heavy by nature) |
 
 The items aren't blockers. Operators should know about #10 if their
 pipeline mixes JSON and MsgPack.

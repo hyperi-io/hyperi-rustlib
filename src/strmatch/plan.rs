@@ -177,27 +177,53 @@ impl Plan {
 fn match_set_is(ac: &AhoCorasick, anchor: Anchor, hay: &[u8]) -> bool {
     match anchor {
         Anchor::Anywhere => ac.find(hay).is_some(),
+        // `ac.find` returns the LEFTMOST match. The smallest possible start
+        // position is 0, so if any match is at position 0, the leftmost is
+        // at position 0. Checking the leftmost is sufficient for `AtStart`.
         Anchor::AtStart => ac.find(hay).is_some_and(|m| m.start() == 0),
-        Anchor::AtEnd => ac.find(hay).is_some_and(|m| m.end() == hay.len()),
+        // The leftmost match is not necessarily the rightmost — its end may
+        // be well short of `hay.len()` even when a later match ends exactly
+        // there. Walk every match.
+        Anchor::AtEnd => ac.find_iter(hay).any(|m| m.end() == hay.len()),
+        // Same problem as `AtEnd`: the leftmost match might satisfy only
+        // the start constraint, while a different match (or none) satisfies
+        // both. Walk every match.
         Anchor::Exact => ac
-            .find(hay)
-            .is_some_and(|m| m.start() == 0 && m.end() == hay.len()),
+            .find_iter(hay)
+            .any(|m| m.start() == 0 && m.end() == hay.len()),
     }
 }
 
 #[inline]
 fn match_set_find(ac: &AhoCorasick, anchor: Anchor, hay: &[u8]) -> Option<Match> {
-    let m = ac.find(hay)?;
-    let ok = match anchor {
-        Anchor::Anywhere => true,
-        Anchor::AtStart => m.start() == 0,
-        Anchor::AtEnd => m.end() == hay.len(),
-        Anchor::Exact => m.start() == 0 && m.end() == hay.len(),
-    };
-    ok.then_some(Match {
-        start: m.start(),
-        end: m.end(),
-    })
+    match anchor {
+        Anchor::Anywhere => ac.find(hay).map(|m| Match {
+            start: m.start(),
+            end: m.end(),
+        }),
+        Anchor::AtStart => ac.find(hay).filter(|m| m.start() == 0).map(|m| Match {
+            start: m.start(),
+            end: m.end(),
+        }),
+        // Find any match that ends at `hay.len()` — not just the leftmost.
+        Anchor::AtEnd => ac
+            .find_iter(hay)
+            .find(|m| m.end() == hay.len())
+            .map(|m| Match {
+                start: m.start(),
+                end: m.end(),
+            }),
+        // Find any match that satisfies both endpoints. Iterating is
+        // bounded by the number of AC hits in the haystack and short-
+        // circuits on the first satisfying match.
+        Anchor::Exact => ac
+            .find_iter(hay)
+            .find(|m| m.start() == 0 && m.end() == hay.len())
+            .map(|m| Match {
+                start: m.start(),
+                end: m.end(),
+            }),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +261,11 @@ fn match_shape_find(op: &ShapeOp, hay: &[u8]) -> Option<Match> {
             start: 0,
             end: lit.len(),
         }),
-        ShapeOp::EndsWith(lit) => hay.ends_with(lit).then_some(Match {
+        // `then_some` eagerly evaluates the Match struct, so the subtraction
+        // `hay.len() - lit.len()` underflows (panics in debug, wraps in release)
+        // when the haystack is shorter than the literal — even though
+        // `ends_with` returns false. `then(closure)` defers evaluation.
+        ShapeOp::EndsWith(lit) => hay.ends_with(lit).then(|| Match {
             start: hay.len() - lit.len(),
             end: hay.len(),
         }),

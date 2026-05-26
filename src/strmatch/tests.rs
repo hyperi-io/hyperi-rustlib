@@ -86,6 +86,37 @@ fn literal_tier_ends_with_multi_byte() {
     assert!(!m.is_match(b"server.log.gz"));
 }
 
+/// Regression for pre-GA review C02: `ShapeOp::EndsWith` previously used
+/// `hay.ends_with(lit).then_some(Match { start: hay.len() - lit.len(), .. })`
+/// which eagerly evaluates the subtraction. When the haystack is shorter
+/// than the literal, `ends_with` returns false but the subtraction underflows
+/// — panic in debug, garbage offset in release.
+///
+/// Lazy `then(|| ..)` defers the Match construction so the subtraction
+/// only happens when the literal actually fits.
+#[test]
+fn ends_with_does_not_panic_on_short_haystack() {
+    let m = StrMatcher::new(r"\.log$").unwrap();
+    // Literal is `.log` (4 bytes). Haystacks shorter than 4 bytes used to
+    // underflow `hay.len() - lit.len()`.
+    assert!(!m.is_match(b""));
+    assert!(!m.is_match(b"a"));
+    assert!(!m.is_match(b"ab"));
+    assert!(!m.is_match(b"abc"));
+    // Exact length boundary: literal == haystack, ends_with true, no underflow
+    assert!(m.is_match(b".log"));
+    assert!(m.is_match(b"x.log"));
+}
+
+#[test]
+fn ends_with_find_does_not_panic_on_short_haystack() {
+    let m = StrMatcher::new(r"\.log$").unwrap();
+    // find() also goes through the same plan path — must not panic
+    assert!(m.find(b"").is_none());
+    assert!(m.find(b"ab").is_none());
+    assert_eq!(m.find(b".log").map(|h| h.start), Some(0));
+}
+
 #[test]
 fn literal_tier_exact_match_multi_byte() {
     let m = StrMatcher::new(r"^foo$").unwrap();
@@ -113,6 +144,44 @@ fn literal_set_tier_alternation_anchored() {
     assert!(m.is_match(b"foo123"));
     assert!(m.is_match(b"baz9"));
     assert!(!m.is_match(b"123foo"));
+}
+
+/// Regression for pre-GA review C01: `match_set_is` / `match_set_find`
+/// for `AtEnd` and `Exact` anchors used `ac.find()` which returns the
+/// LEFTMOST AC match. If that leftmost match doesn't satisfy the anchor
+/// but a later match does, the old code returned a false negative.
+///
+/// AtEnd requires walking find_iter to discover any match whose end ==
+/// hay.len(); Exact requires walking to find a match with both
+/// start == 0 and end == hay.len().
+#[test]
+fn literal_set_at_end_finds_later_match() {
+    // Anchored-end alternation: `(?:foo|bar|baz)$`
+    let m = StrMatcher::new(r"(?:foo|bar|baz)$").unwrap();
+    assert_eq!(m.tier(), MatcherTier::LiteralSet);
+    // Haystack contains a leftmost `foo` at position 0 (not at end)
+    // AND a `bar` at the end. Old code returned false because it only
+    // looked at the leftmost hit. New code walks find_iter.
+    assert!(m.is_match(b"foo_bar"));
+    // Two unanchored hits at the start, none at end -> no match
+    assert!(!m.is_match(b"foo_bar_baz_x"));
+    // Single hit, at end -> match
+    assert!(m.is_match(b"x_baz"));
+}
+
+#[test]
+fn literal_set_exact_finds_full_haystack_match() {
+    // Exact-match alternation: `^(?:foo|bar|baz)$`
+    let m = StrMatcher::new(r"^(?:foo|bar|baz)$").unwrap();
+    assert_eq!(m.tier(), MatcherTier::LiteralSet);
+    // Each pattern matches exactly
+    assert!(m.is_match(b"foo"));
+    assert!(m.is_match(b"bar"));
+    assert!(m.is_match(b"baz"));
+    // Partial overlap doesn't satisfy exact
+    assert!(!m.is_match(b"foobar"));
+    assert!(!m.is_match(b"x_foo"));
+    assert!(!m.is_match(b"foo_x"));
 }
 
 #[test]

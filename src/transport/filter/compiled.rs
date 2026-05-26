@@ -137,12 +137,21 @@ impl CompiledFilter {
             }
             #[cfg(feature = "expression")]
             ClassifyResult::Tier3 { fields } => {
-                let profile = crate::expression::ProfileConfig {
-                    allow_regex: true,
-                    allow_iteration: true,
-                    allow_time: true,
-                };
-                let program = crate::expression::compile_with_config(expr, &profile)
+                // Honour the cascade's ProfileConfig instead of fabricating a
+                // permissive one. The previous behaviour (force
+                // allow_regex/iteration/time = true) bypassed the operator's
+                // app-wide CEL gate — `expression.allow_regex = false` was
+                // silently overridden for Tier-3 transport filters.
+                //
+                // Layered defence:
+                //   - `transport.filter_tiers.allow_complex_filters_in/out`
+                //     gates this transport's direction.
+                //   - `expression.allow_{regex,iteration,time}` gates restricted
+                //     CEL functions across the app.
+                //
+                // BOTH layers must allow. Reaching here means the tier gate
+                // already approved; now `compile()` checks the profile gate.
+                let program = crate::expression::compile(expr)
                     .map_err(|e| format!("CEL compilation failed: {e}"))?;
                 Ok(Self::CelExpression {
                     program,
@@ -554,6 +563,18 @@ fn with_path_refs<R>(path: &[String], f: impl FnOnce(&[&str]) -> R) -> R {
 }
 
 /// Evaluate a Tier 2/3 CEL expression against a JSON payload.
+///
+/// Allocation profile per call:
+///   - One `Vec<(&String, serde_json::Value)>` of length up to `fields.len()`
+///     — small, on a hot path with typically 1-5 fields.
+///   - Per field: one `Vec<&str>` for the dotted path split, plus the
+///     `serde_json::Value` tree produced by `from_str`.
+///
+/// Crucially the field NAMES are not cloned — they reference the
+/// `CompiledFilter::fields` storage, which lives as long as the filter.
+/// The previous implementation built a `HashMap<String, Value>` per call
+/// which cloned every field name; at PB/hr rates that allocator pressure
+/// shows up as GC-like tail-latency spikes.
 #[cfg(feature = "expression")]
 fn evaluate_cel(
     payload: &[u8],
@@ -561,20 +582,19 @@ fn evaluate_cel(
     fields: &[String],
     action: FilterAction,
 ) -> Option<FilterAction> {
-    use std::collections::HashMap;
-
-    // Extract only declared fields via SIMD (not full JSON parse)
-    let mut context_data: HashMap<String, serde_json::Value> = HashMap::with_capacity(fields.len());
+    let mut extracted: Vec<(&String, serde_json::Value)> = Vec::with_capacity(fields.len());
     for field in fields {
         let path: Vec<&str> = field.split('.').collect();
         if let Ok(lv) = sonic_rs::get_from_slice(payload, path.as_slice())
             && let Ok(v) = sonic_rs::from_str::<serde_json::Value>(lv.as_raw_str())
         {
-            context_data.insert(field.clone(), v);
+            extracted.push((field, v));
         }
     }
 
-    let ctx = crate::expression::build_context(&context_data).ok()?;
+    // `build_context` takes `(&String, &JsonValue)`; `extracted.iter()` yields
+    // `&(&String, JsonValue)`, so we re-borrow the value to match.
+    let ctx = crate::expression::build_context(extracted.iter().map(|(k, v)| (*k, v))).ok()?;
     match program.execute(&ctx) {
         Ok(cel::Value::Bool(true)) => Some(action),
         _ => None,
