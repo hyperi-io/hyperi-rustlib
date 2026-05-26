@@ -190,7 +190,7 @@ impl GrpcTransport {
         let filter_engine = super::filter::TransportFilterEngine::new(
             &config.filters_in,
             &config.filters_out,
-            &crate::transport::filter::TransportFilterTierConfig::default(),
+            &crate::transport::filter::TransportFilterTierConfig::from_cascade(),
         )?;
 
         #[cfg(feature = "health")]
@@ -275,7 +275,7 @@ impl TransportSender for GrpcTransport {
         }
 
         // Inject W3C traceparent into gRPC metadata for distributed tracing
-        #[cfg(feature = "otel")]
+        #[cfg(feature = "transport-trace")]
         if let Some(tp) = super::propagation::current_traceparent() {
             metadata.insert(super::propagation::TRACEPARENT_HEADER.to_string(), tp);
         }
@@ -452,7 +452,7 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
         let seq = self.sequence.fetch_add(1, Ordering::Relaxed);
 
         // Extract W3C traceparent from incoming gRPC metadata for distributed tracing
-        #[cfg(feature = "otel")]
+        #[cfg(feature = "transport-trace")]
         if let Some(tp) = req.metadata.get(super::propagation::TRACEPARENT_HEADER)
             && super::propagation::is_valid_traceparent(tp)
         {

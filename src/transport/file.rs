@@ -149,15 +149,13 @@ impl FileTransport {
         #[cfg(feature = "logger")]
         tracing::info!(path = %config.path, append = config.append, "File transport opened");
 
+        // Fail loud on bad filter config — silently disabling filters
+        // turns a misconfigured `drop` / `dlq` rule into a permanent pass.
         let filter_engine = super::filter::TransportFilterEngine::new(
             &config.filters_in,
             &config.filters_out,
-            &crate::transport::filter::TransportFilterTierConfig::default(),
-        )
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Failed to compile transport filters, filtering disabled");
-            super::filter::TransportFilterEngine::empty()
-        });
+            &crate::transport::filter::TransportFilterTierConfig::from_cascade(),
+        )?;
 
         let closed = Arc::new(AtomicBool::new(false));
 

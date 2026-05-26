@@ -1002,8 +1002,8 @@ mod engine_tests {
                 recv_timeout_ms: 50,
                 ..Default::default()
             };
-            let transport = crate::transport::memory::MemoryTransport::new(&config);
-
+            let transport = crate::transport::memory::MemoryTransport::new(&config)
+                .expect("memory transport with valid config must construct");
             // Inject 5 messages
             for i in 0..5 {
                 transport
@@ -1066,8 +1066,8 @@ mod engine_tests {
                 recv_timeout_ms: 50,
                 ..Default::default()
             };
-            let transport = crate::transport::memory::MemoryTransport::new(&config);
-
+            let transport = crate::transport::memory::MemoryTransport::new(&config)
+                .expect("memory transport with valid config must construct");
             let engine = default_engine();
             let shutdown = tokio_util::sync::CancellationToken::new();
             let shutdown_clone = shutdown.clone();
@@ -1108,8 +1108,8 @@ mod engine_tests {
                 recv_timeout_ms: 50,
                 ..Default::default()
             };
-            let transport = crate::transport::memory::MemoryTransport::new(&config);
-
+            let transport = crate::transport::memory::MemoryTransport::new(&config)
+                .expect("memory transport with valid config must construct");
             for i in 0..3 {
                 transport
                     .inject(None, json_payload("logs", i))
@@ -1160,7 +1160,8 @@ mod engine_tests {
                 recv_timeout_ms: 50,
                 ..Default::default()
             };
-            let transport = crate::transport::memory::MemoryTransport::new(&config);
+            let transport = crate::transport::memory::MemoryTransport::new(&config)
+                .expect("memory transport with valid config must construct");
 
             transport
                 .inject(None, json_payload("events", 0))

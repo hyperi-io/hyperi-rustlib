@@ -185,7 +185,10 @@ mod tests {
 
     #[cfg(feature = "transport-memory")]
     fn make_memory_sender() -> AnySender {
-        AnySender::Memory(MemoryTransport::new(&MemoryConfig::default()))
+        AnySender::Memory(
+            MemoryTransport::new(&MemoryConfig::default())
+                .expect("memory transport with valid config must construct"),
+        )
     }
 
     #[tokio::test]

@@ -27,6 +27,7 @@ fn make_transport() -> MemoryTransport {
         recv_timeout_ms: 0,
         ..Default::default()
     })
+    .expect("memory transport with valid config must construct")
 }
 
 /// Inject JSON messages into the transport.

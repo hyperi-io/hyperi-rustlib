@@ -295,7 +295,7 @@ impl KafkaTransport {
         let filter_engine = super::filter::TransportFilterEngine::new(
             &config.filters_in,
             &config.filters_out,
-            &crate::transport::filter::TransportFilterTierConfig::default(),
+            &crate::transport::filter::TransportFilterTierConfig::from_cascade(),
         )?;
 
         #[cfg(feature = "health")]
@@ -370,7 +370,7 @@ impl TransportSender for KafkaTransport {
         let record: FutureRecord<'_, str, [u8]> = FutureRecord::to(key).payload(payload);
 
         // Inject W3C traceparent into Kafka message headers for distributed tracing
-        #[cfg(feature = "otel")]
+        #[cfg(feature = "transport-trace")]
         let record = if let Some(tp) = super::propagation::current_traceparent() {
             let headers = rdkafka::message::OwnedHeaders::new().insert(rdkafka::message::Header {
                 key: super::propagation::TRACEPARENT_HEADER,
@@ -477,7 +477,7 @@ impl TransportReceiver for KafkaTransport {
                 Ok(msg) => {
                     // Extract W3C traceparent from Kafka headers (first message only,
                     // to associate the batch span with the upstream trace)
-                    #[cfg(feature = "otel")]
+                    #[cfg(feature = "transport-trace")]
                     if let Some(headers) = msg.headers() {
                         use rdkafka::message::Headers;
                         for idx in 0..headers.count() {

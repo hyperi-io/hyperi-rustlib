@@ -17,7 +17,7 @@
 //! use hyperi_rustlib::transport::{MemoryTransport, MemoryConfig, Transport};
 //!
 //! let config = MemoryConfig::default();
-//! let transport = MemoryTransport::new(&config);
+//! let transport = MemoryTransport::new(&config).expect("memory transport with valid config must construct");
 //!
 //! // In tests, you can also get a sender handle
 //! let sender = transport.sender();
@@ -100,19 +100,23 @@ pub struct MemoryTransport {
 
 impl MemoryTransport {
     /// Create a new memory transport.
-    #[must_use]
-    pub fn new(config: &MemoryConfig) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransportError`] when any inbound/outbound filter rule
+    /// fails to compile. Previously this produced a `tracing::warn!` and
+    /// silently substituted an empty filter engine; that fail-open
+    /// behaviour hid real misconfiguration (a filter that should have
+    /// blocked traffic would instead let every message through), so the
+    /// constructor now propagates the error to the caller.
+    pub fn new(config: &MemoryConfig) -> super::error::TransportResult<Self> {
         let (sender, receiver) = mpsc::channel(config.buffer_size);
         let filter_engine = super::filter::TransportFilterEngine::new(
             &config.filters_in,
             &config.filters_out,
-            &crate::transport::filter::TransportFilterTierConfig::default(),
-        )
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Failed to compile transport filters, filtering disabled");
-            super::filter::TransportFilterEngine::empty()
-        });
-        Self {
+            &crate::transport::filter::TransportFilterTierConfig::from_cascade(),
+        )?;
+        Ok(Self {
             sender,
             receiver: tokio::sync::Mutex::new(receiver),
             sequence: AtomicU64::new(0),
@@ -121,7 +125,7 @@ impl MemoryTransport {
             recv_timeout_ms: config.recv_timeout_ms,
             filter_engine,
             filtered_dlq_buffer: parking_lot::Mutex::new(Vec::new()),
-        }
+        })
     }
 
     /// Get a sender handle for injecting test messages.
@@ -339,8 +343,8 @@ mod tests {
     #[tokio::test]
     async fn send_and_receive() {
         let config = MemoryConfig::default();
-        let transport = MemoryTransport::new(&config);
-
+        let transport = MemoryTransport::new(&config)
+            .expect("memory transport with valid config must construct");
         // Send a message
         let result = transport.send("test-key", b"hello world").await;
         assert!(result.is_ok());
@@ -355,8 +359,8 @@ mod tests {
     #[tokio::test]
     async fn inject_messages() {
         let config = MemoryConfig::default();
-        let transport = MemoryTransport::new(&config);
-
+        let transport = MemoryTransport::new(&config)
+            .expect("memory transport with valid config must construct");
         // Inject test messages
         transport
             .inject(Some("key1"), b"msg1".to_vec())
@@ -375,8 +379,8 @@ mod tests {
     #[tokio::test]
     async fn commit_advances_sequence() {
         let config = MemoryConfig::default();
-        let transport = MemoryTransport::new(&config);
-
+        let transport = MemoryTransport::new(&config)
+            .expect("memory transport with valid config must construct");
         transport.inject(None, b"msg".to_vec()).await.unwrap();
         let messages = transport.recv(1).await.unwrap();
 
@@ -391,8 +395,8 @@ mod tests {
     #[tokio::test]
     async fn close_prevents_operations() {
         let config = MemoryConfig::default();
-        let transport = MemoryTransport::new(&config);
-
+        let transport = MemoryTransport::new(&config)
+            .expect("memory transport with valid config must construct");
         transport.close().await.unwrap();
         assert!(!transport.is_healthy());
 
@@ -412,7 +416,8 @@ mod tests {
             recv_timeout_ms: 0,
             ..Default::default()
         };
-        let transport = MemoryTransport::new(&config);
+        let transport = MemoryTransport::new(&config)
+            .expect("memory transport with valid config must construct");
 
         // Fill the channel
         let result1 = transport.send("key", b"msg1").await;

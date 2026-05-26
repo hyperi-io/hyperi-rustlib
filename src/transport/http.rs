@@ -278,15 +278,13 @@ impl HttpTransport {
             "HTTP transport opened"
         );
 
+        // Fail loud on bad filter config — silently disabling filters
+        // turns a misconfigured `drop` / `dlq` rule into a permanent pass.
         let filter_engine = super::filter::TransportFilterEngine::new(
             &config.filters_in,
             &config.filters_out,
-            &crate::transport::filter::TransportFilterTierConfig::default(),
-        )
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Failed to compile transport filters, filtering disabled");
-            super::filter::TransportFilterEngine::empty()
-        });
+            &crate::transport::filter::TransportFilterTierConfig::from_cascade(),
+        )?;
 
         let closed = Arc::new(AtomicBool::new(false));
 
@@ -357,7 +355,7 @@ async fn ingest_handler(
     }
 
     // Extract W3C traceparent from incoming HTTP headers for distributed tracing
-    #[cfg(feature = "otel")]
+    #[cfg(feature = "transport-trace")]
     if let Some(tp) = headers
         .get(super::propagation::TRACEPARENT_HEADER)
         .and_then(|v| v.to_str().ok())
@@ -456,7 +454,7 @@ impl TransportSender for HttpTransport {
             .post(&url)
             .header("content-type", "application/octet-stream");
 
-        #[cfg(feature = "otel")]
+        #[cfg(feature = "transport-trace")]
         let request_builder = if let Some(tp) = super::propagation::current_traceparent() {
             request_builder.header(super::propagation::TRACEPARENT_HEADER, tp)
         } else {

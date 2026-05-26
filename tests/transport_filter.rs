@@ -35,6 +35,7 @@ fn transport_with_inbound_filters(filters: Vec<FilterRule>) -> MemoryTransport {
         filters_in: filters,
         filters_out: Vec::new(),
     })
+    .expect("memory transport with valid filters must construct")
 }
 
 fn transport_with_outbound_filters(filters: Vec<FilterRule>) -> MemoryTransport {
@@ -44,6 +45,7 @@ fn transport_with_outbound_filters(filters: Vec<FilterRule>) -> MemoryTransport 
         filters_in: Vec::new(),
         filters_out: filters,
     })
+    .expect("memory transport with valid filters must construct")
 }
 
 fn transport_no_filters() -> MemoryTransport {
@@ -52,6 +54,7 @@ fn transport_no_filters() -> MemoryTransport {
         recv_timeout_ms: 50,
         ..Default::default()
     })
+    .expect("memory transport without filters must construct")
 }
 
 // ============================================================================
@@ -1250,7 +1253,8 @@ async fn smoke_memory_transport_filters_field_present() {
             expression: "has(_drop_me)".into(),
             action: FilterAction::Drop,
         }],
-    });
+    })
+    .expect("memory transport with valid filters must construct");
 
     // Filter actually works
     transport

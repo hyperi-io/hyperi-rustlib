@@ -240,7 +240,7 @@ impl AnySender {
             #[cfg(feature = "transport-memory")]
             TransportType::Memory => {
                 let memory_config = config.memory.clone().unwrap_or_default();
-                let transport = super::memory::MemoryTransport::new(&memory_config);
+                let transport = super::memory::MemoryTransport::new(&memory_config)?;
                 Ok(Self::Memory(transport))
             }
 

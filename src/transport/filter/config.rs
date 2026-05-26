@@ -128,6 +128,27 @@ impl TransportFilterTierConfig {
             (FilterTier::Tier3, FilterDirection::Out) => self.allow_complex_filters_out,
         }
     }
+
+    /// Load tier-gate configuration from the config cascade under the
+    /// `transport.filter_tiers` key.
+    ///
+    /// Falls back to `Self::default()` (all Tier 2/3 gates closed) when
+    /// the cascade is not initialised or the section is missing. This is
+    /// the secure default — operators must explicitly opt in to higher
+    /// tiers per the [transport filter design](crate::transport::filter).
+    #[must_use]
+    pub fn from_cascade() -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(tier_config) =
+                    cfg.unmarshal_key_registered::<Self>("transport.filter_tiers")
+            {
+                return tier_config;
+            }
+        }
+        Self::default()
+    }
 }
 
 #[cfg(test)]
