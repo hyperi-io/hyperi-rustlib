@@ -191,17 +191,30 @@ impl VersionCheck {
 // ============================================================================
 
 /// Payload sent to the version check API.
+///
+/// Intentionally minimal. Pre-2.7.5 the payload also included:
+///   - `instance_id`: a persistent UUID disk-stored in `~/.cache/hyperi/`.
+///     Effectively a tracking cookie that survived restarts. Dropped —
+///     too aggressive for an OSS library's default behaviour. Operators
+///     who want a stable identifier can set one themselves via
+///     `VersionCheckConfig` (not currently exposed; can be added if a
+///     real need emerges).
+///   - `deployment`: free-form string from the operator's config
+///     (`"production-east"`, etc.). Operators sometimes embed sensitive
+///     names; dropping by default. Field stays on `VersionCheckConfig`
+///     for forward-compat but is no longer sent.
+///
+/// Kept: `product`, `current_version`, `os` (family — Linux/Darwin/
+/// Windows), `arch` (x86_64/aarch64). Enough signal for "which versions
+/// are running on which platforms"; zero personal data.
 #[derive(Debug, Serialize)]
 struct CheckPayload {
     product: String,
     current_version: String,
-    instance_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     os: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     arch: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    deployment: Option<String>,
 }
 
 /// Response from the version check API.
@@ -223,19 +236,47 @@ pub struct VersionCheckResponse {
 // Internal helpers
 // ============================================================================
 
+/// Environment-variable opt-out check. Returns true if the user has
+/// disabled telemetry via `HYPERI_TELEMETRY=off|0|false|no`.
+fn telemetry_opted_out() -> bool {
+    std::env::var("HYPERI_TELEMETRY").is_ok_and(|v| {
+        let l = v.to_ascii_lowercase();
+        matches!(l.as_str(), "off" | "0" | "false" | "no" | "disabled")
+    })
+}
+
+/// Once-per-process announcement of the telemetry call. The first
+/// time we make a version check, log loudly what gets sent and how
+/// to opt out. Subsequent calls stay quiet (this is `info!`, not
+/// `warn!`, so log level filtering still applies).
+fn announce_once(config: &VersionCheckConfig) {
+    static ANNOUNCED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    ANNOUNCED.get_or_init(|| {
+        tracing::info!(
+            endpoint = %config.api_url,
+            "version check telemetry: sending anonymous {{product, current_version, os, arch}} to endpoint; \
+             set HYPERI_TELEMETRY=off to disable"
+        );
+    });
+}
+
 /// Perform the HTTP version check.
 async fn do_version_check(
     config: &VersionCheckConfig,
 ) -> Result<VersionCheckResponse, VersionCheckError> {
-    let instance_id = get_or_create_instance_id().await;
+    if telemetry_opted_out() {
+        return Err(VersionCheckError::Http(
+            "telemetry opted out via HYPERI_TELEMETRY env var".into(),
+        ));
+    }
+
+    announce_once(config);
 
     let payload = CheckPayload {
         product: config.product.clone(),
         current_version: config.current_version.clone(),
-        instance_id,
         os: Some(std::env::consts::OS.into()),
         arch: Some(std::env::consts::ARCH.into()),
-        deployment: config.deployment.clone(),
     };
 
     let client = reqwest::Client::builder()
@@ -339,67 +380,15 @@ fn format_age(published_at: &str) -> Option<String> {
     }
 }
 
-/// Resolve the on-disk instance-id path. Prefers
-/// `dirs::cache_dir()/hyperi/instance_id` (XDG cache on Linux,
-/// `~/Library/Caches/hyperi/...` on macOS, `%LOCALAPPDATA%\hyperi\...`
-/// on Windows), falling back to `$HOME/.cache/hyperi/instance_id`.
-///
-/// Never returns a `/tmp/...` path — that location is world-readable
-/// and unreliably cleaned across hosts.
-fn instance_id_path() -> Option<std::path::PathBuf> {
-    if let Some(d) = dirs::cache_dir() {
-        return Some(d.join("hyperi").join("instance_id"));
-    }
-    std::env::var_os("HOME").map(|h| {
-        std::path::PathBuf::from(h)
-            .join(".cache")
-            .join("hyperi")
-            .join("instance_id")
-    })
-}
-
-/// Sync core of the instance-id resolver. Returns the id and the path
-/// (if any) it should be persisted to.
-fn resolve_instance_id_sync() -> String {
-    let Some(id_path) = instance_id_path() else {
-        // No cache location resolvable — generate ephemeral.
-        return uuid::Uuid::new_v4().to_string();
-    };
-
-    // Try to read existing.
-    if let Ok(id) = std::fs::read_to_string(&id_path) {
-        let id = id.trim().to_string();
-        if !id.is_empty() {
-            return id;
-        }
-    }
-
-    // Generate new + persist (best-effort).
-    let id = uuid::Uuid::new_v4().to_string();
-    if let Some(parent) = id_path.parent()
-        && std::fs::create_dir_all(parent).is_ok()
-    {
-        let _ = std::fs::write(&id_path, &id);
-    }
-    id
-}
-
-/// Get or create a persistent instance ID (async-safe).
-///
-/// First call does sync FS work on a `spawn_blocking` thread so the
-/// caller's tokio runtime is never stalled. Subsequent calls return
-/// the cached value from the in-process `OnceLock` (atomic load, no
-/// I/O).
-async fn get_or_create_instance_id() -> String {
-    static INSTANCE_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    if let Some(id) = INSTANCE_ID.get() {
-        return id.clone();
-    }
-    let id = tokio::task::spawn_blocking(resolve_instance_id_sync)
-        .await
-        .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
-    INSTANCE_ID.get_or_init(|| id.clone()).clone()
-}
+// Persistent-instance-id helpers removed in 2.7.5.
+//
+// Previously this file maintained a UUID at
+// `~/.cache/hyperi/instance_id` and included it in every telemetry
+// payload. The persistent identifier survived restarts, IP changes,
+// and process recycles — functionally indistinguishable from a
+// long-lived tracking cookie. For an open-source library the friction
+// it created for SOC2 / regulated consumers far exceeded the fleet-
+// uniqueness signal value. Removed in the pre-GA hardening pass.
 
 /// Errors during version check (internal, never exposed to caller).
 #[derive(Debug)]
@@ -434,32 +423,45 @@ mod tests {
         assert!(config.product.is_empty());
     }
 
-    #[tokio::test]
-    async fn test_instance_id_stable() {
-        // Multiple calls return the same ID
-        let id1 = get_or_create_instance_id().await;
-        let id2 = get_or_create_instance_id().await;
-        assert_eq!(id1, id2);
-        assert!(!id1.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_instance_id_is_uuid() {
-        let id = get_or_create_instance_id().await;
-        assert!(uuid::Uuid::parse_str(&id).is_ok(), "not a valid UUID: {id}");
+    #[test]
+    fn telemetry_opt_out_recognises_common_values() {
+        // `temp_env::with_var` scopes env mutation to the closure and
+        // restores the previous value on drop — required because the
+        // crate has `#![deny(unsafe_code)]` and edition 2024 forbids
+        // direct `std::env::set_var` without `unsafe { }`.
+        for v in ["off", "Off", "OFF", "0", "false", "False", "no", "disabled"] {
+            temp_env::with_var("HYPERI_TELEMETRY", Some(v), || {
+                assert!(telemetry_opted_out(), "value `{v}` should opt out");
+            });
+        }
+        for v in ["on", "1", "true", ""] {
+            temp_env::with_var("HYPERI_TELEMETRY", Some(v), || {
+                assert!(!telemetry_opted_out(), "value `{v}` should NOT opt out");
+            });
+        }
+        temp_env::with_var_unset("HYPERI_TELEMETRY", || {
+            assert!(!telemetry_opted_out(), "absent var should NOT opt out");
+        });
     }
 
     #[test]
-    fn test_instance_id_path_never_in_tmp() {
-        // Rule: never use /tmp for persistent state.
-        let path = instance_id_path();
-        if let Some(p) = path {
-            assert!(
-                !p.starts_with("/tmp"),
-                "instance_id_path returned /tmp path: {}",
-                p.display()
-            );
-        }
+    fn check_payload_omits_dropped_fields() {
+        // The payload struct itself no longer has instance_id or deployment
+        // — this test enforces that by serialising and checking the JSON
+        // shape. A future change that re-adds them will fail here.
+        let payload = CheckPayload {
+            product: "dfe-loader".into(),
+            current_version: "1.0.0".into(),
+            os: Some("linux".into()),
+            arch: Some("x86_64".into()),
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        assert!(!json.contains("instance_id"));
+        assert!(!json.contains("deployment"));
+        assert!(json.contains("product"));
+        assert!(json.contains("current_version"));
+        assert!(json.contains("\"os\":\"linux\""));
+        assert!(json.contains("\"arch\":\"x86_64\""));
     }
 
     #[test]
@@ -467,16 +469,17 @@ mod tests {
         let payload = CheckPayload {
             product: "dfe-loader".into(),
             current_version: "1.8.0".into(),
-            instance_id: "test-id".into(),
             os: Some("linux".into()),
             arch: Some("x86_64".into()),
-            deployment: None,
         };
 
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["product"], "dfe-loader");
         assert_eq!(json["current_version"], "1.8.0");
-        // deployment is None, should be absent
+        assert_eq!(json["os"], "linux");
+        assert_eq!(json["arch"], "x86_64");
+        // Dropped fields must not reappear.
+        assert!(json.get("instance_id").is_none());
         assert!(json.get("deployment").is_none());
     }
 
