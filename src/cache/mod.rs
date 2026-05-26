@@ -34,7 +34,7 @@
 //!     let cache = Cache::new(CacheConfig::default());
 //!
 //!     // Set with source-specific TTL
-//!     cache.set("http", "https://api.example.com", "response_data").await;
+//!     cache.set("http", "https://api.example.com", "response_data").await.expect("cache set");
 //!
 //!     // Get
 //!     if let Some(value) = cache.get::<String>("http", "https://api.example.com").await {
@@ -105,20 +105,29 @@ impl Cache {
         serde_json::from_slice(&bytes).ok()
     }
 
-    /// Set a cached value with source-specific TTL.
+    /// Set a cached value.
     ///
-    /// Uses the TTL configured for the source, falling back to the
-    /// default TTL if the source has no specific configuration.
-    pub async fn set<T: serde::Serialize>(&self, source: &str, key: &str, value: T) {
+    /// **TTL note:** all entries currently use the cache-wide TTL set at
+    /// construction time. Per-source TTL configuration is read from
+    /// [`CacheConfig::source_ttls`] but is not yet honoured for inserts
+    /// (moka's API requires per-entry expiration to go through its
+    /// `Expiry` trait, which would force a cache rebuild on every config
+    /// reload). The `ttl_for_source` helper remains for callers that want
+    /// to inspect the configured policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying [`serde_json::Error`] when serialisation of
+    /// `value` fails. Previously this dropped the error silently; callers
+    /// had no way to know their cache write was a no-op.
+    pub async fn set<T: serde::Serialize>(
+        &self,
+        source: &str,
+        key: &str,
+        value: T,
+    ) -> Result<(), serde_json::Error> {
         let full_key = format!("{source}:{key}");
-        let bytes = match serde_json::to_vec(&value) {
-            Ok(b) => Arc::new(b),
-            Err(_) => return,
-        };
-
-        // moka uses a global TTL set at construction. Per-source TTL would
-        // require separate cache instances or moka's Expiry trait — future work.
-        let _ttl = self.ttl_for_source(source);
+        let bytes = Arc::new(serde_json::to_vec(&value)?);
 
         self.inner.insert(full_key.clone(), bytes).await;
 
@@ -129,6 +138,8 @@ impl Cache {
         if let Ok(mut keys) = self.source_keys.lock() {
             keys.entry(source.to_string()).or_default().push(full_key);
         }
+
+        Ok(())
     }
 
     /// Invalidate all cached entries for a source.
@@ -155,7 +166,14 @@ impl Cache {
     }
 
     /// Get the TTL for a source (from config or default).
-    fn ttl_for_source(&self, source: &str) -> Duration {
+    ///
+    /// Returns the per-source TTL when configured in
+    /// [`CacheConfig::source_ttls`], otherwise the cache-wide
+    /// `default_ttl_secs`. Note that moka uses only the cache-wide TTL
+    /// for actual expiration — see [`Self::set`] for the gap; this
+    /// accessor lets callers inspect what the policy *would* be.
+    #[must_use]
+    pub fn ttl_for_source(&self, source: &str) -> Duration {
         self.config.source_ttls.get(source).copied().map_or(
             Duration::from_secs(self.config.default_ttl_secs),
             Duration::from_secs,
@@ -189,7 +207,10 @@ mod tests {
     #[tokio::test]
     async fn set_and_get() {
         let cache = Cache::new(test_config());
-        cache.set("http", "url1", "value1".to_string()).await;
+        cache
+            .set("http", "url1", "value1".to_string())
+            .await
+            .expect("cache set");
 
         let result: Option<String> = cache.get("http", "url1").await;
         assert_eq!(result.as_deref(), Some("value1"));
@@ -205,8 +226,14 @@ mod tests {
     #[tokio::test]
     async fn sources_are_isolated() {
         let cache = Cache::new(test_config());
-        cache.set("http", "key1", "http_value".to_string()).await;
-        cache.set("db", "key1", "db_value".to_string()).await;
+        cache
+            .set("http", "key1", "http_value".to_string())
+            .await
+            .expect("cache set");
+        cache
+            .set("db", "key1", "db_value".to_string())
+            .await
+            .expect("cache set");
 
         let http: Option<String> = cache.get("http", "key1").await;
         let db: Option<String> = cache.get("db", "key1").await;
@@ -218,9 +245,18 @@ mod tests {
     #[tokio::test]
     async fn invalidate_source_removes_only_that_source() {
         let cache = Cache::new(test_config());
-        cache.set("http", "url1", "v1".to_string()).await;
-        cache.set("http", "url2", "v2".to_string()).await;
-        cache.set("db", "query1", "v3".to_string()).await;
+        cache
+            .set("http", "url1", "v1".to_string())
+            .await
+            .expect("cache set");
+        cache
+            .set("http", "url2", "v2".to_string())
+            .await
+            .expect("cache set");
+        cache
+            .set("db", "query1", "v3".to_string())
+            .await
+            .expect("cache set");
 
         cache.invalidate_source("http").await;
 
@@ -239,8 +275,14 @@ mod tests {
     #[tokio::test]
     async fn invalidate_single_entry() {
         let cache = Cache::new(test_config());
-        cache.set("http", "url1", "v1".to_string()).await;
-        cache.set("http", "url2", "v2".to_string()).await;
+        cache
+            .set("http", "url1", "v1".to_string())
+            .await
+            .expect("cache set");
+        cache
+            .set("http", "url2", "v2".to_string())
+            .await
+            .expect("cache set");
 
         cache.invalidate("http", "url1").await;
         cache.inner.run_pending_tasks().await;
@@ -257,8 +299,14 @@ mod tests {
         let cache = Cache::new(test_config());
         assert_eq!(cache.entry_count(), 0);
 
-        cache.set("http", "url1", "v1".to_string()).await;
-        cache.set("http", "url2", "v2".to_string()).await;
+        cache
+            .set("http", "url1", "v1".to_string())
+            .await
+            .expect("cache set");
+        cache
+            .set("http", "url2", "v2".to_string())
+            .await
+            .expect("cache set");
         cache.inner.run_pending_tasks().await;
 
         assert_eq!(cache.entry_count(), 2);
@@ -269,7 +317,10 @@ mod tests {
         let cache = Cache::new(test_config());
 
         let data = serde_json::json!({"name": "test", "values": [1, 2, 3]});
-        cache.set("db", "query1", data.clone()).await;
+        cache
+            .set("db", "query1", data.clone())
+            .await
+            .expect("cache set");
 
         let result: Option<serde_json::Value> = cache.get("db", "query1").await;
         assert_eq!(result, Some(data));

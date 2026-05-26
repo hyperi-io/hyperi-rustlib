@@ -108,19 +108,31 @@ impl HealthRegistry {
         }
     }
 
+    /// Snapshot every registered check, drop the registry lock, then run
+    /// the checks. A check callback that re-enters
+    /// [`HealthRegistry::register`] (or any other path that takes the
+    /// registry mutex) would otherwise deadlock against itself; this
+    /// keeps the lock critical-section to a clone of the `Arc<dyn Fn>`
+    /// handles.
+    fn snapshot_checks() -> Vec<HealthCheck> {
+        let registry = Self::global();
+        registry
+            .components
+            .lock()
+            .ok()
+            .map(|components| components.iter().map(|c| Arc::clone(&c.check)).collect())
+            .unwrap_or_default()
+    }
+
     /// Check if ALL components are healthy.
     ///
     /// Returns `true` if the registry is empty (vacuously true) or
     /// every registered component reports [`HealthStatus::Healthy`].
     #[must_use]
     pub fn is_healthy() -> bool {
-        let registry = Self::global();
-        let Ok(components) = registry.components.lock() else {
-            return false;
-        };
-        components
+        Self::snapshot_checks()
             .iter()
-            .all(|c| (c.check)() == HealthStatus::Healthy)
+            .all(|check| check() == HealthStatus::Healthy)
     }
 
     /// Check if the service is ready to receive traffic.
@@ -132,13 +144,9 @@ impl HealthRegistry {
     /// Returns `true` if the registry is empty (vacuously true).
     #[must_use]
     pub fn is_ready() -> bool {
-        let registry = Self::global();
-        let Ok(components) = registry.components.lock() else {
-            return false;
-        };
-        components
+        Self::snapshot_checks()
             .iter()
-            .all(|c| (c.check)() != HealthStatus::Unhealthy)
+            .all(|check| check() != HealthStatus::Unhealthy)
     }
 
     /// Get per-component health status.
@@ -147,13 +155,21 @@ impl HealthRegistry {
     /// status. Useful for detailed health endpoints.
     #[must_use]
     pub fn components() -> Vec<(String, HealthStatus)> {
-        let registry = Self::global();
-        let Ok(components) = registry.components.lock() else {
-            return Vec::new();
+        // Snapshot (name, check) pairs under the lock; run checks after
+        // releasing it. See `snapshot_checks` for the reentrancy rationale.
+        let snapshot: Vec<(String, HealthCheck)> = {
+            let registry = Self::global();
+            let Ok(components) = registry.components.lock() else {
+                return Vec::new();
+            };
+            components
+                .iter()
+                .map(|c| (c.name.clone(), Arc::clone(&c.check)))
+                .collect()
         };
-        components
-            .iter()
-            .map(|c| (c.name.clone(), (c.check)()))
+        snapshot
+            .into_iter()
+            .map(|(name, check)| (name, check()))
             .collect()
     }
 

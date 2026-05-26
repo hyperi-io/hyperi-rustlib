@@ -616,20 +616,39 @@ fn load_yaml_file(path: &Path) -> DirectoryConfigResult<serde_yaml_ng::Value> {
 }
 
 /// Write YAML to file with advisory file lock.
+///
+/// Acquires the advisory lock BEFORE truncating, then writes through the
+/// SAME handle the lock was acquired on. The previous implementation
+/// opened with `.truncate(true)` (which truncated immediately), then
+/// later called `std::fs::write(path, ...)` through a separate file
+/// handle — meaning both the truncate AND the write happened outside
+/// the locked handle, defeating the advisory protection the function
+/// name promises.
 fn write_yaml_locked(path: &Path, value: &serde_yaml_ng::Value) -> DirectoryConfigResult<()> {
+    use std::io::{Seek, SeekFrom, Write};
+
     let yaml_str = serde_yaml_ng::to_string(value)
         .map_err(|e| DirectoryConfigError::SerializationError(e.to_string()))?;
 
-    // Open/create the file, acquire exclusive lock, write, release on drop
-    let file = std::fs::OpenOptions::new()
+    // Open/create the file WITHOUT truncating yet — we want to hold the
+    // lock before we destructively modify it. If two writers race, the
+    // second one blocks here.
+    let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
-        .truncate(true)
+        .truncate(false)
         .open(path)?;
 
+    // Acquire the advisory exclusive lock. Held until `file` drops.
     file.lock().map_err(DirectoryConfigError::IoError)?;
 
-    std::fs::write(path, yaml_str.as_bytes())?;
+    // Now that we hold the lock, truncate the file in place and write
+    // through the SAME handle. Sequence: rewind to 0, write bytes,
+    // truncate to the new length (handles shrinks correctly).
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(yaml_str.as_bytes())?;
+    file.set_len(yaml_str.len() as u64)?;
+    file.sync_data()?;
 
     file.unlock().map_err(DirectoryConfigError::IoError)?;
 

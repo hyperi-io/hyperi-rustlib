@@ -156,7 +156,34 @@ pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
                         output::print_kv("log_format", &args.log_format);
                         output::print_kv("metrics_addr", &args.metrics_addr);
                         eprintln!();
-                        eprintln!("  config: {config:#?}");
+                        // Run the Debug dump through the logger's
+                        // sensitive-field masker before printing. Consumer
+                        // configs commonly hold ENV-sourced secrets in
+                        // plain `String` fields (the canonical K8s
+                        // secret-store -> K8s Secret -> ENV path) — without
+                        // masking, `{config:#?}` happily prints them in
+                        // clear text. The masker recognises the standard
+                        // sensitive field names (password, token, api_key,
+                        // secret, bearer, etc.) and replaces the value
+                        // with `[REDACTED]`.
+                        //
+                        // The masker lives in the logger module; if the
+                        // consumer hasn't enabled the `logger` feature
+                        // they're already opting out of every other
+                        // sensitive-field defence (log masking, etc.), so
+                        // an unmasked Debug print here is consistent with
+                        // the rest of their stance.
+                        let raw = format!("{config:#?}");
+                        #[cfg(feature = "logger")]
+                        let masked = {
+                            let default_fields = crate::logger::default_sensitive_fields();
+                            let patterns: Vec<&str> =
+                                default_fields.iter().map(String::as_str).collect();
+                            crate::logger::mask_sensitive_string(&raw, &patterns)
+                        };
+                        #[cfg(not(feature = "logger"))]
+                        let masked = raw;
+                        eprintln!("  config: {masked}");
                     }
                     Ok(())
                 }

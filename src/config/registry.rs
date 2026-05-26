@@ -32,15 +32,23 @@
 //! ```
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde_json::Value as JsonValue;
 
 /// Global config registry singleton.
 static REGISTRY: Mutex<Option<Registry>> = Mutex::new(None);
 
-/// A boxed change listener callback.
-type ChangeCallback = Box<dyn Fn(&JsonValue) + Send>;
+/// A change listener callback.
+///
+/// Stored as `Arc<dyn ...>` rather than `Box<dyn ...>` so [`register_section`]
+/// can snapshot the callbacks into a local Vec under the listener lock and
+/// then drop the lock BEFORE invoking them. Holding the listener mutex
+/// during callback invocation deadlocked re-entrant callers (e.g. a
+/// callback that registered a new listener) and forced any callback work
+/// into the critical section.
+type ChangeCallback = Arc<dyn Fn(&JsonValue) + Send + Sync>;
+type ListenerCallback = ChangeCallback;
 
 /// Change listener storage.
 static LISTENERS: Mutex<Option<BTreeMap<String, Vec<ChangeCallback>>>> = Mutex::new(None);
@@ -226,13 +234,13 @@ pub fn get_section(key: &str) -> Option<ConfigSection> {
 /// simply use the `OnceLock` pattern and ignore change events.
 ///
 /// The callback receives the new effective value as JSON.
-pub fn on_change(key: &str, callback: impl Fn(&JsonValue) + Send + 'static) {
+pub fn on_change(key: &str, callback: impl Fn(&JsonValue) + Send + Sync + 'static) {
     if let Ok(mut guard) = LISTENERS.lock() {
         let listeners = guard.get_or_insert_with(BTreeMap::new);
         listeners
             .entry(key.to_string())
             .or_default()
-            .push(Box::new(callback));
+            .push(Arc::new(callback));
     }
 }
 
@@ -260,11 +268,18 @@ where
         registry.sections.insert(key.to_string(), section);
     }
 
-    // Notify listeners
-    if let Ok(guard) = LISTENERS.lock()
-        && let Some(listeners) = &*guard
-        && let Some(callbacks) = listeners.get(key)
-    {
+    // Notify listeners. Snapshot the callbacks into a local Vec under the
+    // lock, then drop the guard BEFORE invoking them. A callback that
+    // re-enters listener registration (e.g. registers a new listener
+    // while running) would otherwise deadlock against the same mutex.
+    // Callbacks may also do non-trivial work, allocation, or I/O — none
+    // of which belong under a global mutex.
+    let snapshot: Option<Vec<ListenerCallback>> = LISTENERS.lock().ok().and_then(|guard| {
+        guard
+            .as_ref()
+            .and_then(|listeners| listeners.get(key).map(|cbs| cbs.iter().cloned().collect()))
+    });
+    if let Some(callbacks) = snapshot {
         for cb in callbacks {
             cb(&effective_json);
         }
