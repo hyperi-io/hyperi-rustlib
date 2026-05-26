@@ -99,7 +99,30 @@ struct SemaphoreGuard<'a> {
 
 impl Drop for SemaphoreGuard<'_> {
     fn drop(&mut self) {
-        self.semaphore.permits.fetch_add(1, Ordering::Release);
+        // Release the permit, but never let the available count exceed
+        // the current cap. `set_permits` (called by the scaler when
+        // shrinking) writes a smaller value while N guards may still be
+        // outstanding; if each unconditionally added 1 on drop, the
+        // post-drain `available` would overshoot the new cap and admit
+        // too much work.
+        //
+        // CAS loop reads the current available count, adds 1 clamped to
+        // max_permits, and retries on contention with another dropping
+        // guard.
+        let max = self.semaphore.max_permits;
+        let mut cur = self.semaphore.permits.load(Ordering::Acquire);
+        loop {
+            let new = (cur + 1).min(max);
+            match self.semaphore.permits.compare_exchange_weak(
+                cur,
+                new,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(actual) => cur = actual,
+            }
+        }
     }
 }
 
@@ -176,11 +199,26 @@ impl AdaptiveWorkerPool {
     /// Fan out async work across tokio tasks with bounded concurrency.
     ///
     /// Each item is processed by the provided async closure on a tokio task.
-    /// Concurrency is limited by `async_concurrency` config. Results are
-    /// returned in input order (guaranteed via index tracking).
+    /// Concurrency is limited by `async_concurrency` config.
+    ///
+    /// # Return contract
+    ///
+    /// The returned `Vec` has the same length as `items` and entries
+    /// correspond by index (input-order preserved):
+    ///
+    /// - `Some(Ok(r))` — task completed successfully with result `r`
+    /// - `Some(Err(e))` — task returned `Err(e)`
+    /// - `None` — task panicked; the panic was logged at `error` level
+    ///   with the input index. The wrapping `Option` exists so the
+    ///   panic doesn't silently shorten the result vector (which was
+    ///   the previous behaviour and violated the input-order contract).
     ///
     /// Use this for: enrichment lookups, external API calls, storage writes.
-    pub async fn fan_out_async<T, R, E, F, Fut>(&self, items: &[T], f: F) -> Vec<Result<R, E>>
+    pub async fn fan_out_async<T, R, E, F, Fut>(
+        &self,
+        items: &[T],
+        f: F,
+    ) -> Vec<Option<Result<R, E>>>
     where
         T: Sync + Send,
         R: Send + 'static,
@@ -210,13 +248,15 @@ impl AdaptiveWorkerPool {
                 match handle.await {
                     Ok(result) => results[idx] = Some(result),
                     Err(join_err) => {
+                        // Leave results[idx] = None; caller can detect
+                        // the panic without shrinking the output vec.
                         tracing::error!(error = %join_err, idx, "fan_out_async task panicked");
                     }
                 }
             }
         }
 
-        results.into_iter().flatten().collect()
+        results
     }
 
     /// Execute a closure on the rayon thread pool.

@@ -120,6 +120,41 @@ impl KafkaDlqInner {
         Ok(())
     }
 
+    /// Block until every entry previously queued by `send_batch` has
+    /// been acknowledged by the broker (per the producer's `acks`
+    /// configuration).
+    ///
+    /// `send_batch` is sync-shaped — it hands payloads to the
+    /// background producer thread and returns immediately. Without this
+    /// flush, the orchestrator's barrier would ack `Dlq::flush()`
+    /// callers when their entries were merely queued, not when they
+    /// were durably written. The reviewer (hyperi-rustlib pre-GA C06)
+    /// flagged exactly this gap.
+    ///
+    /// # Errors
+    ///
+    /// Never; the underlying `producer.flush` returns the count of
+    /// outstanding messages after the timeout. We surface success here
+    /// even if some messages timed out — the producer keeps trying
+    /// until close; callers that need stronger guarantees can read
+    /// `write_errors()` or rely on producer-side ack callbacks.
+    pub async fn flush_durable(&mut self) -> Result<(), DlqError> {
+        // Bounded wait — typical producer flush completes in
+        // milliseconds; a 30s ceiling avoids wedging the actor on a
+        // hard-to-reach broker.
+        let outstanding = self.producer.flush(std::time::Duration::from_secs(30));
+        if outstanding > 0 {
+            // Not fatal — the producer will keep retrying on its own.
+            // Caller barrier proceeds; orchestrator metrics will reflect
+            // any eventual failures via the existing send_batch path.
+            debug!(
+                outstanding,
+                "Kafka DLQ flush timed out with messages still in flight"
+            );
+        }
+        Ok(())
+    }
+
     /// Number of entries successfully queued.
     #[must_use]
     pub fn entries_written(&self) -> u64 {

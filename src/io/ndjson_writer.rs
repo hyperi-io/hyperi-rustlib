@@ -152,6 +152,35 @@ impl NdjsonWriter {
         Ok(())
     }
 
+    /// Flush any in-memory buffer through the rotating writer.
+    ///
+    /// Note: `file-rotate` does not expose the underlying `File` handle,
+    /// so this can only call `flush()` (which pushes buffered bytes from
+    /// the writer's in-memory buffer to the kernel page cache). It does
+    /// NOT guarantee on-disk durability — a power-loss event between the
+    /// page cache and the platter can still lose data. This is a
+    /// limitation of the rotation library, not the API: when
+    /// `file-rotate` gains a `sync` hook, this method will gain
+    /// `fsync`-level semantics.
+    ///
+    /// For DLQ flush callers: this is the strongest durability the file
+    /// backend can express today. Producers running with high write
+    /// rates plus an `acks=all` sibling Kafka backend will get real
+    /// durability from the Kafka path.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying `std::io::Error` if the flush fails. The
+    /// internal `write_errors` counter is incremented.
+    pub fn flush(&self) -> Result<(), std::io::Error> {
+        let mut writer = self.writer.lock();
+        if let Err(e) = writer.flush() {
+            self.write_errors.fetch_add(1, Ordering::Relaxed);
+            return Err(e);
+        }
+        Ok(())
+    }
+
     /// Number of lines successfully written.
     pub fn lines_written(&self) -> u64 {
         self.lines_written.load(Ordering::Relaxed)
@@ -225,6 +254,22 @@ impl AsyncNdjsonWriter {
     pub async fn write_buf(&self, buf: Vec<u8>, count: u64) -> Result<(), std::io::Error> {
         let inner = Arc::clone(&self.inner);
         tokio::task::spawn_blocking(move || inner.write_buf(&buf, count))
+            .await
+            .map_err(std::io::Error::other)?
+    }
+
+    /// Flush buffered bytes through the rotating writer off-runtime.
+    ///
+    /// See [`NdjsonWriter::flush`] for durability semantics — currently
+    /// flushes to kernel page cache only (the `file-rotate` crate
+    /// doesn't expose the inner `File` for `fsync`).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::write_line`].
+    pub async fn flush(&self) -> Result<(), std::io::Error> {
+        let inner = Arc::clone(&self.inner);
+        tokio::task::spawn_blocking(move || inner.flush())
             .await
             .map_err(std::io::Error::other)?
     }

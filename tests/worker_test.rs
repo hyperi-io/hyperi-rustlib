@@ -180,7 +180,7 @@ async fn test_fan_out_async_preserves_order() {
     let pool = AdaptiveWorkerPool::new(config);
 
     let items: Vec<i32> = (0..20).collect();
-    let results: Vec<Result<i32, String>> = pool
+    let results: Vec<Option<Result<i32, String>>> = pool
         .fan_out_async(&items, |&item| async move {
             tokio::time::sleep(std::time::Duration::from_millis(
                 u64::try_from(20 - item).unwrap_or(0) % 10,
@@ -192,8 +192,13 @@ async fn test_fan_out_async_preserves_order() {
 
     assert_eq!(results.len(), 20);
     for (i, result) in results.iter().enumerate() {
+        let val = result
+            .as_ref()
+            .expect("task should not panic")
+            .as_ref()
+            .expect("task returned Err");
         assert_eq!(
-            *result.as_ref().unwrap(),
+            *val,
             (i32::try_from(i).unwrap()) * 3,
             "Result at index {i} has wrong value"
         );
@@ -214,7 +219,7 @@ async fn test_fan_out_async_respects_concurrency_limit() {
 
     let c = concurrent.clone();
     let mc = max_concurrent.clone();
-    let _results: Vec<Result<i32, String>> = pool
+    let _results: Vec<Option<Result<i32, String>>> = pool
         .fan_out_async(&items, |&item| {
             let c = c.clone();
             let mc = mc.clone();
@@ -236,7 +241,7 @@ async fn test_fan_out_async_respects_concurrency_limit() {
 async fn test_fan_out_async_empty_input() {
     let pool = AdaptiveWorkerPool::new(WorkerPoolConfig::default());
     let items: Vec<i32> = vec![];
-    let results: Vec<Result<i32, String>> =
+    let results: Vec<Option<Result<i32, String>>> =
         pool.fan_out_async(&items, |&x| async move { Ok(x) }).await;
     assert!(results.is_empty());
 }
@@ -545,11 +550,12 @@ fn test_scaling_decision_memory_exactly_at_cap() {
 async fn test_fan_out_async_with_all_failures() {
     let pool = AdaptiveWorkerPool::new(WorkerPoolConfig::default());
     let items: Vec<i32> = (0..10).collect();
-    let results: Vec<Result<i32, String>> = pool
+    let results: Vec<Option<Result<i32, String>>> = pool
         .fan_out_async(&items, |&item| async move { Err(format!("fail: {item}")) })
         .await;
     assert_eq!(results.len(), 10);
-    assert!(results.iter().all(Result::is_err));
+    // Every slot is `Some(Err(...))` — no task panicked, every one returned Err.
+    assert!(results.iter().all(|r| matches!(r, Some(Err(_)))));
 }
 
 #[tokio::test]
@@ -559,7 +565,7 @@ async fn test_fan_out_async_mixed_success_failure_preserves_order() {
         ..Default::default()
     });
     let items: Vec<i32> = (0..20).collect();
-    let results: Vec<Result<i32, String>> = pool
+    let results: Vec<Option<Result<i32, String>>> = pool
         .fan_out_async(&items, |&item| async move {
             // Variable delay to stress ordering
             tokio::time::sleep(std::time::Duration::from_millis(
@@ -575,11 +581,11 @@ async fn test_fan_out_async_mixed_success_failure_preserves_order() {
         .await;
 
     assert_eq!(results.len(), 20);
-    // Verify ordering: even indices that are multiples of 3 should be errors
-    assert!(results[0].is_err()); // 0 % 3 == 0
-    assert!(results[3].is_err()); // 3 % 3 == 0
-    assert!(results[6].is_err()); // 6 % 3 == 0
-    assert_eq!(*results[1].as_ref().unwrap(), 10); // 1 * 10
-    assert_eq!(*results[2].as_ref().unwrap(), 20); // 2 * 10
-    assert_eq!(*results[4].as_ref().unwrap(), 40); // 4 * 10
+    // Verify ordering: indices that are multiples of 3 should be Err
+    assert!(matches!(results[0], Some(Err(_)))); // 0 % 3 == 0
+    assert!(matches!(results[3], Some(Err(_)))); // 3 % 3 == 0
+    assert!(matches!(results[6], Some(Err(_)))); // 6 % 3 == 0
+    assert_eq!(*results[1].as_ref().unwrap().as_ref().unwrap(), 10);
+    assert_eq!(*results[2].as_ref().unwrap().as_ref().unwrap(), 20);
+    assert_eq!(*results[4].as_ref().unwrap().as_ref().unwrap(), 40);
 }

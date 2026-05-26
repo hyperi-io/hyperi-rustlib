@@ -75,6 +75,41 @@ impl DlqBackend {
         }
     }
 
+    /// Make every entry written so far DURABLE.
+    ///
+    /// Called from the BackgroundSink barrier handler when a consumer
+    /// invokes [`super::orchestrator::Dlq::flush`]. Each backend honours
+    /// the strongest durability it can express:
+    ///
+    /// - **File**: `flush()` on the rotating writer. The underlying
+    ///   `file-rotate` crate doesn't expose the inner `File` handle, so
+    ///   we can't `fsync()` from here — `flush()` only guarantees that
+    ///   buffered bytes have been handed to the kernel page cache. A
+    ///   power-loss event between page-cache and disk can still lose
+    ///   data. Documented limitation; tracked separately if/when
+    ///   `file-rotate` exposes a sync hook.
+    /// - **Kafka**: `producer.flush()` — blocks until every queued
+    ///   message has been acked by the broker (per the producer's
+    ///   acks config). This is the real durability semantic.
+    /// - **HTTP**: no-op. `send_batch` already awaits the response.
+    /// - **Redis**: no-op. `send_batch` already awaits the XADD pipeline.
+    ///
+    /// # Errors
+    ///
+    /// Backend-specific. Surfaced to the BackgroundSink barrier
+    /// handler which logs and continues.
+    pub async fn flush_durable(&mut self) -> Result<(), DlqError> {
+        match self {
+            Self::File(b) => b.flush_durable().await,
+            #[cfg(feature = "dlq-kafka")]
+            Self::Kafka(b) => b.flush_durable().await,
+            #[cfg(feature = "dlq-http")]
+            Self::Http(_) => Ok(()),
+            #[cfg(feature = "dlq-redis")]
+            Self::Redis(_) => Ok(()),
+        }
+    }
+
     /// Backend name for log / metric labels.
     #[must_use]
     pub fn name(&self) -> &'static str {

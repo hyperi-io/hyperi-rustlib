@@ -61,6 +61,13 @@ pub struct Dlq {
     join: Arc<AsyncMutex<Option<BackgroundSinkHandle>>>,
     enabled: bool,
     mode: DlqMode,
+    /// Child of the user-supplied shutdown token. The drain task runs
+    /// on this child, so [`Dlq::shutdown`] can cancel only the DLQ
+    /// without affecting the caller's broader shutdown plan. When the
+    /// caller cancels their own token, the child fires too (normal
+    /// child-token semantics), so the drain still exits on global
+    /// shutdown.
+    cancel: CancellationToken,
 }
 
 impl std::fmt::Debug for Dlq {
@@ -90,6 +97,7 @@ impl Dlq {
             join: Arc::new(AsyncMutex::new(None)),
             enabled: false,
             mode: DlqMode::default(),
+            cancel: CancellationToken::new(),
         }
     }
 
@@ -143,13 +151,19 @@ impl Dlq {
             metric_prefix: Some("dfe_dlq"),
         };
 
-        let (sink, handle) = BackgroundSink::spawn(drain, sink_config, shutdown);
+        // Derive a child token so `Dlq::shutdown` can stop the drain
+        // without forcing the caller to cancel their broader shutdown
+        // plan. The child fires automatically when the parent fires,
+        // so global shutdown still drains the DLQ.
+        let cancel = shutdown.child_token();
+        let (sink, handle) = BackgroundSink::spawn(drain, sink_config, cancel.clone());
 
         Ok(Self {
             sink: Some(sink),
             join: Arc::new(AsyncMutex::new(Some(handle))),
             enabled: true,
             mode: config.mode,
+            cancel,
         })
     }
 
@@ -238,18 +252,26 @@ impl Dlq {
         sink.flush().await.map_err(map_sink_err)
     }
 
-    /// Cancel the drain (assumes the caller already cancelled the
-    /// `CancellationToken` passed to `spawn`, OR all clones of this
-    /// `Dlq` have been dropped — either triggers shutdown) and await
-    /// graceful exit.
+    /// Initiate shutdown and await graceful drain exit.
+    ///
+    /// Cancels the internal child token (drain observes the cancellation
+    /// in its next `select!`, flushes its remaining batch, and exits),
+    /// then awaits the drain task. This is the canonical "stop the DLQ
+    /// and wait for it" call — the previous version only awaited the
+    /// join and would hang forever unless the caller had separately
+    /// cancelled the token passed to `spawn`.
     ///
     /// Idempotent: safe to call from many clones; the join happens
-    /// once.
+    /// once. Subsequent calls observe an empty join slot and return Ok.
     ///
     /// # Errors
     ///
     /// Returns `Err(DlqError::Closed)` if the drain task panicked.
     pub async fn shutdown(&self) -> Result<(), DlqError> {
+        // Trip the child token so the drain notices on its next
+        // select!. Idempotent — CancellationToken::cancel handles
+        // re-cancellation.
+        self.cancel.cancel();
         let mut guard = self.join.lock().await;
         let Some(handle) = guard.take() else {
             return Ok(());

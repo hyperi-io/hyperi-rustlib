@@ -105,6 +105,23 @@ impl FileDlqInner {
         Ok(())
     }
 
+    /// Flush buffered bytes to the kernel page cache.
+    ///
+    /// See [`crate::io::NdjsonWriter::flush`] for the durability
+    /// caveat — currently best-effort through the kernel page cache
+    /// only.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DlqError::File` if the underlying writer reports an
+    /// I/O error.
+    pub async fn flush_durable(&mut self) -> Result<(), DlqError> {
+        self.writer
+            .flush()
+            .await
+            .map_err(|e| DlqError::File(format!("DLQ file flush: {e}")))
+    }
+
     /// Number of entries successfully written.
     #[must_use]
     pub fn entries_written(&self) -> u64 {

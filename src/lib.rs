@@ -214,7 +214,7 @@ pub use kafka_config::{
     DfeSource, KafkaConfigError, KafkaConfigResult, ServiceRole, TOPIC_SUFFIX_LAND,
     TOPIC_SUFFIX_LOAD, config_from_file, config_from_properties_str,
 };
-pub use sensitive::SensitiveString;
+pub use sensitive::{SensitiveString, expose_during};
 
 #[cfg(feature = "runtime")]
 #[cfg_attr(docsrs, doc(cfg(feature = "runtime")))]
