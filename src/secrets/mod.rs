@@ -51,6 +51,7 @@
 //! ```
 
 mod cache;
+mod crypto;
 mod error;
 mod provider;
 mod types;

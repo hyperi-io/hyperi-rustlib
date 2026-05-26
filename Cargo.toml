@@ -106,7 +106,7 @@ http = ["reqwest", "reqwest-middleware", "reqwest-retry", "serde_json", "dep:any
 http-server = ["axum", "tower", "tower-http", "tokio", "tracing"]
 spool = ["yaque", "zstd"]
 tiered-sink = ["yaque", "zstd", "lz4_flex", "snap", "tokio", "libc", "tracing"]
-database = ["serde_json"]
+database = ["serde_json", "dep:percent-encoding"]
 cache = ["moka", "serde_json"]
 
 # Cgroup-aware memory backpressure (OOM prevention)
@@ -190,7 +190,7 @@ transport-redis = ["transport", "redis"]
 transport-all = ["transport-memory", "transport-kafka", "transport-grpc", "transport-file", "transport-pipe", "transport-http", "transport-redis"]
 
 # Secrets management
-secrets = ["tokio", "serde_json", "async-trait", "parking_lot", "base64", "dirs", "tracing"]
+secrets = ["tokio", "serde_json", "async-trait", "parking_lot", "base64", "dirs", "tracing", "dep:aes-gcm", "dep:hkdf", "dep:sha2", "dep:rand_core"]
 secrets-vault = ["secrets", "vaultrs"]
 secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
@@ -271,6 +271,10 @@ reqwest-retry = { version = ">=0.9.1, <0.10", optional = true }
 # instead of silently dropping them.
 anyhow = { version = "1", optional = true }
 
+# Percent-encoding for database URL builders (avoids string interpolation
+# that breaks when user/password/db contain `:`, `/`, `@`, `?`, `#`).
+percent-encoding = { version = ">=2.3, <3", optional = true }
+
 # In-memory cache (TinyLFU, async, concurrent)
 moka = { version = ">=0.12, <0.13", features = ["future"], optional = true }
 
@@ -338,6 +342,17 @@ parking_lot = { version = ">=0.12.3, <0.13", optional = true }
 # Data parallelism (CPU-bound work distribution for worker pool)
 rayon = { version = ">=1.10, <2", optional = true }
 base64 = { version = ">=0.22, <0.23", optional = true }
+
+# AEAD for at-rest encryption of the secrets disk cache. Gated by the
+# `secrets` feature; consumers without secrets pay nothing.
+# AES-256-GCM was chosen because (a) it's the project standard for
+# at-rest encryption (matches license-module crypto), (b) AES-NI gives
+# sub-microsecond seal/open on modern x86, (c) the RustCrypto AEAD
+# traits are well-vetted and FIPS-friendly.
+aes-gcm = { version = "0.10", optional = true }
+hkdf = { version = "0.12", optional = true }
+sha2 = { version = "0.10", optional = true }
+rand_core = { version = "0.6", features = ["std"], optional = true }
 
 # Zero-copy byte buffers (BatchEngine)
 bytes = { version = ">=1.10, <2", optional = true }

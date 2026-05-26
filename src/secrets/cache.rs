@@ -37,6 +37,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::{debug, warn};
 
 use super::CacheStats;
+use super::crypto;
 use super::error::{SecretsError, SecretsResult};
 use super::types::{CacheConfig, CacheEntry, SecretValue};
 
@@ -213,6 +214,15 @@ impl SecretCache {
     }
 
     /// Load a secret from disk cache.
+    ///
+    /// Detects encryption envelopes by their `"v":` JSON marker and
+    /// decrypts via [`crypto::open`] when an encryption key is
+    /// configured. Legacy plaintext entries (no envelope) are still
+    /// accepted but loaded with a warning — operators upgrading from
+    /// pre-encryption deployments see one notice per file. A future
+    /// release will hard-reject legacy entries to force a clean
+    /// migration; for now we read-through so existing caches keep
+    /// working.
     fn load_from_disk(&self, key: &str) -> Option<SecretValue> {
         let cache_dir = self.cache_dir.as_ref()?;
         let cache_file = cache_dir.join(Self::key_to_filename(key));
@@ -221,12 +231,56 @@ impl SecretCache {
             return None;
         }
 
-        let content = std::fs::read_to_string(&cache_file).ok()?;
-        let entry: CacheEntry = serde_json::from_str(&content).ok()?;
+        let raw = std::fs::read(&cache_file).ok()?;
+
+        // Pick the load path based on (a) whether the file looks like
+        // an encrypted envelope, and (b) whether an encryption key is
+        // configured. This handles upgrades cleanly.
+        let entry_bytes = if crypto::Envelope::looks_like(&raw) {
+            let Some(ref user_key) = self.config.encryption_key else {
+                tracing::warn!(
+                    file = %cache_file.display(),
+                    "cache file is encrypted but no encryption_key configured — skipping",
+                );
+                return None;
+            };
+            match crypto::open(user_key.expose(), &raw) {
+                Ok(plain) => plain,
+                Err(e) => {
+                    tracing::warn!(
+                        file = %cache_file.display(),
+                        error = %e,
+                        "cache file decrypt failed — skipping",
+                    );
+                    return None;
+                }
+            }
+        } else {
+            // Legacy plaintext path. Warn once per load to nudge
+            // operators toward re-running with an `encryption_key`
+            // configured, which will rewrite entries on next refresh.
+            if self.config.encryption_key.is_some() {
+                tracing::warn!(
+                    file = %cache_file.display(),
+                    "cache file is plaintext but encryption_key is set — will be re-encrypted on next refresh",
+                );
+            }
+            raw
+        };
+
+        let entry: CacheEntry = serde_json::from_slice(&entry_bytes).ok()?;
         entry.to_value().ok()
     }
 
     /// Save a secret to disk cache.
+    ///
+    /// When `CacheConfig.encryption_key` is set, the serialised
+    /// `CacheEntry` is encrypted via AES-256-GCM (see [`crypto`]).
+    /// Without a key, the previous plaintext-base64-JSON shape is
+    /// retained — this keeps the cache usable in development without
+    /// forcing operators to provision a key, but the misleading
+    /// `encryption_key: None` plaintext path is now loud at startup
+    /// (a `tracing::warn!` from `SecretCache::new`).
     fn save_to_disk(&self, key: &str, value: &SecretValue) -> SecretsResult<()> {
         let Some(ref cache_dir) = self.cache_dir else {
             return Ok(());
@@ -235,13 +289,30 @@ impl SecretCache {
         let cache_file = cache_dir.join(Self::key_to_filename(key));
         let entry = CacheEntry::from_value(value);
 
-        let content = serde_json::to_string_pretty(&entry).map_err(|e| {
+        let plaintext = serde_json::to_vec(&entry).map_err(|e| {
             SecretsError::CacheError(format!("failed to serialize cache entry: {e}"))
         })?;
 
-        std::fs::write(&cache_file, content).map_err(|e| {
+        let payload: Vec<u8> = if let Some(ref user_key) = self.config.encryption_key {
+            crypto::seal(user_key.expose(), &plaintext)?.into_bytes()
+        } else {
+            plaintext
+        };
+
+        // Atomic-ish write: temp file in the same directory, then
+        // rename. `std::fs::write` is not atomic — a power loss between
+        // the truncate and the write leaves an empty file. The rename
+        // is atomic on every Unix and on NTFS.
+        let temp_path = cache_file.with_extension("json.tmp");
+        std::fs::write(&temp_path, &payload).map_err(|e| {
             SecretsError::CacheError(format!(
-                "failed to write cache file {}: {e}",
+                "failed to write cache temp {}: {e}",
+                temp_path.display()
+            ))
+        })?;
+        std::fs::rename(&temp_path, &cache_file).map_err(|e| {
+            SecretsError::CacheError(format!(
+                "failed to rename cache temp into place {}: {e}",
                 cache_file.display()
             ))
         })?;
