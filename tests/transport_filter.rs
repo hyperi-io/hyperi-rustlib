@@ -1115,27 +1115,15 @@ async fn no_filters_no_dlq_buffer_overhead() {
 }
 
 // ============================================================================
-// Section 9: Memmem false positive (documented limitation)
+// Section 9: Tier-1 has() strict CEL semantics (F13)
 // ============================================================================
 
+/// Tier-1 `has(<single-field>)` only matches the field at the top
+/// level of the JSON object. Nested occurrences must NOT trigger.
+/// Codex F13 — strict CEL syntax adherence even when the engine is
+/// the SIMD fast path.
 #[test]
-fn memmem_false_positive_nested_field_matches_top_level_filter() {
-    // KNOWN LIMITATION: the memmem fast-path for `has(<single-field>)` searches
-    // for the literal `"<field>":` byte pattern anywhere in the payload. It does
-    // NOT verify that the field appears at the TOP LEVEL of the JSON object.
-    //
-    // If the same field name occurs at a nested level, the fast-path will match
-    // even though a strict CEL `has()` would not.
-    //
-    // Example: filter is `has(_table)` (top-level), payload is
-    //   {"data":{"_table":"events"}}
-    // The bytes contain `"_table":`, so memmem matches and the filter triggers.
-    //
-    // This is a deliberate tradeoff for the ~50% performance gain on the most
-    // common transport filter (existence checks on top-level routing fields).
-    // Workaround for users who need strict top-level matching: use a nested
-    // path like `has(some.nested._table)` which forces the slower sonic-rs path.
-
+fn has_single_field_only_matches_top_level() {
     let engine = TransportFilterEngine::new(
         &[FilterRule {
             expression: "has(_table)".into(),
@@ -1146,27 +1134,24 @@ fn memmem_false_positive_nested_field_matches_top_level_filter() {
     )
     .unwrap();
 
-    // Real top-level field — correct match
+    // Top-level — match.
     let real_match = br#"{"_table":"events"}"#;
     assert_eq!(engine.apply_inbound(real_match), FilterDisposition::Drop);
 
-    // Nested field at non-top-level — documented false positive
+    // Nested — must NOT match (strict CEL).
     let nested_payload = br#"{"data":{"_table":"events"}}"#;
     assert_eq!(
         engine.apply_inbound(nested_payload),
-        FilterDisposition::Drop,
-        "Documented false positive: memmem fast-path matches nested occurrences"
+        FilterDisposition::Pass,
+        "F13: nested _table must not satisfy top-level has(_table)",
     );
 
-    // Sound case: well-formed JSON with field name only inside an escaped
-    // string value never triggers a false positive — JSON encoding requires
-    // a `\` before any embedded `\"`, so the literal byte pattern `"_table":`
-    // never appears inside a string value.
+    // Field name appears only inside an escaped string value — no match.
     let escaped_in_value = br#"{"description":"event with \"_table\": substring"}"#;
     assert_eq!(
         engine.apply_inbound(escaped_in_value),
         FilterDisposition::Pass,
-        "Escaped quotes prevent the literal `\"_table\":` pattern from appearing in a string value"
+        "escaped quotes never produce a literal \"_table\": at structural depth",
     );
 }
 

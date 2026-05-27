@@ -86,6 +86,17 @@ pub struct CacheConfig {
     /// Reserved for future use. Cache is currently stored unencrypted.
     /// If set, the value will be redacted in serialisation and debug output.
     pub encryption_key: Option<crate::SensitiveString>,
+
+    /// Unix permission mode for the cache directory. Default `0o700`.
+    /// Set to `None` to skip chmod entirely — required on backing
+    /// stores that reject `chmod`: S3-FUSE, root-squashed NFS, some
+    /// other network mounts. Operators are responsible for upstream
+    /// perms in that case.
+    pub dir_mode: Option<u32>,
+
+    /// Unix permission mode for cache files. Default `0o600`. `None`
+    /// skips chmod, see `dir_mode`.
+    pub file_mode: Option<u32>,
 }
 
 impl Default for CacheConfig {
@@ -98,6 +109,8 @@ impl Default for CacheConfig {
             refresh_interval_secs: 1800, // 30 minutes
             refresh_jitter_secs: 300,    // 5 minutes
             encryption_key: None,
+            dir_mode: Some(0o700),
+            file_mode: Some(0o600),
         }
     }
 }

@@ -452,30 +452,50 @@ fn split_field_path(field: &str) -> Vec<String> {
 /// Cost: O(pos), dominated by SIMD `memchr` finds. ~5ns per quote; total
 /// stays well under 100ns for sub-kilobyte payloads. Keeps Tier-1 in its
 /// typical 50-200ns budget.
-/// Walks `payload` once, tracking JSON string-state via unescaped
-/// quotes, and returns the first SIMD hit at a structural (out-of-
-/// string) position. O(payload_len) total, regardless of hit count.
+/// Walks `payload` once, tracking JSON string-state + object/array
+/// depth, and returns the first SIMD hit at a **top-level structural
+/// position** — outside any string AND at object depth 1 (immediate
+/// child of the root object).
+///
+/// Strict CEL semantics (F13): `has(_table)` on
+/// `{"data":{"_table":"events"}}` must NOT match — `_table` is at
+/// depth 2 inside `data`, not the implicit root. The previous shape
+/// of this helper matched anywhere outside string values, which
+/// broke the contract for routed messages where the same field
+/// name commonly appears nested in user data.
 #[inline]
 fn first_structural_hit(payload: &[u8], hits: impl IntoIterator<Item = usize>) -> Option<usize> {
     let mut in_string = false;
+    let mut depth: i32 = 0;
     let mut walk = 0usize;
     for hit in hits {
         while walk < hit {
-            if payload[walk] == b'"' {
-                // Count contiguous backslashes immediately preceding.
-                let mut bs = 0usize;
-                let mut k = walk;
-                while k > 0 && payload[k - 1] == b'\\' {
-                    bs += 1;
-                    k -= 1;
+            let b = payload[walk];
+            if in_string {
+                if b == b'"' {
+                    let mut bs = 0usize;
+                    let mut k = walk;
+                    while k > 0 && payload[k - 1] == b'\\' {
+                        bs += 1;
+                        k -= 1;
+                    }
+                    if bs.is_multiple_of(2) {
+                        in_string = false;
+                    }
                 }
-                if bs.is_multiple_of(2) {
-                    in_string = !in_string;
+            } else {
+                match b {
+                    b'"' => in_string = true,
+                    b'{' | b'[' => depth += 1,
+                    b'}' | b']' => depth -= 1,
+                    _ => {}
                 }
             }
             walk += 1;
         }
-        if !in_string {
+        // Hit is "<field>":; the JSON key is at the same depth as
+        // its containing object, so depth == 1 means top-level.
+        if !in_string && depth == 1 {
             return Some(hit);
         }
     }
@@ -683,25 +703,28 @@ mod tests {
         assert_eq!(filter.evaluate(payload), None);
     }
 
-    /// `first_structural_hit` returns the first hit at an unquoted
-    /// position. Hits inside strings are skipped; escaped quotes do
-    /// not toggle string state.
+    /// F13: `first_structural_hit` returns hits only at depth 1
+    /// (top-level child) AND outside any string. Nested hits skipped.
     #[test]
-    fn first_structural_hit_skips_in_string_hits() {
-        // `{` at 0 (structural), `k` at 2 (in string), `v` at 8
-        // (in string), `}` at 14 (structural).
-        let payload = br#"{"key":"value"}"#;
-        assert_eq!(first_structural_hit(payload, [0]), Some(0));
-        assert_eq!(first_structural_hit(payload, [2]), None);
-        assert_eq!(first_structural_hit(payload, [8]), None);
-        assert_eq!(first_structural_hit(payload, [14]), Some(14));
-        // First hit at 2 is in-string and skipped; 14 is structural.
-        assert_eq!(first_structural_hit(payload, [2, 8, 14]), Some(14));
+    fn first_structural_hit_only_matches_top_level() {
+        let needle = memchr::memmem::Finder::new(b"\"_table\":");
 
-        // Escaped quotes do not toggle string state.
-        let payload = b"\"hi \\\" there\"x";
-        assert_eq!(first_structural_hit(payload, [1]), None);
-        assert_eq!(first_structural_hit(payload, [13]), Some(13));
+        // Top-level — match.
+        let top = br#"{"_table":"events"}"#;
+        let hits: Vec<usize> = needle.find_iter(top).collect();
+        assert_eq!(first_structural_hit(top, hits), Some(1));
+
+        // Nested at depth 2 — no match.
+        let nested = br#"{"data":{"_table":"events"}}"#;
+        let hits: Vec<usize> = needle.find_iter(nested).collect();
+        assert!(!hits.is_empty(), "memmem must find the nested key");
+        assert_eq!(first_structural_hit(nested, hits), None);
+
+        // Hit inside a string value — no match (well-formed JSON
+        // would escape the `"`, but defence-in-depth either way).
+        let in_value = br#"{"d":"\"_table\":x"}"#;
+        let hits: Vec<usize> = needle.find_iter(in_value).collect();
+        assert_eq!(first_structural_hit(in_value, hits), None);
     }
 
     #[test]

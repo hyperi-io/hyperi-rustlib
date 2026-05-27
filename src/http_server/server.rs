@@ -133,10 +133,17 @@ impl HttpServer {
         // Two-phase: unbounded wait for shutdown, then bounded drain.
         // If drain exceeds shutdown_timeout, drop the serve future
         // so K8s terminationGracePeriodSeconds isn't blown.
+        //
+        // F12: flip ready -> false BEFORE notifying drain start so
+        // /health/ready returns 503 the moment shutdown is signalled.
+        // K8s endpoint controller catches the 503 and stops routing
+        // before in-flight requests finish draining.
         let (drain_started_tx, drain_started_rx) = tokio::sync::oneshot::channel();
         let drain_started_tx = std::sync::Mutex::new(Some(drain_started_tx));
+        let ready_for_signal = Arc::clone(&self.ready);
         let signal = async move {
             shutdown.await;
+            ready_for_signal.store(false, Ordering::SeqCst);
             if let Some(tx) = drain_started_tx.lock().ok().and_then(|mut g| g.take()) {
                 let _ = tx.send(());
             }
@@ -201,10 +208,13 @@ impl HttpServer {
         tracing::info!(address = %addr, "HTTP server listening");
 
         // Two-phase shutdown, matching `serve_with_shutdown`.
+        // F12: flip ready -> false before notifying drain start.
         let (drain_started_tx, drain_started_rx) = tokio::sync::oneshot::channel();
         let drain_started_tx = std::sync::Mutex::new(Some(drain_started_tx));
+        let ready_for_signal = Arc::clone(&self.ready);
         let signal = async move {
             let _ = rx.clone().changed().await;
+            ready_for_signal.store(false, Ordering::SeqCst);
             if let Some(tx) = drain_started_tx.lock().ok().and_then(|mut g| g.take()) {
                 let _ = tx.send(());
             }
@@ -483,6 +493,40 @@ mod tests {
 
         // Wait for server to finish
         future.await.unwrap();
+    }
+
+    /// Codex F12 regression: shutdown signal flips the readiness
+    /// flag so /health/ready returns 503 before the drain window
+    /// completes. K8s endpoint controller stops routing on the 503.
+    #[tokio::test]
+    async fn shutdown_signal_flips_ready_before_drain() {
+        let config = HttpServerConfig::new("127.0.0.1:18081");
+        let server = HttpServer::new(config);
+        let ready = server.ready_flag();
+        assert!(ready.load(Ordering::SeqCst), "ready starts true");
+
+        let app = Router::new().route(
+            "/slow",
+            get(|| async {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                "done"
+            }),
+        );
+
+        let (handle, future) = server.serve_with_handle(app).await.unwrap();
+        let server_task = tokio::spawn(future);
+
+        // Trigger shutdown — handle.shutdown() drops the watch sender.
+        handle.shutdown();
+
+        // Allow the signal future to observe + flip readiness.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            !ready.load(Ordering::SeqCst),
+            "ready must flip to false post-shutdown",
+        );
+
+        let _ = server_task.await;
     }
 
     #[test]

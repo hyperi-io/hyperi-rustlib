@@ -74,29 +74,10 @@ impl SecretCache {
                     .join("secrets")
             });
 
-            // Create directory if it doesn't exist
-            if !dir.exists() {
-                std::fs::create_dir_all(&dir).map_err(|e| {
-                    SecretsError::CacheError(format!(
-                        "failed to create cache directory {}: {e}",
-                        dir.display()
-                    ))
-                })?;
-
-                // Restrict to owner-only on Unix (secrets cache should not be world-readable)
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
-                        .map_err(|e| {
-                            SecretsError::CacheError(format!(
-                                "failed to set cache directory permissions on {}: {e}",
-                                dir.display()
-                            ))
-                        })?;
-                }
-            }
-
+            // Create if missing AND force the configured mode on
+            // every new(). F6: previously skipped chmod on existing
+            // dirs, leaving umask-default perms.
+            ensure_dir_private(&dir, config.dir_mode)?;
             Some(dir)
         } else {
             None
@@ -186,13 +167,15 @@ impl SecretCache {
     /// Clear all cached secrets.
     pub fn clear(&mut self) {
         self.memory.clear();
-
-        // Clear disk cache
         if let Some(ref dir) = self.cache_dir {
             if let Err(e) = std::fs::remove_dir_all(dir) {
                 warn!(error = %e, "Failed to clear disk cache");
             }
-            let _ = std::fs::create_dir_all(dir);
+            // F6: re-creating the dir without permissions falls back
+            // to umask. Force the configured mode on every recreate.
+            if let Err(e) = ensure_dir_private(dir, self.config.dir_mode) {
+                warn!(error = %e, "Failed to restore cache directory perms");
+            }
         }
     }
 
@@ -299,24 +282,7 @@ impl SecretCache {
             plaintext
         };
 
-        // Atomic-ish write: temp file in the same directory, then
-        // rename. `std::fs::write` is not atomic — a power loss between
-        // the truncate and the write leaves an empty file. The rename
-        // is atomic on every Unix and on NTFS.
-        let temp_path = cache_file.with_extension("json.tmp");
-        std::fs::write(&temp_path, &payload).map_err(|e| {
-            SecretsError::CacheError(format!(
-                "failed to write cache temp {}: {e}",
-                temp_path.display()
-            ))
-        })?;
-        std::fs::rename(&temp_path, &cache_file).map_err(|e| {
-            SecretsError::CacheError(format!(
-                "failed to rename cache temp into place {}: {e}",
-                cache_file.display()
-            ))
-        })?;
-
+        write_private_file_atomic(&cache_file, &payload, self.config.file_mode)?;
         Ok(())
     }
 
@@ -326,6 +292,63 @@ impl SecretCache {
         let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key);
         format!("{encoded}.json")
     }
+}
+
+/// Ensure `dir` exists; chmod to `mode` on Unix when `mode` is
+/// `Some`. `None` skips chmod — used by operators on S3-FUSE,
+/// root-squashed NFS, or other mounts that reject chmod.
+fn ensure_dir_private(dir: &std::path::Path, mode: Option<u32>) -> SecretsResult<()> {
+    std::fs::create_dir_all(dir).map_err(|e| {
+        SecretsError::CacheError(format!(
+            "failed to create cache directory {}: {e}",
+            dir.display()
+        ))
+    })?;
+    #[cfg(unix)]
+    if let Some(m) = mode {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(m)).map_err(|e| {
+            SecretsError::CacheError(format!(
+                "failed to set cache directory permissions on {}: {e}",
+                dir.display()
+            ))
+        })?;
+    }
+    Ok(())
+}
+
+/// Atomic-write `bytes` to `path`; chmod to `mode` on Unix when
+/// `mode` is `Some`. Sets perms BEFORE rename so the file is never
+/// visible at the umask default even briefly.
+fn write_private_file_atomic(
+    path: &std::path::Path,
+    bytes: &[u8],
+    mode: Option<u32>,
+) -> SecretsResult<()> {
+    let temp_path = path.with_extension("json.tmp");
+    std::fs::write(&temp_path, bytes).map_err(|e| {
+        SecretsError::CacheError(format!(
+            "failed to write cache temp {}: {e}",
+            temp_path.display()
+        ))
+    })?;
+    #[cfg(unix)]
+    if let Some(m) = mode {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(m)).map_err(|e| {
+            SecretsError::CacheError(format!(
+                "failed to set cache file permissions on {}: {e}",
+                temp_path.display()
+            ))
+        })?;
+    }
+    std::fs::rename(&temp_path, path).map_err(|e| {
+        SecretsError::CacheError(format!(
+            "failed to rename cache temp into place {}: {e}",
+            path.display()
+        ))
+    })?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -345,6 +368,8 @@ mod tests {
             refresh_interval_secs: 1800,
             refresh_jitter_secs: 300,
             encryption_key: None,
+            dir_mode: Some(0o700),
+            file_mode: Some(0o600),
         }
     }
 
@@ -473,5 +498,70 @@ mod tests {
         );
         assert!(!filename.contains('/'));
         assert!(!filename.contains(':'));
+    }
+
+    /// Cascade override: `dir_mode: None` skips chmod (S3-FUSE /
+    /// root-squashed NFS / similar mounts that reject `chmod`).
+    #[cfg(unix)]
+    #[test]
+    fn dir_mode_none_skips_chmod() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cfg = CacheConfig {
+            enabled: true,
+            directory: Some(temp_dir.path().to_path_buf()),
+            dir_mode: None,
+            file_mode: None,
+            ..Default::default()
+        };
+        // Pre-set the dir to a non-private mode that ensure_dir_private
+        // would normally clobber; with mode: None it must NOT change.
+        std::fs::set_permissions(temp_dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _cache = SecretCache::new(&cfg).unwrap();
+        let mode = std::fs::metadata(temp_dir.path())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777;
+        assert_eq!(mode, 0o755, "dir_mode: None must skip chmod");
+    }
+
+    /// Codex F6 regression (Unix): create -> set -> clear -> set;
+    /// directory stays 0700 and the cache file lands at 0600.
+    #[cfg(unix)]
+    #[test]
+    fn cache_directory_and_files_stay_private_after_clear() {
+        use crate::secrets::types::SecretValue;
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cfg = CacheConfig {
+            enabled: true,
+            directory: Some(temp_dir.path().to_path_buf()),
+            ..Default::default()
+        };
+        let mut cache = SecretCache::new(&cfg).unwrap();
+        let dir = cache.cache_dir.as_ref().unwrap().clone();
+
+        let mode_after_new = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(mode_after_new, 0o700);
+
+        cache.set("k", &SecretValue::new(b"v".to_vec())).unwrap();
+
+        let cache_file = dir.join(SecretCache::key_to_filename("k"));
+        let file_mode = std::fs::metadata(&cache_file).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(file_mode, 0o600);
+
+        cache.clear();
+        let mode_after_clear = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(mode_after_clear, 0o700);
+
+        cache.set("k2", &SecretValue::new(b"v".to_vec())).unwrap();
+        let post_clear_file_mode = std::fs::metadata(dir.join(SecretCache::key_to_filename("k2")))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o7777;
+        assert_eq!(post_clear_file_mode, 0o600);
     }
 }

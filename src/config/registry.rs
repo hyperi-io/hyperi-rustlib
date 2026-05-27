@@ -131,9 +131,12 @@ pub fn dump_effective() -> JsonValue {
     JsonValue::Object(map)
 }
 
-/// Dump effective config WITHOUT redaction (for internal/debug use only).
-///
-/// Do NOT expose this on any endpoint. Use `dump_effective()` for safe output.
+/// Dump effective config WITHOUT redaction. **Compile-time gated**
+/// behind the `dangerous-diagnostics` feature; not in `full`. Off
+/// in every shipping build. One-off operator-driven diagnostics
+/// only — never wire to a network endpoint.
+#[cfg(feature = "dangerous-diagnostics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "dangerous-diagnostics")))]
 #[must_use]
 pub fn dump_effective_unredacted() -> JsonValue {
     let map: serde_json::Map<String, JsonValue> = sections()
@@ -407,6 +410,7 @@ mod tests {
         assert_eq!(dump["db"]["nested"]["db_password"], REDACTED);
     }
 
+    #[cfg(feature = "dangerous-diagnostics")]
     #[test]
     fn dump_unredacted_preserves_all_fields() {
         serial_test!();
