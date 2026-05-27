@@ -121,7 +121,7 @@ const CEL_KEYWORDS: &[&str] = &[
 /// Classify a CEL expression into a performance tier.
 ///
 /// Returns `Err` if the expression is syntactically invalid (can't even be
-/// parsed as a potential CEL expression — empty, unbalanced quotes, etc.).
+/// parsed as a potential CEL expression -- empty, unbalanced quotes, etc.).
 ///
 /// # Examples
 ///
@@ -143,7 +143,7 @@ pub fn classify(expr: &str) -> Result<ClassifyResult, String> {
         return Ok(ClassifyResult::Tier1(op));
     }
 
-    // Not Tier 1 — check for restricted functions (Tier 3) vs standard (Tier 2)
+    // Not Tier 1 -- check for restricted functions (Tier 3) vs standard (Tier 2)
     let has_restricted = check_restricted_functions(trimmed);
     let fields = extract_field_references(trimmed);
 
@@ -254,7 +254,7 @@ fn position_is_in_string(expr: &str, pos: usize) -> bool {
 /// For method calls like `field.matches("...")`, extracts only the receiver field.
 /// Returns unique field names (may include dotted paths for nested access).
 fn extract_field_references(expr: &str) -> Vec<String> {
-    // Match dotted identifier (potentially nested) — we'll trim trailing method call
+    // Match dotted identifier (potentially nested) -- we'll trim trailing method call
     // segments after matching.
     static RE_IDENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[a-zA-Z_][\w.]*").unwrap());
 
@@ -282,7 +282,7 @@ fn extract_field_references(expr: &str) -> Vec<String> {
         let mut ident = m.as_str().to_string();
 
         // If this identifier is immediately followed by '(' (a function call),
-        // strip the last dotted segment (the method name) — the receiver is
+        // strip the last dotted segment (the method name) -- the receiver is
         // the actual field reference.
         let after = &expr[m.end()..];
         if after.trim_start().starts_with('(') {
@@ -290,7 +290,7 @@ fn extract_field_references(expr: &str) -> Vec<String> {
                 // Method call on a field: keep the receiver
                 ident.truncate(dot_pos);
             } else {
-                // Bare function call (e.g., has(), size()) — not a field
+                // Bare function call (e.g., has(), size()) -- not a field
                 continue;
             }
         }

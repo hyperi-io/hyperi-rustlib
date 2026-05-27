@@ -6,7 +6,7 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Filter metrics — counters per direction and action.
+//! Filter metrics -- counters per direction and action.
 //!
 //! Uses the `metrics` crate (no-op if no recorder installed).
 

@@ -8,7 +8,7 @@
 
 //! Scaling pressure calculation for autoscaler integration.
 //!
-//! Produces a 0.0–100.0 composite metric based on weighted application
+//! Produces a 0.0-100.0 composite metric based on weighted application
 //! signals with two hard gates (circuit breaker, memory pressure).
 //! Designed for KEDA but works with any autoscaler that reads Prometheus
 //! gauges.
@@ -19,7 +19,7 @@
 //! App signals ──→ ScalingPressure ──→ {prefix}_scaling_pressure gauge
 //!                  ├─ Gate: circuit breaker open → 0.0
 //!                  ├─ Gate: memory ≥ threshold → 100.0
-//!                  └─ Weighted composite → 0.0–100.0
+//!                  └─ Weighted composite → 0.0-100.0
 //! ```
 //!
 //! ## Usage

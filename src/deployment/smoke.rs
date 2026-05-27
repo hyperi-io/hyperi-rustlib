@@ -66,7 +66,7 @@ pub struct SmokeResult {
 #[derive(Debug, thiserror::Error)]
 pub enum SmokeError {
     /// Docker daemon not reachable.
-    #[error("docker daemon not available — `docker info` failed: {0}")]
+    #[error("docker daemon not available -- `docker info` failed: {0}")]
     DockerUnavailable(String),
 
     /// Source binary missing.
@@ -234,7 +234,7 @@ mod tests {
             Path::new("/nonexistent/binary/that/does/not/exist"),
             &[],
         );
-        // Either DockerUnavailable (no daemon) or BinaryMissing — both are
+        // Either DockerUnavailable (no daemon) or BinaryMissing -- both are
         // expected non-success outcomes. We just assert it errored.
         assert!(r.is_err());
     }

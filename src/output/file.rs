@@ -13,12 +13,12 @@
 //!
 //! ## Sync vs async API
 //!
-//! - [`FileOutput::write`] / [`FileOutput::write_batch`] are SYNC — they
+//! - [`FileOutput::write`] / [`FileOutput::write_batch`] are SYNC -- they
 //!   call into the parking_lot-protected `NdjsonWriter` directly. Cheap
 //!   (~µs) but block the calling thread. Safe from sync code, tests, and
 //!   pre-runtime startup.
 //! - [`FileOutput::write_async`] / [`FileOutput::write_batch_async`] are
-//!   ASYNC — they hand the sync work to `tokio::task::spawn_blocking` so
+//!   ASYNC -- they hand the sync work to `tokio::task::spawn_blocking` so
 //!   the tokio runtime is never stalled. Use these from `async fn`
 //!   bodies.
 //!
@@ -46,7 +46,7 @@ use super::error::OutputError;
 /// File output sink for raw NDJSON events.
 ///
 /// Wraps [`NdjsonWriter`] with output-specific configuration and logging.
-/// Cheap to `Clone` — the inner writer is shared via `Arc`.
+/// Cheap to `Clone` -- the inner writer is shared via `Arc`.
 #[derive(Clone)]
 pub struct FileOutput {
     writer: Arc<NdjsonWriter>,
@@ -69,8 +69,8 @@ impl FileOutput {
     ///
     /// # Arguments
     ///
-    /// * `config` — File output configuration
-    /// * `service_name` — Used as subdirectory name (e.g. "loader", "receiver")
+    /// * `config` -- File output configuration
+    /// * `service_name` -- Used as subdirectory name (e.g. "loader", "receiver")
     ///
     /// # Errors
     ///
@@ -98,7 +98,7 @@ impl FileOutput {
 
     /// Write a single raw JSON bytes line (sync). Blocks the calling
     /// thread on disk I/O. Safe from sync code; **never call from an
-    /// `async fn` body** — use [`Self::write_async`] instead.
+    /// `async fn` body** -- use [`Self::write_async`] instead.
     pub fn write(&self, data: &[u8]) -> Result<(), OutputError> {
         if data.last() == Some(&b'\n') {
             self.writer.write_line(data)?;
@@ -112,7 +112,7 @@ impl FileOutput {
     }
 
     /// Write a batch of raw JSON bytes lines (sync). Same caveats as
-    /// [`Self::write`] — use [`Self::write_batch_async`] from `async fn`.
+    /// [`Self::write`] -- use [`Self::write_batch_async`] from `async fn`.
     pub fn write_batch(&self, data: &[&[u8]]) -> Result<(), OutputError> {
         if data.is_empty() {
             return Ok(());
@@ -132,7 +132,7 @@ impl FileOutput {
         Ok(())
     }
 
-    /// Async write — runs the rotate-and-write on a blocking thread via
+    /// Async write -- runs the rotate-and-write on a blocking thread via
     /// `tokio::task::spawn_blocking`. Hot-path safe for async callers.
     ///
     /// # Errors
@@ -159,7 +159,7 @@ impl FileOutput {
         .map_err(|e| OutputError::Io(std::io::Error::other(e)))?
     }
 
-    /// Async batch write — coalesces lines into a single buffer and runs
+    /// Async batch write -- coalesces lines into a single buffer and runs
     /// the rotate-and-write on a blocking thread.
     ///
     /// # Errors
@@ -381,7 +381,7 @@ mod tests {
         let t = ticks.load(std::sync::atomic::Ordering::SeqCst);
         assert!(
             t >= 8,
-            "ticker fired only {t} times — FileOutput starved the runtime",
+            "ticker fired only {t} times -- FileOutput starved the runtime",
         );
     }
 

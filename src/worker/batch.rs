@@ -17,7 +17,7 @@
 //! Every DFE app follows the same structure:
 //!
 //! 1. **Parallel phase:** Process each message through a pure `&self` function
-//!    (parse, route, transform, enrich) — via rayon `process_batch()`
+//!    (parse, route, transform, enrich) -- via rayon `process_batch()`
 //! 2. **Sequential phase:** Apply results to mutable state (buffer push,
 //!    mark_pending, stats update, DLQ routing)
 //!
@@ -58,7 +58,7 @@ use super::stats::PipelineStats;
 /// Trait for parallel-safe message processing.
 ///
 /// Implement this with a struct that holds only `&` references to immutable
-/// dependencies. The `process` method must be pure — no mutable state, no I/O,
+/// dependencies. The `process` method must be pure -- no mutable state, no I/O,
 /// no `.await`. Safe for rayon `par_iter()`.
 ///
 /// The struct is typically created per-batch in the event loop (borrows released
@@ -73,7 +73,7 @@ pub trait BatchProcessor: Sync {
     /// Error type for processing failures.
     type Error: Send;
 
-    /// Process a single input. Must be pure — no mutation, no I/O.
+    /// Process a single input. Must be pure -- no mutation, no I/O.
     fn process(&self, input: &Self::Input) -> Result<Self::Output, Self::Error>;
 }
 

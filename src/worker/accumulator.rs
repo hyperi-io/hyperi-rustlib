@@ -14,8 +14,8 @@
 //! - Byte count reaches `max_bytes`
 //! - Time since last drain reaches `max_wait`
 //!
-//! Bounded — pushers get an error when the channel is full (backpressure).
-//! Shutdown-safe — `drain_remaining()` flushes buffered items.
+//! Bounded -- pushers get an error when the channel is full (backpressure).
+//! Shutdown-safe -- `drain_remaining()` flushes buffered items.
 //!
 //! ## Example
 //!
@@ -48,7 +48,7 @@ use tokio::sync::mpsc;
 /// Accumulator configuration.
 #[derive(Debug, Clone)]
 pub struct AccumulatorConfig {
-    /// Channel capacity (bounded — pushers get error when full).
+    /// Channel capacity (bounded -- pushers get error when full).
     pub channel_capacity: usize,
     /// Maximum items per batch before auto-drain.
     pub max_items: usize,
@@ -69,13 +69,13 @@ impl Default for AccumulatorConfig {
     }
 }
 
-/// Push handle — cloneable, used by producers to send items into the accumulator.
+/// Push handle -- cloneable, used by producers to send items into the accumulator.
 #[derive(Clone)]
 pub struct BatchAccumulator<T> {
     tx: mpsc::Sender<(T, usize)>, // (item, byte_size)
 }
 
-/// Drain handle — used by a single consumer to receive batches.
+/// Drain handle -- used by a single consumer to receive batches.
 pub struct BatchDrainer<T> {
     rx: mpsc::Receiver<(T, usize)>,
     config: AccumulatorConfig,
@@ -85,7 +85,7 @@ pub struct BatchDrainer<T> {
 
 /// Error when the accumulator channel is full (backpressure).
 #[derive(Debug, thiserror::Error)]
-#[error("accumulator full — backpressure active ({capacity} items buffered)")]
+#[error("accumulator full -- backpressure active ({capacity} items buffered)")]
 pub struct AccumulatorFull {
     pub capacity: usize,
 }
@@ -148,10 +148,10 @@ impl<T> BatchDrainer<T> {
             tokio::select! {
                 biased;
 
-                // Time threshold — flush whatever we have
+                // Time threshold -- flush whatever we have
                 () = timeout => {
                     if self.buffer.is_empty() {
-                        // No items at all — keep waiting (don't return empty batch)
+                        // No items at all -- keep waiting (don't return empty batch)
                         continue;
                     }
                     return self.take_buffer();
@@ -168,7 +168,7 @@ impl<T> BatchDrainer<T> {
                             }
                         }
                         None => {
-                            // Channel closed — drain remaining
+                            // Channel closed -- drain remaining
                             return self.take_buffer();
                         }
                     }
@@ -211,7 +211,7 @@ mod tests {
         };
         let (acc, mut drainer) = BatchAccumulator::new(config);
 
-        // Push 5 items — should trigger drain
+        // Push 5 items -- should trigger drain
         for i in 0..5 {
             acc.push(i, 1).await.unwrap();
         }
@@ -231,7 +231,7 @@ mod tests {
         };
         let (acc, mut drainer) = BatchAccumulator::new(config);
 
-        // Push items with size=3 each — 4 items = 12 bytes > 10 threshold
+        // Push items with size=3 each -- 4 items = 12 bytes > 10 threshold
         for i in 0..4 {
             acc.push(i, 3).await.unwrap();
         }
@@ -314,7 +314,7 @@ mod tests {
         };
         let (acc, mut drainer) = BatchAccumulator::new(config);
 
-        // Push 7 items — should produce 2 full batches + 1 partial
+        // Push 7 items -- should produce 2 full batches + 1 partial
         for i in 0..7 {
             acc.push(i, 1).await.unwrap();
         }

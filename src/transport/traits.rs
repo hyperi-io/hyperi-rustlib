@@ -58,7 +58,7 @@ pub trait TransportSender: TransportBase {
     fn send(&self, key: &str, payload: &[u8]) -> impl Future<Output = SendResult> + Send;
 }
 
-/// Receive-side transport — generic over commit token type.
+/// Receive-side transport -- generic over commit token type.
 ///
 /// Extends `TransportBase` with receive and commit capability.
 /// Input stages (receiver, fetcher) use concrete implementations
@@ -99,7 +99,7 @@ pub trait TransportReceiver: TransportBase {
     /// internal queue. Call this method after each `recv()` to drain the
     /// staged entries and route them to your DLQ.
     ///
-    /// Default implementation returns an empty vec — transports without
+    /// Default implementation returns an empty vec -- transports without
     /// filter support don't need to override this.
     ///
     /// # Example
@@ -116,7 +116,7 @@ pub trait TransportReceiver: TransportBase {
     }
 }
 
-/// Combined transport — implements both send and receive.
+/// Combined transport -- implements both send and receive.
 ///
 /// Convenience trait for transports that support bidirectional communication.
 /// Most concrete implementations (Kafka, gRPC, Memory, Redis, File, Pipe)

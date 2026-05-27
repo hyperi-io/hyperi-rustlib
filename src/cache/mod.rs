@@ -170,7 +170,7 @@ impl Cache {
     /// Returns the per-source TTL when configured in
     /// [`CacheConfig::source_ttls`], otherwise the cache-wide
     /// `default_ttl_secs`. Note that moka uses only the cache-wide TTL
-    /// for actual expiration — see [`Self::set`] for the gap; this
+    /// for actual expiration -- see [`Self::set`] for the gap; this
     /// accessor lets callers inspect what the policy *would* be.
     #[must_use]
     pub fn ttl_for_source(&self, source: &str) -> Duration {

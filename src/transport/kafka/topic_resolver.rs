@@ -299,7 +299,7 @@ impl TopicResolver {
                         match self.resolve() {
                             Ok(new_topics) => {
                                 if tx.send(new_topics).is_err() {
-                                    break; // receiver dropped — no point continuing
+                                    break; // receiver dropped -- no point continuing
                                 }
                             }
                             Err(e) => {
@@ -444,7 +444,7 @@ mod tests {
             preferred_suffix: "_load".into(),
             suppressed_suffix: "_land".into(),
         }];
-        // No _load topics present — nothing should be suppressed
+        // No _load topics present -- nothing should be suppressed
         let topics = vec!["auth_land".into(), "events_land".into()];
         let result = apply_suppression_rules(topics.clone(), &rules);
         assert_eq!(result, topics);

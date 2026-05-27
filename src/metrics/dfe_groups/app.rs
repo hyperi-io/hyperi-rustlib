@@ -16,7 +16,7 @@ use super::super::manifest::{MetricDescriptor, MetricType};
 /// Mandatory metrics for every DFE application.
 ///
 /// Registers `info`, `start_time_seconds`, record counters, byte counters,
-/// memory gauges, and config reload counter — all prefixed with the
+/// memory gauges, and config reload counter -- all prefixed with the
 /// `MetricsManager` namespace.
 #[derive(Clone)]
 pub struct AppMetrics {
@@ -78,7 +78,7 @@ impl AppMetrics {
                 .map_or(0.0, |d| d.as_secs_f64()),
         );
 
-        // config_reloads_total — label-based, register descriptor manually
+        // config_reloads_total -- label-based, register descriptor manually
         let config_key = if ns.is_empty() {
             "config_reloads_total".to_string()
         } else {

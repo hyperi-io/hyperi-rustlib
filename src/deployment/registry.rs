@@ -23,8 +23,8 @@
 //!
 //! # Defaults
 //!
-//! - [`DEFAULT_IMAGE_REGISTRY`] = `ghcr.io/hyperi-io` — where built images go
-//! - [`DEFAULT_BASE_IMAGE`] = `ubuntu:24.04` — what the runtime stage builds on
+//! - [`DEFAULT_IMAGE_REGISTRY`] = `ghcr.io/hyperi-io` -- where built images go
+//! - [`DEFAULT_BASE_IMAGE`] = `ubuntu:24.04` -- what the runtime stage builds on
 //!
 //! When (eventually) a curated GHCR base image lands at
 //! `ghcr.io/hyperi-io/dfe-base:ubuntu-24.04`, ops can override
@@ -92,7 +92,7 @@ pub fn base_image_from_cascade() -> String {
 /// Read the git repo URL for ArgoCD generation from the config cascade.
 ///
 /// Reads `deployment.argocd.repo_url` from the YAML cascade. Falls back to
-/// `https://github.com/hyperi-io/{app_name}` if not set — matches the org
+/// `https://github.com/hyperi-io/{app_name}` if not set -- matches the org
 /// convention.
 #[must_use]
 pub fn argocd_repo_url_from_cascade(app_name: &str) -> String {

@@ -49,11 +49,11 @@ use super::config::WorkerPoolConfig;
 ///
 /// Provides two processing modes:
 ///
-/// - [`process_mid_tier`](Self::process_mid_tier) — parse JSON via SIMD, extract
+/// - [`process_mid_tier`](Self::process_mid_tier) -- parse JSON via SIMD, extract
 ///   known fields, apply pre-route filters, then parallel transform via rayon.
 ///   The standard path for most DFE apps (loader, archiver, transforms).
 ///
-/// - [`process_raw`](Self::process_raw) — skip parsing, apply pre-route on raw
+/// - [`process_raw`](Self::process_raw) -- skip parsing, apply pre-route on raw
 ///   bytes, then parallel transform via rayon. For apps that handle raw bytes
 ///   (receiver, binary protocols).
 ///
@@ -147,9 +147,9 @@ impl BatchEngine {
     /// Parse, filter, and transform a batch of raw messages.
     ///
     /// Pipeline phases per chunk:
-    /// 1. **Pre-route** — SIMD field extraction + filter evaluation (sequential, ~100 ns/msg)
-    /// 2. **Parse** — `sonic_rs::from_slice` + known-field extraction (sequential, ~1-5 µs/msg)
-    /// 3. **Transform** — user closure via rayon `par_iter_mut` (parallel)
+    /// 1. **Pre-route** -- SIMD field extraction + filter evaluation (sequential, ~100 ns/msg)
+    /// 2. **Parse** -- `sonic_rs::from_slice` + known-field extraction (sequential, ~1-5 µs/msg)
+    /// 3. **Transform** -- user closure via rayon `par_iter_mut` (parallel)
     ///
     /// Results contain one entry per non-filtered message. Filtered messages are
     /// silently removed (their commit tokens remain accessible via the original
@@ -515,10 +515,10 @@ impl BatchEngine {
     ///
     /// Like [`run`](Self::run) but with two key differences:
     ///
-    /// 1. **Async sink** — the sink is an async closure, enabling async I/O
+    /// 1. **Async sink** -- the sink is an async closure, enabling async I/O
     ///    (ClickHouse inserts, Kafka produce, storage writes) inside the sink.
     ///
-    /// 2. **Sink-managed commits** — the sink receives commit tokens and decides
+    /// 2. **Sink-managed commits** -- the sink receives commit tokens and decides
     ///    when to commit. The engine does NOT auto-commit. This enables deferred
     ///    commit patterns (e.g., commit after ClickHouse flush, not after buffer push).
     ///
@@ -556,7 +556,7 @@ impl BatchEngine {
             "BatchEngine (async) starting"
         );
 
-        // Ticker interval — if None, create a dummy that never fires.
+        // Ticker interval -- if None, create a dummy that never fires.
         let mut tick_interval = ticker.as_ref().map(|(d, _)| tokio::time::interval(*d));
         let mut ticker_fn = ticker.map(|(_, f)| f);
 
@@ -606,7 +606,7 @@ impl BatchEngine {
                     // Process: pre-route + parse + parallel transform.
                     let results = self.process_mid_tier(&raw, &transform);
 
-                    // Sink receives results AND tokens — sink decides when to commit.
+                    // Sink receives results AND tokens -- sink decides when to commit.
                     if let Err(e) = sink(results, tokens).await {
                         tracing::error!(error = %e, "Sink failed (async)");
                     }
@@ -940,7 +940,7 @@ mod engine_tests {
         let results: Vec<Result<String, String>> =
             engine.process_mid_tier(&msgs, |_pm| Ok("ok".to_string()));
 
-        // Filtered messages are removed — only 2 results
+        // Filtered messages are removed -- only 2 results
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(|r| r.is_ok()));
 
@@ -1075,7 +1075,7 @@ mod engine_tests {
             let tick_count = Arc::new(AtomicU64::new(0));
             let tick_count_clone = Arc::clone(&tick_count);
 
-            // Shut down after 350ms — ticker at 100ms should fire ~2-3 times
+            // Shut down after 350ms -- ticker at 100ms should fire ~2-3 times
             tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(350)).await;
                 shutdown_clone.cancel();
@@ -1177,7 +1177,7 @@ mod engine_tests {
                 shutdown_clone.cancel();
             });
 
-            // Sink always errors — engine should continue (not crash)
+            // Sink always errors -- engine should continue (not crash)
             let result = engine
                 .run_async(
                     &transport,

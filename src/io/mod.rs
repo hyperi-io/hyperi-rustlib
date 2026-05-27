@@ -8,7 +8,7 @@
 
 //! Shared NDJSON file I/O primitives.
 //!
-//! Provides [`NdjsonWriter`] — a rotating file writer for newline-delimited JSON.
+//! Provides [`NdjsonWriter`] -- a rotating file writer for newline-delimited JSON.
 //! Used by both the DLQ file backend and the file output sink.
 //!
 //! ## Design
@@ -19,7 +19,7 @@
 //! - Age-based cleanup of old files
 //! - Atomic write counters for metrics
 //!
-//! It knows nothing about DLQ or output semantics — callers serialise their
+//! It knows nothing about DLQ or output semantics -- callers serialise their
 //! own types and hand raw `&[u8]` lines to the writer.
 
 mod config;

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use super::budget::FilterBudget;
 
-/// A single filter rule — CEL expression + disposition action.
+/// A single filter rule -- CEL expression + disposition action.
 ///
 /// Written in CEL syntax regardless of execution tier. The engine determines
 /// the optimal execution strategy at construction time.
@@ -87,7 +87,7 @@ impl std::fmt::Display for FilterDirection {
     }
 }
 
-/// Tier gate configuration — controls which filter tiers are enabled.
+/// Tier gate configuration -- controls which filter tiers are enabled.
 ///
 /// Lives under the `expression` config cascade key alongside `ProfileConfig`.
 /// Separate struct because it serves a different purpose (transport-level
@@ -140,7 +140,7 @@ impl TransportFilterTierConfig {
     ///
     /// Falls back to `Self::default()` (all Tier 2/3 gates closed) when
     /// the cascade is not initialised or the section is missing. This is
-    /// the secure default — operators must explicitly opt in to higher
+    /// the secure default -- operators must explicitly opt in to higher
     /// tiers per the [transport filter design](crate::transport::filter).
     #[must_use]
     pub fn from_cascade() -> Self {

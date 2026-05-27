@@ -1,6 +1,6 @@
 // Project:   hyperi-rustlib
 // File:      src/cli/runtime.rs
-// Purpose:   ServiceRuntime — pre-built infrastructure for DFE service apps
+// Purpose:   ServiceRuntime -- pre-built infrastructure for DFE service apps
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
@@ -10,23 +10,23 @@
 //!
 //! [`ServiceRuntime`] is created by [`super::run_app`] before calling
 //! [`DfeApp::run_service`]. It contains all the common infrastructure
-//! that every DFE app needs — metrics, memory guard, scaling, shutdown,
+//! that every DFE app needs -- metrics, memory guard, scaling, shutdown,
 //! worker pool, and runtime context. Apps receive it fully wired.
 //!
 //! This eliminates ~50 lines of identical boilerplate per DFE app.
 //!
 //! ## What's included (always)
 //!
-//! - [`MetricsManager`] — started, serving `/metrics`, `/healthz`, `/readyz`
-//! - [`DfeMetrics`] — platform `dfe_*` metrics registered
-//! - [`MemoryGuard`] — cgroup-aware, auto-detected from env prefix
-//! - [`CancellationToken`] — signal handler installed with K8s pre-stop delay
-//! - [`RuntimeContext`] — K8s/Docker/BareMetal metadata
+//! - [`MetricsManager`] -- started, serving `/metrics`, `/healthz`, `/readyz`
+//! - [`DfeMetrics`] -- platform `dfe_*` metrics registered
+//! - [`MemoryGuard`] -- cgroup-aware, auto-detected from env prefix
+//! - [`CancellationToken`] -- signal handler installed with K8s pre-stop delay
+//! - [`RuntimeContext`] -- K8s/Docker/BareMetal metadata
 //!
 //! ## What's included (when features enabled)
 //!
-//! - [`AdaptiveWorkerPool`] — rayon + tokio hybrid (`worker` feature)
-//! - [`ScalingPressure`] — KEDA signals (`scaling` feature)
+//! - [`AdaptiveWorkerPool`] -- rayon + tokio hybrid (`worker` feature)
+//! - [`ScalingPressure`] -- KEDA signals (`scaling` feature)
 //!
 //! ## What stays app-specific
 //!
@@ -49,12 +49,12 @@ use super::error::CliError;
 
 /// Pre-built service infrastructure. Created by `run_app()` before `run_service()`.
 ///
-/// Apps receive this fully wired — they just use the fields. No boilerplate needed.
+/// Apps receive this fully wired -- they just use the fields. No boilerplate needed.
 ///
 /// On bare metal, K8s-specific features (pre-stop delay, pod metadata in logs)
 /// are automatically disabled. On K8s, they're automatically enabled.
 pub struct ServiceRuntime {
-    /// Metrics manager — already started, serving endpoints.
+    /// Metrics manager -- already started, serving endpoints.
     /// Use for registering app-specific metrics and metric groups.
     pub metrics: MetricsManager,
 
@@ -70,7 +70,7 @@ pub struct ServiceRuntime {
     /// Clone and pass to your pipeline loops.
     pub shutdown: CancellationToken,
 
-    /// Runtime context — K8s/Docker/BareMetal metadata (pod_name, namespace, etc.).
+    /// Runtime context -- K8s/Docker/BareMetal metadata (pod_name, namespace, etc.).
     pub context: &'static RuntimeContext,
 
     /// Adaptive worker pool for parallel batch processing (`worker` feature).
@@ -93,7 +93,7 @@ pub struct ServiceRuntime {
 impl ServiceRuntime {
     /// Build the service runtime from app configuration.
     ///
-    /// This is called by `run_app()` — apps don't call it directly.
+    /// This is called by `run_app()` -- apps don't call it directly.
     ///
     /// # Errors
     ///

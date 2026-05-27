@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 /// Runtime native dependencies for a container image.
 ///
-/// Populated via [`NativeDepsContract::for_rustlib_features`] — pass the list
+/// Populated via [`NativeDepsContract::for_rustlib_features`] -- pass the list
 /// of hyperi-rustlib features your app enables, get back the runtime packages
 /// and any custom APT repos needed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

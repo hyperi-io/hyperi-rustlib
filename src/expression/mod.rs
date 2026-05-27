@@ -6,7 +6,7 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! CEL expression evaluation — compile, evaluate, validate.
+//! CEL expression evaluation -- compile, evaluate, validate.
 //!
 //! Provides a DFE-profile-restricted CEL expression evaluator built on the
 //! [`cel`] crate (renamed from `cel-interpreter`). Both Python (via
@@ -31,9 +31,9 @@
 //! | Arithmetic | `+`, `-`, `*`, `/`, `%` |
 //!
 //! **Restricted (blocked by default, opt-in via [`ProfileConfig`]):**
-//! - Regex: `matches()` — unbounded cost per record
-//! - Iteration: `map()`, `filter()`, `exists()`, `all()` — O(n) per collection
-//! - Time: `timestamp()`, `duration()` — ClickHouse handles natively
+//! - Regex: `matches()` -- unbounded cost per record
+//! - Iteration: `map()`, `filter()`, `exists()`, `all()` -- O(n) per collection
+//! - Time: `timestamp()`, `duration()` -- ClickHouse handles natively
 //!
 //! # Usage
 //!

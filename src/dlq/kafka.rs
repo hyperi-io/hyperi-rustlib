@@ -10,7 +10,7 @@
 //!
 //! Routes failed messages to Kafka topics using rustlib's
 //! [`KafkaProducer`](crate::transport::kafka::KafkaProducer). The
-//! producer uses the `LowLatency` profile — DLQ volume is low and we
+//! producer uses the `LowLatency` profile -- DLQ volume is low and we
 //! want failures visible quickly.
 //!
 //! ## Topic Routing
@@ -29,7 +29,7 @@ use super::config::{DlqRouting, KafkaDlqConfig};
 use super::entry::DlqEntry;
 use super::error::DlqError;
 
-/// Kafka backend — internal variant carried by [`super::DlqBackend::Kafka`].
+/// Kafka backend -- internal variant carried by [`super::DlqBackend::Kafka`].
 pub struct KafkaDlqInner {
     producer: KafkaProducer,
     routing: DlqRouting,
@@ -93,7 +93,7 @@ impl KafkaDlqInner {
 
     /// Send a batch. Per-entry topic resolution + non-blocking producer
     /// queue. The producer's background delivery thread does the network
-    /// I/O — `send()` is sync-shaped and returns immediately.
+    /// I/O -- `send()` is sync-shaped and returns immediately.
     pub async fn send_batch(&mut self, batch: &[DlqEntry]) -> Result<(), DlqError> {
         for entry in batch {
             let topic = self.resolve_topic(entry);
@@ -124,7 +124,7 @@ impl KafkaDlqInner {
     /// been acknowledged by the broker (per the producer's `acks`
     /// configuration).
     ///
-    /// `send_batch` is sync-shaped — it hands payloads to the
+    /// `send_batch` is sync-shaped -- it hands payloads to the
     /// background producer thread and returns immediately. Without this
     /// flush, the orchestrator's barrier would ack `Dlq::flush()`
     /// callers when their entries were merely queued, not when they
@@ -135,11 +135,11 @@ impl KafkaDlqInner {
     ///
     /// `DlqError::Kafka` when the producer flush timeout expires with
     /// messages still outstanding. The previous shape returned `Ok(())`
-    /// regardless — callers thought the DLQ was drained while Kafka
+    /// regardless -- callers thought the DLQ was drained while Kafka
     /// still owned in-flight data, so a process exit lost entries
     /// (Codex F3).
     pub async fn flush_durable(&mut self) -> Result<(), DlqError> {
-        // Bounded wait — typical producer flush completes in
+        // Bounded wait -- typical producer flush completes in
         // milliseconds; a 30s ceiling avoids wedging the actor on a
         // hard-to-reach broker.
         let outstanding = self.producer.flush(std::time::Duration::from_secs(30));

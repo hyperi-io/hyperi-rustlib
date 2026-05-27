@@ -33,7 +33,7 @@ impl BufferMetrics {
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
 
-        // buffer_flush_trigger_total — label-based, register descriptor manually
+        // buffer_flush_trigger_total -- label-based, register descriptor manually
         let trigger_key = if ns.is_empty() {
             "buffer_flush_trigger_total".to_string()
         } else {

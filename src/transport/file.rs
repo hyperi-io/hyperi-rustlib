@@ -149,7 +149,7 @@ impl FileTransport {
         #[cfg(feature = "logger")]
         tracing::info!(path = %config.path, append = config.append, "File transport opened");
 
-        // Fail loud on bad filter config — silently disabling filters
+        // Fail loud on bad filter config -- silently disabling filters
         // turns a misconfigured `drop` / `dlq` rule into a permanent pass.
         let filter_engine = super::filter::TransportFilterEngine::new(
             &config.filters_in,
@@ -536,7 +536,7 @@ mod tests {
         r1.commit(&tokens).await.unwrap();
         r1.close().await.unwrap();
 
-        // Open a new transport — should resume from committed position
+        // Open a new transport -- should resume from committed position
         let r2 = FileTransport::new(&FileTransportConfig {
             path: path_str,
             append: true,
@@ -586,7 +586,7 @@ mod tests {
         transport.send("k", b"only_line").await;
         transport.close().await.unwrap();
 
-        // Read all, then read again — should get empty
+        // Read all, then read again -- should get empty
         let reader = FileTransport::new(&FileTransportConfig {
             path: path_str,
             append: true,

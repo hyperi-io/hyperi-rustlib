@@ -154,6 +154,16 @@ impl WorkerPoolConfig {
                 reason: "must be >= 1 (fan_out_async iterates via step_by)".into(),
             });
         }
+        // Codex F11: zero CPU workers leaves the rayon semaphore
+        // spinning in `yield_now()` forever. Reject upfront; the
+        // scaler's clamp uses min_threads as the floor, so this
+        // also guarantees the scaler never drives permits below 1.
+        if self.min_threads == 0 {
+            return Err(crate::config::ConfigError::InvalidValue {
+                key: "worker_pool.min_threads".into(),
+                reason: "must be >= 1 (zero permits busy-spin the pool)".into(),
+            });
+        }
         Ok(())
     }
 
@@ -200,5 +210,20 @@ mod tests {
             ..Default::default()
         };
         assert!(cfg.validate().is_ok());
+    }
+
+    /// Codex F11 regression: `min_threads: 0` previously passed
+    /// validation and pinned the rayon semaphore in a yield loop.
+    #[test]
+    fn validate_rejects_zero_min_threads() {
+        let cfg = WorkerPoolConfig {
+            min_threads: 0,
+            ..Default::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            crate::config::ConfigError::InvalidValue { .. }
+        ));
     }
 }

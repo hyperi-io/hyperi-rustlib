@@ -481,7 +481,7 @@ mod tests {
             assert_eq!(spool.len(), 3);
         }
 
-        // Reopen — len should reflect existing items
+        // Reopen -- len should reflect existing items
         {
             let spool = Spool::create(&path).await.unwrap();
             assert_eq!(spool.len(), 3);
@@ -505,7 +505,7 @@ mod tests {
             assert_eq!(spool.len(), 3);
         }
 
-        // Reopen — should show 3 remaining
+        // Reopen -- should show 3 remaining
         {
             let spool = Spool::create(&path).await.unwrap();
             assert_eq!(spool.len(), 3);

@@ -72,7 +72,7 @@ pub struct GrpcTransport {
     /// Whether the transport is closed.
     closed: AtomicBool,
 
-    /// Shared healthy flag — read by health registry closure, written by close().
+    /// Shared healthy flag -- read by health registry closure, written by close().
     healthy: Arc<AtomicBool>,
 
     /// Receive timeout (milliseconds).
@@ -109,7 +109,7 @@ impl GrpcTransport {
         let mut server_handle = None;
         let sequence = Arc::new(AtomicU64::new(0));
 
-        // Set up client (lazy connection — doesn't fail until first RPC)
+        // Set up client (lazy connection -- doesn't fail until first RPC)
         if let Some(endpoint) = &config.endpoint {
             let channel = tonic::transport::Channel::from_shared(endpoint.clone())
                 .map_err(|e| TransportError::Config(format!("invalid endpoint: {e}")))?
@@ -417,7 +417,7 @@ impl TransportReceiver for GrpcTransport {
     }
 
     async fn commit(&self, _tokens: &[Self::Token]) -> TransportResult<()> {
-        // gRPC has no broker-side persistence — commit is a no-op.
+        // gRPC has no broker-side persistence -- commit is a no-op.
         // Acknowledgement is implicit in the Push RPC response.
         Ok(())
     }

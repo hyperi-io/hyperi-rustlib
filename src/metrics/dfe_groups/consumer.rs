@@ -31,7 +31,7 @@ impl ConsumerMetrics {
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
 
-        // consumer_lag — label-based, register descriptor manually
+        // consumer_lag -- label-based, register descriptor manually
         let lag_key = if ns.is_empty() {
             "consumer_lag".to_string()
         } else {

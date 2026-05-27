@@ -455,20 +455,15 @@ fn test_config_validation_emergency_below_shrink_rejected() {
 }
 
 #[test]
-fn test_config_min_threads_zero_rejected_by_rayon() {
-    // min_threads=0 means no permits — every rayon task would block forever.
-    // This should still create the pool (rayon allows 0 threads? no, it panics).
-    // Actually rayon requires at least 1 thread. But our semaphore starts at min_threads.
-    // With 0 permits, process_batch would deadlock. Validate this edge case.
+fn test_config_min_threads_zero_rejected_by_validate() {
+    // Codex F11: min_threads=0 leaves the rayon semaphore spinning
+    // in yield_now() forever. validate() now rejects upfront.
     let config = WorkerPoolConfig {
         min_threads: 0,
         max_threads: 4,
         ..Default::default()
     };
-    // Config validates OK (0 is technically valid — means "start with 0 active, scaler grows")
-    // But process_batch would block. This is a design choice — min_threads=0 is allowed
-    // for services that start idle and scale up on demand.
-    assert!(config.validate().is_ok());
+    assert!(config.validate().is_err());
 }
 
 #[test]

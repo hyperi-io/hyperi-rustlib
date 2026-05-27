@@ -12,14 +12,14 @@
 //! `strmatch` classifies it into one of four tiers and dispatches at
 //! match time via the cheapest engine that's correct:
 //!
-//! - **Byte** (≤ 30 ns) — direct byte ops: `memchr` / `memchr2` /
+//! - **Byte** (≤ 30 ns) -- direct byte ops: `memchr` / `memchr2` /
 //!   `memchr3` / single-byte `starts_with` / `ends_with` / `==`.
-//! - **Literal** (≤ 200 ns) — single multi-byte literal:
+//! - **Literal** (≤ 200 ns) -- single multi-byte literal:
 //!   `memmem::Finder` / multi-byte `starts_with` / `ends_with` / `==`.
-//! - **LiteralSet** (≤ 500 ns) — `aho-corasick` over ≥ 2 literals
+//! - **LiteralSet** (≤ 500 ns) -- `aho-corasick` over ≥ 2 literals
 //!   (optional uniform anchor checked after the AC scan). Regex engine
 //!   is never invoked.
-//! - **Regex** (engine-bounded) — fall through to
+//! - **Regex** (engine-bounded) -- fall through to
 //!   `regex-automata::meta::Regex`. Has its own internal prefilter
 //!   pipeline; cost depends on pattern and haystack.
 //!
@@ -34,7 +34,7 @@
 //! process, capped at 10 distinct WARNs total. After the cap, further
 //! fall-through patterns log at DEBUG. A counter
 //! `hyperi_strmatch_regex_fallback_total` increments on every
-//! fall-through regardless of log level — operators can scrape that
+//! fall-through regardless of log level -- operators can scrape that
 //! rather than rely on logs.
 //!
 //! ## Quality gates
@@ -49,22 +49,22 @@
 //! ```
 //! use hyperi_rustlib::strmatch::{MatcherTier, OnBelowMin, StrMatcher};
 //!
-//! // Byte tier — anchored single byte, dispatches to hay.first() == Some(b)
+//! // Byte tier -- anchored single byte, dispatches to hay.first() == Some(b)
 //! let m = StrMatcher::new(r"^/")?;
 //! assert_eq!(m.tier(), MatcherTier::Byte);
 //! assert!(m.is_match(b"/api/v1/orders"));
 //!
-//! // Literal tier — multi-byte literal, dispatches to memmem
+//! // Literal tier -- multi-byte literal, dispatches to memmem
 //! let m = StrMatcher::new(r"AKIA")?;
 //! assert_eq!(m.tier(), MatcherTier::Literal);
 //! assert!(m.is_match(b"... AKIA1234 ..."));
 //!
-//! // LiteralSet tier — alternation, dispatches to AhoCorasick
+//! // LiteralSet tier -- alternation, dispatches to AhoCorasick
 //! let m = StrMatcher::new(r"AKIA|ghp_|sk_live_")?;
 //! assert_eq!(m.tier(), MatcherTier::LiteralSet);
 //! assert!(m.is_match(b"github token: ghp_abcdef"));
 //!
-//! // Regex tier — falls through to engine; refuse the build instead
+//! // Regex tier -- falls through to engine; refuse the build instead
 //! let err = StrMatcher::builder()
 //!     .min_tier(MatcherTier::LiteralSet)
 //!     .on_below_min(OnBelowMin::Reject)
@@ -91,7 +91,7 @@ use plan::Plan;
 // ---------------------------------------------------------------------------
 
 /// Which engine class a [`StrMatcher`] is dispatching to. Tiers are
-/// ordered by cost — `Byte > Literal > LiteralSet > Regex` (higher
+/// ordered by cost -- `Byte > Literal > LiteralSet > Regex` (higher
 /// means faster). Use [`Self::rank`] for `min_tier` comparisons.
 ///
 /// Budgets below are typical for a modern x86 server on a ~200-byte
@@ -100,16 +100,16 @@ use plan::Plan;
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MatcherTier {
-    /// **≤ 30 ns** — direct byte ops: `memchr` / `memchr2/3` / single-byte
+    /// **≤ 30 ns** -- direct byte ops: `memchr` / `memchr2/3` / single-byte
     /// `starts_with` / `ends_with` / `==`.
     Byte,
-    /// **≤ 200 ns** — single multi-byte literal: `memmem::Finder` /
+    /// **≤ 200 ns** -- single multi-byte literal: `memmem::Finder` /
     /// multi-byte `starts_with` / `ends_with` / `==`.
     Literal,
-    /// **≤ 500 ns** — `aho-corasick` over ≥ 2 literals (optional
+    /// **≤ 500 ns** -- `aho-corasick` over ≥ 2 literals (optional
     /// uniform anchor checked after the AC scan).
     LiteralSet,
-    /// **Bounded by the regex engine** — `regex-automata::meta::Regex`
+    /// **Bounded by the regex engine** -- `regex-automata::meta::Regex`
     /// fall-through. Cost depends on pattern and haystack.
     Regex,
 }
@@ -126,7 +126,7 @@ impl std::fmt::Display for MatcherTier {
 }
 
 impl MatcherTier {
-    /// Cost rank — higher means faster. Useful for `min_tier`
+    /// Cost rank -- higher means faster. Useful for `min_tier`
     /// comparisons without depending on the specific ns numbers.
     ///
     /// Ordering: `Byte (4) > Literal (3) > LiteralSet (2) > Regex (1)`.
@@ -223,7 +223,7 @@ pub enum BuildError {
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OnBelowMin {
-    /// Default — proceed quietly. The anti-spam protocol still emits
+    /// Default -- proceed quietly. The anti-spam protocol still emits
     /// up to ten WARNs per process for fall-through patterns.
     #[default]
     Allow,
@@ -462,7 +462,7 @@ impl StrMatcherBuilder {
 }
 
 // ---------------------------------------------------------------------------
-// StrMatcherSet — multi-pattern, single AC scan where possible
+// StrMatcherSet -- multi-pattern, single AC scan where possible
 // ---------------------------------------------------------------------------
 
 /// Multi-pattern matcher.
@@ -470,12 +470,12 @@ impl StrMatcherBuilder {
 /// Build-time partition:
 ///
 /// - Unanchored `Byte` / `Literal` / `LiteralSet` patterns fold into
-///   one shared aho-corasick. One linear scan covers them all —
+///   one shared aho-corasick. One linear scan covers them all --
 ///   O(M + total_matches).
 /// - Anchored patterns (`^foo`, `bar$`, `^baz$`) and `Regex` fall-
 ///   throughs stay as per-pattern matchers.
 ///
-/// The merged AC runs `MatchKind::LeftmostLongest` — overlapping
+/// The merged AC runs `MatchKind::LeftmostLongest` -- overlapping
 /// literals like `AKIA` vs `AKIA1234` resolve to the longer match.
 /// Pattern indices survive the merge: `SetMatch.pattern_idx`
 /// always matches the caller's input order.
@@ -488,7 +488,7 @@ pub struct StrMatcherSet {
 }
 
 /// Cross-pattern AC. `pattern_indices[ac_id]` maps an AC pattern ID
-/// back to the caller's input index — one input pattern can
+/// back to the caller's input index -- one input pattern can
 /// contribute multiple literals (alternation, byte-set), so indices
 /// repeat.
 struct MergedAc {
@@ -499,7 +499,7 @@ struct MergedAc {
 impl StrMatcherSet {
     /// Compile every pattern. Patterns that violate the builder's
     /// `min_tier` policy with `OnBelowMin::Reject` fail the build for
-    /// the entire set — returning the first failing pattern's error.
+    /// the entire set -- returning the first failing pattern's error.
     ///
     /// # Errors
     ///
@@ -529,8 +529,17 @@ impl StrMatcherSet {
         self.individual.iter().any(|(_, m)| m.is_match(hay))
     }
 
-    /// Find the earliest match across all patterns (lowest `start`
-    /// offset; ties broken by pattern index).
+    /// Find the earliest match across all patterns.
+    ///
+    /// Order:
+    /// - Lower `start` wins.
+    /// - At the same `start`, the merged AC applies
+    ///   `MatchKind::LeftmostLongest` *within* its literal set, so
+    ///   the longer literal wins among merged patterns (e.g.
+    ///   `AKIA1234` over `AKIA`).
+    /// - Across the merge boundary (merged-AC hit vs an individual
+    ///   anchored / regex matcher at the same `start`), the
+    ///   lower `pattern_idx` wins -- input-order preserved.
     #[must_use]
     pub fn earliest_match(&self, hay: &[u8]) -> Option<SetMatch> {
         let mut best: Option<SetMatch> = None;
@@ -565,6 +574,11 @@ impl StrMatcherSet {
 
     /// Collect every non-overlapping match across all patterns,
     /// sorted by `(start, pattern_idx)`.
+    ///
+    /// The merged AC runs `MatchKind::LeftmostLongest` internally,
+    /// so when two literals overlap within the merged set, the
+    /// longer one wins. Across the merge boundary the sort key
+    /// gives input-order tie-breaking.
     ///
     /// When multiple patterns match at the same position, the
     /// lower-indexed pattern wins (consistent with the input order).
@@ -658,7 +672,7 @@ impl StrMatcherBuilder {
             }
         }
 
-        // AC build is infallible on a pre-validated literal set —
+        // AC build is infallible on a pre-validated literal set --
         // empty merge_lits short-circuits to None above, and the
         // classifier already enforces LITERAL_SET_CAP. A failure
         // here would mean a contract violation, so panic.

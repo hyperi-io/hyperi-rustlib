@@ -118,12 +118,12 @@ pub struct KafkaTransport {
     /// Key optimization: no locks in the hot path.
     topic_cache: HashMap<String, Arc<str>>,
     closed: AtomicBool,
-    /// Shared healthy flag — read by health registry closure, written by close().
+    /// Shared healthy flag -- read by health registry closure, written by close().
     healthy: Arc<AtomicBool>,
     /// Topics we're subscribed to (for cache warming and Debug).
     /// Behind RwLock so recv() can update after topic refresh re-subscribe.
     subscribed_topics: parking_lot::RwLock<Vec<String>>,
-    /// Shutdown token — cancelled on close() to stop background tasks.
+    /// Shutdown token -- cancelled on close() to stop background tasks.
     shutdown_token: tokio_util::sync::CancellationToken,
     /// Periodic topic refresh handle (auto-discovery mode only).
     /// Checked on each recv() call to detect new/removed topics.
@@ -236,7 +236,7 @@ impl KafkaTransport {
         // - Empty + !auto_discover → no subscription (producer-only)
         let (effective_topics, topic_refresh, shutdown_token) =
             if config.topics.is_empty() && config.auto_discover {
-                tracing::info!("Topics empty — auto-discovering from broker");
+                tracing::info!("Topics empty -- auto-discovering from broker");
                 let resolver = topic_resolver::TopicResolver::new(config)?;
                 let discovered = resolver.resolve()?;
                 if discovered.is_empty() {

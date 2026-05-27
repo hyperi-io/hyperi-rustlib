@@ -9,14 +9,14 @@
 //! # Transport Filter Engine
 //!
 //! Provides transport-level message filtering using CEL syntax with SIMD
-//! fast-path for simple patterns. Embedded in every transport — filters are
+//! fast-path for simple patterns. Embedded in every transport -- filters are
 //! configured via the config cascade and applied automatically.
 //!
 //! ## Performance Tiers
 //!
-//! - **Tier 1** — SIMD field extraction (~50-100ns/msg). Always enabled.
-//! - **Tier 2** — Pre-compiled CEL (~500ns-1us/msg). Requires `allow_cel_filters_in/out`.
-//! - **Tier 3** — Complex CEL with regex/iteration (~5-50us/msg). Requires `allow_complex_filters_in/out`.
+//! - **Tier 1** -- SIMD field extraction (~50-100ns/msg). Always enabled.
+//! - **Tier 2** -- Pre-compiled CEL (~500ns-1us/msg). Requires `allow_cel_filters_in/out`.
+//! - **Tier 3** -- Complex CEL with regex/iteration (~5-50us/msg). Requires `allow_complex_filters_in/out`.
 //!
 //! ## Usage
 //!
@@ -51,17 +51,17 @@ use crate::transport::error::TransportError;
 /// Result of evaluating a filter against a message payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FilterDisposition {
-    /// Message passes all filters — continue processing.
+    /// Message passes all filters -- continue processing.
     Pass,
-    /// Message matched a filter with `action: drop` — discard silently.
+    /// Message matched a filter with `action: drop` -- discard silently.
     Drop,
-    /// Message matched a filter with `action: dlq` — route to dead-letter queue.
+    /// Message matched a filter with `action: dlq` -- route to dead-letter queue.
     Dlq,
 }
 
 /// A DLQ entry produced by inbound filtering.
 ///
-/// The transport does NOT send to DLQ directly — it returns these entries
+/// The transport does NOT send to DLQ directly -- it returns these entries
 /// alongside passing messages. The caller handles DLQ routing using its
 /// own `Dlq` handle.
 #[derive(Debug, Clone)]
@@ -79,11 +79,11 @@ pub struct FilteredDlqEntry {
 /// Returned from `TransportFilterEngine::partition_batch()`. Contains:
 /// - `messages`: messages that passed all filters (or had no filter match)
 /// - `dlq_entries`: messages matched by a filter with `action: dlq`. The
-///   caller is responsible for routing these to a DLQ — the engine does
+///   caller is responsible for routing these to a DLQ -- the engine does
 ///   NOT send to DLQ directly (transports don't have DLQ handles).
 /// - `drop_count`: count of messages matched by `action: drop` filters
 ///
-/// Drop and DLQ messages are removed from `messages` — the caller only
+/// Drop and DLQ messages are removed from `messages` -- the caller only
 /// processes `messages` for normal pipeline work, and `dlq_entries`
 /// for DLQ routing.
 #[derive(Debug)]
@@ -185,14 +185,14 @@ impl TransportFilterEngine {
                 tracing::warn!(
                     count = compiled_in.len(),
                     direction = "in",
-                    "Large number of inbound filters — may impact throughput"
+                    "Large number of inbound filters -- may impact throughput"
                 );
             }
             if compiled_out.len() > FILTER_COUNT_WARNING_THRESHOLD {
                 tracing::warn!(
                     count = compiled_out.len(),
                     direction = "out",
-                    "Large number of outbound filters — may impact throughput"
+                    "Large number of outbound filters -- may impact throughput"
                 );
             }
         }
@@ -256,7 +256,7 @@ impl TransportFilterEngine {
 
     /// Partition a batch of messages through inbound filters.
     ///
-    /// This is the recommended API for transports — it returns a
+    /// This is the recommended API for transports -- it returns a
     /// `FilteredBatch` containing both passing messages AND DLQ entries.
     /// The transport's caller routes DLQ entries via its own DLQ handle.
     ///
@@ -367,7 +367,7 @@ impl TransportFilterEngine {
             )
             .map_err(|e| {
                 TransportError::Config(format!(
-                    "filter_{direction}[{idx}]: '{expr}' — {e}",
+                    "filter_{direction}[{idx}]: '{expr}' -- {e}",
                     expr = rule.expression
                 ))
             })?;
@@ -387,7 +387,7 @@ impl TransportFilterEngine {
                     index = idx,
                     tier = %tier,
                     expression = filter.expression_text(),
-                    "Higher-tier filter precedes lower-tier filter — consider reordering for better performance"
+                    "Higher-tier filter precedes lower-tier filter -- consider reordering for better performance"
                 );
             }
             if (tier as u8) < (lowest_seen as u8) {
@@ -411,7 +411,7 @@ fn warn_msgpack_bypass_once(direction: FilterDirection) {
         tracing::warn!(
             target: "hyperi_rustlib::transport::filter",
             direction = %direction,
-            "transport filters skipped a MsgPack payload — \
+            "transport filters skipped a MsgPack payload -- \
              filters are JSON-only. Scrape \
              dfe_transport_filter_msgpack_bypass_total for the rate."
         );

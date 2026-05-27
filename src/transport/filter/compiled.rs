@@ -17,7 +17,7 @@ use super::config::{FilterAction, FilterDirection, FilterTier, TransportFilterTi
 
 /// A compiled filter ready for hot-path evaluation.
 ///
-/// Tier 1 variants bypass the CEL engine entirely — they use SIMD JSON
+/// Tier 1 variants bypass the CEL engine entirely -- they use SIMD JSON
 /// field extraction via `sonic_rs::get_from_str()` (zero-copy &str path,
 /// no UTF-8 revalidation per call).
 ///
@@ -26,13 +26,13 @@ use super::config::{FilterAction, FilterDirection, FilterTier, TransportFilterTi
 /// in raw bytes, bypassing the JSON parser entirely (~10-20ns vs ~200ns).
 #[derive(Debug)]
 pub enum CompiledFilter {
-    // Tier 1 — SIMD field ops
+    // Tier 1 -- SIMD field ops
     FieldExists {
         field: String,
         path: Vec<String>,
         /// Pre-compiled memmem finder for the `"field":` byte pattern.
         /// Used as a fast-path when the path is a single segment (no nested).
-        /// `None` for nested paths — falls back to sonic-rs.
+        /// `None` for nested paths -- falls back to sonic-rs.
         needle: Option<memchr::memmem::Finder<'static>>,
         action: FilterAction,
         expression_text: String,
@@ -79,7 +79,7 @@ pub enum CompiledFilter {
         action: FilterAction,
         expression_text: String,
     },
-    // Tier 2/3 — CEL expression (feature-gated)
+    // Tier 2/3 -- CEL expression (feature-gated)
     #[cfg(feature = "expression")]
     CelExpression {
         program: cel::Program,
@@ -145,7 +145,7 @@ impl CompiledFilter {
                 super::budget::check_static_budget(expr, &tier_config.budget)
                     .map_err(|e| e.to_string())?;
                 // `allow_complex_filters_in/out` is the single source
-                // of truth for Tier-3 transport filters — it implies
+                // of truth for Tier-3 transport filters -- it implies
                 // the restricted CEL categories at the expression
                 // layer. Two-knob (transport AND expression) was
                 // confusing in practice; the tier gate approved
@@ -454,11 +454,11 @@ fn split_field_path(field: &str) -> Vec<String> {
 /// typical 50-200ns budget.
 /// Walks `payload` once, tracking JSON string-state + object/array
 /// depth, and returns the first SIMD hit at a **top-level structural
-/// position** — outside any string AND at object depth 1 (immediate
+/// position** -- outside any string AND at object depth 1 (immediate
 /// child of the root object).
 ///
 /// Strict CEL semantics (F13): `has(_table)` on
-/// `{"data":{"_table":"events"}}` must NOT match — `_table` is at
+/// `{"data":{"_table":"events"}}` must NOT match -- `_table` is at
 /// depth 2 inside `data`, not the implicit root. The previous shape
 /// of this helper matched anywhere outside string values, which
 /// broke the contract for routed messages where the same field
@@ -505,7 +505,7 @@ fn first_structural_hit(payload: &[u8], hits: impl IntoIterator<Item = usize>) -
 /// Build a memmem Finder for a single-segment field name. Returns `None`
 /// for nested paths (those fall back to sonic-rs).
 ///
-/// The needle is `"<field>":` — the JSON key pattern. memchr's SIMD-accelerated
+/// The needle is `"<field>":` -- the JSON key pattern. memchr's SIMD-accelerated
 /// substring search detects this pattern in raw bytes ~10-20ns per call,
 /// vs ~200ns for a full sonic-rs JSON parse.
 ///
@@ -536,7 +536,7 @@ fn extract_string_value<'a>(lv: &'a sonic_rs::LazyValue<'a>) -> std::borrow::Cow
     let raw = lv.as_raw_str();
 
     if lv.is_str() {
-        // Strip the quotes — sonic-rs guarantees raw is `"..."` for string values
+        // Strip the quotes -- sonic-rs guarantees raw is `"..."` for string values
         let bytes = raw.as_bytes();
         if bytes.len() >= 2 && bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"' {
             let inner = &raw[1..raw.len() - 1];
@@ -544,7 +544,7 @@ fn extract_string_value<'a>(lv: &'a sonic_rs::LazyValue<'a>) -> std::borrow::Cow
             if memchr::memchr(b'\\', inner.as_bytes()).is_none() {
                 return std::borrow::Cow::Borrowed(inner);
             }
-            // Has escapes — un-escape via sonic-rs as_str
+            // Has escapes -- un-escape via sonic-rs as_str
             if let Some(s) = lv.as_str() {
                 return std::borrow::Cow::Owned(s.to_string());
             }
@@ -584,11 +584,11 @@ fn with_path_refs<R>(path: &[String], f: impl FnOnce(&[&str]) -> R) -> R {
 ///
 /// Allocation profile per call:
 ///   - One `Vec<(&String, serde_json::Value)>` of length up to `fields.len()`
-///     — small, on a hot path with typically 1-5 fields.
+///     -- small, on a hot path with typically 1-5 fields.
 ///   - Per field: one `Vec<&str>` for the dotted path split, plus the
 ///     `serde_json::Value` tree produced by `from_str`.
 ///
-/// Crucially the field NAMES are not cloned — they reference the
+/// Crucially the field NAMES are not cloned -- they reference the
 /// `CompiledFilter::fields` storage, which lives as long as the filter.
 /// The previous implementation built a `HashMap<String, Value>` per call
 /// which cloned every field name; at PB/hr rates that allocator pressure
@@ -602,7 +602,7 @@ fn evaluate_cel(
     max_payload_bytes: usize,
 ) -> Option<FilterAction> {
     // Gate 2: skip oversized payloads (pass-through). Data-driven
-    // CEL cost scales with payload size — caps the worst case.
+    // CEL cost scales with payload size -- caps the worst case.
     if payload.len() > max_payload_bytes {
         #[cfg(feature = "metrics")]
         metrics::counter!("dfe_transport_filter_cel_payload_skip_total").increment(1);
@@ -709,18 +709,18 @@ mod tests {
     fn first_structural_hit_only_matches_top_level() {
         let needle = memchr::memmem::Finder::new(b"\"_table\":");
 
-        // Top-level — match.
+        // Top-level -- match.
         let top = br#"{"_table":"events"}"#;
         let hits: Vec<usize> = needle.find_iter(top).collect();
         assert_eq!(first_structural_hit(top, hits), Some(1));
 
-        // Nested at depth 2 — no match.
+        // Nested at depth 2 -- no match.
         let nested = br#"{"data":{"_table":"events"}}"#;
         let hits: Vec<usize> = needle.find_iter(nested).collect();
         assert!(!hits.is_empty(), "memmem must find the nested key");
         assert_eq!(first_structural_hit(nested, hits), None);
 
-        // Hit inside a string value — no match (well-formed JSON
+        // Hit inside a string value -- no match (well-formed JSON
         // would escape the `"`, but defence-in-depth either way).
         let in_value = br#"{"d":"\"_table\":x"}"#;
         let hits: Vec<usize> = needle.find_iter(in_value).collect();

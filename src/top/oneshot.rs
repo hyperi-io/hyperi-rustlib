@@ -60,7 +60,7 @@ fn filter_samples<'a>(samples: &'a [MetricSample], filter: Option<&str>) -> Vec<
     }
 }
 
-/// Simple pattern matching — supports basic regex-like patterns.
+/// Simple pattern matching -- supports basic regex-like patterns.
 /// Uses contains for plain strings, or regex for patterns with metacharacters.
 fn match_filter(name: &str, pattern: &str) -> bool {
     // If pattern has no regex metacharacters, do simple contains match
@@ -98,7 +98,7 @@ fn regex_match(name: &str, pattern: &str) -> bool {
     let parts: Vec<&str> = pattern.split(".*").collect();
 
     if parts.len() == 1 {
-        // No wildcards — substring match (respecting anchors)
+        // No wildcards -- substring match (respecting anchors)
         if anchored_start && anchored_end {
             return name == pattern;
         }
@@ -181,7 +181,7 @@ fn print_table(samples: &[&MetricSample], url: &str) {
 }
 
 /// Format labels as comma-separated `key=value` pairs for TSV output.
-/// No braces, no quotes — clean for awk/grep.
+/// No braces, no quotes -- clean for awk/grep.
 fn format_labels_tsv(labels: &HashMap<String, String>) -> String {
     if labels.is_empty() {
         return String::new();
@@ -406,7 +406,7 @@ mod tests {
             vec![("topic", "events"), ("partition", "0")],
         );
         let samples = vec![&sample];
-        // Just verify it doesn't panic — TSV output goes to stdout
+        // Just verify it doesn't panic -- TSV output goes to stdout
         print_table(&samples, "http://localhost:9090/metrics");
     }
 

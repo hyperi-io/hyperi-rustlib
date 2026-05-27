@@ -66,7 +66,7 @@ pub struct HttpServerConfig {
     #[serde(default)]
     pub tls_cert_path: Option<String>,
 
-    /// TLS key path (PEM). See `tls_cert_path` — not wired.
+    /// TLS key path (PEM). See `tls_cert_path` -- not wired.
     #[serde(default)]
     pub tls_key_path: Option<String>,
 

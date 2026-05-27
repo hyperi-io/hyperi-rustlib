@@ -69,7 +69,7 @@ pub struct BatchProcessingConfig {
 
     /// Pre-route filters applied before routing decisions.
     ///
-    /// Evaluated in order — first match wins.
+    /// Evaluated in order -- first match wins.
     #[serde(default)]
     pub pre_route_filters: Vec<PreRouteFilterConfig>,
 

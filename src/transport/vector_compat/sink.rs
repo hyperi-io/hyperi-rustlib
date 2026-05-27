@@ -26,7 +26,7 @@ pub struct VectorCompatClient {
 impl VectorCompatClient {
     /// Connect to a Vector source endpoint.
     ///
-    /// Uses lazy connection — the actual TCP connection is established
+    /// Uses lazy connection -- the actual TCP connection is established
     /// on the first RPC call.
     ///
     /// # Errors

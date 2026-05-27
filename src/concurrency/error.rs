@@ -20,7 +20,7 @@ use thiserror::Error;
 /// Errors returned by [`super::BackgroundSink`] push / flush operations.
 #[derive(Debug, Error)]
 pub enum SinkError {
-    /// Queue full and `Overflow::Drop` was selected — message discarded
+    /// Queue full and `Overflow::Drop` was selected -- message discarded
     /// and the sink's `dropped` counter incremented.
     #[error("background sink queue full (overflow=drop policy)")]
     Overflow,
@@ -33,7 +33,7 @@ pub enum SinkError {
     /// A drain implementation reported an error during a batch write.
     /// The actor logs + counts these and continues; this variant is
     /// only surfaced if the caller asks the sink for a propagated error
-    /// (rare — drain failures are usually observed via the
+    /// (rare -- drain failures are usually observed via the
     /// `<prefix>_write_errors_total` metric).
     #[error("drain failure: {0}")]
     Drain(#[from] DrainError),
@@ -60,7 +60,7 @@ pub enum DrainError {
 
 /// Errors returned by [`super::PeriodicTask`] tick implementations.
 ///
-/// Tick errors are logged at WARN and do NOT terminate the worker —
+/// Tick errors are logged at WARN and do NOT terminate the worker --
 /// the next tick still fires. Consumers wanting fail-fast must return
 /// `Ok(())` from `tick` and surface their failure differently (e.g.
 /// via a `failed: AtomicBool` flag the parent process polls).

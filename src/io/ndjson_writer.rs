@@ -9,15 +9,15 @@
 //! Core NDJSON file writer with automatic rotation.
 //!
 //! Writes `&[u8]` lines to a rotating file using the `file-rotate` crate.
-//! This writer knows nothing about DLQ or output semantics — callers
+//! This writer knows nothing about DLQ or output semantics -- callers
 //! serialise their own types and hand raw bytes to the writer.
 //!
 //! ## Two APIs
 //!
-//! - [`NdjsonWriter`] — synchronous. Acquires a `parking_lot::Mutex` and
+//! - [`NdjsonWriter`] -- synchronous. Acquires a `parking_lot::Mutex` and
 //!   calls `std::io::Write::write_all` directly. Cheap (~µs) but blocks
 //!   the calling thread. Safe to call from non-async code and tests.
-//! - [`AsyncNdjsonWriter`] — async wrapper over `Arc<NdjsonWriter>`. Each
+//! - [`AsyncNdjsonWriter`] -- async wrapper over `Arc<NdjsonWriter>`. Each
 //!   call runs the sync work on a `tokio::task::spawn_blocking` thread,
 //!   so the tokio runtime is never stalled. Use this from `async fn`
 //!   bodies.
@@ -72,10 +72,10 @@ impl NdjsonWriter {
     ///
     /// # Arguments
     ///
-    /// * `config` — Shared file writer settings (path, rotation, compression)
-    /// * `subdir` — Subdirectory under `config.path` (e.g. service name)
-    /// * `filename` — Output filename (e.g. "dlq.ndjson", "events.ndjson")
-    /// * `label` — Human label for log messages (e.g. "dlq", "output")
+    /// * `config` -- Shared file writer settings (path, rotation, compression)
+    /// * `subdir` -- Subdirectory under `config.path` (e.g. service name)
+    /// * `filename` -- Output filename (e.g. "dlq.ndjson", "events.ndjson")
+    /// * `label` -- Human label for log messages (e.g. "dlq", "output")
     ///
     /// # Errors
     ///
@@ -126,7 +126,7 @@ impl NdjsonWriter {
 
     /// Write a single line (must include trailing newline or caller appends it).
     ///
-    /// The data is written as-is — caller is responsible for serialisation
+    /// The data is written as-is -- caller is responsible for serialisation
     /// and newline termination.
     pub fn write_line(&self, line: &[u8]) -> Result<(), std::io::Error> {
         let mut writer = self.writer.lock();
@@ -157,7 +157,7 @@ impl NdjsonWriter {
     /// Note: `file-rotate` does not expose the underlying `File` handle,
     /// so this can only call `flush()` (which pushes buffered bytes from
     /// the writer's in-memory buffer to the kernel page cache). It does
-    /// NOT guarantee on-disk durability — a power-loss event between the
+    /// NOT guarantee on-disk durability -- a power-loss event between the
     /// page cache and the platter can still lose data. This is a
     /// limitation of the rotation library, not the API: when
     /// `file-rotate` gains a `sync` hook, this method will gain
@@ -260,7 +260,7 @@ impl AsyncNdjsonWriter {
 
     /// Flush buffered bytes through the rotating writer off-runtime.
     ///
-    /// See [`NdjsonWriter::flush`] for durability semantics — currently
+    /// See [`NdjsonWriter::flush`] for durability semantics -- currently
     /// flushes to kernel page cache only (the `file-rotate` crate
     /// doesn't expose the inner `File` for `fsync`).
     ///
@@ -396,7 +396,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // AsyncNdjsonWriter tests — these prove the async wrapper actually
+    // AsyncNdjsonWriter tests -- these prove the async wrapper actually
     // moves the sync work off the runtime thread.
     // -----------------------------------------------------------------
 
@@ -456,7 +456,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn async_writer_does_not_block_runtime() {
         // Prove that concurrent writers + ticker on the same runtime
-        // make progress concurrently — i.e. write_line releases the
+        // make progress concurrently -- i.e. write_line releases the
         // runtime thread.
         let dir = tempfile::tempdir().expect("tempdir");
         let cfg = test_config(dir.path());
@@ -495,7 +495,7 @@ mod tests {
         let ticks = ticker_fired.load(std::sync::atomic::Ordering::SeqCst);
         assert!(
             ticks >= 10,
-            "ticker fired only {ticks} times — writers starved the runtime",
+            "ticker fired only {ticks} times -- writers starved the runtime",
         );
     }
 }

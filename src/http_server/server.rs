@@ -163,7 +163,7 @@ impl HttpServer {
                 #[cfg(feature = "logger")]
                 tracing::warn!(
                     timeout_ms = u64::try_from(shutdown_timeout.as_millis()).unwrap_or(u64::MAX),
-                    "HTTP server graceful drain timed out — forcing exit"
+                    "HTTP server graceful drain timed out -- forcing exit"
                 );
             }
         }
@@ -236,7 +236,7 @@ impl HttpServer {
                         #[cfg(feature = "logger")]
                         tracing::warn!(
                             timeout_ms = u64::try_from(shutdown_timeout.as_millis()).unwrap_or(u64::MAX),
-                            "HTTP server graceful drain timed out — forcing exit"
+                            "HTTP server graceful drain timed out -- forcing exit"
                         );
                     }
                 }
@@ -542,7 +542,7 @@ mod tests {
         let (handle, future) = server.serve_with_handle(app).await.unwrap();
         let server_task = tokio::spawn(future);
 
-        // Trigger shutdown — handle.shutdown() drops the watch sender.
+        // Trigger shutdown -- handle.shutdown() drops the watch sender.
         handle.shutdown();
 
         // Allow the signal future to observe + flip readiness.

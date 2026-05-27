@@ -29,7 +29,7 @@ pub(crate) async fn refresh_loop(
     mut shutdown_rx: oneshot::Receiver<()>,
 ) {
     let mut ticker = tokio::time::interval(interval);
-    // First tick fires immediately — skip it since we loaded on init
+    // First tick fires immediately -- skip it since we loaded on init
     ticker.tick().await;
 
     loop {

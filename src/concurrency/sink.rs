@@ -1,6 +1,6 @@
 // Project:   hyperi-rustlib
 // File:      src/concurrency/sink.rs
-// Purpose:   BackgroundSink — generic fire-and-forget durable sink
+// Purpose:   BackgroundSink -- generic fire-and-forget durable sink
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
@@ -8,7 +8,7 @@
 
 //! Generic fire-and-forget durable sink built on bounded `mpsc` +
 //! background actor. Consumer hot path is sync-shaped and never blocks
-//! the tokio runtime — `try_push` is ~100 ns push to an mpsc queue.
+//! the tokio runtime -- `try_push` is ~100 ns push to an mpsc queue.
 //!
 //! See `docs/superpowers/plans/2026-05-08-async-patterns.md` for the
 //! design rationale and `hyperi-ai/standards/languages/RUST.md`
@@ -81,7 +81,7 @@ pub struct BackgroundSinkConfig {
     ///   - `<prefix>_pending`              (gauge, current queue depth)
     ///
     /// When `None`, the sink tracks `dropped()` / `pending()` via
-    /// internal atomics only — callers can read them but nothing is
+    /// internal atomics only -- callers can read them but nothing is
     /// published.
     pub metric_prefix: Option<&'static str>,
 }
@@ -101,13 +101,13 @@ impl Default for BackgroundSinkConfig {
 /// Overflow policy for [`BackgroundSink::try_push`].
 ///
 /// `push_blocking` and `flush` always wait for queue space regardless
-/// of this setting — overflow only governs the sync `try_push` path.
+/// of this setting -- overflow only governs the sync `try_push` path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Overflow {
     /// `try_push` returns `Err(Overflow)` immediately and increments
     /// the dropped counter. Default for hot paths.
     Drop,
-    /// `try_push` is rejected — callers in this mode MUST use
+    /// `try_push` is rejected -- callers in this mode MUST use
     /// `push_blocking` or `flush`. Documents intent: "this sink may
     /// not be used from a sync context."
     Block,
@@ -127,7 +127,7 @@ enum SinkMsg<T> {
 /// A drain consumes batches of messages and writes them to the backend.
 ///
 /// Implementations are captured by [`BackgroundSink::spawn`] and live
-/// inside the actor task. They run only on the actor — never on
+/// inside the actor task. They run only on the actor -- never on
 /// consumer hot paths.
 ///
 /// **CRITICAL:** drain methods may take time (disk fsync, network
@@ -135,14 +135,14 @@ enum SinkMsg<T> {
 /// `rdkafka` / `reqwest` / `redis`) or `tokio::task::spawn_blocking`
 /// for unavoidable sync work. **NEVER** put `std::fs::*` /
 /// `std::io::Write::*` / `std::thread::sleep` directly in `write_batch`
-/// — that pins the actor task's tokio worker, and `tests/sync_in_async.rs`
+/// -- that pins the actor task's tokio worker, and `tests/sync_in_async.rs`
 /// will fail the lint.
 pub trait SinkDrain<T: Send>: Send + 'static {
     /// Flush a batch. Implementer chooses the async I/O strategy.
     /// Returned `Err` is logged + counted by the actor; the actor
     /// continues draining subsequent batches.
     ///
-    /// Takes `&mut self` — drains typically own mutable I/O state
+    /// Takes `&mut self` -- drains typically own mutable I/O state
     /// (file handles, connection pools, write buffers). The actor
     /// holds the only reference; this method is never called
     /// concurrently for a given drain instance.
@@ -152,8 +152,8 @@ pub trait SinkDrain<T: Send>: Send + 'static {
     /// Block until every entry written to this drain so far is durable
     /// (synced to disk for file backends, acked by the broker for
     /// network backends). Called by the actor when it processes a
-    /// `BackgroundSink::flush()` barrier — BEFORE acking the barrier
-    /// — so callers of `flush()` see real durability, not just "the
+    /// `BackgroundSink::flush()` barrier -- BEFORE acking the barrier
+    /// -- so callers of `flush()` see real durability, not just "the
     /// bytes were handed to the kernel".
     ///
     /// Default: no-op (the trait stays additive; non-durable drains
@@ -265,7 +265,7 @@ impl<T: Send + 'static> BackgroundSink<T> {
     ///
     /// - `Overflow::Drop` (default): returns `Err(Overflow)` immediately
     ///   when the queue is full and increments the dropped counter.
-    /// - `Overflow::Block`: returns `Err(Overflow)` unconditionally —
+    /// - `Overflow::Block`: returns `Err(Overflow)` unconditionally --
     ///   callers in Block mode must use `push_blocking`. This makes the
     ///   policy decision explicit at the call site.
     pub fn try_push(&self, msg: T) -> Result<(), SinkError> {
@@ -275,7 +275,7 @@ impl<T: Send + 'static> BackgroundSink<T> {
                 // `write_batch_with_metrics` subtracts from `pending`
                 // when it processes a message. If we incremented AFTER
                 // send, a fast actor could receive + process + subtract
-                // before our add landed — underflowing `pending` to a
+                // before our add landed -- underflowing `pending` to a
                 // huge wrap-around value.
                 self.pending.fetch_add(1, Ordering::Relaxed);
                 match self.tx.try_send(SinkMsg::Data(msg)) {
@@ -286,7 +286,7 @@ impl<T: Send + 'static> BackgroundSink<T> {
                         Ok(())
                     }
                     Err(mpsc::error::TrySendError::Full(_)) => {
-                        // Send refused — give the slot back.
+                        // Send refused -- give the slot back.
                         self.pending.fetch_sub(1, Ordering::Relaxed);
                         self.dropped.fetch_add(1, Ordering::Relaxed);
                         if let Some(p) = self.metric_prefix {
@@ -305,7 +305,7 @@ impl<T: Send + 'static> BackgroundSink<T> {
     }
 
     /// Async push that awaits queue space. Returns when queued (NOT
-    /// yet durably written — use [`Self::flush`] for that).
+    /// yet durably written -- use [`Self::flush`] for that).
     pub async fn push_blocking(&self, msg: T) -> Result<(), SinkError> {
         // Increment before send, same race avoidance as `try_push`. The
         // .await yield point makes the race window wider than the sync
@@ -326,7 +326,7 @@ impl<T: Send + 'static> BackgroundSink<T> {
     /// the back of the queue.
     ///
     /// In `Overflow::Drop` mode, "every message accepted" excludes
-    /// messages that were dropped via overflow — those were never in
+    /// messages that were dropped via overflow -- those were never in
     /// the queue. If you need lossless flush semantics, use
     /// `Overflow::Block` + `push_blocking`.
     pub async fn flush(&self) -> Result<(), SinkError> {
@@ -349,7 +349,7 @@ impl<T: Send + 'static> BackgroundSink<T> {
         self.dropped.load(Ordering::Relaxed)
     }
 
-    /// Current queue depth (approximate — actor may be mid-recv).
+    /// Current queue depth (approximate -- actor may be mid-recv).
     #[must_use]
     pub fn pending(&self) -> usize {
         self.pending.load(Ordering::Relaxed)
@@ -384,7 +384,7 @@ async fn actor_loop<T, D>(
                 rx.close();
 
                 // Flush whatever's already accumulated. Drop the
-                // result — non-barrier writes log + count failures
+                // result -- non-barrier writes log + count failures
                 // internally; we're already shutting down.
                 if !batch.is_empty() {
                     let _ = write_batch_with_metrics(
@@ -618,7 +618,7 @@ mod tests {
         }
         assert!(overflowed > 0, "expected at least one overflow");
         assert_eq!(sink.dropped(), overflowed);
-        // Queue cap is 4 — once filled, every push past that overflows.
+        // Queue cap is 4 -- once filled, every push past that overflows.
         assert!(accepted >= 4, "should accept at least queue_capacity");
         let _ = (accepted, count); // silence unused
         shutdown.cancel();
@@ -752,7 +752,7 @@ mod tests {
             shutdown.clone(),
         );
 
-        // Push 10_000 messages back-to-back. Drain is gated — actor is
+        // Push 10_000 messages back-to-back. Drain is gated -- actor is
         // blocked on `notified()`. The hot path MUST stay fast anyway.
         let start = Instant::now();
         for i in 0..10_000_u32 {
@@ -876,7 +876,7 @@ mod tests {
         }
         assert!(
             max_us < 5_000,
-            "max try_push latency was {max_us}µs — slow drain leaked back to consumer",
+            "max try_push latency was {max_us}µs -- slow drain leaked back to consumer",
         );
         shutdown.cancel();
     }
@@ -900,7 +900,7 @@ mod tests {
     }
 
     /// Codex F2 regression: drain accepts writes but flush_durable
-    /// fails — flush() must surface the durable failure.
+    /// fails -- flush() must surface the durable failure.
     #[tokio::test]
     async fn flush_surfaces_flush_durable_failure() {
         struct WriteOkFlushFail;

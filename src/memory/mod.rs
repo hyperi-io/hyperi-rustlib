@@ -15,8 +15,8 @@
 //! # Architecture
 //!
 //! ```text
-//! Layer 1 (opt-in): Cap allocator — hard limit, last-resort crash instead of OOM-kill
-//! Layer 2 (default): MemoryGuard — cgroup-aware tracking, backpressure signals
+//! Layer 1 (opt-in): Cap allocator -- hard limit, last-resort crash instead of OOM-kill
+//! Layer 2 (default): MemoryGuard -- cgroup-aware tracking, backpressure signals
 //! ```
 
 pub mod cgroup;

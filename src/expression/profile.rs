@@ -1,12 +1,12 @@
 // Project:   hyperi-rustlib
 // File:      src/expression/profile.rs
-// Purpose:   DFE expression profile — allowed/restricted CEL functions
+// Purpose:   DFE expression profile -- allowed/restricted CEL functions
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! DFE expression profile — allowed and restricted CEL functions.
+//! DFE expression profile -- allowed and restricted CEL functions.
 //!
 //! The DFE profile restricts CEL to a high-performance subset suitable
 //! for per-record evaluation at ingest/query time. Functions with
@@ -31,7 +31,7 @@ pub const ALLOWED_FUNCTIONS: &[&str] = &[
     "bool",
 ];
 
-/// Restricted function categories — blocked by default, opt-in via config.
+/// Restricted function categories -- blocked by default, opt-in via config.
 ///
 /// Each category has a reason for restriction and a config flag to unlock.
 pub const RESTRICTED_REGEX: &[&str] = &["matches"];
@@ -56,14 +56,14 @@ pub const DISALLOWED_FUNCTIONS: &[&str] = &[
 /// to `false` (blocked). Set explicitly in application config to opt in.
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct ProfileConfig {
-    /// Allow `matches()` (regex). Unbounded cost per record — use only
+    /// Allow `matches()` (regex). Unbounded cost per record -- use only
     /// when `contains()`/`startsWith()`/`endsWith()` are insufficient.
     pub allow_regex: bool,
     /// Allow `map()`, `filter()`, `exists()`, `all()`, `exists_one()`.
-    /// O(n) per collection element — cost proportional to data size.
+    /// O(n) per collection element -- cost proportional to data size.
     pub allow_iteration: bool,
     /// Allow `timestamp()`, `duration()`. Excluded because ClickHouse
-    /// handles time natively — rarely needed in CEL expressions.
+    /// handles time natively -- rarely needed in CEL expressions.
     pub allow_time: bool,
 }
 
@@ -181,7 +181,7 @@ fn skip_string_literal(bytes: &[u8], start: usize) -> usize {
         }
         i += 1;
     }
-    // Unterminated string — return end of input
+    // Unterminated string -- return end of input
     bytes.len()
 }
 
@@ -194,7 +194,7 @@ fn restriction_reason(name: &str) -> &'static str {
             "Per-element iteration has O(n) cost proportional to collection size. Set allow_iteration: true in expression config to permit."
         }
         "timestamp" | "duration" => {
-            "Time functions excluded — ClickHouse handles time natively. Set allow_time: true in expression config to permit."
+            "Time functions excluded -- ClickHouse handles time natively. Set allow_time: true in expression config to permit."
         }
         _ => "Restricted by DFE expression profile.",
     }
@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn function_name_inside_string_with_parens_not_flagged() {
-        // "map(" appears inside a string — should not be flagged
+        // "map(" appears inside a string -- should not be flagged
         assert!(check_profile(r#"msg.contains("map(x)")"#).is_empty());
     }
 
@@ -308,7 +308,7 @@ mod tests {
 
     #[test]
     fn escaped_quote_inside_string_handled() {
-        // String with escaped quote: "filter\"(" — scanner must not exit early
+        // String with escaped quote: "filter\"(" -- scanner must not exit early
         assert!(check_profile(r#"msg.contains("filter\"(")"#).is_empty());
     }
 

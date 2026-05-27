@@ -1,6 +1,6 @@
 // Project:   hyperi-rustlib
 // File:      src/transport/factory.rs
-// Purpose:   Transport factory — create senders from config
+// Purpose:   Transport factory -- create senders from config
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2

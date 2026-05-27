@@ -120,7 +120,7 @@ impl HttpClient {
     /// Returns a middleware-wrapped error if JSON serialisation of `body`
     /// fails, or a network error if the request fails to send. Previously
     /// a serialisation failure was silently substituted with an empty body
-    /// — the request would dispatch with no payload, hiding the bug at the
+    /// -- the request would dispatch with no payload, hiding the bug at the
     /// caller and producing confusing downstream behaviour.
     pub async fn post_json<T: serde::Serialize + ?Sized>(
         &self,
@@ -159,7 +159,7 @@ impl HttpClient {
     ///
     /// # Errors
     ///
-    /// See [`Self::post_json`] — same serialise + send error contract.
+    /// See [`Self::post_json`] -- same serialise + send error contract.
     pub async fn put_json<T: serde::Serialize + ?Sized>(
         &self,
         url: &str,

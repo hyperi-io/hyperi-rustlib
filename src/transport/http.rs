@@ -278,7 +278,7 @@ impl HttpTransport {
             "HTTP transport opened"
         );
 
-        // Fail loud on bad filter config — silently disabling filters
+        // Fail loud on bad filter config -- silently disabling filters
         // turns a misconfigured `drop` / `dlq` rule into a permanent pass.
         let filter_engine = super::filter::TransportFilterEngine::new(
             &config.filters_in,
@@ -609,7 +609,7 @@ impl TransportReceiver for HttpTransport {
     }
 
     async fn commit(&self, _tokens: &[Self::Token]) -> TransportResult<()> {
-        // HTTP is fire-and-forget — commit is a no-op.
+        // HTTP is fire-and-forget -- commit is a no-op.
         Ok(())
     }
 }

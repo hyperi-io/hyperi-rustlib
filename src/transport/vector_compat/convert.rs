@@ -286,7 +286,7 @@ mod tests {
 
         let log = event::Log {
             fields,
-            value: None, // No unified value — use deprecated fields
+            value: None, // No unified value -- use deprecated fields
             metadata: None,
             metadata_full: None,
         };

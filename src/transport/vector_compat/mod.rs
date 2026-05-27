@@ -22,8 +22,8 @@
 //! ## Proto files
 //!
 //! Vendored from <https://github.com/vectordotdev/vector> (pinned 2026-03-02):
-//! - `proto/vector/vector.proto` — PushEvents service definition
-//! - `proto/vector/event.proto` — EventWrapper, Log, Value, Metric, Trace
+//! - `proto/vector/vector.proto` -- PushEvents service definition
+//! - `proto/vector/event.proto` -- EventWrapper, Log, Value, Metric, Trace
 //!
 //! ## Feature flag
 //!

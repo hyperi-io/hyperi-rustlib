@@ -27,7 +27,7 @@ impl SinkMetrics {
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
 
-        // sink_duration_seconds — label-based, register descriptor manually
+        // sink_duration_seconds -- label-based, register descriptor manually
         let dur_key = if ns.is_empty() {
             "sink_duration_seconds".to_string()
         } else {
@@ -50,7 +50,7 @@ impl SinkMetrics {
             dashboard_hint: None,
         });
 
-        // sink_errors_total — label-based
+        // sink_errors_total -- label-based
         let err_key = if ns.is_empty() {
             "sink_errors_total".to_string()
         } else {
@@ -69,7 +69,7 @@ impl SinkMetrics {
             dashboard_hint: None,
         });
 
-        // bytes_sent_total — label-based
+        // bytes_sent_total -- label-based
         let bytes_key = if ns.is_empty() {
             "bytes_sent_total".to_string()
         } else {

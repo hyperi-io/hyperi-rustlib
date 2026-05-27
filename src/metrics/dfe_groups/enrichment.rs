@@ -25,7 +25,7 @@ impl EnrichmentMetrics {
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
 
-        // enrichment_cache_hits_total — label-based
+        // enrichment_cache_hits_total -- label-based
         let hits_key = if ns.is_empty() {
             "enrichment_cache_hits_total".to_string()
         } else {
@@ -44,7 +44,7 @@ impl EnrichmentMetrics {
             dashboard_hint: None,
         });
 
-        // enrichment_cache_misses_total — label-based
+        // enrichment_cache_misses_total -- label-based
         let misses_key = if ns.is_empty() {
             "enrichment_cache_misses_total".to_string()
         } else {
@@ -63,7 +63,7 @@ impl EnrichmentMetrics {
             dashboard_hint: None,
         });
 
-        // enrichment_cache_size — label-based
+        // enrichment_cache_size -- label-based
         let size_key = if ns.is_empty() {
             "enrichment_cache_size".to_string()
         } else {
@@ -82,7 +82,7 @@ impl EnrichmentMetrics {
             dashboard_hint: None,
         });
 
-        // enrichment_duration_seconds — label-based
+        // enrichment_duration_seconds -- label-based
         let dur_key = if ns.is_empty() {
             "enrichment_duration_seconds".to_string()
         } else {

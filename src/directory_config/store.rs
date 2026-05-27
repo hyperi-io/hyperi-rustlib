@@ -42,7 +42,7 @@ pub struct DirectoryConfigStore {
 
 impl DirectoryConfigStore {
     /// Create a new store. Validates the directory exists and detects write mode.
-    /// Does NOT start background refresh — call `start()` for that.
+    /// Does NOT start background refresh -- call `start()` for that.
     pub async fn new(config: DirectoryConfigStoreConfig) -> DirectoryConfigResult<Self> {
         let dir = &config.directory;
 
@@ -621,7 +621,7 @@ fn load_yaml_file(path: &Path) -> DirectoryConfigResult<serde_yaml_ng::Value> {
 /// SAME handle the lock was acquired on. The previous implementation
 /// opened with `.truncate(true)` (which truncated immediately), then
 /// later called `std::fs::write(path, ...)` through a separate file
-/// handle — meaning both the truncate AND the write happened outside
+/// handle -- meaning both the truncate AND the write happened outside
 /// the locked handle, defeating the advisory protection the function
 /// name promises.
 fn write_yaml_locked(path: &Path, value: &serde_yaml_ng::Value) -> DirectoryConfigResult<()> {
@@ -630,7 +630,7 @@ fn write_yaml_locked(path: &Path, value: &serde_yaml_ng::Value) -> DirectoryConf
     let yaml_str = serde_yaml_ng::to_string(value)
         .map_err(|e| DirectoryConfigError::SerializationError(e.to_string()))?;
 
-    // Open/create the file WITHOUT truncating yet — we want to hold the
+    // Open/create the file WITHOUT truncating yet -- we want to hold the
     // lock before we destructively modify it. If two writers race, the
     // second one blocks here.
     let mut file = std::fs::OpenOptions::new()
@@ -682,13 +682,13 @@ fn set_yaml_key(doc: &mut serde_yaml_ng::Value, key: &str, value: serde_yaml_ng:
         let yaml_key = serde_yaml_ng::Value::String((*part).to_string());
 
         if i == parts.len() - 1 {
-            // Last part — set the value
+            // Last part -- set the value
             if let serde_yaml_ng::Value::Mapping(map) = current {
                 map.insert(yaml_key, value);
                 return;
             }
         } else {
-            // Intermediate part — navigate or create mapping
+            // Intermediate part -- navigate or create mapping
             if !current.is_mapping() {
                 *current = serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::new());
             }

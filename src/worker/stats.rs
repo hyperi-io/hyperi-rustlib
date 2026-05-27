@@ -12,7 +12,7 @@
 //! errors, DLQ. These use [`AtomicU64`] for lock-free updates from both
 //! the parallel (rayon) and sequential phases.
 //!
-//! App-specific stats extend separately — these are the common fields
+//! App-specific stats extend separately -- these are the common fields
 //! shared across all 6 DFE pipeline projects.
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Common DFE pipeline statistics with atomic counters.
 ///
 /// Lock-free, safe to read and write from any thread. Uses
-/// `Ordering::Relaxed` — stats are informational, not safety-critical.
+/// `Ordering::Relaxed` -- stats are informational, not safety-critical.
 #[derive(Debug, Default)]
 pub struct PipelineStats {
     /// Messages received from source (Kafka, HTTP, gRPC, etc.).

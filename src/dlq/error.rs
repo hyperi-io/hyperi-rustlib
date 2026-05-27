@@ -47,7 +47,7 @@ pub enum DlqError {
     #[error("DLQ queue is full")]
     QueueFull,
 
-    /// DLQ has been shut down — no further entries accepted.
+    /// DLQ has been shut down -- no further entries accepted.
     #[error("DLQ has shut down")]
     Closed,
 }

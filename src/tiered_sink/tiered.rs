@@ -66,8 +66,14 @@ impl<S: Sink> TieredSink<S> {
         let spool_sender = Arc::new(Mutex::new(sender));
         let spool_receiver = Arc::new(Mutex::new(receiver));
 
-        // Initialise spool counters from existing queue contents
-        let (initial_count, initial_bytes) = spool_item_count_and_bytes(&config.spool_path);
+        // Codex F16: recover counters in spawn_blocking -- segment
+        // files can be GB-sized after a crash; walking them on the
+        // async runtime pins a tokio worker.
+        let spool_path_for_scan = config.spool_path.clone();
+        let (initial_count, initial_bytes) =
+            tokio::task::spawn_blocking(move || spool_item_count_and_bytes(&spool_path_for_scan))
+                .await
+                .unwrap_or((0, 0));
         let spool_count = Arc::new(AtomicU64::new(initial_count));
         let spool_bytes = Arc::new(AtomicU64::new(initial_bytes));
 
@@ -556,6 +562,21 @@ async fn disk_capacity_poller(
 
 impl<S: Sink> Drop for TieredSink<S> {
     fn drop(&mut self) {
+        // Codex F17: durability requires explicit `shutdown().await`.
+        // Drop can only notify the background drainer -- it can't
+        // await it. If anything's still spooled at drop time, the
+        // caller has skipped the explicit shutdown and risks losing
+        // that data. Warn + count so this shows up in dashboards.
+        let pending = self.spool_count.load(AtomicOrdering::Relaxed);
+        if pending > 0 {
+            #[cfg(feature = "metrics")]
+            ::metrics::counter!("dfe_spool_dropped_without_shutdown_total").increment(1);
+            #[cfg(feature = "tracing")]
+            tracing::warn!(
+                pending,
+                "TieredSink dropped with spooled work pending -- call shutdown().await for durability"
+            );
+        }
         self.shutdown.notify_one();
     }
 }
@@ -836,7 +857,7 @@ mod tests {
             tiered.shutdown().await;
         }
 
-        // Phase 2: Re-open — spool_count should reflect existing items
+        // Phase 2: Re-open -- spool_count should reflect existing items
         {
             let sink = TestSink::new();
             let config = TieredSinkConfig::new(&spool_path);

@@ -8,16 +8,16 @@
 
 //! Three layers:
 //!
-//! 1. **Classification** — every shape lands in the expected tier.
-//! 2. **Equivalence** — Shape and Literal tier behaviour matches
+//! 1. **Classification** -- every shape lands in the expected tier.
+//! 2. **Equivalence** -- Shape and Literal tier behaviour matches
 //!    `regex::Regex` over random and adversarial haystacks.
-//! 3. **Anti-spam** — distinct WARN cap and per-pattern dedup behave
+//! 3. **Anti-spam** -- distinct WARN cap and per-pattern dedup behave
 //!    as documented.
 
 use super::*;
 
 // ---------------------------------------------------------------------------
-// 1. Classification — every shape ends up in the expected tier
+// 1. Classification -- every shape ends up in the expected tier
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -51,7 +51,7 @@ fn byte_tier_byte_set_3() {
 
 #[test]
 fn byte_tier_single_byte_anchored_start() {
-    // /^/ — single-byte anchored at start. Lands in Byte tier because
+    // /^/ -- single-byte anchored at start. Lands in Byte tier because
     // dispatch is `hay.first() == Some(b'/')`.
     let m = StrMatcher::new(r"^/").unwrap();
     assert_eq!(m.tier(), MatcherTier::Byte);
@@ -90,7 +90,7 @@ fn literal_tier_ends_with_multi_byte() {
 /// `hay.ends_with(lit).then_some(Match { start: hay.len() - lit.len(), .. })`
 /// which eagerly evaluates the subtraction. When the haystack is shorter
 /// than the literal, `ends_with` returns false but the subtraction underflows
-/// — panic in debug, garbage offset in release.
+/// -- panic in debug, garbage offset in release.
 ///
 /// Lazy `then(|| ..)` defers the Match construction so the subtraction
 /// only happens when the literal actually fits.
@@ -111,7 +111,7 @@ fn ends_with_does_not_panic_on_short_haystack() {
 #[test]
 fn ends_with_find_does_not_panic_on_short_haystack() {
     let m = StrMatcher::new(r"\.log$").unwrap();
-    // find() also goes through the same plan path — must not panic
+    // find() also goes through the same plan path -- must not panic
     assert!(m.find(b"").is_none());
     assert!(m.find(b"ab").is_none());
     assert_eq!(m.find(b".log").map(|h| h.start), Some(0));
@@ -203,7 +203,7 @@ fn meta_unbounded_quantifier() {
 
 #[test]
 fn meta_lookahead_rejected_at_parse() {
-    // regex_syntax doesn't support lookahead by default — this should
+    // regex_syntax doesn't support lookahead by default -- this should
     // surface as BuildError::Syntax, not a tier classification.
     let err = StrMatcher::new(r"foo(?=bar)").unwrap_err();
     match err {
@@ -222,7 +222,7 @@ fn empty_pattern_is_error() {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Equivalence — Shape / Literal tiers behave the same as `regex`
+// 2. Equivalence -- Shape / Literal tiers behave the same as `regex`
 // ---------------------------------------------------------------------------
 
 mod equivalence {
@@ -292,7 +292,7 @@ mod equivalence {
 
     #[test]
     fn meta_patterns_match_regex() {
-        // Even the fall-through tier must agree with regex — this
+        // Even the fall-through tier must agree with regex -- this
         // catches accidental engine differences.
         let cases: &[&[u8]] = &[
             b"",
@@ -311,7 +311,7 @@ mod equivalence {
 }
 
 // ---------------------------------------------------------------------------
-// 3. Anti-spam — dedup, cap, force-warn
+// 3. Anti-spam -- dedup, cap, force-warn
 // ---------------------------------------------------------------------------
 
 mod antispam {
@@ -337,7 +337,7 @@ mod antispam {
         // and the dedup state is observable via _reset.
         let _m1 = StrMatcher::new(r"\bfoo\b").unwrap();
         let _m2 = StrMatcher::new(r"\bfoo\b").unwrap();
-        // Both compiled. Hash set tracks one entry — second compile
+        // Both compiled. Hash set tracks one entry -- second compile
         // re-hashes the same pattern and finds it already inserted.
         capture(|| {}); // no-op for now; real capture would assert exactly one WARN line
     }
@@ -441,7 +441,7 @@ fn ascii_case_insensitive_single_literal() {
         .build("foo")
         .unwrap();
     // Case-insensitive forces an AC-backed plan even for a single
-    // literal — the Byte/Literal tiers' memchr/memmem can't fold case.
+    // literal -- the Byte/Literal tiers' memchr/memmem can't fold case.
     // So tier is LiteralSet (AC with ascii_case_insensitive flag).
     assert_eq!(m.tier(), MatcherTier::LiteralSet);
     assert!(m.is_match(b"FOO"));
@@ -493,7 +493,7 @@ fn find_offsets_for_anchored_shape() {
 }
 
 // ---------------------------------------------------------------------------
-// 7. Public API surface — rank(), typical_budget_ns(), Display, pattern()
+// 7. Public API surface -- rank(), typical_budget_ns(), Display, pattern()
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -547,7 +547,7 @@ fn pattern_accessor_preserves_input_verbatim() {
 #[test]
 fn empty_haystack_against_every_tier() {
     // Empty haystack should match nothing (except patterns that match
-    // empty strings, which we don't allow — the parser rejects ^$
+    // empty strings, which we don't allow -- the parser rejects ^$
     // anyway). All our patterns require at least one byte.
     for pattern in ["x", "foo", r"^foo$", "foo|bar", r"\w+@\w+"] {
         let m = StrMatcher::new(pattern).unwrap();
@@ -611,7 +611,7 @@ fn long_haystack_with_many_matches() {
 }
 
 // ---------------------------------------------------------------------------
-// 9. Meta-tier reasons — verify each disqualifying feature lands with
+// 9. Meta-tier reasons -- verify each disqualifying feature lands with
 //    the documented reason string and a non-trivial hint
 // ---------------------------------------------------------------------------
 
@@ -682,7 +682,7 @@ fn min_tier_byte_rejects_literal_tier_pattern() {
 
 #[test]
 fn min_tier_byte_accepts_byte_tier_pattern() {
-    // Single-byte pattern IS Byte tier — should build fine even with
+    // Single-byte pattern IS Byte tier -- should build fine even with
     // the strictest min_tier.
     let m = StrMatcher::builder()
         .min_tier(MatcherTier::Byte)

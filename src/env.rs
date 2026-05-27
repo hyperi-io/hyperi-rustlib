@@ -136,7 +136,7 @@ impl Default for Environment {
 }
 
 // =============================================================================
-// RuntimeContext — rich runtime metadata detected once at startup
+// RuntimeContext -- rich runtime metadata detected once at startup
 // =============================================================================
 
 /// Rich runtime context detected once at startup, immutable after.
@@ -145,7 +145,7 @@ impl Default for Environment {
 /// instead of doing their own env var lookups. Detected lazily on first access
 /// via [`runtime_context()`].
 ///
-/// On bare metal, most fields are `None` — features that read them become no-ops.
+/// On bare metal, most fields are `None` -- features that read them become no-ops.
 #[derive(Debug, Clone)]
 pub struct RuntimeContext {
     /// Detected runtime environment.
@@ -168,7 +168,7 @@ impl RuntimeContext {
     /// Detect the full runtime context.
     ///
     /// Reads environment variables and filesystem signals. Safe to call
-    /// on bare metal — fields will be `None` when not in a container.
+    /// on bare metal -- fields will be `None` when not in a container.
     #[must_use]
     pub fn detect() -> Self {
         let environment = Environment::detect();
@@ -485,7 +485,7 @@ mod tests {
     fn test_read_cgroup_memory_limit_returns_option() {
         // On bare metal, returns None (no cgroup). On container, returns Some.
         let limit = read_cgroup_memory_limit();
-        // Just verify it doesn't panic — result depends on environment
+        // Just verify it doesn't panic -- result depends on environment
         let _ = limit;
     }
 

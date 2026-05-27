@@ -41,7 +41,7 @@ impl Default for HttpDlqConfig {
     }
 }
 
-/// HTTP backend — internal variant carried by [`super::DlqBackend::Http`].
+/// HTTP backend -- internal variant carried by [`super::DlqBackend::Http`].
 #[derive(Debug)]
 pub struct HttpDlqInner {
     client: reqwest::Client,

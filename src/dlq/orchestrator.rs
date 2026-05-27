@@ -15,15 +15,15 @@
 //! ## Hot path
 //!
 //! `try_send` / `send` queue an entry onto the in-memory mpsc and
-//! return. The drain task — the only place that touches backends —
+//! return. The drain task -- the only place that touches backends --
 //! coalesces queued entries into batches and writes to backends. The
 //! caller never blocks on disk, Kafka, HTTP, or Redis I/O.
 //!
 //! ## Modes
 //!
-//! - `Cascade` / `FileOnly` / `KafkaOnly` — try backends in order,
+//! - `Cascade` / `FileOnly` / `KafkaOnly` -- try backends in order,
 //!   stop on first success.
-//! - `FanOut` — send to all backends, succeed if any succeed.
+//! - `FanOut` -- send to all backends, succeed if any succeed.
 //!
 //! ## Shutdown
 //!
@@ -105,7 +105,7 @@ impl Dlq {
     ///
     /// `kafka_config` is required if the config has `kafka.enabled =
     /// true` (or the mode demands Kafka). Pass `None` if the service
-    /// has no Kafka transport — Kafka mode/enabled flags are honoured
+    /// has no Kafka transport -- Kafka mode/enabled flags are honoured
     /// where possible and a clear `Err(DlqError::NotConfigured)` is
     /// returned if Kafka is required but unavailable.
     ///
@@ -131,7 +131,7 @@ impl Dlq {
         )?;
 
         if backends.is_empty() {
-            warn!("DLQ enabled but no backends configured — entries will be dropped");
+            warn!("DLQ enabled but no backends configured -- entries will be dropped");
             return Ok(Self::disabled());
         }
 
@@ -193,7 +193,7 @@ impl Dlq {
 
     /// Sync-shaped queue submission. Returns immediately. On a full
     /// queue, returns `Err(DlqError::QueueFull)` and increments the
-    /// drop counter — caller decides whether to log, escalate, or
+    /// drop counter -- caller decides whether to log, escalate, or
     /// proceed.
     ///
     /// # Errors
@@ -257,7 +257,7 @@ impl Dlq {
     /// Cancels the internal child token (drain observes the cancellation
     /// in its next `select!`, flushes its remaining batch, and exits),
     /// then awaits the drain task. This is the canonical "stop the DLQ
-    /// and wait for it" call — the previous version only awaited the
+    /// and wait for it" call -- the previous version only awaited the
     /// join and would hang forever unless the caller had separately
     /// cancelled the token passed to `spawn`.
     ///
@@ -269,7 +269,7 @@ impl Dlq {
     /// Returns `Err(DlqError::Closed)` if the drain task panicked.
     pub async fn shutdown(&self) -> Result<(), DlqError> {
         // Trip the child token so the drain notices on its next
-        // select!. Idempotent — CancellationToken::cancel handles
+        // select!. Idempotent -- CancellationToken::cancel handles
         // re-cancellation.
         self.cancel.cancel();
         let mut guard = self.join.lock().await;
@@ -300,7 +300,7 @@ fn build_backends(
     let mut backends: Vec<DlqBackend> = Vec::new();
     let mode = config.mode;
 
-    // Kafka first (primary in cascade) — feature-gated.
+    // Kafka first (primary in cascade) -- feature-gated.
     #[cfg(feature = "dlq-kafka")]
     {
         let want_kafka = matches!(
@@ -320,7 +320,7 @@ fn build_backends(
         }
     }
 
-    // File second (fallback in cascade) — always available.
+    // File second (fallback in cascade) -- always available.
     let want_file = matches!(mode, DlqMode::Cascade | DlqMode::FanOut | DlqMode::FileOnly);
     if want_file && config.file.enabled {
         backends.push(DlqBackend::File(FileDlqInner::new(
@@ -329,7 +329,7 @@ fn build_backends(
         )?));
     }
 
-    // HTTP — feature-gated, added when explicitly enabled.
+    // HTTP -- feature-gated, added when explicitly enabled.
     #[cfg(feature = "dlq-http")]
     {
         if config.http.enabled {
@@ -339,7 +339,7 @@ fn build_backends(
         }
     }
 
-    // Redis — feature-gated. Requires async constructor; we build a
+    // Redis -- feature-gated. Requires async constructor; we build a
     // tokio runtime handle inline. Spawn() must run inside a tokio
     // runtime (true for every HyperI service).
     #[cfg(feature = "dlq-redis")]
@@ -357,7 +357,7 @@ fn build_backends(
     Ok(backends)
 }
 
-/// Drain task — owns the backends and implements cascade / fan-out
+/// Drain task -- owns the backends and implements cascade / fan-out
 /// dispatch. Lives inside the actor task spawned by `BackgroundSink`.
 struct DlqDrain {
     mode: DlqMode,

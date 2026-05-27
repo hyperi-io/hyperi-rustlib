@@ -24,7 +24,7 @@ impl CircuitBreakerMetrics {
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
 
-        // circuit_breaker_state — label-based, register descriptor manually
+        // circuit_breaker_state -- label-based, register descriptor manually
         let state_key = if ns.is_empty() {
             "circuit_breaker_state".to_string()
         } else {
@@ -46,7 +46,7 @@ impl CircuitBreakerMetrics {
             dashboard_hint: None,
         });
 
-        // circuit_breaker_transitions_total — label-based
+        // circuit_breaker_transitions_total -- label-based
         let trans_key = if ns.is_empty() {
             "circuit_breaker_transitions_total".to_string()
         } else {

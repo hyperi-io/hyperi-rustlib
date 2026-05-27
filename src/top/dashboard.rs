@@ -256,7 +256,7 @@ fn render_header(frame: &mut Frame, app: &DashboardApp, area: ratatui::layout::R
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(" — "),
+        Span::raw(" -- "),
         Span::styled(&app.metrics_url, Style::default().fg(Color::DarkGray)),
     ]))
     .block(Block::default().borders(Borders::BOTTOM));

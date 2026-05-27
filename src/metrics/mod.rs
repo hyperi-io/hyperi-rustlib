@@ -40,7 +40,7 @@
 //!     let active = manager.gauge("active_connections", "Active connections");
 //!     let latency = manager.histogram("request_duration_seconds", "Request latency");
 //!
-//!     // Start metrics server (simple — built-in endpoints only)
+//!     // Start metrics server (simple -- built-in endpoints only)
 //!     manager.start_server("0.0.0.0:9090").await.unwrap();
 //!
 //!     // Record metrics
@@ -313,7 +313,7 @@ impl MetricsManager {
     /// This constructor skips recorder installation entirely. `metrics!` macros
     /// become no-ops (the crate's documented behaviour when no recorder is set),
     /// but manifest registry tracking, descriptor push, and namespace logic all
-    /// work normally — which is what the tests actually verify.
+    /// work normally -- which is what the tests actually verify.
     #[cfg(test)]
     pub(crate) fn new_for_test(namespace: &str) -> Self {
         let config = MetricsConfig {
@@ -413,7 +413,7 @@ impl MetricsManager {
     /// Create a counter with label keys and group metadata for the manifest.
     ///
     /// The `labels` parameter declares label **key names** for the manifest.
-    /// The returned `Counter` is label-free — apply label values at recording
+    /// The returned `Counter` is label-free -- apply label values at recording
     /// time via `metrics::counter!(key, "label" => value)`.
     #[must_use]
     pub fn counter_with_labels(
@@ -621,7 +621,7 @@ impl MetricsManager {
     ///
     /// Call this once init is complete. K8s `startupProbe` hits `/startupz`
     /// which returns 503 until this is called, then 200 thereafter.
-    /// Separate from readiness — startup has a longer timeout for slow starters.
+    /// Separate from readiness -- startup has a longer timeout for slow starters.
     pub fn mark_started(&self) {
         self.started
             .store(true, std::sync::atomic::Ordering::Release);
@@ -692,7 +692,7 @@ impl MetricsManager {
             .as_ref()
             .ok_or_else(|| {
                 MetricsError::ServerError(
-                    "Prometheus handle not configured — MetricsManager was created without a recorder".into(),
+                    "Prometheus handle not configured -- MetricsManager was created without a recorder".into(),
                 )
             })?
             .clone();
@@ -765,7 +765,7 @@ impl MetricsManager {
             .as_ref()
             .ok_or_else(|| {
                 MetricsError::ServerError(
-                    "Prometheus handle not configured — MetricsManager was created without a recorder".into(),
+                    "Prometheus handle not configured -- MetricsManager was created without a recorder".into(),
                 )
             })?
             .clone();

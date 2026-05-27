@@ -10,7 +10,7 @@
 //! `sonic_rs::get_from_slice` (SIMD-accelerated), then apply filters
 //! to decide whether the message continues, is dropped, or goes to DLQ.
 //!
-//! Hot path: ~50–100 ns per message.
+//! Hot path: ~50-100 ns per message.
 
 use sonic_rs::JsonValueTrait as _;
 
@@ -30,9 +30,9 @@ pub enum PreRouteExtraction {
 /// Outcome after applying filters to a pre-route extraction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PreRouteOutcome {
-    /// Message passes — proceed to parse + transform.
+    /// Message passes -- proceed to parse + transform.
     Continue,
-    /// Message filtered out — skip parse, include in commit.
+    /// Message filtered out -- skip parse, include in commit.
     Filtered,
     /// Message routes to DLQ with reason.
     Dlq(String),
@@ -77,7 +77,7 @@ pub fn extract_routing_field(payload: &[u8], field_name: &str) -> PreRouteExtrac
 
 /// Apply a list of runtime filters to a pre-route extraction result.
 ///
-/// Filters are evaluated in order — first match wins. If no filter matches
+/// Filters are evaluated in order -- first match wins. If no filter matches
 /// the message continues.
 #[must_use]
 pub fn apply_filters(
@@ -102,7 +102,7 @@ pub fn apply_filters(
         }
     }
 
-    // A parse error with no filters still results in Continue — the parse
+    // A parse error with no filters still results in Continue -- the parse
     // phase will detect and handle the invalid payload.
     PreRouteOutcome::Continue
 }

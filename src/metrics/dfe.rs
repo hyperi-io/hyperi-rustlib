@@ -10,7 +10,7 @@
 //!
 //! Pre-defined metric set for DFE pipeline components (receiver, loader, engine).
 //! Call [`DfeMetrics::register`] **after** creating a
-//! [`MetricsManager`](super::MetricsManager) — the manager must exist so that
+//! [`MetricsManager`](super::MetricsManager) -- the manager must exist so that
 //! platform metrics are automatically captured in the manifest registry.
 //!
 //! All methods are `#[inline]` and designed for hot-path use.
@@ -35,7 +35,7 @@ use super::manifest::{MetricDescriptor, MetricType};
 /// Provides labelled counters, gauges, and histograms covering transport,
 /// pipeline, records, scaling, spool, and security concerns.
 ///
-/// Construct via [`DfeMetrics::register`] — this describes all metrics with
+/// Construct via [`DfeMetrics::register`] -- this describes all metrics with
 /// the global recorder AND pushes descriptors into the manifest registry.
 pub struct DfeMetrics {
     /// Prevent external construction.
@@ -47,7 +47,7 @@ impl DfeMetrics {
     /// manifest registry.
     ///
     /// Call this **once** after creating a [`MetricsManager`](super::MetricsManager).
-    /// The returned handle is cheaply clonable (it's zero-sized — all recording
+    /// The returned handle is cheaply clonable (it's zero-sized -- all recording
     /// goes through the global `metrics!` macros).
     ///
     /// **Breaking change (v1.22):** Now takes `&MetricsManager` to ensure

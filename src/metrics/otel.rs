@@ -85,7 +85,7 @@ fn build_otlp_exporter(
 /// Uses `metrics-exporter-opentelemetry` to create a `metrics::Recorder`
 /// backed by an OTel `SdkMeterProvider` with an OTLP periodic exporter.
 ///
-/// The recorder is returned but NOT installed — the caller decides whether
+/// The recorder is returned but NOT installed -- the caller decides whether
 /// to install it directly or compose it with Prometheus via Fanout.
 pub(crate) fn build_otel_recorder(
     scope_name: &str,
@@ -115,7 +115,7 @@ pub(crate) fn build_otel_recorder(
     let reader_for_closure = reader;
     let resource_for_closure = resource;
 
-    // build() returns (SdkMeterProvider, Recorder) — provider first
+    // build() returns (SdkMeterProvider, Recorder) -- provider first
     let (provider, recorder) =
         metrics_exporter_opentelemetry::Recorder::builder(scope_name.to_string())
             .with_meter_provider(move |mpb| {

@@ -11,9 +11,9 @@
 //! `ConfigReloader<T>` provides three reload triggers, any combination of
 //! which can be enabled simultaneously:
 //!
-//! 1. **SIGHUP** (Unix only) — standard daemon reload signal
-//! 2. **Periodic timer** — reload every N seconds
-//! 3. **File polling** — detect config file changes via mtime comparison
+//! 1. **SIGHUP** (Unix only) -- standard daemon reload signal
+//! 2. **Periodic timer** -- reload every N seconds
+//! 3. **File polling** -- detect config file changes via mtime comparison
 //!
 //! The reloader calls a user-supplied `reload_fn` to load config and a
 //! `validate_fn` to validate before applying. On success it updates the
@@ -184,9 +184,9 @@ impl Default for ReloaderConfig {
 /// Universal configuration reloader.
 ///
 /// Supports three reload triggers (any combination):
-/// - **SIGHUP** (Unix) — `enable_sighup: true`
-/// - **Periodic timer** — `periodic_interval > 0`
-/// - **File polling** — `config_path: Some(path)`
+/// - **SIGHUP** (Unix) -- `enable_sighup: true`
+/// - **Periodic timer** -- `periodic_interval > 0`
+/// - **File polling** -- `config_path: Some(path)`
 ///
 /// On each trigger, calls `reload_fn` to load new config, `validate_fn` to
 /// validate, then updates the `SharedConfig<T>` if valid.
@@ -275,7 +275,7 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
         })
     }
 
-    /// Main reload loop — waits for any trigger, then attempts reload.
+    /// Main reload loop -- waits for any trigger, then attempts reload.
     async fn run_loop(self) {
         #[cfg(feature = "shutdown")]
         let shutdown_token = crate::shutdown::token();
@@ -534,7 +534,7 @@ async fn file_mtime_async(path: &PathBuf) -> Option<SystemTime> {
         .and_then(|m| m.modified().ok())
 }
 
-/// Sync mtime helper — used only by the sync-context test below.
+/// Sync mtime helper -- used only by the sync-context test below.
 #[cfg(test)]
 fn file_mtime(path: &PathBuf) -> Option<SystemTime> {
     std::fs::metadata(path).ok().and_then(|m| m.modified().ok())

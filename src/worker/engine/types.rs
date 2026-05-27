@@ -92,7 +92,7 @@ impl<T: crate::CommitToken> CommitTokenErased for T {
 
 /// Metadata attached to a raw message.
 ///
-/// Carries transport provenance — timestamp, detected format, and an optional
+/// Carries transport provenance -- timestamp, detected format, and an optional
 /// type-erased commit token so the engine can acknowledge messages without
 /// knowing the concrete transport type.
 #[derive(Debug, Clone)]
@@ -107,7 +107,7 @@ pub struct MessageMetadata {
 
 /// Transport-agnostic raw message.
 ///
-/// The lowest-level type in the engine — holds raw bytes plus just enough
+/// The lowest-level type in the engine -- holds raw bytes plus just enough
 /// metadata to route, parse, and commit. No generic parameters.
 #[derive(Debug, Clone)]
 pub struct RawMessage {
@@ -148,7 +148,7 @@ impl<T: crate::CommitToken> From<crate::Message<T>> for RawMessage {
 /// value alongside extracted fields for fast routing lookups.
 #[derive(Debug, Clone)]
 pub enum ParsedMessage {
-    /// Unparsed message — bytes only.
+    /// Unparsed message -- bytes only.
     Raw(RawMessage),
     /// Successfully JSON-parsed message.
     Parsed {

@@ -46,7 +46,7 @@ impl HealthStatus {
     }
 }
 
-/// Health check callback — returns current component status.
+/// Health check callback -- returns current component status.
 type HealthCheck = Arc<dyn Fn() -> HealthStatus + Send + Sync>;
 
 /// A registered health check entry.
@@ -94,7 +94,7 @@ impl HealthRegistry {
     /// # Duplicate Names
     ///
     /// Multiple components may register with the same name. Each
-    /// registration is independent — the registry does not deduplicate.
+    /// registration is independent -- the registry does not deduplicate.
     pub fn register(
         name: impl Into<String>,
         check: impl Fn() -> HealthStatus + Send + Sync + 'static,
@@ -138,7 +138,7 @@ impl HealthRegistry {
     /// Check if the service is ready to receive traffic.
     ///
     /// Ready means no component is [`HealthStatus::Unhealthy`]. Degraded
-    /// components are acceptable — the service can still serve requests,
+    /// components are acceptable -- the service can still serve requests,
     /// just with reduced capability.
     ///
     /// Returns `true` if the registry is empty (vacuously true).
@@ -215,7 +215,7 @@ mod tests {
 
     use super::*;
 
-    /// Tests share global statics — serialise them.
+    /// Tests share global statics -- serialise them.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     macro_rules! serial_test {

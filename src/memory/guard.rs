@@ -26,7 +26,7 @@ pub enum MemoryPressure {
     Low,
     /// Usage between 50% and pressure_threshold.
     Medium,
-    /// Usage above pressure_threshold — apply backpressure.
+    /// Usage above pressure_threshold -- apply backpressure.
     High,
 }
 
@@ -107,9 +107,9 @@ impl MemoryGuardConfig {
     /// Create config from environment variables with a prefix.
     ///
     /// Reads standard env vars for memory configuration:
-    /// - `{PREFIX}_MEMORY_LIMIT_BYTES` — explicit limit (0 or unset = auto-detect from cgroup)
-    /// - `{PREFIX}_MEMORY_PRESSURE_THRESHOLD` — backpressure trigger (default 0.80)
-    /// - `{PREFIX}_MEMORY_CGROUP_HEADROOM` — fraction of cgroup limit to use (default 0.85)
+    /// - `{PREFIX}_MEMORY_LIMIT_BYTES` -- explicit limit (0 or unset = auto-detect from cgroup)
+    /// - `{PREFIX}_MEMORY_PRESSURE_THRESHOLD` -- backpressure trigger (default 0.80)
+    /// - `{PREFIX}_MEMORY_CGROUP_HEADROOM` -- fraction of cgroup limit to use (default 0.85)
     ///
     /// # Example
     ///
@@ -178,10 +178,10 @@ impl MemoryGuardConfig {
 ///
 /// let guard = MemoryGuard::new(MemoryGuardConfig::default());
 ///
-/// // On data arrival — check before accepting
+/// // On data arrival -- check before accepting
 /// let payload_len = 1024u64;
 /// if !guard.try_reserve(payload_len) {
-///     // return 503 — backpressure
+///     // return 503 -- backpressure
 /// }
 ///
 /// // After data is flushed/sent
@@ -215,7 +215,7 @@ impl MemoryGuard {
             config.limit_bytes
         } else {
             let detected = cgroup::detect_memory_limit();
-            // Apply headroom — don't use 100% of cgroup limit
+            // Apply headroom -- don't use 100% of cgroup limit
             (detected as f64 * config.cgroup_headroom) as u64
         };
 
@@ -241,7 +241,7 @@ impl MemoryGuard {
     pub fn try_reserve(&self, bytes: u64) -> bool {
         let current = self.current_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes;
         if current > self.limit_bytes {
-            // Over limit — roll back
+            // Over limit -- roll back
             self.current_bytes.fetch_sub(bytes, Ordering::Relaxed);
             self.under_pressure.store(true, Ordering::Relaxed);
             return false;
@@ -364,7 +364,7 @@ mod tests {
             pressure_threshold: 0.8,
             ..Default::default()
         });
-        guard.add_bytes(900); // 90% — over threshold
+        guard.add_bytes(900); // 90% -- over threshold
         assert!(guard.under_pressure());
         assert_eq!(guard.pressure(), MemoryPressure::High);
 
@@ -412,7 +412,7 @@ mod tests {
             ..Default::default()
         });
         guard.add_bytes(100);
-        guard.release(200); // release more than added — saturates to 0
+        guard.release(200); // release more than added -- saturates to 0
         assert_eq!(
             guard.current_bytes(),
             0,
@@ -450,7 +450,7 @@ mod tests {
         for h in handles {
             h.join().unwrap();
         }
-        // All bytes should be released — may not be exactly 0 due to ordering
+        // All bytes should be released -- may not be exactly 0 due to ordering
         // but should be close (within one thread's batch)
         assert!(
             guard.current_bytes() < 1000,

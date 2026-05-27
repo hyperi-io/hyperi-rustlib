@@ -11,7 +11,7 @@
 //! `CacheConfig.encryption_key` (when set) drives AES-256-GCM
 //! encryption of every disk-cache entry. The user-supplied key string
 //! is passed through HKDF-SHA256 (with a fixed library-domain salt)
-//! to produce the 32-byte AES key — this means the user can supply
+//! to produce the 32-byte AES key -- this means the user can supply
 //! any-length string, including a passphrase, without us assuming
 //! they already have 32 bytes of key material.
 //!
@@ -40,15 +40,10 @@
 //!
 //! ## Misuse resistance
 //!
-//! - Tampering with `ct` or `nonce` breaks GCM authentication ->
-//!   `open()` returns `Err(BadCiphertext)`.
-//! - Wrong key -> same path, same error.
-//! - Truncated nonce / wrong base64 -> `Err(MalformedEnvelope)`.
-//!
-//! Defence-in-depth: the file is base64-shaped JSON so an attacker
-//! reading the disk can't tell `data:` apart from `nonce:` from
-//! `ct:` by their byte distribution — they all decode to random
-//! bytes.
+//! - Tampering with `ct` or `nonce` breaks GCM auth -> `open()`
+//!   returns an error.
+//! - Wrong key, wrong AAD -- same path, same error (no oracle).
+//! - Truncated nonce / bad base64 -> malformed envelope error.
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
@@ -60,7 +55,7 @@ use sha2::Sha256;
 
 use super::error::{SecretsError, SecretsResult};
 
-/// HKDF salt — fixed per-library so two services with the same
+/// HKDF salt -- fixed per-library so two services with the same
 /// `encryption_key` produce the same derived key (the user's intent
 /// is "same key = same cache"). Not secret. 32 bytes of high-entropy
 /// constant.
@@ -68,7 +63,7 @@ const HKDF_SALT: &[u8] = b"hyperi-rustlib::secrets::cache::v1::hkdf-salt-32bytes
 const HKDF_INFO: &[u8] = b"hyperi-rustlib secrets disk cache AES-256-GCM key";
 
 const ENVELOPE_VERSION: u8 = 1;
-const NONCE_LEN: usize = 12; // 96 bits — standard for AES-GCM
+const NONCE_LEN: usize = 12; // 96 bits -- standard for AES-GCM
 
 /// AAD prefix. Domain-separates the cache AAD namespace so a future
 /// reuse of `seal`/`open` for a different purpose can't share AAD

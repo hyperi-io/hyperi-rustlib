@@ -31,7 +31,7 @@
 //! - Use `tokio::fs` / `tokio::io::AsyncWrite` for occasional async I/O.
 //! - Use [`BackgroundSink`] for high-throughput durable writes.
 //! - Use `tokio::task::spawn_blocking` for one-off unavoidable sync work.
-//! - Don't — push the sync work to startup, before the runtime is hot.
+//! - Don't -- push the sync work to startup, before the runtime is hot.
 //!
 //! The grep-based `tests/sync_in_async.rs` lint enforces this
 //! mechanically: any `async fn` body containing `std::fs::*`,
@@ -40,15 +40,15 @@
 //!
 //! # Considered alternatives
 //!
-//! - `tokio-actors` (v0.6) — covers `ActorHandle` + `PeriodicWorker`
+//! - `tokio-actors` (v0.6) -- covers `ActorHandle` + `PeriodicWorker`
 //!   cleanly but doesn't provide batched-drain-with-flush-barrier,
 //!   which is the load-bearing case for [`BackgroundSink`]. Wrapping
 //!   it would equal the size of this module's impl. Rejected.
-//! - `tokio-prometheus-metered-channel` (v0.2) — bounded channel with
+//! - `tokio-prometheus-metered-channel` (v0.2) -- bounded channel with
 //!   Prometheus metrics, no actor / batch / flush. Too narrow.
-//! - `xtra`, `actix`, `bastion` — heavy actor frameworks. Don't fit
+//! - `xtra`, `actix`, `bastion` -- heavy actor frameworks. Don't fit
 //!   the sink shape. Rejected.
-//! - `tracing-appender::non_blocking` — used elsewhere for the logger
+//! - `tracing-appender::non_blocking` -- used elsewhere for the logger
 //!   subscriber; orthogonal to this module's tokio-runtime concerns.
 //!
 //! Rationale per [Alice Ryhl's "Actors with Tokio"](https://ryhl.io/blog/actors-with-tokio/)

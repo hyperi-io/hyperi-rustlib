@@ -8,7 +8,7 @@
 
 //! File output sink for local NDJSON event writing.
 //!
-//! Provides a simple file-based output for DFE services — useful for testing,
+//! Provides a simple file-based output for DFE services -- useful for testing,
 //! bare-metal deployments, and debugging where Kafka is not available.
 //!
 //! ## Example

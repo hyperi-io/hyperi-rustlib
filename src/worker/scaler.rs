@@ -44,7 +44,7 @@ impl ScalingDecision {
     /// the target thread count and the direction of the scaling change.
     #[must_use]
     pub fn evaluate(input: &ScalingInput) -> Self {
-        // Memory pressure overrides everything — prevent OOM
+        // Memory pressure overrides everything -- prevent OOM
         if input.memory_pressure > input.memory_pressure_cap {
             return Self {
                 target: input.min_threads,
@@ -113,7 +113,7 @@ impl ScalingController {
         self.system.refresh_cpu_all();
         let cpu_util = f64::from(self.system.global_cpu_usage()) / 100.0;
 
-        // Sample memory — dual source: sysinfo process RSS + MemoryGuard if attached
+        // Sample memory -- dual source: sysinfo process RSS + MemoryGuard if attached
         self.system.refresh_memory();
         let sysinfo_mem_pressure = if self.system.total_memory() > 0 {
             self.system.used_memory() as f64 / self.system.total_memory() as f64

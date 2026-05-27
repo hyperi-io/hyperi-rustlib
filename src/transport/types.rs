@@ -175,7 +175,7 @@ impl SendResult {
 /// Top-level transport configuration.
 ///
 /// Used by the transport factory to create the right backend from config.
-/// Each transport type has its own optional config section — only the one
+/// Each transport type has its own optional config section -- only the one
 /// matching `transport_type` is read.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TransportConfig {

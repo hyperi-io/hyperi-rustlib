@@ -75,7 +75,7 @@ const PATH_SEGMENT: &AsciiSet = USERINFO;
 pub trait DatabaseUrl {
     /// Build the connection URL string.
     ///
-    /// Password is included in the URL — use `.to_url()` only for passing
+    /// Password is included in the URL -- use `.to_url()` only for passing
     /// to database drivers, never for logging. Use `Display` for safe output.
     fn to_url(&self) -> String;
 
@@ -86,10 +86,10 @@ pub trait DatabaseUrl {
 /// Common database connection fields.
 ///
 /// `password` is a [`SensitiveString`] so its value is redacted in
-/// `Debug` / `serde::Serialize` output — never use the field directly
+/// `Debug` / `serde::Serialize` output -- never use the field directly
 /// in logs. Code that needs to round-trip a `DbConnection` through
 /// `serde` (e.g. figment env overlays) MUST wrap the serialise/deserialise
-/// in [`crate::expose_during`] so the value survives — that's the same
+/// in [`crate::expose_during`] so the value survives -- that's the same
 /// shape every other consumer needs for `SensitiveString` fields.
 ///
 /// `Debug` is derived because `SensitiveString::Debug` already prints
@@ -139,7 +139,7 @@ impl DbConnection {
     /// component so that special characters (`:`, `/`, `@`, `?`, `#`,
     /// `=`, `&`) in user/password/db don't break the parser. The
     /// previous string-interpolation shape silently corrupted URLs for
-    /// any credential containing one of those bytes — and those bytes
+    /// any credential containing one of those bytes -- and those bytes
     /// are common in generated/random passwords.
     fn url_with_scheme(&self, scheme: &str) -> String {
         let user_enc = utf8_percent_encode(&self.user, USERINFO);
@@ -160,7 +160,7 @@ impl DbConnection {
             format!("/{}", utf8_percent_encode(&self.db, PATH_SEGMENT))
         };
 
-        // Query parameters are passed through verbatim — callers are
+        // Query parameters are passed through verbatim -- callers are
         // expected to provide a properly-encoded `key=value&key2=value2`
         // string (typically a small fixed set like `sslmode=require`).
         let params = self
@@ -337,7 +337,7 @@ impl DatabaseUrl for MongoUrl {
     }
 }
 
-/// Safe `Display` implementation — redacts password.
+/// Safe `Display` implementation -- redacts password.
 impl std::fmt::Display for PostgresUrl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -473,14 +473,14 @@ mod tests {
     #[test]
     fn url_percent_encodes_password_with_special_chars() {
         // Real-world generated passwords routinely contain `@`, `/`, `:`,
-        // `#`, `=`. Without encoding the URL parser misroutes them — the
+        // `#`, `=`. Without encoding the URL parser misroutes them -- the
         // `@` ends the userinfo early, the `/` starts the path early.
         let url = PostgresUrl::new("db.prod", 5432, "user", "p@ss/w:rd#1=2", "mydb");
         let s = url.to_url();
         // `@` -> %40, `/` -> %2F, `:` -> %3A, `#` -> %23, `=` -> %3D
         assert!(s.contains("p%40ss%2Fw%3Ard%231%3D2"), "got: {s}");
         // Userinfo terminator should be the SINGLE @ separating creds
-        // from host — never a raw @ from the password.
+        // from host -- never a raw @ from the password.
         assert_eq!(s.matches('@').count(), 1, "got: {s}");
     }
 

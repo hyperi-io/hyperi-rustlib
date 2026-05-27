@@ -29,7 +29,7 @@ impl SchemaCacheMetrics {
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
 
-        // schema_recovery_total — label-based, register descriptor manually
+        // schema_recovery_total -- label-based, register descriptor manually
         let recovery_key = if ns.is_empty() {
             "schema_recovery_total".to_string()
         } else {

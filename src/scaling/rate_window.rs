@@ -12,7 +12,7 @@
 //! the rate of change per second. Useful for request rate, message rate,
 //! error rate, and similar signals.
 //!
-//! Thread-safe via `parking_lot::RwLock` — reads are fast and non-blocking.
+//! Thread-safe via `parking_lot::RwLock` -- reads are fast and non-blocking.
 
 use std::time::{Duration, Instant};
 

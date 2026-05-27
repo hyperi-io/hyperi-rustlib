@@ -10,7 +10,7 @@
 //!
 //! [`SensitiveString`] wraps a `String` but always serialises as
 //! `"***REDACTED***"`. This provides compile-time guarantees that the
-//! value cannot leak through serialisation — not in the config registry,
+//! value cannot leak through serialisation -- not in the config registry,
 //! not in logs, not in debug output, not in API responses.
 //!
 //! This module is always available (no feature gate) so that any module
@@ -49,7 +49,7 @@ const REDACTED: &str = "***REDACTED***";
 thread_local! {
     /// Per-thread serde-exposure flag. When set (via [`expose_during`])
     /// [`SensitiveString::serialize`] writes the inner value verbatim
-    /// instead of `***REDACTED***`. Default: `false` — every other call
+    /// instead of `***REDACTED***`. Default: `false` -- every other call
     /// site continues to redact.
     static EXPOSE: Cell<bool> = const { Cell::new(false) };
 }
@@ -83,7 +83,7 @@ impl Drop for ExposeGuard {
 /// Run `f` with [`SensitiveString`]'s `Serialize` impl exposing inner values.
 ///
 /// Use this around code paths that need to serialise-and-deserialise a
-/// config struct without destroying its secrets — typically the
+/// config struct without destroying its secrets -- typically the
 /// `figment::Figment::from(Serialized::defaults(&config))` + `.extract()`
 /// round-trip in a consumer's config loader.
 ///
@@ -93,7 +93,7 @@ impl Drop for ExposeGuard {
 /// thread observe exposure; calls from other threads do not. Nested
 /// calls compose correctly (inner guards restore the outer state on
 /// drop). Async callers should be aware that the flag does NOT cross
-/// `.await` boundaries to other threads — keep the round-trip on one
+/// `.await` boundaries to other threads -- keep the round-trip on one
 /// thread, or wrap each thread's section in its own
 /// `expose_during`.
 ///
@@ -177,8 +177,8 @@ impl SensitiveString {
 impl serde::Serialize for SensitiveString {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         // Honour the thread-local exposure flag set by `expose_during`.
-        // Without exposure (the default), every serialise path —
-        // serde_json::to_string, config-registry dump, logger output —
+        // Without exposure (the default), every serialise path --
+        // serde_json::to_string, config-registry dump, logger output --
         // emits the redacted constant. Inside `expose_during`, the
         // serializer emits the inner value verbatim, which is what
         // figment / serde round-trips need to avoid destroying secrets
@@ -347,12 +347,12 @@ mod tests {
     #[test]
     fn round_trip_outside_expose_during_redacts() {
         let s = SensitiveString::new("hunter2");
-        // Default path — no `expose_during` wrap.
+        // Default path -- no `expose_during` wrap.
         let v = serde_json::to_value(&s).unwrap();
         let round_tripped: SensitiveString = serde_json::from_value(v).unwrap();
         // The serialised form was the literal "***REDACTED***", so the
         // deserialised value is that literal. This is the bug being
-        // fixed for the consumer who wraps their round-trip — but the
+        // fixed for the consumer who wraps their round-trip -- but the
         // default behaviour is preserved verbatim.
         assert_eq!(round_tripped.expose(), REDACTED);
     }
@@ -366,7 +366,7 @@ mod tests {
         expose_during(|| {
             assert!(serde_json::to_string(&s).unwrap().contains("secret"));
         });
-        // After: redacted again — guard restored the flag
+        // After: redacted again -- guard restored the flag
         assert!(serde_json::to_string(&s).unwrap().contains(REDACTED));
         assert!(!serde_json::to_string(&s).unwrap().contains("secret"));
     }

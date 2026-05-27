@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 /// A failed message routed to the dead letter queue.
 ///
-/// This envelope is backend-agnostic — it carries the original payload
+/// This envelope is backend-agnostic -- it carries the original payload
 /// plus metadata about why and where the failure occurred.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DlqEntry {

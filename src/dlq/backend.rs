@@ -1,6 +1,6 @@
 // Project:   hyperi-rustlib
 // File:      src/dlq/backend.rs
-// Purpose:   DlqBackend enum — variant per supported backend
+// Purpose:   DlqBackend enum -- variant per supported backend
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
@@ -21,14 +21,14 @@ use super::error::DlqError;
 ///
 /// Variants are feature-gated:
 ///
-/// - [`Self::File`] — always available
-/// - [`Self::Kafka`] — `dlq-kafka` feature
-/// - [`Self::Http`] — `dlq-http` feature
-/// - [`Self::Redis`] — `dlq-redis` feature
+/// - [`Self::File`] -- always available
+/// - [`Self::Kafka`] -- `dlq-kafka` feature
+/// - [`Self::Http`] -- `dlq-http` feature
+/// - [`Self::Redis`] -- `dlq-redis` feature
 ///
 /// Each variant's inner struct lives in its sibling module
 /// (`file::FileDlqInner`, `kafka::KafkaDlqInner`, etc.). They are
-/// crate-private — consumers configure DLQ via [`super::DlqConfig`] and
+/// crate-private -- consumers configure DLQ via [`super::DlqConfig`] and
 /// drive it via [`super::orchestrator::Dlq`].
 #[non_exhaustive]
 pub enum DlqBackend {
@@ -57,7 +57,7 @@ impl std::fmt::Debug for DlqBackend {
 
 impl DlqBackend {
     /// Write a batch of entries to this backend. Called only by the
-    /// orchestrator's drain task — never from a consumer hot path.
+    /// orchestrator's drain task -- never from a consumer hot path.
     ///
     /// # Errors
     ///
@@ -83,12 +83,12 @@ impl DlqBackend {
     ///
     /// - **File**: `flush()` on the rotating writer. The underlying
     ///   `file-rotate` crate doesn't expose the inner `File` handle, so
-    ///   we can't `fsync()` from here — `flush()` only guarantees that
+    ///   we can't `fsync()` from here -- `flush()` only guarantees that
     ///   buffered bytes have been handed to the kernel page cache. A
     ///   power-loss event between page-cache and disk can still lose
     ///   data. Documented limitation; tracked separately if/when
     ///   `file-rotate` exposes a sync hook.
-    /// - **Kafka**: `producer.flush()` — blocks until every queued
+    /// - **Kafka**: `producer.flush()` -- blocks until every queued
     ///   message has been acked by the broker (per the producer's
     ///   acks config). This is the real durability semantic.
     /// - **HTTP**: no-op. `send_batch` already awaits the response.

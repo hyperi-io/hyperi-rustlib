@@ -6,7 +6,7 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! OpenTelemetry distributed tracing — span export via OTLP.
+//! OpenTelemetry distributed tracing -- span export via OTLP.
 //!
 //! Bridges the `tracing` ecosystem (`tracing::span!`, `#[instrument]`,
 //! `tracing::info_span!`) to OpenTelemetry spans that get exported via

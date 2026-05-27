@@ -79,7 +79,7 @@ pub trait DfeApp: Sized {
     /// Called after logging, config, and [`ServiceRuntime`](super::ServiceRuntime)
     /// are initialised. The runtime contains all common infrastructure (metrics,
     /// memory guard, shutdown token, worker pool, scaling pressure). Apps just
-    /// use it — no boilerplate needed.
+    /// use it -- no boilerplate needed.
     ///
     /// # Errors
     ///
@@ -160,7 +160,7 @@ pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
                         // sensitive-field masker before printing. Consumer
                         // configs commonly hold ENV-sourced secrets in
                         // plain `String` fields (the canonical K8s
-                        // secret-store -> K8s Secret -> ENV path) — without
+                        // secret-store -> K8s Secret -> ENV path) -- without
                         // masking, `{config:#?}` happily prints them in
                         // clear text. The masker recognises the standard
                         // sensitive field names (password, token, api_key,
@@ -208,7 +208,7 @@ pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
         }
         #[cfg(not(any(feature = "metrics", feature = "otel-metrics")))]
         StandardCommand::MetricsManifest => {
-            output::print_error("metrics feature not enabled — no manifest available");
+            output::print_error("metrics feature not enabled -- no manifest available");
             Err(CliError::Service("metrics feature not enabled".into()))
         }
 
@@ -232,7 +232,7 @@ pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
 
             tracing::debug!(?config, "configuration loaded");
 
-            // Build ServiceRuntime — all common infrastructure for free
+            // Build ServiceRuntime -- all common infrastructure for free
             let commit = option_env!("GIT_COMMIT").unwrap_or("unknown");
             let runtime = super::ServiceRuntime::build(
                 app.name(),
@@ -299,7 +299,7 @@ fn init_logger_for_service(
 /// Generate all CI artefacts for this service.
 ///
 /// Produces metrics manifest, deployment contract, and container spec
-/// in the output directory. Files are deterministic — running twice produces
+/// in the output directory. Files are deterministic -- running twice produces
 /// identical output (no timestamps that change between runs).
 fn generate_artefacts<A: DfeApp>(
     app: &A,
@@ -334,7 +334,7 @@ fn generate_artefacts<A: DfeApp>(
     #[cfg(feature = "deployment")]
     if deployment_contract.is_none() {
         output::print_warn(&format!(
-            "DfeApp::deployment_contract() returned None for `{}` — \
+            "DfeApp::deployment_contract() returned None for `{}` -- \
              only metrics-manifest.json will be generated. \
              Implement the trait hook to emit deployment-contract.json, \
              container-manifest.json, and Dockerfile.runtime.",
@@ -368,7 +368,7 @@ fn generate_artefacts<A: DfeApp>(
         })?;
         generated.push("Dockerfile.runtime".to_string());
 
-        // ArgoCD Application CR (default generation — ArgoCD is the
+        // ArgoCD Application CR (default generation -- ArgoCD is the
         // standard CD tool across the fleet).
         let argo_path = output_dir.join("argocd-application.yaml");
         let argo_cfg = crate::deployment::ArgocdConfig {

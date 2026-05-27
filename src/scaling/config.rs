@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 /// Lives in the app's config cascade so thresholds are env-var overridable
 /// (e.g., `DFE_LOADER__SCALING__MEMORY_GATE_THRESHOLD=0.9`).
 ///
-/// Component weights and saturation points are app-specific — defined in
+/// Component weights and saturation points are app-specific -- defined in
 /// each app's config and passed to [`super::ScalingPressure::new`] via
 /// [`ScalingComponent`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,7 +29,7 @@ pub struct ScalingPressureConfig {
     /// When disabled, `calculate()` always returns 0.0.
     pub enabled: bool,
 
-    /// Memory usage ratio that triggers the memory gate (0.0–1.0).
+    /// Memory usage ratio that triggers the memory gate (0.0-1.0).
     ///
     /// When `memory_used / memory_limit >= threshold`, scaling pressure
     /// is forced to 100.0 to trigger immediate scale-up before OOM.
@@ -83,7 +83,7 @@ impl ScalingPressureConfig {
 pub struct ScalingComponent {
     /// Component name (e.g., "kafka_lag", "buffer_depth").
     pub name: String,
-    /// Relative weight (0.0–1.0). All weights should sum to ~1.0.
+    /// Relative weight (0.0-1.0). All weights should sum to ~1.0.
     pub weight: f64,
     /// Value at which this component contributes its full weight.
     /// Score = `(value / saturation).min(1.0) * weight * 100.0`.

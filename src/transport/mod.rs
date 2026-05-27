@@ -94,7 +94,7 @@ pub mod redis_transport;
 
 pub mod routed;
 
-// Re-exports — traits and factory
+// Re-exports -- traits and factory
 pub use error::{TransportError, TransportResult};
 pub use factory::AnySender;
 pub use routed::RoutedSender;

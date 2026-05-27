@@ -150,7 +150,7 @@ impl<T: Clone + Send + Sync + 'static> SharedConfig<T> {
     /// Get the current config version.
     ///
     /// Version is 0 after creation, incremented by 1 on each `update()`.
-    /// Monotonically increasing — never decreases.
+    /// Monotonically increasing -- never decreases.
     #[inline]
     #[must_use]
     pub fn version(&self) -> u64 {

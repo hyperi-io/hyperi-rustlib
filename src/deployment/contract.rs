@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use super::keda::KedaContract;
 use super::native_deps::NativeDepsContract;
 
-/// Container image profile — controls what goes into the generated Dockerfile.
+/// Container image profile -- controls what goes into the generated Dockerfile.
 ///
 /// Both profiles use the same linking strategy (dynamic). The difference is
 /// optimisation level, debug tooling, and image metadata.
@@ -27,10 +27,10 @@ use super::native_deps::NativeDepsContract;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageProfile {
-    /// Minimal production image — stripped binary, no debug tools.
+    /// Minimal production image -- stripped binary, no debug tools.
     #[default]
     Production,
-    /// Development image — includes diagnostic tools (bash, strace, tcpdump,
+    /// Development image -- includes diagnostic tools (bash, strace, tcpdump,
     /// procps, dnsutils, net-tools). Same binary, same linking.
     Development,
 }
@@ -47,7 +47,7 @@ pub struct DeploymentContract {
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
 
-    /// Application name (e.g., "dfe-loader") — matched against Chart.yaml `name`.
+    /// Application name (e.g., "dfe-loader") -- matched against Chart.yaml `name`.
     pub app_name: String,
 
     /// Binary name (e.g., "dfe-loader"). Defaults to app_name if empty.
@@ -114,14 +114,14 @@ pub struct DeploymentContract {
     #[serde(default)]
     pub native_deps: NativeDepsContract,
 
-    /// Image profile — production (minimal) or development (debug tools).
+    /// Image profile -- production (minimal) or development (debug tools).
     ///
     /// Defaults to [`ImageProfile::Production`]. Use [`with_dev_profile`](Self::with_dev_profile)
     /// to derive a development variant from an existing contract.
     #[serde(default)]
     pub image_profile: ImageProfile,
 
-    /// OCI image labels (static — dynamic labels injected by CI at build time).
+    /// OCI image labels (static -- dynamic labels injected by CI at build time).
     #[serde(default)]
     pub oci_labels: OciLabels,
 }

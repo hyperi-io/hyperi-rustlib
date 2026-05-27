@@ -15,7 +15,7 @@
 //! The numeric values are gaps wide enough that consumer projects can
 //! slot custom waves (e.g. `-15` for "between operators and CRDs", `-3`
 //! for "before topics but after CRDs"). Stick to the canonical bands
-//! where possible — operators install order is genuinely
+//! where possible -- operators install order is genuinely
 //! dependency-driven.
 
 /// Operators that must install before everything else (e.g.

@@ -88,7 +88,7 @@ pub struct CacheConfig {
     pub encryption_key: Option<crate::SensitiveString>,
 
     /// Unix permission mode for the cache directory. Default `0o700`.
-    /// Set to `None` to skip chmod entirely — required on backing
+    /// Set to `None` to skip chmod entirely -- required on backing
     /// stores that reject `chmod`: S3-FUSE, root-squashed NFS, some
     /// other network mounts. Operators are responsible for upstream
     /// perms in that case.

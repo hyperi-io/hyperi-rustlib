@@ -6,12 +6,12 @@
 // License:   FSL-1.1-ALv2
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Core CEL expression operations — compile, evaluate, validate.
+//! Core CEL expression operations -- compile, evaluate, validate.
 //!
 //! Wraps the [`cel`] crate (renamed from `cel-interpreter`), enforcing the
 //! DFE expression profile on every compilation path. Both Python (via
 //! `common-expression-language` PyO3 bindings) and Rust share the **same**
-//! Rust crate — zero behavioural drift between services.
+//! Rust crate -- zero behavioural drift between services.
 //!
 //! # Profile Configuration
 //!
@@ -27,7 +27,7 @@
 //! ```
 //!
 //! Without the `config` feature (or before `config::setup()` is called),
-//! [`ProfileConfig::default()`] is used — all restrictions active.
+//! [`ProfileConfig::default()`] is used -- all restrictions active.
 //!
 //! # Usage
 //!
@@ -63,7 +63,7 @@ use serde_json::Value as JsonValue;
 use super::error::{ExpressionError, ExpressionResult};
 use super::profile::{self, ProfileConfig};
 
-/// Cached profile config — loaded once from the config cascade or default.
+/// Cached profile config -- loaded once from the config cascade or default.
 static PROFILE_CONFIG: OnceLock<ProfileConfig> = OnceLock::new();
 
 /// Get the active profile config.

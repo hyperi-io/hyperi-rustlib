@@ -22,7 +22,7 @@
 //!   `regex_automata::meta::Regex`, which has its own internal
 //!   prefilter pipeline (memchr → Teddy → AC → NFA/DFA).
 //!
-//! The classifier never returns "this regex is invalid" — that's the
+//! The classifier never returns "this regex is invalid" -- that's the
 //! parser's job. It returns a [`Plan`] and a [`Descriptor`] explaining
 //! which tier was chosen and (if Meta) why.
 
@@ -70,7 +70,7 @@ pub struct Descriptor {
 /// `case_insensitive` is honoured at *match time* via
 /// `aho_corasick::AhoCorasickBuilder::ascii_case_insensitive`, not via
 /// HIR rewriting. We deliberately do NOT wrap the pattern in `(?i:…)`
-/// before parsing — that would expand literals into per-byte case
+/// before parsing -- that would expand literals into per-byte case
 /// classes and defeat simple-shape detection.
 ///
 /// When `case_insensitive` is set:
@@ -95,7 +95,7 @@ pub fn classify(pattern: &str, case_insensitive: bool) -> Result<Classified, Bui
         return Ok(meta_plan(pattern, reason, hint));
     }
 
-    // 2. Single-pattern simple shape (skipped when case-insensitive —
+    // 2. Single-pattern simple shape (skipped when case-insensitive --
     //    memchr/memmem can't fold case; we route those through a
     //    one-element AC below instead).
     if !case_insensitive && let Some(shape) = try_simple_shape(&hir) {
@@ -131,7 +131,7 @@ pub fn classify(pattern: &str, case_insensitive: bool) -> Result<Classified, Bui
 
     // 4. Case-insensitive single-literal fast path. We've already
     //    refused the Shape tier above, but the pattern may still
-    //    reduce to a single literal byte sequence — route it through
+    //    reduce to a single literal byte sequence -- route it through
     //    a one-element AC so the case-folding happens at match time.
     if case_insensitive
         && let Some((ac, anchor, literals)) = try_single_literal_for_case_insensitive(&hir)
@@ -191,7 +191,7 @@ fn hard_reject(hir: &Hir) -> Option<(&'static str, &'static str)> {
     use HirKind as K;
     match hir.kind() {
         K::Look(l) => match l {
-            // Start/End anchors are fine — we handle them in the
+            // Start/End anchors are fine -- we handle them in the
             // simple-shape detector. Everything else (word boundaries,
             // multi-line anchors, lookarounds) prevents safe reduction.
             Look::Start | Look::End => None,
@@ -232,7 +232,7 @@ fn hard_reject(hir: &Hir) -> Option<(&'static str, &'static str)> {
             }
         }
         K::Capture(c) => {
-            // Anonymous captures are fine if we walk into their body —
+            // Anonymous captures are fine if we walk into their body --
             // we just don't expose captures in our public API. But the
             // important case is back-references, which regex-syntax
             // forbids at parse time anyway (the default parser
@@ -308,7 +308,7 @@ fn anchored_literal(parts: &[Hir]) -> Option<ShapeOp> {
 /// Split a `Concat` into `(has_start_anchor, body, has_end_anchor)`.
 ///
 /// Returns `None` if the structure doesn't fit the shape "optional ^ +
-/// body + optional $" — e.g. multiple disjoint literals inside the
+/// body + optional $" -- e.g. multiple disjoint literals inside the
 /// Concat that aren't combineable.
 fn strip_anchors(parts: &[Hir]) -> Option<(bool, &[Hir], bool)> {
     let (mut lo, mut hi) = (0_usize, parts.len());
@@ -475,7 +475,7 @@ fn strip_outer_concat_anchors(hir: &Hir) -> Option<(Anchor, &Hir)> {
     if body.len() == 1 {
         Some((anchor, &body[0]))
     } else {
-        // Multi-element body — synthesise a Concat representation by
+        // Multi-element body -- synthesise a Concat representation by
         // returning None. The caller can route through the extractor
         // fallback instead.
         None
@@ -550,7 +550,7 @@ fn meta_plan(pattern: &str, reason: &'static str, hint: &'static str) -> Classif
     // We've already parsed the pattern with `regex_syntax::parse` in
     // the caller, so `meta::Regex::new` will accept the same input
     // (regex-automata wraps the same parser). The meta engine has its
-    // own internal `(?i)` handling — no wrapper required here.
+    // own internal `(?i)` handling -- no wrapper required here.
     let meta = meta::Regex::new(pattern)
         .expect("meta::Regex::new should not fail after regex_syntax::parse succeeded");
     Classified {
@@ -564,7 +564,7 @@ fn meta_plan(pattern: &str, reason: &'static str, hint: &'static str) -> Classif
 }
 
 // ---------------------------------------------------------------------------
-// Reason strings for the shape tier (no hint needed — success path).
+// Reason strings for the shape tier (no hint needed -- success path).
 // ---------------------------------------------------------------------------
 
 fn shape_reason(shape: &ShapeOp) -> &'static str {

@@ -25,7 +25,7 @@
 //!         ..Default::default()
 //!     });
 //!
-//!     // Fire-and-forget — spawns a background task, never blocks startup
+//!     // Fire-and-forget -- spawns a background task, never blocks startup
 //!     checker.check_on_startup();
 //! }
 //! ```
@@ -52,7 +52,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 ///   disabled: false
 /// ```
 ///
-/// `product` and `current_version` are always set programmatically — they
+/// `product` and `current_version` are always set programmatically -- they
 /// come from the binary, not from config files.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VersionCheckConfig {
@@ -194,7 +194,7 @@ impl VersionCheck {
 ///
 /// Intentionally minimal. Pre-2.7.5 the payload also included:
 ///   - `instance_id`: a persistent UUID disk-stored in `~/.cache/hyperi/`.
-///     Effectively a tracking cookie that survived restarts. Dropped —
+///     Effectively a tracking cookie that survived restarts. Dropped --
 ///     too aggressive for an OSS library's default behaviour. Operators
 ///     who want a stable identifier can set one themselves via
 ///     `VersionCheckConfig` (not currently exposed; can be added if a
@@ -204,7 +204,7 @@ impl VersionCheck {
 ///     names; dropping by default. Field stays on `VersionCheckConfig`
 ///     for forward-compat but is no longer sent.
 ///
-/// Kept: `product`, `current_version`, `os` (family — Linux/Darwin/
+/// Kept: `product`, `current_version`, `os` (family -- Linux/Darwin/
 /// Windows), `arch` (x86_64/aarch64). Enough signal for "which versions
 /// are running on which platforms"; zero personal data.
 #[derive(Debug, Serialize)]
@@ -385,7 +385,7 @@ fn format_age(published_at: &str) -> Option<String> {
 // Previously this file maintained a UUID at
 // `~/.cache/hyperi/instance_id` and included it in every telemetry
 // payload. The persistent identifier survived restarts, IP changes,
-// and process recycles — functionally indistinguishable from a
+// and process recycles -- functionally indistinguishable from a
 // long-lived tracking cookie. For an open-source library the friction
 // it created for SOC2 / regulated consumers far exceeded the fleet-
 // uniqueness signal value. Removed in the pre-GA hardening pass.
@@ -426,7 +426,7 @@ mod tests {
     #[test]
     fn telemetry_opt_out_recognises_common_values() {
         // `temp_env::with_var` scopes env mutation to the closure and
-        // restores the previous value on drop — required because the
+        // restores the previous value on drop -- required because the
         // crate has `#![deny(unsafe_code)]` and edition 2024 forbids
         // direct `std::env::set_var` without `unsafe { }`.
         for v in ["off", "Off", "OFF", "0", "false", "False", "no", "disabled"] {
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn check_payload_omits_dropped_fields() {
         // The payload struct itself no longer has instance_id or deployment
-        // — this test enforces that by serialising and checking the JSON
+        // -- this test enforces that by serialising and checking the JSON
         // shape. A future change that re-adds them will fail here.
         let payload = CheckPayload {
             product: "dfe-loader".into(),

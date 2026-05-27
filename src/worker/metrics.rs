@@ -15,7 +15,7 @@ use super::config::WorkerPoolConfig;
 /// This registers both operational metrics and threshold gauges.
 /// Threshold gauges are emitted immediately with current config values.
 pub fn register(manager: &MetricsManager, config: &WorkerPoolConfig) {
-    // Operational metrics — register descriptions (return values intentionally unused)
+    // Operational metrics -- register descriptions (return values intentionally unused)
     let _ = manager.gauge(
         "worker_pool_active_threads",
         "Current active worker threads",
@@ -59,7 +59,7 @@ pub fn register(manager: &MetricsManager, config: &WorkerPoolConfig) {
         "Current async fan-out tasks in flight",
     );
 
-    // Threshold gauges (config values as metrics — emitted immediately)
+    // Threshold gauges (config values as metrics -- emitted immediately)
     emit_thresholds(config);
 }
 

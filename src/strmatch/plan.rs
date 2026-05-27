@@ -9,7 +9,7 @@
 //! The `Plan` chosen by the classifier and the single-match dispatch
 //! that fires it on a haystack.
 //!
-//! Three variants — `LiteralOnly` / `Shape` / `Meta` — map directly to
+//! Three variants -- `LiteralOnly` / `Shape` / `Meta` -- map directly to
 //! the public [`super::MatcherTier`]. Match-time dispatch is a single
 //! `match` per call; each arm is one or two instructions for the
 //! literal and shape tiers.
@@ -22,13 +22,13 @@ use super::Match;
 /// Where in the haystack a match must occur.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Anchor {
-    /// `/foo/` — anywhere in the haystack.
+    /// `/foo/` -- anywhere in the haystack.
     Anywhere,
-    /// `/^foo/` — match must start at byte 0.
+    /// `/^foo/` -- match must start at byte 0.
     AtStart,
-    /// `/foo$/` — match must end at `hay.len()`.
+    /// `/foo$/` -- match must end at `hay.len()`.
     AtEnd,
-    /// `/^foo$/` — match must cover the whole haystack.
+    /// `/^foo$/` -- match must cover the whole haystack.
     Exact,
 }
 
@@ -87,17 +87,17 @@ impl SmallByteSet {
 /// dispatch doesn't pay for cold variant data.
 #[derive(Debug, Clone)]
 pub(crate) enum ShapeOp {
-    /// `/x/` — single byte, anywhere.
+    /// `/x/` -- single byte, anywhere.
     ContainsByte(u8),
     /// `/[xy]/` or `/[xyz]/`.
     ByteSet(SmallByteSet),
-    /// `/foo/` — multi-byte literal, anywhere. Pre-compiled needle.
+    /// `/foo/` -- multi-byte literal, anywhere. Pre-compiled needle.
     Contains(Box<memchr::memmem::Finder<'static>>),
-    /// `/^foo/` — anchored at start.
+    /// `/^foo/` -- anchored at start.
     StartsWith(Box<[u8]>),
-    /// `/foo$/` — anchored at end.
+    /// `/foo$/` -- anchored at end.
     EndsWith(Box<[u8]>),
-    /// `/^foo$/` — must cover the whole haystack.
+    /// `/^foo$/` -- must cover the whole haystack.
     ExactMatch(Box<[u8]>),
 }
 
@@ -105,7 +105,7 @@ pub(crate) enum ShapeOp {
 ///
 /// `AhoCorasick` and `meta::Regex` are large structures (each carries
 /// internal heap allocations + several enums in the hundreds of bytes).
-/// Boxing them keeps `Plan` itself one cache line — the Shape variant
+/// Boxing them keeps `Plan` itself one cache line -- the Shape variant
 /// stays inline because it's used directly on the hottest path.
 pub(crate) enum Plan {
     /// AC over a finite literal set with optional uniform anchor.
@@ -200,7 +200,7 @@ impl Plan {
 }
 
 // ---------------------------------------------------------------------------
-// LiteralOnly dispatch — one AC scan, then optional position check
+// LiteralOnly dispatch -- one AC scan, then optional position check
 // ---------------------------------------------------------------------------
 
 #[inline]
@@ -211,7 +211,7 @@ fn match_set_is(ac: &AhoCorasick, anchor: Anchor, hay: &[u8]) -> bool {
         // position is 0, so if any match is at position 0, the leftmost is
         // at position 0. Checking the leftmost is sufficient for `AtStart`.
         Anchor::AtStart => ac.find(hay).is_some_and(|m| m.start() == 0),
-        // The leftmost match is not necessarily the rightmost — its end may
+        // The leftmost match is not necessarily the rightmost -- its end may
         // be well short of `hay.len()` even when a later match ends exactly
         // there. Walk every match.
         Anchor::AtEnd => ac.find_iter(hay).any(|m| m.end() == hay.len()),
@@ -235,7 +235,7 @@ fn match_set_find(ac: &AhoCorasick, anchor: Anchor, hay: &[u8]) -> Option<Match>
             start: m.start(),
             end: m.end(),
         }),
-        // Find any match that ends at `hay.len()` — not just the leftmost.
+        // Find any match that ends at `hay.len()` -- not just the leftmost.
         Anchor::AtEnd => ac
             .find_iter(hay)
             .find(|m| m.end() == hay.len())
@@ -257,7 +257,7 @@ fn match_set_find(ac: &AhoCorasick, anchor: Anchor, hay: &[u8]) -> Option<Match>
 }
 
 // ---------------------------------------------------------------------------
-// Shape dispatch — single match arm per shape, 1–3 instructions per
+// Shape dispatch -- single match arm per shape, 1-3 instructions per
 // ---------------------------------------------------------------------------
 
 #[inline]
@@ -293,7 +293,7 @@ fn match_shape_find(op: &ShapeOp, hay: &[u8]) -> Option<Match> {
         }),
         // `then_some` eagerly evaluates the Match struct, so the subtraction
         // `hay.len() - lit.len()` underflows (panics in debug, wraps in release)
-        // when the haystack is shorter than the literal — even though
+        // when the haystack is shorter than the literal -- even though
         // `ends_with` returns false. `then(closure)` defers evaluation.
         ShapeOp::EndsWith(lit) => hay.ends_with(lit).then(|| Match {
             start: hay.len() - lit.len(),
@@ -307,7 +307,7 @@ fn match_shape_find(op: &ShapeOp, hay: &[u8]) -> Option<Match> {
 }
 
 // ---------------------------------------------------------------------------
-// Collect-iter dispatch — non-overlapping matches into a caller-owned Vec
+// Collect-iter dispatch -- non-overlapping matches into a caller-owned Vec
 // ---------------------------------------------------------------------------
 
 fn collect_set(ac: &AhoCorasick, anchor: Anchor, hay: &[u8], out: &mut Vec<Match>) {

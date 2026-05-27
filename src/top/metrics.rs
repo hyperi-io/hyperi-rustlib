@@ -256,7 +256,7 @@ fn strip_metric_suffix(name: &str) -> &str {
 
 /// Fetch metrics from an HTTP endpoint using raw TCP.
 ///
-/// Simple HTTP/1.0 GET — suitable for Prometheus `/metrics` endpoints
+/// Simple HTTP/1.0 GET -- suitable for Prometheus `/metrics` endpoints
 /// which return plain text without chunked encoding.
 ///
 /// # Errors
@@ -320,7 +320,7 @@ pub fn fetch_metrics_http(url: &str) -> Result<String, TopError> {
 fn parse_http_url(url: &str) -> Result<(String, u16, String), TopError> {
     let rest = url
         .strip_prefix("http://")
-        .ok_or_else(|| TopError::Fetch(format!("URL must start with http:// — got {url}")))?;
+        .ok_or_else(|| TopError::Fetch(format!("URL must start with http:// -- got {url}")))?;
 
     let (host_port, path) = rest
         .split_once('/')

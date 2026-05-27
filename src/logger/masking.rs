@@ -257,7 +257,7 @@ fn inject_and_redact_json_line(
                 );
             }
 
-            // Inject K8s context fields (no-op on bare metal — fields are None)
+            // Inject K8s context fields (no-op on bare metal -- fields are None)
             let ctx = crate::env::runtime_context();
             if let Some(ref pod) = ctx.pod_name {
                 map.insert(
@@ -344,7 +344,7 @@ fn redact_text_line(line: &str, sensitive: &HashSet<String>) -> String {
                     result.push_str(REDACTED);
                     pos = value_end;
                 } else {
-                    // Not sensitive — copy through the '=' and continue
+                    // Not sensitive -- copy through the '=' and continue
                     result.push_str(&line[pos..=eq_pos]);
                     pos = eq_pos + 1;
                 }
@@ -361,7 +361,7 @@ fn skip_field_value(line: &str, start: usize) -> usize {
         return start;
     }
     if line.as_bytes()[start] == b'"' {
-        // Quoted value — find closing quote (handle escaped quotes)
+        // Quoted value -- find closing quote (handle escaped quotes)
         let mut i = start + 1;
         while i < line.len() {
             if line.as_bytes()[i] == b'"' && line.as_bytes()[i - 1] != b'\\' {
@@ -371,7 +371,7 @@ fn skip_field_value(line: &str, start: usize) -> usize {
         }
         line.len()
     } else {
-        // Unquoted value — ends at next whitespace
+        // Unquoted value -- ends at next whitespace
         line[start..]
             .find(char::is_whitespace)
             .map_or(line.len(), |wp| start + wp)
@@ -384,7 +384,7 @@ fn skip_field_value(line: &str, start: usize) -> usize {
 #[must_use]
 pub fn mask_sensitive_string(input: &str, patterns: &[&str]) -> String {
     // Build a flat list of search needles. We sweep the input once per
-    // needle, replacing every occurrence — not just the first — so a
+    // needle, replacing every occurrence -- not just the first -- so a
     // `Debug` dump of a config with several secret-shaped fields gets
     // every value redacted, not only the leftmost one.
     let mut needles: Vec<String> = Vec::with_capacity(patterns.len() * 3);
@@ -412,7 +412,7 @@ pub fn mask_sensitive_string(input: &str, patterns: &[&str]) -> String {
             })
             .min_by_key(|(start, _len)| *start);
         let Some((match_start, needle_len)) = next_hit else {
-            // No more matches — copy the rest verbatim.
+            // No more matches -- copy the rest verbatim.
             result.push_str(&input[cursor..]);
             break;
         };

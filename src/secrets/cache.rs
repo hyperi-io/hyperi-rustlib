@@ -201,7 +201,7 @@ impl SecretCache {
     /// Detects encryption envelopes by their `"v":` JSON marker and
     /// decrypts via [`crypto::open`] when an encryption key is
     /// configured. Legacy plaintext entries (no envelope) are still
-    /// accepted but loaded with a warning — operators upgrading from
+    /// accepted but loaded with a warning -- operators upgrading from
     /// pre-encryption deployments see one notice per file. A future
     /// release will hard-reject legacy entries to force a clean
     /// migration; for now we read-through so existing caches keep
@@ -223,7 +223,7 @@ impl SecretCache {
             let Some(ref user_key) = self.config.encryption_key else {
                 tracing::warn!(
                     file = %cache_file.display(),
-                    "cache file is encrypted but no encryption_key configured — skipping",
+                    "cache file is encrypted but no encryption_key configured -- skipping",
                 );
                 return None;
             };
@@ -233,7 +233,7 @@ impl SecretCache {
                     tracing::warn!(
                         file = %cache_file.display(),
                         error = %e,
-                        "cache file decrypt failed — skipping",
+                        "cache file decrypt failed -- skipping",
                     );
                     return None;
                 }
@@ -245,7 +245,7 @@ impl SecretCache {
             if self.config.encryption_key.is_some() {
                 tracing::warn!(
                     file = %cache_file.display(),
-                    "cache file is plaintext but encryption_key is set — will be re-encrypted on next refresh",
+                    "cache file is plaintext but encryption_key is set -- will be re-encrypted on next refresh",
                 );
             }
             raw
@@ -260,7 +260,7 @@ impl SecretCache {
     /// When `CacheConfig.encryption_key` is set, the serialised
     /// `CacheEntry` is encrypted via AES-256-GCM (see [`crypto`]).
     /// Without a key, the previous plaintext-base64-JSON shape is
-    /// retained — this keeps the cache usable in development without
+    /// retained -- this keeps the cache usable in development without
     /// forcing operators to provision a key, but the misleading
     /// `encryption_key: None` plaintext path is now loud at startup
     /// (a `tracing::warn!` from `SecretCache::new`).
@@ -295,7 +295,7 @@ impl SecretCache {
 }
 
 /// Ensure `dir` exists; chmod to `mode` on Unix when `mode` is
-/// `Some`. `None` skips chmod — used by operators on S3-FUSE,
+/// `Some`. `None` skips chmod -- used by operators on S3-FUSE,
 /// root-squashed NFS, or other mounts that reject chmod.
 fn ensure_dir_private(dir: &std::path::Path, mode: Option<u32>) -> SecretsResult<()> {
     std::fs::create_dir_all(dir).map_err(|e| {

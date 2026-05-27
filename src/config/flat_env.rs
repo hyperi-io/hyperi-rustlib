@@ -28,7 +28,7 @@
 //! use hyperi_rustlib::config::flat_env::*;
 //!
 //! // In production, env vars are set by the container/K8s ConfigMap.
-//! // std::env::set_var is unsafe in edition 2024 — use temp_env in tests.
+//! // std::env::set_var is unsafe in edition 2024 -- use temp_env in tests.
 //! if let Some(host) = flat_env_string("MYAPP", "HOST") {
 //!     println!("Host override: {host}");
 //! }
@@ -208,7 +208,7 @@ where
         let path_buf = std::path::PathBuf::from(path);
         if let Some(parent) = path_buf.parent() {
             if parent.as_os_str().is_empty() {
-                // Relative path with no directory component — use current dir
+                // Relative path with no directory component -- use current dir
                 opts.config_paths.push(std::path::PathBuf::from("."));
             } else {
                 opts.config_paths.push(parent.to_path_buf());
@@ -425,7 +425,7 @@ mod tests {
         let mut config = TestConfig {
             value: "default".into(),
         };
-        // No env var set — value should remain unchanged
+        // No env var set -- value should remain unchanged
         config.apply_flat_env("ABSENT_PREFIX");
         assert_eq!(config.value, "default");
     }

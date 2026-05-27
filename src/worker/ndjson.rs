@@ -11,7 +11,7 @@
 //! Splits NDJSON byte payloads into individual lines and optionally parses
 //! them in parallel via [`AdaptiveWorkerPool::process_batch`](crate::worker::AdaptiveWorkerPool::process_batch).
 //!
-//! Does NOT depend on a specific JSON parser — the parse function is a closure.
+//! Does NOT depend on a specific JSON parser -- the parse function is a closure.
 //! Use with `sonic-rs`, `serde_json`, or any other parser.
 //!
 //! ## Example
@@ -32,7 +32,7 @@
 /// Split an NDJSON payload into individual line slices.
 ///
 /// Handles `\n`, `\r\n`, trailing newlines, and blank lines (skipped).
-/// Zero-copy — returns slices into the original payload.
+/// Zero-copy -- returns slices into the original payload.
 #[must_use]
 pub fn split_lines(payload: &[u8]) -> Vec<&[u8]> {
     let mut lines = Vec::new();
@@ -76,7 +76,7 @@ pub fn count_lines(payload: &[u8]) -> usize {
         return 0;
     }
 
-    // Count newline bytes — bytecount crate would be marginally faster but is
+    // Count newline bytes -- bytecount crate would be marginally faster but is
     // not worth a dependency for a non-hot-path utility function.
     #[allow(clippy::naive_bytecount)]
     let newlines = payload.iter().filter(|&&b| b == b'\n').count();

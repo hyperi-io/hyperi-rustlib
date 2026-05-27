@@ -18,9 +18,9 @@ use super::config::WorkerPoolConfig;
 /// Adaptive worker pool with hybrid rayon (CPU) + tokio (async I/O) execution.
 ///
 /// Provides two APIs:
-/// - [`process_batch`](Self::process_batch) — CPU-bound work via rayon
+/// - [`process_batch`](Self::process_batch) -- CPU-bound work via rayon
 ///   (JSON parsing, transforms, compression, CEL evaluation)
-/// - [`fan_out_async`](Self::fan_out_async) — async I/O via tokio
+/// - [`fan_out_async`](Self::fan_out_async) -- async I/O via tokio
 ///   (enrichment, external APIs, storage writes)
 ///
 /// The pool auto-scales active threads based on CPU/memory pressure using
@@ -175,7 +175,7 @@ impl AdaptiveWorkerPool {
     /// by the scaling controller). Results are returned in input order.
     ///
     /// Use this for: JSON parsing, transforms, compression, CEL evaluation, routing.
-    /// Do NOT use for work that needs `.await` — use [`fan_out_async`](Self::fan_out_async).
+    /// Do NOT use for work that needs `.await` -- use [`fan_out_async`](Self::fan_out_async).
     pub fn process_batch<T, R, E, F>(&self, items: &[T], f: F) -> Vec<Result<R, E>>
     where
         T: Sync,
@@ -206,9 +206,9 @@ impl AdaptiveWorkerPool {
     /// The returned `Vec` has the same length as `items` and entries
     /// correspond by index (input-order preserved):
     ///
-    /// - `Some(Ok(r))` — task completed successfully with result `r`
-    /// - `Some(Err(e))` — task returned `Err(e)`
-    /// - `None` — task panicked; the panic was logged at `error` level
+    /// - `Some(Ok(r))` -- task completed successfully with result `r`
+    /// - `Some(Err(e))` -- task returned `Err(e)`
+    /// - `None` -- task panicked; the panic was logged at `error` level
     ///   with the input index. The wrapping `Option` exists so the
     ///   panic doesn't silently shorten the result vector (which was
     ///   the previous behaviour and violated the input-order contract).
@@ -263,7 +263,7 @@ impl AdaptiveWorkerPool {
     ///
     /// Provides direct access to the rayon pool for operations that need
     /// `par_iter_mut` or other rayon primitives not covered by `process_batch`.
-    /// The semaphore is NOT applied — callers manage their own concurrency.
+    /// The semaphore is NOT applied -- callers manage their own concurrency.
     ///
     /// Used by `BatchEngine` for the mutable transform phase.
     pub fn install<R: Send>(&self, f: impl FnOnce() -> R + Send) -> R {

@@ -1,6 +1,6 @@
 // Project:   hyperi-rustlib
 // File:      src/concurrency/periodic.rs
-// Purpose:   PeriodicWorker — timer-driven loop with biased shutdown
+// Purpose:   PeriodicWorker -- timer-driven loop with biased shutdown
 // Language:  Rust
 //
 // License:   FSL-1.1-ALv2
@@ -24,7 +24,7 @@
 //!                              CancellationToken
 //! ```
 //!
-//! Tick errors are logged at WARN and do NOT terminate the worker —
+//! Tick errors are logged at WARN and do NOT terminate the worker --
 //! the next tick still fires. Use the `shutdown` hook for cleanup.
 
 use std::future::Future;
@@ -39,9 +39,9 @@ use super::error::TickError;
 
 /// A task that runs on a fixed interval.
 ///
-/// Implementations may hold mutable state — `tick` takes `&mut self`.
+/// Implementations may hold mutable state -- `tick` takes `&mut self`.
 /// Replies / outputs propagate through the state itself (`AtomicU64`
-/// counters, `ArcSwap<T>` config handles, etc.) — `tick` returns
+/// counters, `ArcSwap<T>` config handles, etc.) -- `tick` returns
 /// `Result<(), TickError>` purely for error signalling.
 pub trait PeriodicTask: Send + 'static {
     /// Called once per interval tick.
@@ -56,7 +56,7 @@ pub trait PeriodicTask: Send + 'static {
 
 /// Handle for the worker task.
 ///
-/// Dropping the handle does NOT abort the task — the task lives until
+/// Dropping the handle does NOT abort the task -- the task lives until
 /// the `CancellationToken` is fired or the runtime shuts down. Use
 /// [`Self::join`] for graceful drain after signalling shutdown.
 pub struct PeriodicWorker {
@@ -182,7 +182,7 @@ mod tests {
             Duration::from_millis(100),
             shutdown.clone(),
         );
-        // Check immediately — should be 0 because interval consumed
+        // Check immediately -- should be 0 because interval consumed
         // the first tick before the loop started.
         tokio::time::sleep(Duration::from_millis(10)).await;
         assert_eq!(ticks.load(Ordering::SeqCst), 0);
@@ -224,7 +224,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(80)).await;
         shutdown.cancel();
         let n = ticks.load(Ordering::SeqCst);
-        // Worker kept ticking despite errors — proves no panic + no exit.
+        // Worker kept ticking despite errors -- proves no panic + no exit.
         assert!(n >= 3, "got {n} ticks, expected >=3 even with errors");
     }
 
@@ -240,7 +240,7 @@ mod tests {
             CountingTask {
                 ticks: ticks.clone(),
             },
-            Duration::from_millis(1), // very tight — many tick opportunities
+            Duration::from_millis(1), // very tight -- many tick opportunities
             shutdown.clone(),
         );
         let t0 = Instant::now();
@@ -249,7 +249,7 @@ mod tests {
         shutdown.cancel();
         worker.join().await.expect("clean exit");
         let elapsed = t0.elapsed();
-        // join() must return in much less than 1s — i.e. shutdown
+        // join() must return in much less than 1s -- i.e. shutdown
         // wasn't blocked by an in-flight tick.
         assert!(
             elapsed < Duration::from_millis(500),

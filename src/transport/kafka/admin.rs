@@ -316,7 +316,7 @@ impl KafkaAdmin {
 
     /// Create one or more topics.
     ///
-    /// Ignores "topic already exists" errors — safe to call repeatedly.
+    /// Ignores "topic already exists" errors -- safe to call repeatedly.
     ///
     /// # Arguments
     ///

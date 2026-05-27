@@ -16,7 +16,7 @@ use crate::io::{FileWriterConfig, RotationPeriod};
 
 /// File output sink configuration.
 ///
-/// Writes raw NDJSON events to rotating files — used for testing and
+/// Writes raw NDJSON events to rotating files -- used for testing and
 /// bare-metal deployments where Kafka is not available.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

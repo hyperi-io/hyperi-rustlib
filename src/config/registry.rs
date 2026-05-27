@@ -66,7 +66,7 @@ pub struct ConfigSection {
     pub effective: JsonValue,
 }
 
-/// The config registry — stores all registered sections.
+/// The config registry -- stores all registered sections.
 #[derive(Debug, Clone, Default)]
 struct Registry {
     sections: BTreeMap<String, ConfigSection>,
@@ -115,7 +115,7 @@ pub fn sections() -> Vec<ConfigSection> {
 /// Applies heuristic redaction to fields whose names contain sensitive
 /// patterns (password, secret, token, key, credential, auth, private,
 /// cert, encryption). Fields with `#[serde(skip_serializing)]` are
-/// already excluded at serialisation time — this is the safety net for
+/// already excluded at serialisation time -- this is the safety net for
 /// fields that weren't annotated.
 #[must_use]
 pub fn dump_effective() -> JsonValue {
@@ -134,7 +134,7 @@ pub fn dump_effective() -> JsonValue {
 /// Dump effective config WITHOUT redaction. **Compile-time gated**
 /// behind the `dangerous-diagnostics` feature; not in `full`. Off
 /// in every shipping build. One-off operator-driven diagnostics
-/// only — never wire to a network endpoint.
+/// only -- never wire to a network endpoint.
 #[cfg(feature = "dangerous-diagnostics")]
 #[cfg_attr(docsrs, doc(cfg(feature = "dangerous-diagnostics")))]
 #[must_use]
@@ -165,12 +165,8 @@ pub fn dump_defaults() -> JsonValue {
 ///
 /// Any JSON field whose name (lowercased) contains one of these
 /// substrings will have its value replaced with `"***REDACTED***"`.
-/// Field name patterns that trigger automatic redaction.
 ///
-/// Any JSON field whose name (lowercased) contains one of these
-/// substrings will have its value replaced with `"***REDACTED***"`.
-///
-/// This is a safety net — the primary protection is [`SensitiveString`]
+/// Safety net only -- the primary protection is [`SensitiveString`]
 /// on the field type (compile-time safe). This heuristic catches fields
 /// that developers forgot to mark as sensitive.
 const SENSITIVE_PATTERNS: &[&str] = &[
@@ -275,7 +271,7 @@ where
     // lock, then drop the guard BEFORE invoking them. A callback that
     // re-enters listener registration (e.g. registers a new listener
     // while running) would otherwise deadlock against the same mutex.
-    // Callbacks may also do non-trivial work, allocation, or I/O — none
+    // Callbacks may also do non-trivial work, allocation, or I/O -- none
     // of which belong under a global mutex.
     let snapshot: Option<Vec<ListenerCallback>> = LISTENERS.lock().ok().and_then(|guard| {
         guard
@@ -307,7 +303,7 @@ mod tests {
 
     use super::*;
 
-    /// Tests share global statics — serialise them.
+    /// Tests share global statics -- serialise them.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     macro_rules! serial_test {
@@ -535,11 +531,11 @@ mod tests {
             counter_clone.fetch_add(1, Ordering::Relaxed);
         });
 
-        // Update a different key — listener should NOT fire
+        // Update a different key -- listener should NOT fire
         update::<TestConfig>("key_b", &TestConfig::default());
         assert_eq!(counter.load(Ordering::Relaxed), 0);
 
-        // Update the subscribed key — listener fires
+        // Update the subscribed key -- listener fires
         update::<TestConfig>("key_a", &TestConfig::default());
         assert_eq!(counter.load(Ordering::Relaxed), 1);
     }

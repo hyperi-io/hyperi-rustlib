@@ -151,7 +151,7 @@ pub fn merge_with_overrides<S: std::hash::BuildHasher>(
 // Profile Defaults
 // ============================================================================
 
-/// Production consumer profile — lean baseline.
+/// Production consumer profile -- lean baseline.
 ///
 /// Only settings that differ from librdkafka defaults with clear justification.
 /// Services override on an exception basis via `librdkafka_overrides`.
@@ -173,7 +173,7 @@ pub const PRODUCTION_PROFILE: &[(&str, &str)] = &[
     ("statistics.interval.ms", "1000"),
 ];
 
-/// Development/test consumer profile — minimal latency, low memory.
+/// Development/test consumer profile -- minimal latency, low memory.
 ///
 /// Inherits the same "only non-defaults" philosophy. Optimised for fast
 /// iteration on developer machines: no fetch batching, smaller queues,
@@ -202,7 +202,7 @@ pub const DEVTEST_PROFILE: &[(&str, &str)] = &[
 // Producer Profile Defaults
 // ============================================================================
 
-/// High-throughput producer — lean baseline.
+/// High-throughput producer -- lean baseline.
 ///
 /// Only settings that differ from librdkafka defaults.
 /// Services override via `librdkafka_overrides`.
@@ -220,7 +220,7 @@ pub const PRODUCER_HIGH_THROUGHPUT: &[(&str, &str)] = &[
     ("statistics.interval.ms", "1000"),
 ];
 
-/// Exactly-once producer — idempotence + ordering.
+/// Exactly-once producer -- idempotence + ordering.
 ///
 /// Only settings that differ from librdkafka defaults.
 /// `acks=all` and `max.in.flight=5` are already defaults but explicit
@@ -245,7 +245,7 @@ pub const PRODUCER_EXACTLY_ONCE: &[(&str, &str)] = &[
     ("statistics.interval.ms", "1000"),
 ];
 
-/// Low-latency producer — minimal delay, leader-ack only.
+/// Low-latency producer -- minimal delay, leader-ack only.
 ///
 /// Only settings that differ from librdkafka defaults.
 ///
@@ -264,7 +264,7 @@ pub const PRODUCER_LOW_LATENCY: &[(&str, &str)] = &[
     ("statistics.interval.ms", "1000"),
 ];
 
-/// DevTest producer — fast acks, no compression.
+/// DevTest producer -- fast acks, no compression.
 ///
 /// Only settings that differ from librdkafka defaults.
 ///
@@ -281,7 +281,7 @@ pub const PRODUCER_DEVTEST: &[(&str, &str)] = &[
     ("statistics.interval.ms", "1000"),
 ];
 
-/// Legacy producer defaults — now aliases `PRODUCER_HIGH_THROUGHPUT`.
+/// Legacy producer defaults -- now aliases `PRODUCER_HIGH_THROUGHPUT`.
 #[deprecated(since = "2.0.0", note = "Use PRODUCER_HIGH_THROUGHPUT instead")]
 pub const PRODUCER_DEFAULTS: &[(&str, &str)] = PRODUCER_HIGH_THROUGHPUT;
 
@@ -293,7 +293,7 @@ pub const PRODUCER_DEFAULTS: &[(&str, &str)] = PRODUCER_HIGH_THROUGHPUT;
 #[deprecated(since = "2.0.0", note = "Use PRODUCTION_PROFILE instead")]
 pub const HIGH_THROUGHPUT_CONSUMER_DEFAULTS: &[(&str, &str)] = PRODUCTION_PROFILE;
 
-/// Low-latency consumer — minimal fetch delay.
+/// Low-latency consumer -- minimal fetch delay.
 ///
 /// Only settings that differ from librdkafka defaults.
 ///
