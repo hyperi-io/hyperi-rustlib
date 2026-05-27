@@ -144,21 +144,18 @@ impl CompiledFilter {
             ClassifyResult::Tier3 { fields } => {
                 super::budget::check_static_budget(expr, &tier_config.budget)
                     .map_err(|e| e.to_string())?;
-                // Honour the cascade's ProfileConfig instead of fabricating a
-                // permissive one. The previous behaviour (force
-                // allow_regex/iteration/time = true) bypassed the operator's
-                // app-wide CEL gate — `expression.allow_regex = false` was
-                // silently overridden for Tier-3 transport filters.
-                //
-                // Layered defence:
-                //   - `transport.filter_tiers.allow_complex_filters_in/out`
-                //     gates this transport's direction.
-                //   - `expression.allow_{regex,iteration,time}` gates restricted
-                //     CEL functions across the app.
-                //
-                // BOTH layers must allow. Reaching here means the tier gate
-                // already approved; now `compile()` checks the profile gate.
-                let program = crate::expression::compile(expr)
+                // `allow_complex_filters_in/out` is the single source
+                // of truth for Tier-3 transport filters — it implies
+                // the restricted CEL categories at the expression
+                // layer. Two-knob (transport AND expression) was
+                // confusing in practice; the tier gate approved
+                // already, so compile under a permissive profile.
+                let profile = crate::expression::ProfileConfig {
+                    allow_regex: true,
+                    allow_iteration: true,
+                    allow_time: true,
+                };
+                let program = crate::expression::compile_with_config(expr, &profile)
                     .map_err(|e| format!("CEL compilation failed: {e}"))?;
                 Ok(Self::CelExpression {
                     program,

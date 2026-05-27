@@ -70,6 +70,19 @@ const HKDF_INFO: &[u8] = b"hyperi-rustlib secrets disk cache AES-256-GCM key";
 const ENVELOPE_VERSION: u8 = 1;
 const NONCE_LEN: usize = 12; // 96 bits — standard for AES-GCM
 
+/// AAD prefix. Domain-separates the cache AAD namespace so a future
+/// reuse of `seal`/`open` for a different purpose can't share AAD
+/// values with the cache by accident.
+const AAD_DOMAIN: &[u8] = b"hyperi-rustlib:secrets-cache:v1:";
+
+/// Compose AAD for a cache slot: domain prefix + cache-key bytes.
+pub(super) fn aad_for(cache_key: &str) -> Vec<u8> {
+    let mut v = Vec::with_capacity(AAD_DOMAIN.len() + cache_key.len());
+    v.extend_from_slice(AAD_DOMAIN);
+    v.extend_from_slice(cache_key.as_bytes());
+    v
+}
+
 /// Encrypted cache envelope. JSON-serialised to disk.
 #[derive(Debug, Serialize, Deserialize)]
 pub(super) struct Envelope {
@@ -229,6 +242,16 @@ mod tests {
     fn aad_mismatch_fails_authentication() {
         let env = seal("k", b"db-password", b"db_password").unwrap();
         let err = open("k", env.as_bytes(), b"kafka_password").unwrap_err();
+        assert!(matches!(err, SecretsError::CacheError(_)));
+    }
+
+    /// Codex F15: domain-separated AAD. A future caller using the
+    /// same cache_key under a different domain MUST fail auth.
+    #[test]
+    fn aad_domain_separation_blocks_cross_module_reuse() {
+        let env = seal("k", b"db-password", &aad_for("db_password")).unwrap();
+        // Same cache_key bytes, no domain prefix → must fail.
+        let err = open("k", env.as_bytes(), b"db_password").unwrap_err();
         assert!(matches!(err, SecretsError::CacheError(_)));
     }
 

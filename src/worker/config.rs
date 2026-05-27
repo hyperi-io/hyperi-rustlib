@@ -147,6 +147,13 @@ impl WorkerPoolConfig {
                 ),
             });
         }
+        // `fan_out_async` does `step_by(async_concurrency)`; 0 panics.
+        if self.async_concurrency == 0 {
+            return Err(crate::config::ConfigError::InvalidValue {
+                key: "worker_pool.async_concurrency".into(),
+                reason: "must be >= 1 (fan_out_async iterates via step_by)".into(),
+            });
+        }
         Ok(())
     }
 
@@ -163,5 +170,35 @@ impl WorkerPoolConfig {
         } else {
             self.max_threads = self.max_threads.min(available);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Codex F9 regression: `async_concurrency: 0` previously
+    /// passed validation and panicked at `step_by(0)` in
+    /// `fan_out_async`.
+    #[test]
+    fn validate_rejects_zero_async_concurrency() {
+        let cfg = WorkerPoolConfig {
+            async_concurrency: 0,
+            ..Default::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            crate::config::ConfigError::InvalidValue { .. }
+        ));
+    }
+
+    #[test]
+    fn validate_accepts_one_async_concurrency() {
+        let cfg = WorkerPoolConfig {
+            async_concurrency: 1,
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_ok());
     }
 }
