@@ -244,7 +244,7 @@ impl SecretCache {
                 );
                 return None;
             };
-            match crypto::open(user_key.expose(), &raw) {
+            match crypto::open(user_key.expose(), &raw, key.as_bytes()) {
                 Ok(plain) => plain,
                 Err(e) => {
                     tracing::warn!(
@@ -294,7 +294,7 @@ impl SecretCache {
         })?;
 
         let payload: Vec<u8> = if let Some(ref user_key) = self.config.encryption_key {
-            crypto::seal(user_key.expose(), &plaintext)?.into_bytes()
+            crypto::seal(user_key.expose(), &plaintext, key.as_bytes())?.into_bytes()
         } else {
             plaintext
         };

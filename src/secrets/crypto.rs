@@ -50,7 +50,7 @@
 //! `ct:` by their byte distribution — they all decode to random
 //! bytes.
 
-use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use base64::Engine;
 use hkdf::Hkdf;
@@ -104,16 +104,13 @@ fn derive_key(user_key: &str) -> [u8; 32] {
     out
 }
 
-/// Encrypt `plaintext` to a base64-shaped JSON envelope using
-/// AES-256-GCM with a freshly-generated random nonce.
+/// Seal `plaintext` under `user_key`. `aad` (cache-key name) is
+/// authenticated, not encrypted; mismatch on open fails auth.
 ///
 /// # Errors
 ///
-/// Returns `SecretsError::CacheError` if random nonce generation fails
-/// (effectively never on a healthy host) or if JSON-serialisation of
-/// the resulting envelope fails (also effectively never — `Envelope`
-/// is a fixed shape).
-pub(super) fn seal(user_key: &str, plaintext: &[u8]) -> SecretsResult<String> {
+/// `SecretsError::CacheError` on encrypt or serialise failure.
+pub(super) fn seal(user_key: &str, plaintext: &[u8], aad: &[u8]) -> SecretsResult<String> {
     let key_bytes = derive_key(user_key);
     let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
     let cipher = Aes256Gcm::new(key);
@@ -123,7 +120,13 @@ pub(super) fn seal(user_key: &str, plaintext: &[u8]) -> SecretsResult<String> {
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     let ct = cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(
+            nonce,
+            Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
         .map_err(|e| SecretsError::CacheError(format!("encrypt failed: {e}")))?;
 
     let envelope = Envelope {
@@ -136,16 +139,13 @@ pub(super) fn seal(user_key: &str, plaintext: &[u8]) -> SecretsResult<String> {
         .map_err(|e| SecretsError::CacheError(format!("envelope serialise: {e}")))
 }
 
-/// Decrypt a base64-shaped JSON envelope previously produced by [`seal`].
+/// Open an envelope from [`seal`]. Same `aad` required.
 ///
 /// # Errors
 ///
-/// `SecretsError::CacheError` on:
-/// - Malformed envelope JSON
-/// - Wrong envelope version (currently only `1` accepted)
-/// - Malformed base64 in `nonce` / `ct`
-/// - Authentication failure (tampered ciphertext OR wrong key)
-pub(super) fn open(user_key: &str, envelope_bytes: &[u8]) -> SecretsResult<Vec<u8>> {
+/// `SecretsError::CacheError` on malformed envelope, wrong version,
+/// bad base64, or auth failure (wrong key / AAD / tampered ct).
+pub(super) fn open(user_key: &str, envelope_bytes: &[u8], aad: &[u8]) -> SecretsResult<Vec<u8>> {
     let envelope: Envelope = serde_json::from_slice(envelope_bytes)
         .map_err(|e| SecretsError::CacheError(format!("envelope parse: {e}")))?;
 
@@ -175,73 +175,87 @@ pub(super) fn open(user_key: &str, envelope_bytes: &[u8]) -> SecretsResult<Vec<u
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     cipher
-        .decrypt(nonce, ct.as_ref())
-        .map_err(|_| SecretsError::CacheError("decrypt failed: wrong key or tampered data".into()))
+        .decrypt(
+            nonce,
+            Payload {
+                msg: ct.as_ref(),
+                aad,
+            },
+        )
+        .map_err(|_| {
+            SecretsError::CacheError(
+                "decrypt failed: wrong key, wrong AAD, or tampered data".into(),
+            )
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const AAD: &[u8] = b"test-aad";
+
     #[test]
     fn round_trip_recovers_plaintext() {
         let key = "operator-provided-passphrase";
         let pt = b"my secret value";
-        let env = seal(key, pt).unwrap();
-        let recovered = open(key, env.as_bytes()).unwrap();
+        let env = seal(key, pt, AAD).unwrap();
+        let recovered = open(key, env.as_bytes(), AAD).unwrap();
         assert_eq!(recovered, pt);
     }
 
     #[test]
     fn wrong_key_fails_authentication() {
-        let env = seal("right-key", b"data").unwrap();
-        let err = open("wrong-key", env.as_bytes()).unwrap_err();
+        let env = seal("right-key", b"data", AAD).unwrap();
+        let err = open("wrong-key", env.as_bytes(), AAD).unwrap_err();
         assert!(matches!(err, SecretsError::CacheError(_)));
     }
 
     #[test]
     fn tampered_ciphertext_fails_authentication() {
-        let mut env = seal("k", b"data").unwrap();
+        let mut env = seal("k", b"data", AAD).unwrap();
         // Flip a byte in the middle of the ct field.
         let needle = "\"ct\":\"";
         let start = env.find(needle).unwrap() + needle.len();
-        // Replace the first ct byte with a different valid base64 char.
         let mut bytes = env.into_bytes();
         bytes[start] = if bytes[start] == b'A' { b'B' } else { b'A' };
         env = String::from_utf8(bytes).unwrap();
-        let err = open("k", env.as_bytes()).unwrap_err();
+        let err = open("k", env.as_bytes(), AAD).unwrap_err();
+        assert!(matches!(err, SecretsError::CacheError(_)));
+    }
+
+    /// AAD prevents cross-slot file swaps.
+    #[test]
+    fn aad_mismatch_fails_authentication() {
+        let env = seal("k", b"db-password", b"db_password").unwrap();
+        let err = open("k", env.as_bytes(), b"kafka_password").unwrap_err();
         assert!(matches!(err, SecretsError::CacheError(_)));
     }
 
     #[test]
     fn nonces_are_unique_across_seals() {
-        // 1000 seals of the same plaintext with the same key — every
-        // envelope should be unique (random nonce). Collision space is
-        // 2^96, this exercises the random source not the upper bound.
         let mut seen = std::collections::HashSet::new();
         for _ in 0..1000 {
-            let env = seal("k", b"same plaintext").unwrap();
+            let env = seal("k", b"same plaintext", AAD).unwrap();
             assert!(seen.insert(env), "duplicate envelope (nonce collision)");
         }
     }
 
     #[test]
     fn looks_like_envelope_detects_v1_form() {
-        let env = seal("k", b"x").unwrap();
+        let env = seal("k", b"x", AAD).unwrap();
         assert!(Envelope::looks_like(env.as_bytes()));
     }
 
     #[test]
     fn looks_like_envelope_rejects_legacy_plaintext() {
-        // Legacy CacheEntry JSON (pre-encryption) starts with `{` but
-        // does NOT contain `"v":` at the top level.
         let legacy = br#"{"data":"abc","fetched_at_secs":1234,"metadata":{}}"#;
         assert!(!Envelope::looks_like(legacy));
     }
 
     #[test]
     fn malformed_envelope_returns_error() {
-        let err = open("k", b"not json").unwrap_err();
+        let err = open("k", b"not json", AAD).unwrap_err();
         assert!(matches!(err, SecretsError::CacheError(_)));
     }
 }

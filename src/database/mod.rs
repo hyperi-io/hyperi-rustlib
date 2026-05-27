@@ -169,10 +169,15 @@ impl DbConnection {
             .map(|p| format!("?{p}"))
             .unwrap_or_default();
 
-        format!(
-            "{scheme}://{auth}{}:{}{db_path}{params}",
-            self.host, self.port
-        )
+        // IPv6 literals must be bracketed in URL host position
+        // (RFC 3986 §3.2.2). Don't bracket what's already bracketed.
+        let host_fmt = if self.host.contains(':') && !self.host.starts_with('[') {
+            format!("[{}]", self.host)
+        } else {
+            self.host.clone()
+        };
+
+        format!("{scheme}://{auth}{host_fmt}:{}{db_path}{params}", self.port)
     }
 }
 
@@ -542,5 +547,36 @@ mod tests {
             serde_json::from_value(v).unwrap()
         });
         assert_eq!(round_tripped.password.expose(), "the_real_secret");
+    }
+
+    /// IPv6 literals get RFC 3986 brackets.
+    #[test]
+    fn ipv6_host_is_bracketed() {
+        let dbc = DbConnection {
+            host: "::1".into(),
+            port: 5432,
+            user: "u".into(),
+            password: SensitiveString::new("p"),
+            db: "d".into(),
+            params: None,
+        };
+        let url = dbc.url_with_scheme("postgresql");
+        assert!(url.contains("@[::1]:5432/"), "got: {url}");
+    }
+
+    /// Pre-bracketed host stays single-bracketed.
+    #[test]
+    fn pre_bracketed_ipv6_host_not_double_bracketed() {
+        let dbc = DbConnection {
+            host: "[fe80::1]".into(),
+            port: 5432,
+            user: "u".into(),
+            password: SensitiveString::new("p"),
+            db: "d".into(),
+            params: None,
+        };
+        let url = dbc.url_with_scheme("postgresql");
+        assert!(url.contains("@[fe80::1]:5432/"), "got: {url}");
+        assert!(!url.contains("[[fe80::1]]"));
     }
 }
