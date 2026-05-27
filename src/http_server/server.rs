@@ -260,10 +260,17 @@ impl HttpServer {
 
         if self.config.enable_health_endpoints {
             let ready = Arc::clone(&self.ready);
-            router = router.route("/health/live", get(health_live)).route(
-                "/health/ready",
-                get(move || health_ready(Arc::clone(&ready))),
-            );
+            // K8s-standard paths are /healthz and /readyz; the
+            // /health/live and /health/ready aliases stay for
+            // backward compat with existing consumer probes.
+            // Kaz #38: docs claim /readyz, code only had /health/ready.
+            let r1 = Arc::clone(&ready);
+            let r2 = Arc::clone(&ready);
+            router = router
+                .route("/health/live", get(health_live))
+                .route("/health/ready", get(move || health_ready(Arc::clone(&r1))))
+                .route("/healthz", get(health_live))
+                .route("/readyz", get(move || health_ready(Arc::clone(&r2))));
         }
 
         #[cfg(all(feature = "health", feature = "serde_json"))]
@@ -493,6 +500,25 @@ mod tests {
 
         // Wait for server to finish
         future.await.unwrap();
+    }
+
+    /// Kaz #38: K8s-standard `/healthz` and `/readyz` paths must
+    /// be live alongside the legacy `/health/live` and
+    /// `/health/ready` aliases.
+    #[tokio::test]
+    async fn k8s_standard_health_paths_are_mounted() {
+        let config = HttpServerConfig::default();
+        let server = HttpServer::new(config);
+        let app = server.build_router(Router::new());
+
+        for path in &["/healthz", "/readyz"] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(*path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "path={path}");
+        }
     }
 
     /// Codex F12 regression: shutdown signal flips the readiness

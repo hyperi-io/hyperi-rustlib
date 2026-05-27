@@ -141,6 +141,57 @@ intent.
 required; the field rename only affects log lines from rustlib
 itself.
 
+### Codex Wave 1 — Tier-3 single-knob
+
+`transport.filter_tiers.allow_complex_filters_in/out: true` now
+implies `expression.allow_regex / allow_iteration / allow_time =
+true` for the transport's compile path. Previously operators had
+to flip both knobs and they could disagree (filter passes the
+transport gate, fails the expression profile). One source of truth.
+
+### Codex Wave 1 — `WorkerPoolConfig::validate`
+
+`async_concurrency == 0` now rejected at config-load. Previously
+passed validation and panicked at `step_by(0)` inside
+`fan_out_async`.
+
+### Codex Wave 2 — `BackgroundSink::flush()` surfaces drain errors
+
+`flush()` now returns `Err(SinkError::Drain(_))` when the underlying
+drain's `write_batch` or `flush_durable` failed. Previously acked
+`Ok(())` regardless — callers thought messages were durable when
+they were lost. Caller adjustment: handle `Err(SinkError::Drain)`
+on `flush().await`.
+
+### Codex Wave 2 — Kafka DLQ `flush_durable` Err on outstanding
+
+`Dlq::flush_durable` (Kafka backend) returns `DlqError::Kafka`
+when the producer flush timeout expires with messages still in
+flight. Previously logged at debug and returned `Ok(())`. Shutdown
+paths that assumed Ok = drained must now treat Err as "DLQ entries
+may be lost".
+
+### Codex Wave 3 — `CacheConfig.dir_mode` / `.file_mode`
+
+Two new optional fields default to `Some(0o700)` and `Some(0o600)`.
+`None` disables chmod entirely — required on S3-FUSE / root-
+squashed NFS / similar mounts that reject chmod. Operators on
+those mounts must own upstream perms.
+
+### Codex Wave 3 — `dangerous-diagnostics` feature
+
+`config::registry::dump_effective_unredacted()` is now gated by
+the `dangerous-diagnostics` cargo feature. Not included in `full`.
+Compile with `--features dangerous-diagnostics` only for one-off
+operator-driven debugging.
+
+### Codex Wave 3 — strict CEL `has(<single>)`
+
+Tier-1 `has(<single-field>)` now only matches at JSON depth 1
+(immediate child of the root). Previously matched at any depth.
+Operators relying on the nested-match behaviour must switch to a
+dotted path (`has(some.path.field)`) or to a Tier-2 CEL filter.
+
 ---
 
 ## Known open issues (not fixed on this branch)
