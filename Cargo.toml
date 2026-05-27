@@ -162,8 +162,11 @@ secrets-vault = ["secrets", "vaultrs"]
 secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
+# Credential spec resolution (env:/vault:/literal)
+credential = []
+
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "otel-tracing", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "database", "cache", "transport-all", "transport-trace", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "worker", "cli-service", "io", "dlq", "dlq-kafka", "dlq-http", "dlq-redis", "output-file", "expression"]
+full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "otel-tracing", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "database", "cache", "transport-all", "transport-trace", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "worker", "cli-service", "io", "dlq", "dlq-kafka", "dlq-http", "dlq-redis", "output-file", "expression", "credential"]
 
 [dependencies]
 # Serialisation (always needed)
