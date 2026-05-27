@@ -349,15 +349,15 @@ impl DfeMetrics {
 
     /// Record messages successfully sent to a transport.
     #[inline]
-    pub fn transport_sent(&self, transport: &str, count: u64) {
-        metrics::counter!("dfe_transport_sent_total", "transport" => transport.to_string())
+    pub fn transport_sent(&self, transport: super::TransportKind, count: u64) {
+        metrics::counter!("dfe_transport_sent_total", "transport" => transport.as_label())
             .increment(count);
     }
 
     /// Record send errors for a transport.
     #[inline]
-    pub fn transport_send_errors(&self, transport: &str, count: u64) {
-        metrics::counter!("dfe_transport_send_errors_total", "transport" => transport.to_string())
+    pub fn transport_send_errors(&self, transport: super::TransportKind, count: u64) {
+        metrics::counter!("dfe_transport_send_errors_total", "transport" => transport.as_label())
             .increment(count);
     }
 
@@ -495,14 +495,14 @@ impl DfeMetrics {
 
     /// Record authentication failure.
     #[inline]
-    pub fn auth_failure(&self, reason: &str) {
-        metrics::counter!("dfe_auth_failures_total", "reason" => reason.to_string()).increment(1);
+    pub fn auth_failure(&self, reason: super::AuthFailureReason) {
+        metrics::counter!("dfe_auth_failures_total", "reason" => reason.as_label()).increment(1);
     }
 
     /// Record validation failure.
     #[inline]
-    pub fn validation_failure(&self, reason: &str) {
-        metrics::counter!("dfe_validation_failures_total", "reason" => reason.to_string())
+    pub fn validation_failure(&self, reason: super::ValidationFailureReason) {
+        metrics::counter!("dfe_validation_failures_total", "reason" => reason.as_label())
             .increment(1);
     }
 }
@@ -554,8 +554,8 @@ mod tests {
         let mgr = super::super::MetricsManager::new("test_app");
         let dfe = DfeMetrics::register(&mgr);
 
-        dfe.transport_sent("kafka", 1);
-        dfe.transport_send_errors("kafka", 1);
+        dfe.transport_sent(super::super::TransportKind::Kafka, 1);
+        dfe.transport_send_errors(super::super::TransportKind::Kafka, 1);
         dfe.transport_backpressured("kafka", 1);
         dfe.transport_refused("kafka", 1);
         dfe.transport_healthy("kafka", true);
@@ -580,7 +580,7 @@ mod tests {
         dfe.spool_messages(10.0);
         dfe.spool_disk_available(1_000_000.0);
 
-        dfe.auth_failure("invalid_token");
-        dfe.validation_failure("missing_field");
+        dfe.auth_failure(super::super::AuthFailureReason::MalformedToken);
+        dfe.validation_failure(super::super::ValidationFailureReason::FieldMissing);
     }
 }

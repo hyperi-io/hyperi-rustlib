@@ -89,10 +89,8 @@ impl BufferMetrics {
     }
 
     /// Record a flush with its duration and trigger reason.
-    ///
-    /// `trigger` should be one of: `size`, `age`, `eviction`, `records`.
     #[inline]
-    pub fn record_flush(&self, duration_secs: f64, trigger: &str) {
+    pub fn record_flush(&self, duration_secs: f64, trigger: crate::metrics::FlushTrigger) {
         self.buffer_flush.increment(1);
         self.buffer_flush_duration.record(duration_secs);
         let key = if self.namespace.is_empty() {
@@ -100,6 +98,6 @@ impl BufferMetrics {
         } else {
             format!("{}_buffer_flush_trigger_total", self.namespace)
         };
-        metrics::counter!(key, "trigger" => trigger.to_string()).increment(1);
+        metrics::counter!(key, "trigger" => trigger.as_label()).increment(1);
     }
 }

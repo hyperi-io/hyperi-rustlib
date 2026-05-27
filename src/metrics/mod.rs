@@ -84,8 +84,11 @@
 
 mod container;
 pub mod dfe;
+pub mod labels;
 pub mod manifest;
 mod process;
+
+pub use labels::{AuthFailureReason, FlushTrigger, TransportKind, ValidationFailureReason};
 
 #[cfg(feature = "otel-metrics")]
 pub(crate) mod otel;

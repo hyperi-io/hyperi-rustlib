@@ -117,9 +117,15 @@ impl RoutedSender {
         self.default.is_some()
     }
 
-    /// Resolve which sender handles a given key.
-    fn resolve(&self, key: &str) -> Option<&AnySender> {
-        self.routes.get(key).or(self.default.as_ref())
+    /// Resolve which route + sender handles a given key. Returns the
+    /// configured route name (or `"default"` for the fallback) so
+    /// metrics can label by route, not by per-message key (F7).
+    fn resolve(&self, key: &str) -> Option<(&str, &AnySender)> {
+        if let Some((name, sender)) = self.routes.get_key_value(key) {
+            Some((name.as_str(), sender))
+        } else {
+            self.default.as_ref().map(|s| ("default", s))
+        }
     }
 }
 
@@ -158,19 +164,23 @@ impl TransportSender for RoutedSender {
             return SendResult::Fatal(TransportError::Closed);
         }
 
-        let Some(sender) = self.resolve(key) else {
+        let Some((route_name, sender)) = self.resolve(key) else {
             return SendResult::Fatal(TransportError::Config(format!(
                 "no route configured for key '{key}' and no default sender"
             )));
         };
-
+        // F7: route label is the CONFIGURED route name (or
+        // "default"), not the per-message key. Cardinality is
+        // bounded by the routing table size, not by message count.
         #[cfg(feature = "metrics")]
         metrics::counter!(
             "dfe_transport_sent_total",
             "transport" => "routed",
-            "route" => key.to_string()
+            "route" => route_name.to_string()
         )
         .increment(1);
+        #[cfg(not(feature = "metrics"))]
+        let _ = route_name;
 
         sender.send(key, payload).await
     }
@@ -249,5 +259,25 @@ mod tests {
 
         let result = sender.send("key", b"payload").await;
         assert!(result.is_fatal());
+    }
+
+    /// Codex F7 regression: `resolve` returns the configured route
+    /// name (or `"default"`), not the per-message key. Metric labels
+    /// stay bounded by the routing table size, not by message count.
+    #[test]
+    #[cfg(feature = "transport-memory")]
+    fn resolve_returns_route_name_not_message_key() {
+        let mut route_map = HashMap::new();
+        route_map.insert("events.land".into(), make_memory_sender());
+        let sender = RoutedSender::new(route_map, Some(make_memory_sender()));
+
+        // Match: route name equals the configured key.
+        let (name, _) = sender.resolve("events.land").unwrap();
+        assert_eq!(name, "events.land");
+
+        // Miss: falls through to "default" — bounded label, not the
+        // arbitrary inbound key.
+        let (name, _) = sender.resolve("arbitrary-user-key-12345").unwrap();
+        assert_eq!(name, "default");
     }
 }

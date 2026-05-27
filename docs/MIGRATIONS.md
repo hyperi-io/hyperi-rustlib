@@ -192,6 +192,58 @@ Tier-1 `has(<single-field>)` now only matches at JSON depth 1
 Operators relying on the nested-match behaviour must switch to a
 dotted path (`has(some.path.field)`) or to a Tier-2 CEL filter.
 
+### Codex Wave 5 — bounded metric labels (F7)
+
+`DfeMetrics` methods that took free-form `&str` for metric labels
+now take typed enums. The labels are bounded; cardinality is
+fixed at the enum variant count.
+
+| Method | Old | New |
+|---|---|---|
+| `transport_sent` | `(transport: &str, count)` | `(transport: TransportKind, count)` |
+| `transport_send_errors` | `(transport: &str, count)` | `(transport: TransportKind, count)` |
+| `auth_failure` | `(reason: &str)` | `(reason: AuthFailureReason)` |
+| `validation_failure` | `(reason: &str)` | `(reason: ValidationFailureReason)` |
+| `BufferGroup::record_flush` | `(duration, trigger: &str)` | `(duration, trigger: FlushTrigger)` |
+
+```rust
+// Before
+dfe.auth_failure("token-expired");
+dfe.record_flush(0.012, "size");
+dfe.transport_sent("kafka", 1);
+
+// After
+use hyperi_rustlib::metrics::{AuthFailureReason, FlushTrigger, TransportKind};
+dfe.auth_failure(AuthFailureReason::Expired);
+dfe.record_flush(0.012, FlushTrigger::Size);
+dfe.transport_sent(TransportKind::Kafka, 1);
+```
+
+Variant lists:
+- `TransportKind`: `Kafka`, `Grpc`, `Memory`, `File`, `Pipe`, `Http`, `Redis`, `Routed`
+- `FlushTrigger`: `Size`, `Records`, `Age`, `Eviction`, `Shutdown`, `Manual`
+- `AuthFailureReason`: RFC 6749 codes + JWT failure modes
+  (`Expired`, `InvalidSignature`, `InvalidClient`, `InvalidGrant`,
+  `InvalidScope`, `MalformedToken`, `RevokedToken`, `RateLimited`,
+  `Unauthorized`, `AccessDenied`)
+- `ValidationFailureReason`: JSON Schema 2020-12 categories
+  (`SchemaInvalid`, `FieldMissing`, `TypeMismatch`, `OutOfRange`,
+  `PatternMismatch`, `FormatInvalid`, `EnumViolation`,
+  `AdditionalProperties`, `NullValue`, `EncodingError`)
+
+No `Other` catch-all. New failure modes require a rustlib release
+that adds a variant; consumers then bump and recompile. The compiler
+flags every site needing the new variant.
+
+### Codex Wave 5 — `RoutedSender` metric label
+
+`dfe_transport_sent_total{transport="routed",route=...}` now
+carries the **configured route name** (or `"default"` for the
+fallback), not the inbound message key. Cardinality is bounded by
+the routing table size. No consumer code change required — only
+the metric label values change. Dashboards keyed on per-message
+keys need rewiring.
+
 ---
 
 ## Known open issues (not fixed on this branch)
