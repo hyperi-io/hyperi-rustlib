@@ -132,7 +132,7 @@ mod tests {
             .unwrap_err();
         match err {
             CredentialError::MissingEnvVar { name } => {
-                assert_eq!(name, "HYPERI_RUSTLIB_NONEXISTENT_XYZ")
+                assert_eq!(name, "HYPERI_RUSTLIB_NONEXISTENT_XYZ");
             }
             other => panic!("expected MissingEnvVar, got {other:?}"),
         }
