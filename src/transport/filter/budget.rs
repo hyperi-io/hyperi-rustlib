@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Lives under the `transport.filter_tiers.budget` cascade key.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct FilterBudget {
     /// Max AST nodes after parse.
     #[serde(default = "default_max_ast_nodes")]
@@ -55,6 +56,7 @@ impl Default for FilterBudget {
 
 /// Budget violation discovered at config-load or evaluation.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BudgetError {
     /// AST exceeded `max_ast_nodes`.
     TooManyNodes { count: usize, limit: usize },

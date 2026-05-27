@@ -161,6 +161,7 @@ impl MatcherTier {
 /// Byte offsets of a match. End is exclusive: `&hay[start..end]` is the
 /// matched slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Match {
     pub start: usize,
     pub end: usize,
@@ -169,6 +170,7 @@ pub struct Match {
 /// Like [`Match`] but also identifies which input pattern matched in a
 /// [`StrMatcherSet`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SetMatch {
     pub start: usize,
     pub end: usize,
@@ -177,6 +179,7 @@ pub struct SetMatch {
 
 /// Failure modes during construction.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum BuildError {
     /// The pattern is empty.
     #[error(
