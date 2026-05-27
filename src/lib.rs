@@ -295,7 +295,7 @@ pub use secrets::{
 
 #[cfg(feature = "credential")]
 #[cfg_attr(docsrs, doc(cfg(feature = "credential")))]
-pub use credential::{resolve, resolve_optional, CredentialError};
+pub use credential::{CredentialError, resolve, resolve_optional};
 
 #[cfg(feature = "secrets-vault")]
 #[cfg_attr(docsrs, doc(cfg(feature = "secrets-vault")))]

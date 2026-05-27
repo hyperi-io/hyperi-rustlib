@@ -86,8 +86,9 @@ async fn resolve_vault(path_key: &str) -> Result<String, CredentialError> {
         ..Default::default()
     };
 
-    let secrets = SecretsManager::new(config)
-        .map_err(|e| CredentialError::Vault(format!("failed to initialise secrets manager: {e}")))?;
+    let secrets = SecretsManager::new(config).map_err(|e| {
+        CredentialError::Vault(format!("failed to initialise secrets manager: {e}"))
+    })?;
     let value = secrets
         .get("_vault_lookup")
         .await
@@ -126,9 +127,13 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_env_missing() {
-        let err = resolve("env:HYPERI_RUSTLIB_NONEXISTENT_XYZ").await.unwrap_err();
+        let err = resolve("env:HYPERI_RUSTLIB_NONEXISTENT_XYZ")
+            .await
+            .unwrap_err();
         match err {
-            CredentialError::MissingEnvVar { name } => assert_eq!(name, "HYPERI_RUSTLIB_NONEXISTENT_XYZ"),
+            CredentialError::MissingEnvVar { name } => {
+                assert_eq!(name, "HYPERI_RUSTLIB_NONEXISTENT_XYZ")
+            }
             other => panic!("expected MissingEnvVar, got {other:?}"),
         }
     }
