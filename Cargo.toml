@@ -343,12 +343,11 @@ parking_lot = { version = ">=0.12.3, <0.13", optional = true }
 rayon = { version = ">=1.10, <2", optional = true }
 base64 = { version = ">=0.22, <0.23", optional = true }
 
-# AEAD for at-rest encryption of the secrets disk cache. Gated by the
-# `secrets` feature; consumers without secrets pay nothing.
-# AES-256-GCM was chosen because (a) it's the project standard for
-# at-rest encryption (matches license-module crypto), (b) AES-NI gives
-# sub-microsecond seal/open on modern x86, (c) the RustCrypto AEAD
-# traits are well-vetted and FIPS-friendly.
+# AEAD for at-rest encryption of the secrets disk cache. Gated by
+# the `secrets` feature; consumers without it pay nothing. AES-256-
+# GCM picked because AES-NI gives sub-microsecond seal/open on
+# modern x86, and the RustCrypto AEAD traits are well-vetted +
+# FIPS-friendly.
 aes-gcm = { version = "0.10", optional = true }
 hkdf = { version = "0.12", optional = true }
 sha2 = { version = "0.10", optional = true }
