@@ -12,8 +12,7 @@
 //! Each builder reads `{PREFIX}_HOST`, `{PREFIX}_PORT`, `{PREFIX}_USER`,
 //! `{PREFIX}_PASSWORD`, `{PREFIX}_DB` and constructs the appropriate URL.
 //!
-//! Password fields use [`SensitiveString`](crate::config::sensitive::SensitiveString)
-//! for compile-time safe redaction.
+//! Password fields use [`crate::SensitiveString`] for compile-time safe redaction.
 //!
 //! # Supported Databases
 //!

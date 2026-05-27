@@ -80,7 +80,7 @@ impl Drop for ExposeGuard {
     }
 }
 
-/// Run `f` with [`SensitiveString::serialize`] exposing inner values.
+/// Run `f` with [`SensitiveString`]'s `Serialize` impl exposing inner values.
 ///
 /// Use this around code paths that need to serialise-and-deserialise a
 /// config struct without destroying its secrets — typically the
@@ -99,8 +99,8 @@ impl Drop for ExposeGuard {
 ///
 /// # Panic safety
 ///
-/// If `f` panics, the previous flag value is restored via the
-/// [`ExposeGuard`] drop impl before the panic unwinds further.
+/// If `f` panics, the previous flag value is restored via an RAII
+/// drop guard before the panic unwinds further.
 ///
 /// # Examples
 ///
