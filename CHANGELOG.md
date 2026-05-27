@@ -1,3 +1,38 @@
+# [2.8.0](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.7.4...v2.8.0) (2026-05-27)
+
+
+### Bug Fixes
+
+* #[non_exhaustive] on new public types ([7ae8b65](https://github.com/hyperi-io/hyperi-rustlib/commit/7ae8b659f02e30805b90a5d99eb41053599124c3))
+* at-rest secret handling — DB url encoding + disk cache encryption ([9542e4b](https://github.com/hyperi-io/hyperi-rustlib/commit/9542e4b815caba7a1a0f58d2851aa3ba5eb877e8))
+* Codex pre-GA Wave 1 — CI unblock + security (F1, F4, F9, F15) ([f34c848](https://github.com/hyperi-io/hyperi-rustlib/commit/f34c84886fd08e076dbdc2acefbd977468548ff9))
+* Codex pre-GA Wave 2 — durability contracts (F2, F3, F5) ([6174d80](https://github.com/hyperi-io/hyperi-rustlib/commit/6174d80d44af65947ac1daa9268b1cefe122586e))
+* Codex pre-GA Wave 3 — surface hardening (F6, F10, F12, F13) ([66e48f5](https://github.com/hyperi-io/hyperi-rustlib/commit/66e48f5542ffa95301095102d6aa35e4e6a28eca))
+* Codex Wave 4 — docs alignment + K8s-standard probe aliases ([22dfc70](https://github.com/hyperi-io/hyperi-rustlib/commit/22dfc707b3123c815a2fbbcc98d75afc347558b3)), closes [#38](https://github.com/hyperi-io/hyperi-rustlib/issues/38)
+* Codex Wave 5 part 1 — F11 + F16 + F17 + F14 docs + F18 style ([e5c728e](https://github.com/hyperi-io/hyperi-rustlib/commit/e5c728e6c5ef0a57251bd143fe22a3e682c077ee))
+* concurrency correctness + SensitiveString round-trip survival ([2d1b3df](https://github.com/hyperi-io/hyperi-rustlib/commit/2d1b3df2acef71989ae3c29e608c5ed24ba05650)), closes [hyperi-rustlib#41](https://github.com/hyperi-rustlib/issues/41)
+* **deps:** drop stale deny.toml ignores; trim stale Cargo.toml comment ([40058f8](https://github.com/hyperi-io/hyperi-rustlib/commit/40058f8d4aa4da0dcdb636b2537fd68fae935954))
+* **docs:** add MIGRATIONS.md for consumer rebuild playbook ([68a90bb](https://github.com/hyperi-io/hyperi-rustlib/commit/68a90bb7325e1350125e45193d3759d4e8b7fd99))
+* **docs:** clean rustdoc -D warnings under --all-features ([30e899c](https://github.com/hyperi-io/hyperi-rustlib/commit/30e899c66b4909f316dab3bb1934409032a35fd1))
+* **docs:** mark strmatch + content-scrubbing as Planned, not shipped ([25cb2cb](https://github.com/hyperi-io/hyperi-rustlib/commit/25cb2cbeb176b0c00d75fb50dd5996cfc667bb12))
+* **docs:** MIGRATIONS records open Kafka issues; docs/README links it ([f94c48b](https://github.com/hyperi-io/hyperi-rustlib/commit/f94c48b5e6f74ddbe152a2252fc99d1a1991fdbc)), closes [#35](https://github.com/hyperi-io/hyperi-rustlib/issues/35) [#36](https://github.com/hyperi-io/hyperi-rustlib/issues/36) [#37](https://github.com/hyperi-io/hyperi-rustlib/issues/37)
+* **http-server:** wire max_connections + shutdown_timeout_ms; document unwired knobs (C21) ([f96e63b](https://github.com/hyperi-io/hyperi-rustlib/commit/f96e63b99954b7b65f2ee21bad14ccb476a241f2))
+* perf + observability nits ([#4](https://github.com/hyperi-io/hyperi-rustlib/issues/4), [#6](https://github.com/hyperi-io/hyperi-rustlib/issues/6), [#10](https://github.com/hyperi-io/hyperi-rustlib/issues/10)) ([3c0622c](https://github.com/hyperi-io/hyperi-rustlib/commit/3c0622c9aba15d0bd0e832425f74532c0a76109d))
+* **security:** AAD on cache crypto; IPv6 bracket in DB URL ([8271031](https://github.com/hyperi-io/hyperi-rustlib/commit/8271031c09c8e3be3845c7c731ed0de298eec633))
+* silent-error / leak / mutex-callback fixes — pre-GA hardening batch 1 ([fdfdc07](https://github.com/hyperi-io/hyperi-rustlib/commit/fdfdc071354afeb119736b201daff93a91c1bc09))
+* **strmatch:** merge eligible patterns into one AC scan ([#1](https://github.com/hyperi-io/hyperi-rustlib/issues/1)) ([8dbec8c](https://github.com/hyperi-io/hyperi-rustlib/commit/8dbec8cd4b81cf8dbf26fe48367270e33f9ed031))
+* **strmatch:** regex-shaped patterns with 4-tier fast-path dispatch ([88cc9ee](https://github.com/hyperi-io/hyperi-rustlib/commit/88cc9ee33616d36b02fc9eb754f1d38fd6af90fb))
+* **tiered-sink:** plug strict-FIFO race and spool-capacity TOCTOU (C15) ([fa44e33](https://github.com/hyperi-io/hyperi-rustlib/commit/fa44e33910669ed2f65f834c9e32a264859e2545))
+* **transport-filter:** static AST + payload budget for Tier 2/3 CEL (C12) ([ceed5af](https://github.com/hyperi-io/hyperi-rustlib/commit/ceed5afdf5aeedadc58a757182a92c48f2df13b9))
+* **transport, strmatch:** pre-GA hardening pass — correctness, perf, honesty ([04b7e42](https://github.com/hyperi-io/hyperi-rustlib/commit/04b7e42527cd625432ae76abe6f8695bd8384dfe)), closes [#5](https://github.com/hyperi-io/hyperi-rustlib/issues/5) [#3](https://github.com/hyperi-io/hyperi-rustlib/issues/3) [#1](https://github.com/hyperi-io/hyperi-rustlib/issues/1) [#7](https://github.com/hyperi-io/hyperi-rustlib/issues/7) [#11](https://github.com/hyperi-io/hyperi-rustlib/issues/11) [#12](https://github.com/hyperi-io/hyperi-rustlib/issues/12)
+* **transport:** bucket-F pre-GA findings — gates, semantics, fail-loud ([3ceeac6](https://github.com/hyperi-io/hyperi-rustlib/commit/3ceeac6e962cc2f2502a63df3421dfb84a1d484e))
+* **version-check:** trim telemetry payload to anonymous version-only ([7347aee](https://github.com/hyperi-io/hyperi-rustlib/commit/7347aee37859d55266a14a2279cfb20c7b2e07fa))
+
+
+### Features
+
+* bounded metric labels via typed enums (TransportKind, FlushTrigger, AuthFailureReason, ValidationFailureReason) ([ad8a018](https://github.com/hyperi-io/hyperi-rustlib/commit/ad8a018938559181dd6cb4cb1ff5740cb771add6))
+
 ## [2.7.4](https://github.com/hyperi-io/hyperi-rustlib/compare/v2.7.3...v2.7.4) (2026-05-25)
 
 
