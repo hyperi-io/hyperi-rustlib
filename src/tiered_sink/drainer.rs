@@ -130,6 +130,11 @@ enum DrainResult {
     Empty,
     /// I/O error
     IoError,
+    /// `guard.commit()` failed after the sink/codec returned a result
+    /// that would normally consume the entry. The entry is STILL on
+    /// disk; counters were NOT decremented. StrictFifo must stay
+    /// gated until the next drain iteration retries (Codex F5).
+    CommitFailed(String),
 }
 
 /// Drain loop. Runs until shutdown signalled.
@@ -206,14 +211,19 @@ pub async fn drain_loop<S: Sink>(
                             let send_result = sink.try_send(&data).await;
                             match send_result {
                                 Ok(()) => {
-                                    // Success - commit to remove from queue
-                                    if let Err(e) = guard.commit() {
-                                        #[cfg(feature = "tracing")]
-                                        tracing::error!(error = %e, "Failed to commit after successful send");
+                                    // Commit FIRST; only decrement on commit success.
+                                    // F5: previously decremented unconditionally,
+                                    // letting counters drift while the entry still
+                                    // sat in the queue.
+                                    match guard.commit() {
+                                        Ok(()) => {
+                                            spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
+                                            spool_bytes
+                                                .fetch_sub(compressed_len, AtomicOrdering::Relaxed);
+                                            DrainResult::Success
+                                        }
+                                        Err(e) => DrainResult::CommitFailed(e.to_string()),
                                     }
-                                    spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
-                                    spool_bytes.fetch_sub(compressed_len, AtomicOrdering::Relaxed);
-                                    DrainResult::Success
                                 }
                                 Err(SinkError::Full) => {
                                     // Don't commit - guard drops and rolls back
@@ -225,28 +235,27 @@ pub async fn drain_loop<S: Sink>(
                                     drop(guard);
                                     DrainResult::SinkUnavailable
                                 }
-                                Err(SinkError::Fatal(e)) => {
-                                    // Commit to remove unprocessable message
-                                    if let Err(commit_err) = guard.commit() {
-                                        #[cfg(feature = "tracing")]
-                                        tracing::error!(error = %commit_err, "Failed to commit after fatal error");
+                                Err(SinkError::Fatal(e)) => match guard.commit() {
+                                    Ok(()) => {
+                                        spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
+                                        spool_bytes
+                                            .fetch_sub(compressed_len, AtomicOrdering::Relaxed);
+                                        DrainResult::Fatal(e.to_string())
                                     }
-                                    spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
-                                    spool_bytes.fetch_sub(compressed_len, AtomicOrdering::Relaxed);
-                                    DrainResult::Fatal(e.to_string())
-                                }
+                                    Err(commit_err) => {
+                                        DrainResult::CommitFailed(commit_err.to_string())
+                                    }
+                                },
                             }
                         }
-                        Err(e) => {
-                            // Commit to remove corrupted message
-                            if let Err(commit_err) = guard.commit() {
-                                #[cfg(feature = "tracing")]
-                                tracing::error!(error = %commit_err, "Failed to commit after decompression error");
+                        Err(e) => match guard.commit() {
+                            Ok(()) => {
+                                spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
+                                spool_bytes.fetch_sub(compressed_len, AtomicOrdering::Relaxed);
+                                DrainResult::DecompressError(e.to_string())
                             }
-                            spool_count.fetch_sub(1, AtomicOrdering::Relaxed);
-                            spool_bytes.fetch_sub(compressed_len, AtomicOrdering::Relaxed);
-                            DrainResult::DecompressError(e.to_string())
-                        }
+                            Err(commit_err) => DrainResult::CommitFailed(commit_err.to_string()),
+                        },
                     }
                 }
                 Err(yaque::TryRecvError::QueueEmpty) => DrainResult::Empty,
@@ -287,6 +296,13 @@ pub async fn drain_loop<S: Sink>(
             }
             DrainResult::Empty | DrainResult::IoError => {
                 // Nothing to do, just continue
+            }
+            DrainResult::CommitFailed(e) => {
+                // Counters intact; entry still on disk. Treat as
+                // failure so StrictFifo stays gated until retry.
+                drainer.record_failure();
+                #[cfg(feature = "tracing")]
+                tracing::error!(error = %e, "yaque commit failed; counters preserved, will retry");
             }
         }
 

@@ -115,9 +115,13 @@ pub enum Overflow {
 
 /// Internal channel message. Tagged so flush() barriers and data
 /// messages share the queue and are processed in FIFO order.
+///
+/// `Barrier` ack carries `Result<(), DrainError>` so flush() reports
+/// drain / flush_durable failures back to the caller instead of
+/// silently lying that everything before the barrier was durable.
 enum SinkMsg<T> {
     Data(T),
-    Barrier(oneshot::Sender<()>),
+    Barrier(oneshot::Sender<Result<(), DrainError>>),
 }
 
 /// A drain consumes batches of messages and writes them to the backend.
@@ -331,7 +335,12 @@ impl<T: Send + 'static> BackgroundSink<T> {
             .send(SinkMsg::Barrier(ack_tx))
             .await
             .map_err(|_| SinkError::Closed)?;
-        ack_rx.await.map_err(|_| SinkError::Closed)
+        // Two layers of failure: the actor dropped before processing
+        // (Closed), or the drain returned an error (Drain).
+        ack_rx
+            .await
+            .map_err(|_| SinkError::Closed)?
+            .map_err(SinkError::Drain)
     }
 
     /// Total messages dropped due to overflow since spawn.
@@ -374,9 +383,11 @@ async fn actor_loop<T, D>(
                 // message sit in a channel we observed as empty.
                 rx.close();
 
-                // Flush whatever's already accumulated.
+                // Flush whatever's already accumulated. Drop the
+                // result — non-barrier writes log + count failures
+                // internally; we're already shutting down.
                 if !batch.is_empty() {
-                    write_batch_with_metrics(
+                    let _ = write_batch_with_metrics(
                         &mut drain, std::mem::take(&mut batch),
                         &pending, metric_prefix,
                     ).await;
@@ -386,36 +397,26 @@ async fn actor_loop<T, D>(
                         SinkMsg::Data(t) => {
                             batch.push(t);
                             if batch.len() >= config.batch_size {
-                                write_batch_with_metrics(
+                                let _ = write_batch_with_metrics(
                                     &mut drain, std::mem::take(&mut batch),
                                     &pending, metric_prefix,
                                 ).await;
                             }
                         }
                         SinkMsg::Barrier(ack) => {
-                            // Flush the current batch BEFORE acking. The
-                            // requester is waiting for durability of
-                            // every message accepted before their flush
-                            // call — acking before the write violates
-                            // that contract.
-                            if !batch.is_empty() {
-                                write_batch_with_metrics(
-                                    &mut drain, std::mem::take(&mut batch),
-                                    &pending, metric_prefix,
-                                ).await;
-                            }
-                            // After the batch is dispatched to the drain,
-                            // ask the drain to make it DURABLE (fsync /
-                            // producer flush). Default impl is a no-op.
-                            if let Err(e) = drain.flush_durable().await {
-                                warn!(error = %e, "sink drain flush_durable failed during shutdown barrier");
-                            }
-                            let _ = ack.send(());
+                            // Flush + durable, then ack with the
+                            // composite Result. Acking Ok on a failed
+                            // drain is the durability lie F2 fixes.
+                            let result = barrier_drain(
+                                &mut drain, std::mem::take(&mut batch),
+                                &pending, metric_prefix,
+                            ).await;
+                            let _ = ack.send(result);
                         }
                     }
                 }
                 if !batch.is_empty() {
-                    write_batch_with_metrics(
+                    let _ = write_batch_with_metrics(
                         &mut drain, std::mem::take(&mut batch),
                         &pending, metric_prefix,
                     ).await;
@@ -430,28 +431,22 @@ async fn actor_loop<T, D>(
                 Some(SinkMsg::Data(t)) => {
                     batch.push(t);
                     if batch.len() >= config.batch_size {
-                        write_batch_with_metrics(
+                        let _ = write_batch_with_metrics(
                             &mut drain, std::mem::take(&mut batch),
                             &pending, metric_prefix,
                         ).await;
                     }
                 }
                 Some(SinkMsg::Barrier(ack)) => {
-                    if !batch.is_empty() {
-                        write_batch_with_metrics(
-                            &mut drain, std::mem::take(&mut batch),
-                            &pending, metric_prefix,
-                        ).await;
-                    }
-                    if let Err(e) = drain.flush_durable().await {
-                        warn!(error = %e, "sink drain flush_durable failed during barrier");
-                    }
-                    let _ = ack.send(());
+                    let result = barrier_drain(
+                        &mut drain, std::mem::take(&mut batch),
+                        &pending, metric_prefix,
+                    ).await;
+                    let _ = ack.send(result);
                 }
                 None => {
-                    // All senders dropped — graceful exit.
                     if !batch.is_empty() {
-                        write_batch_with_metrics(
+                        let _ = write_batch_with_metrics(
                             &mut drain, std::mem::take(&mut batch),
                             &pending, metric_prefix,
                         ).await;
@@ -465,7 +460,7 @@ async fn actor_loop<T, D>(
 
             _ = tick.tick() => {
                 if !batch.is_empty() {
-                    write_batch_with_metrics(
+                    let _ = write_batch_with_metrics(
                         &mut drain, std::mem::take(&mut batch),
                         &pending, metric_prefix,
                     ).await;
@@ -475,12 +470,34 @@ async fn actor_loop<T, D>(
     }
 }
 
+/// Run the batch write + drain.flush_durable() and report the
+/// first error back through the barrier ack. Acking `Ok(())` when
+/// either step failed is the durability-lie F2 fixes.
+async fn barrier_drain<T, D: SinkDrain<T>>(
+    drain: &mut D,
+    batch: Vec<T>,
+    pending: &AtomicUsize,
+    metric_prefix: Option<&'static str>,
+) -> Result<(), DrainError>
+where
+    T: Send,
+{
+    let write_result = if batch.is_empty() {
+        Ok(())
+    } else {
+        write_batch_with_metrics(drain, batch, pending, metric_prefix).await
+    };
+    let durable_result = drain.flush_durable().await;
+    write_result.and(durable_result)
+}
+
 async fn write_batch_with_metrics<T, D: SinkDrain<T>>(
     drain: &mut D,
     batch: Vec<T>,
     pending: &AtomicUsize,
     metric_prefix: Option<&'static str>,
-) where
+) -> Result<(), DrainError>
+where
     T: Send,
 {
     let count = batch.len();
@@ -489,10 +506,14 @@ async fn write_batch_with_metrics<T, D: SinkDrain<T>>(
         metrics::counter!(format!("{p}_writes_total")).increment(1);
         metrics::gauge!(format!("{p}_pending")).set(pending.load(Ordering::Relaxed) as f64);
     }
-    if let Err(e) = drain.write_batch(batch).await {
-        warn!(error = %e, count, "sink drain write_batch failed");
-        if let Some(p) = metric_prefix {
-            metrics::counter!(format!("{p}_write_errors_total")).increment(1);
+    match drain.write_batch(batch).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            warn!(error = %e, count, "sink drain write_batch failed");
+            if let Some(p) = metric_prefix {
+                metrics::counter!(format!("{p}_write_errors_total")).increment(1);
+            }
+            Err(e)
         }
     }
 }
@@ -857,6 +878,46 @@ mod tests {
             max_us < 5_000,
             "max try_push latency was {max_us}µs — slow drain leaked back to consumer",
         );
+        shutdown.cancel();
+    }
+
+    /// Codex F2 regression: drain returning Err means flush() returns
+    /// Err. The ack must carry the drain error, not silently `Ok(())`.
+    #[tokio::test]
+    async fn flush_surfaces_drain_write_failure() {
+        struct FailingDrain;
+        impl SinkDrain<u32> for FailingDrain {
+            async fn write_batch(&mut self, _batch: Vec<u32>) -> Result<(), DrainError> {
+                Err(DrainError::Io(std::io::Error::other("simulated")))
+            }
+        }
+        let shutdown = CancellationToken::new();
+        let (sink, _handle) = BackgroundSink::spawn(FailingDrain, fast_config(), shutdown.clone());
+        sink.try_push(1).unwrap();
+        let err = sink.flush().await.unwrap_err();
+        assert!(matches!(err, SinkError::Drain(_)), "got: {err:?}");
+        shutdown.cancel();
+    }
+
+    /// Codex F2 regression: drain accepts writes but flush_durable
+    /// fails — flush() must surface the durable failure.
+    #[tokio::test]
+    async fn flush_surfaces_flush_durable_failure() {
+        struct WriteOkFlushFail;
+        impl SinkDrain<u32> for WriteOkFlushFail {
+            async fn write_batch(&mut self, _batch: Vec<u32>) -> Result<(), DrainError> {
+                Ok(())
+            }
+            async fn flush_durable(&mut self) -> Result<(), DrainError> {
+                Err(DrainError::Io(std::io::Error::other("durable-fail")))
+            }
+        }
+        let shutdown = CancellationToken::new();
+        let (sink, _handle) =
+            BackgroundSink::spawn(WriteOkFlushFail, fast_config(), shutdown.clone());
+        sink.try_push(1).unwrap();
+        let err = sink.flush().await.unwrap_err();
+        assert!(matches!(err, SinkError::Drain(_)), "got: {err:?}");
         shutdown.cancel();
     }
 }

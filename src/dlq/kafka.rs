@@ -133,24 +133,24 @@ impl KafkaDlqInner {
     ///
     /// # Errors
     ///
-    /// Never; the underlying `producer.flush` returns the count of
-    /// outstanding messages after the timeout. We surface success here
-    /// even if some messages timed out — the producer keeps trying
-    /// until close; callers that need stronger guarantees can read
-    /// `write_errors()` or rely on producer-side ack callbacks.
+    /// `DlqError::Kafka` when the producer flush timeout expires with
+    /// messages still outstanding. The previous shape returned `Ok(())`
+    /// regardless — callers thought the DLQ was drained while Kafka
+    /// still owned in-flight data, so a process exit lost entries
+    /// (Codex F3).
     pub async fn flush_durable(&mut self) -> Result<(), DlqError> {
         // Bounded wait — typical producer flush completes in
         // milliseconds; a 30s ceiling avoids wedging the actor on a
         // hard-to-reach broker.
         let outstanding = self.producer.flush(std::time::Duration::from_secs(30));
         if outstanding > 0 {
-            // Not fatal — the producer will keep retrying on its own.
-            // Caller barrier proceeds; orchestrator metrics will reflect
-            // any eventual failures via the existing send_batch path.
             debug!(
                 outstanding,
                 "Kafka DLQ flush timed out with messages still in flight"
             );
+            return Err(DlqError::Kafka(format!(
+                "flush_durable timed out with {outstanding} messages still in flight"
+            )));
         }
         Ok(())
     }
