@@ -143,8 +143,46 @@ itself.
 
 ---
 
+## Known open issues (not fixed on this branch)
+
+Tracked upstream; each needs its own focused commit. Workarounds
+applied at the consumer level until then.
+
+### #35 — Kafka topic auto-discovery race
+
+`KafkaAdmin::list_topics` returns empty when the admin consumer
+hasn't finished its bootstrap handshake. Symptom: "Auto-discovery
+found no matching topics" at startup even though the topic exists.
+
+**Workaround:** drop `topic_regex` from the config and list topics
+explicitly under `topics:`. The explicit-subscribe path bypasses
+the resolver.
+
+### #36 — `KafkaTransport` always allocates both roles
+
+`KafkaTransport::new` builds both a `BaseConsumer` and a
+`FutureProducer` from the same `ClientConfig`. Producer-only
+callers with empty `group.id` get "rdkafka consumer queue not
+available" because the consumer half can't construct without a
+group.
+
+**Workaround:** set `librdkafka_options.group.id` to a dummy
+non-empty value on producer-side configs. The dummy group is
+never used; only present so `BaseConsumer` doesn't fail to
+construct.
+
+### #37 — `TransportSender::send(key, payload)` overloads `key` as topic
+
+The Kafka impl passes `key` to `FutureRecord::to(key)`, so the
+"key" arg is the destination topic, not a partition key. Callers
+can't route to a configured topic AND set a partition key in one
+call.
+
+**Workaround:** none. Sites needing partition keys must bypass
+the trait and use rdkafka directly.
+
+---
+
 ## Older releases
 
-Historical migrations from prior releases live in agent memory at
-`project_dfe_*_migration.md` (referenced from `MEMORY.md`) until they
-graduate here.
+Historical migrations live in agent memory at `project_dfe_*_migration.md` (referenced from `MEMORY.md`) until they graduate here.
