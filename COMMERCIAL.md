@@ -72,7 +72,7 @@ Source License and its Additional Use Grant, including:
 ## Corporate Groups and Affiliates
 
 The detailed affiliate / corporate-group terms are set out in the separable
-Affiliate Annexure (LICENSE-ANNEXURE-AFFILIATE.md). In summary:
+Affiliate Annexure (a delineated, severable section within the LICENSE). In summary:
 
 ### Multiple Entities Using Independently
 
@@ -135,16 +135,15 @@ We offer flexible licensing options including:
 This document explains the commercial path. It is not the License. The default
 public license grant is maintained in:
 
-- [LICENSE](LICENSE) -- Business Source License 1.1 and the Additional Use Grant
-- [LICENSE-ANNEXURE-AFFILIATE.md](LICENSE-ANNEXURE-AFFILIATE.md) -- affiliate / group terms
+- [LICENSE](LICENSE) -- Business Source License 1.1, the Additional Use Grant,
+  and the Affiliate and Australia annexures as delineated, severable sections
 
 The AI / machine-learning terms are maintained separately in
 [AI-TRAINING-POLICY.md](AI-TRAINING-POLICY.md).
 
-The Australian-law overlay is maintained separately in
-[LICENSE-ANNEXURE-AUSTRALIA.md](LICENSE-ANNEXURE-AUSTRALIA.md) and applies only
-to recipients to whom Australian law applies. It is not part of the default
-public license grant.
+The Australian-law overlay is a delineated, severable section within
+[LICENSE](LICENSE) and applies only to recipients to whom Australian law
+applies. It is not part of the default public license grant.
 
 ## Future Open Source Conversion
 

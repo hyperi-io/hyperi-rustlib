@@ -4,7 +4,7 @@
 [![Build Status](https://github.com/hyperi-io/hyperi-rustlib/actions/workflows/ci.yml/badge.svg)](https://github.com/hyperi-io/hyperi-rustlib/actions)
 [![Crates.io](https://img.shields.io/crates/v/hyperi-rustlib?logo=rust)](https://crates.io/crates/hyperi-rustlib)
 [![docs.rs](https://img.shields.io/docsrs/hyperi-rustlib?logo=rust)](https://docs.rs/hyperi-rustlib)
-[![License](https://img.shields.io/badge/license-FSL--1.1--ALv2-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
 <!-- BADGES:END -->
 
 There's plenty of sage advice out there about how to run Rust services in production at scale — config cascades, structured logging, masking secrets, multi-backend secrets management, Prometheus, OpenTelemetry, Kafka transports, tiered disk-spillover sinks, adaptive worker pools, graceful shutdown — but almost none of it as code you can just install and use.
