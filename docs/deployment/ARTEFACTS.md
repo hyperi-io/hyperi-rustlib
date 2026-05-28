@@ -91,7 +91,7 @@ FROM ubuntu:24.04 AS runtime
 
 LABEL org.opencontainers.image.title="dfe-loader"
 LABEL org.opencontainers.image.vendor="HYPERI PTY LIMITED"
-LABEL org.opencontainers.image.licenses="FSL-1.1-ALv2"
+LABEL org.opencontainers.image.licenses="BUSL-1.1"
 LABEL io.hyperi.profile="production"
 
 # Runtime shared libraries for dynamically-linked Rust crates.

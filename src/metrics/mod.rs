@@ -3,7 +3,7 @@
 // Purpose:   Prometheus metrics with process and container awareness
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Metrics with Prometheus and/or OpenTelemetry backends.

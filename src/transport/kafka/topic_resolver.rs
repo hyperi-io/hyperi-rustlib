@@ -3,7 +3,7 @@
 // Purpose:   Kafka topic auto-discovery with configurable suppression rules and regex filters
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Kafka topic resolver for auto-discovery with filter and suppression support.

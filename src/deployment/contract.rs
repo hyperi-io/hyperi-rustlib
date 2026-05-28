@@ -3,7 +3,7 @@
 // Purpose:   Deployment contract types
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Deployment contract types.
@@ -162,7 +162,7 @@ fn default_vendor() -> String {
 }
 
 fn default_license() -> String {
-    "FSL-1.1-ALv2".to_string()
+    "BUSL-1.1".to_string()
 }
 
 fn default_schema_version() -> u32 {

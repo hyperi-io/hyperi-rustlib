@@ -3,7 +3,7 @@
 // Purpose:   In-memory transport using tokio channels
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Memory Transport

@@ -3,7 +3,7 @@
 // Purpose:   Error types for the three async concurrency primitives
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Error types for [`crate::concurrency`] primitives.

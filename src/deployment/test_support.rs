@@ -3,7 +3,7 @@
 // Purpose:   Reusable test helpers for contract-artefact e2e tests
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Test helpers for contract-artefact end-to-end tests, shared by rustlib

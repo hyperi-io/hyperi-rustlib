@@ -3,7 +3,7 @@
 // Purpose:   Non-interactive single-scrape output for top command
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Single-scrape output modes for `top --once` and `top --json`.

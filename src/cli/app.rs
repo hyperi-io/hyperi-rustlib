@@ -3,7 +3,7 @@
 // Purpose:   DfeApp trait and standard lifecycle runner
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Application trait and lifecycle runner for DFE services.

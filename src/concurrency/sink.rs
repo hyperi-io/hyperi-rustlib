@@ -3,7 +3,7 @@
 // Purpose:   BackgroundSink -- generic fire-and-forget durable sink
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Generic fire-and-forget durable sink built on bounded `mpsc` +

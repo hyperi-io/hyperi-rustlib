@@ -3,7 +3,7 @@
 // Purpose:   Plan enum + match-time dispatch for strmatch
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! The `Plan` chosen by the classifier and the single-match dispatch

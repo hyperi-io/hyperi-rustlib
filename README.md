@@ -171,8 +171,7 @@ cascade reference.
 
 ## License
 
-[FSL-1.1-ALv2](LICENSE) — Functional Source License, transitions to Apache 2.0
-after 2 years.
+[BUSL-1.1](LICENSE) — Business Source License 1.1, transitions to Apache 2.0 after 3 years.
 
 ## Related
 

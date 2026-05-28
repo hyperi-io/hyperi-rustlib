@@ -3,7 +3,7 @@
 // Purpose:   DlqBackend enum -- variant per supported backend
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Static enum dispatch for DLQ backends.

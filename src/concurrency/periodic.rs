@@ -3,7 +3,7 @@
 // Purpose:   PeriodicWorker -- timer-driven loop with biased shutdown
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Timer-driven background loop, generic over the task type.

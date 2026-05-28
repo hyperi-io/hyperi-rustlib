@@ -3,7 +3,7 @@
 # Purpose:   Update VERSION file and Cargo.toml during semantic-release
 # Language:  Python
 #
-# License:   FSL-1.1-ALv2
+# License:   BUSL-1.1
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 
 import re

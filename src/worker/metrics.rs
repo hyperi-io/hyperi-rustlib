@@ -3,7 +3,7 @@
 // Purpose:   Metric registration and threshold gauge emission
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use crate::metrics::MetricsManager;

@@ -3,7 +3,7 @@
 // Purpose:   Static + runtime budget for Tier 2/3 CEL filters
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Static AST + runtime payload budget for Tier 2/3 CEL filters.

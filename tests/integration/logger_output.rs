@@ -3,7 +3,7 @@
 // Purpose:   Integration tests for logger output capturing and masking
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Tests that verify actual log output content for both JSON and text formats,

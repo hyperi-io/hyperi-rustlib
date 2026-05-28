@@ -2,7 +2,7 @@
 // File:      src/deployment/app_project.rs
 // Purpose:   Generate ArgoCD AppProject CRs
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! ArgoCD `AppProject` generator.

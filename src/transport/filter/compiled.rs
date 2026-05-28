@@ -3,7 +3,7 @@
 // Purpose:   Compiled filter variants with Tier 1 SIMD evaluation
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Compiled filter representations and evaluation logic.

@@ -3,7 +3,7 @@
 // Purpose:   Kafka transport configuration with profiles and config-driven overrides
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Kafka configuration with profile-based defaults and config-driven overrides.

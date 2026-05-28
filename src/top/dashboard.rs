@@ -3,7 +3,7 @@
 // Purpose:   TUI metrics dashboard rendering and event loop
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Ratatui-based TUI dashboard for live metrics display.

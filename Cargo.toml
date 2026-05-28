@@ -3,7 +3,7 @@
 # Purpose:   Rust shared library for HyperI projects
 # Language:  TOML
 #
-# License:   FSL-1.1-ALv2
+# License:   BUSL-1.1
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 
 [package]
@@ -18,7 +18,7 @@ This is that code.
 
 Opinionated, drop-in, working out of the box. The patterns from blog posts, watercooler chats and beers with your Google mates as actual library — not a framework you assemble from twenty crates and 8 weeks of munging.
 """
-license = "FSL-1.1-ALv2"
+license-file = "LICENSE"
 repository = "https://github.com/hyperi-io/hyperi-rustlib"
 publish = true
 keywords = ["observability", "kubernetes", "prometheus", "opentelemetry", "kafka"]

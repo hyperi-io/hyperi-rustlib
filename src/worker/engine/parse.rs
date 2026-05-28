@@ -3,7 +3,7 @@
 // Purpose:   SIMD-accelerated payload parsing for the batch processing engine
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Parse phase: convert raw bytes into a `sonic_rs::Value` using SIMD
