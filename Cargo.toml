@@ -18,6 +18,8 @@ This is that code.
 
 Opinionated, drop-in, working out of the box. The patterns from blog posts, watercooler chats and beers with your Google mates as actual library — not a framework you assemble from twenty crates and 8 weeks of munging.
 """
+# BUSL-1.1 (Business Source License 1.1); each release converts to Apache-2.0
+# on its third anniversary. Full text + Affiliate/Australia annexures: LICENSE.
 license-file = "LICENSE"
 repository = "https://github.com/hyperi-io/hyperi-rustlib"
 publish = true
