@@ -32,6 +32,15 @@ name = "ring"
 expression = "MIT AND ISC AND OpenSSL"
 license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 
+# Our own crate ships a combined LICENSE (BUSL-1.1 text + org annexures), so
+# we use `license-file` rather than an SPDX `license` field. cargo-deny can't
+# confidently match the combined file to the BUSL-1.1 template (score ~0.41)
+# and flags the crate as unlicensed -- clarify that it is BUSL-1.1.
+[[licenses.clarify]]
+name = "hyperi-rustlib"
+expression = "BUSL-1.1"
+license-files = [{ path = "LICENSE", hash = 0x1d547099 }]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
