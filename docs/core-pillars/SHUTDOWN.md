@@ -35,20 +35,12 @@ latency in the cluster. 5 seconds is the safe default for most clusters.
 
 The delay runs *before* token cancellation. Sequence:
 
-```
-SIGTERM received
-     │
-     ▼
-[clear ready flag]   →  /readyz returns 503  →  kube-proxy removes pod from endpoints
-     │
-     ▼
-[sleep PRESTOP_DELAY_SECS]   →  in-flight requests drain naturally
-     │
-     ▼
-[cancel CancellationToken]   →  every select! arm fires; modules drain
-     │
-     ▼
-[main returns]   →  process exits
+```mermaid
+flowchart TB
+    A["SIGTERM received"] --> B["Clear ready flag<br/>/readyz returns 503 → kube-proxy removes pod from endpoints"]
+    B --> C["Sleep PRESTOP_DELAY_SECS<br/>in-flight requests drain naturally"]
+    C --> D["Cancel CancellationToken<br/>every select! arm fires; modules drain"]
+    D --> E["main returns<br/>process exits"]
 ```
 
 The ready-flag clearing in the actual flow is owned by `ServiceRuntime` /
@@ -106,14 +98,14 @@ be safe to drop at any await point. Most tokio primitives are; a few are not.
 
 | Future | Cancel-safe? | Notes |
 |---|---|---|
-| `tokio::sync::mpsc::Receiver::recv` | ✓ | Drop just abandons the wait |
-| `tokio::sync::oneshot::Receiver` | ✓ | |
-| `tokio::time::sleep` | ✓ | |
-| `tokio::net::TcpListener::accept` | ✓ | |
-| `CancellationToken::cancelled` | ✓ | |
-| `tokio::sync::broadcast::Receiver::recv` | **✗** | Dropping drops messages — hoist OUT of `select!`, `pin!` it once, only drop on shutdown |
-| `tokio::sync::mpsc::Sender::send` after `reserve()` | **✗** | Drop loses the permit slot |
-| Any multi-step state machine you wrote yourself | Usually ✗ | Default to "no" until proven otherwise |
+| `tokio::sync::mpsc::Receiver::recv` | Yes | Drop just abandons the wait |
+| `tokio::sync::oneshot::Receiver` | Yes | |
+| `tokio::time::sleep` | Yes | |
+| `tokio::net::TcpListener::accept` | Yes | |
+| `CancellationToken::cancelled` | Yes | |
+| `tokio::sync::broadcast::Receiver::recv` | **No** | Dropping drops messages — hoist OUT of `select!`, `pin!` it once, only drop on shutdown |
+| `tokio::sync::mpsc::Sender::send` after `reserve()` | **No** | Drop loses the permit slot |
+| Any multi-step state machine you wrote yourself | Usually no | Default to "no" until proven otherwise |
 
 The Kafka offset-commit path in `dfe-loader` was bitten by this: a
 `broadcast::recv` inside `select!` dropped messages on every shutdown event,

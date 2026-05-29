@@ -132,7 +132,7 @@ determine which runtime packages are needed.
 
 ```dockerfile
 # Build stage
-FROM rust:1.94 AS builder
+FROM rust:1 AS builder
 RUN apt-get update && apt-get install -y \
     pkg-config libssl-dev librdkafka-dev libgit2-dev libzstd-dev
 COPY . .
@@ -165,9 +165,10 @@ explicit `set_ready()` call — cleared during graceful shutdown.
 
 ## Architecture
 
-See [docs/DESIGN.md](docs/DESIGN.md) for full architecture documentation
-and [docs/CONFIG-CASCADE.md](docs/CONFIG-CASCADE.md) for the 8-layer config
-cascade reference.
+See [docs/](docs/README.md) for the full documentation index —
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module map and layering,
+and [docs/core-pillars/CONFIG.md](docs/core-pillars/CONFIG.md) for the 8-layer
+config cascade reference.
 
 ## License
 

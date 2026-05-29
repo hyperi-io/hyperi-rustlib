@@ -2,8 +2,8 @@
 
 `ServiceRuntime` is the pre-wired infrastructure object that every
 DFE service receives from `run_app` before its `run_service` method
-is called. It collapses ~50 lines of identical startup boilerplate
-per service into a single typed struct.
+is called. It collapses the identical startup boilerplate every
+service would otherwise hand-write into a single typed struct.
 
 A service author writes `DfeApp::run_service(config, runtime)` and
 uses the runtime's fields directly — metrics manager, memory guard,

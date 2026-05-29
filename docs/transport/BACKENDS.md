@@ -39,7 +39,7 @@ config-only difference.
 
 ## Kafka
 
-`rdkafka` 0.39+ with dynamic linking against system librdkafka — see
+`rdkafka` with dynamic linking against system librdkafka — see
 [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) for the package matrix.
 Profile-based config (`production`, `devtest`) with
 `librdkafka_overrides` for fine control. Supports auto-discovery
@@ -75,7 +75,7 @@ Source: [../../src/transport/kafka/](../../src/transport/kafka/).
 
 ## gRPC
 
-`tonic` 0.14+, pure Rust. Each gRPC backend can be client-only
+`tonic`, pure Rust. Each gRPC backend can be client-only
 (`endpoint` set), server-only (`listen` set), or both. Default
 recv-buffer 10k, max-message 16 MB, gzip optional. The
 [transport filter engine](FILTER-ENGINE.md) is wired in the same as

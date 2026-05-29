@@ -13,17 +13,31 @@ embedded propagation — see [FILTER-ENGINE.md](FILTER-ENGINE.md) and
 
 Four traits stacked, split sender/receiver:
 
-```text
-TransportBase  ── close, is_healthy, name      (object-safe)
-   |
-   +── TransportSender ── send(key, payload)   (object-safe-ish)
-   |
-   +── TransportReceiver<Token: CommitToken>   (NOT object-safe)
-           ── recv(max) -> Vec<Message<Token>>
-           ── commit(tokens)
-           ── take_filtered_dlq_entries()
-
-Transport  ── blanket impl when both Sender + Receiver are concrete
+```mermaid
+classDiagram
+    class TransportBase {
+        <<trait>>
+        +close()
+        +is_healthy()
+        +name()
+    }
+    class TransportSender {
+        <<trait>>
+        +send(key, payload)
+    }
+    class TransportReceiver {
+        <<trait>>
+        +recv(max)
+        +commit(tokens)
+        +take_filtered_dlq_entries()
+    }
+    class Transport {
+        <<trait>>
+    }
+    TransportBase <|-- TransportSender : object-safe
+    TransportBase <|-- TransportReceiver : generic Token, not object-safe
+    TransportSender <|-- Transport : blanket impl
+    TransportReceiver <|-- Transport : blanket impl
 ```
 
 | Trait | Purpose | Object-safe? |

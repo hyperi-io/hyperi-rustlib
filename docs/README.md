@@ -164,6 +164,6 @@ sub-components (filter engine lives inside every transport).
 
 - **Crate:** [hyperi-rustlib](https://crates.io/crates/hyperi-rustlib) (crates.io)
 - **Edition:** 2024
-- **MSRV:** 1.95
+- **MSRV:** see `rust-version` in `Cargo.toml`
 - **Used by:** [dfe-loader](https://github.com/hyperi-io/dfe-loader), [dfe-receiver](https://github.com/hyperi-io/dfe-receiver), [dfe-fetcher](https://github.com/hyperi-io/dfe-fetcher), [dfe-archiver](https://github.com/hyperi-io/dfe-archiver), [dfe-transform-vrl](https://github.com/hyperi-io/dfe-transform-vrl), [dfe-transform-vector](https://github.com/hyperi-io/dfe-transform-vector)
 - **Sibling libs:** [hyperi-pylib](https://github.com/hyperi-io/hyperi-pylib) (Python equivalent)

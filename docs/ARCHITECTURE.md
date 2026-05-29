@@ -156,8 +156,8 @@ Pillars are singletons. Modules in higher layers call into them via macros
 ## Feature defaults
 
 - `default = ["config", "logger"]`. Nothing else. Apps explicitly opt in.
-- The trim landed in 2.6.0 to shave ~200 transitive deps off the
-  "I-just-want-config" use case.
+- Trimmed defaults keep the "I-just-want-config" use case off the full
+  transitive dependency set.
 - See [FEATURE-FLAGS.md](FEATURE-FLAGS.md) for the full tree and which
   features pull in which.
 
@@ -189,7 +189,7 @@ auto-wired vs explicit.
 ## Project facts
 
 - **Edition:** 2024
-- **MSRV:** 1.95
+- **MSRV:** see `rust-version` in `Cargo.toml`
 - **Sibling lib:** `hyperi-pylib` (Python equivalent)
 - **Downstream:** the six core DFE apps consume `hyperi-rustlib` in
   lockstep (see [README.md § Project facts](README.md#project-facts))

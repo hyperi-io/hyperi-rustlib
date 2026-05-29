@@ -82,9 +82,9 @@ registration timestamp.
 {
   "schema_version": 1,
   "app": "dfe_loader",
-  "version": "2.7.1",
-  "commit": "a081eb4",
-  "registered_at": "2026-05-25T03:14:00Z",
+  "version": "x.y.z",
+  "commit": "<git-sha>",
+  "registered_at": "<rfc3339-timestamp>",
   "metrics": [
     {
       "name": "dfe_loader_transport_sent_total",

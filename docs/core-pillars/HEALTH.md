@@ -78,9 +78,9 @@ pub enum HealthStatus { Healthy, Degraded, Unhealthy }
 
 | Status | `is_healthy()` | `is_ready()` | Use for |
 |---|---|---|---|
-| `Healthy` | ✓ | ✓ | Component fully operational |
-| `Degraded` | ✗ | ✓ | Operational but impaired — circuit half-open, fallback active, elevated latency |
-| `Unhealthy` | ✗ | ✗ | Not operational — stop sending traffic |
+| `Healthy` | Yes | Yes | Component fully operational |
+| `Degraded` | No | Yes | Operational but impaired — circuit half-open, fallback active, elevated latency |
+| `Unhealthy` | No | No | Not operational — stop sending traffic |
 
 `is_ready()` is the readiness predicate — degraded counts as ready because
 the service can still serve, just at reduced capability. `is_healthy()` is
