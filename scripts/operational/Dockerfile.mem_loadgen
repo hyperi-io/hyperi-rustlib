@@ -1,0 +1,20 @@
+# Project:   hyperi-rustlib
+# File:      scripts/operational/Dockerfile.mem_loadgen
+# Purpose:   Build the memory operational-test harness for cgroup-confined runs
+# Language:  Dockerfile
+#
+# License:   BUSL-1.1
+# Copyright: (c) 2026 HYPERI PTY LIMITED
+#
+# The `memory` feature is pure Rust (no librdkafka/libgit2/etc.), so the build
+# is light. Built + run by scripts/operational-mem-test.sh under `docker run
+# --memory` to observe the KERNEL outcome (OOM-killed vs survives).
+
+FROM rust:1-bookworm AS builder
+WORKDIR /build
+COPY . .
+RUN cargo build --release --example mem_loadgen --features memory
+
+FROM debian:bookworm-slim
+COPY --from=builder /build/target/release/examples/mem_loadgen /usr/local/bin/mem_loadgen
+ENTRYPOINT ["/usr/local/bin/mem_loadgen"]

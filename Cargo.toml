@@ -445,4 +445,10 @@ name = "strmatch"
 harness = false
 required-features = ["strmatch"]
 
+# Memory backpressure operational-test harness (not a product binary).
+# Driven under a cgroup --memory limit by scripts/operational-mem-test.sh.
+[[example]]
+name = "mem_loadgen"
+required-features = ["memory"]
+
 # Release marker: trigger v2.8.0 publish via hyperi-ci version-first pipeline.
