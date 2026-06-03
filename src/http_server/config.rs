@@ -142,10 +142,38 @@ impl HttpServerConfig {
         Duration::from_millis(self.shutdown_timeout_ms)
     }
 
-    /// Check if TLS is configured.
+    /// Whether TLS cert+key paths are present in config.
+    ///
+    /// NOTE: this only reports that the fields are *set* -- in-process TLS is
+    /// NOT terminated by this server (see `tls_cert_path`). Use
+    /// [`validate`](Self::validate) at startup so a config that *expects*
+    /// in-pod TLS fails loudly instead of silently serving cleartext.
     #[must_use]
     pub fn is_tls_enabled(&self) -> bool {
         self.tls_cert_path.is_some() && self.tls_key_path.is_some()
+    }
+
+    /// Validate the server config (finding 10: `is_tls_enabled` must not lie).
+    ///
+    /// In-process TLS termination is not supported -- the K8s pattern is to
+    /// terminate TLS at the ingress / service mesh and run cleartext in-pod.
+    /// If `tls_cert_path`/`tls_key_path` are set, the operator expects in-pod
+    /// TLS that will not happen, so this errors rather than letting the server
+    /// bind cleartext while the config claims TLS. Call at startup.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if either TLS path is set.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.tls_cert_path.is_some() || self.tls_key_path.is_some() {
+            return Err(
+                "http_server: in-process TLS is not supported (tls_cert_path / \
+                 tls_key_path set) -- terminate TLS at the ingress / service mesh \
+                 and leave these unset, or front the service with a TLS sidecar"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -182,6 +210,30 @@ mod tests {
 
         config.tls_key_path = Some("/path/to/key.pem".to_string());
         assert!(config.is_tls_enabled());
+    }
+
+    #[test]
+    fn validate_rejects_unsupported_in_process_tls() {
+        // Default (no TLS paths) validates.
+        assert!(HttpServerConfig::default().validate().is_ok());
+
+        // Setting either TLS path is rejected -- the server can't terminate
+        // TLS, so a config expecting in-pod TLS must fail loudly, not serve
+        // cleartext while is_tls_enabled() reports true.
+        let mut config = HttpServerConfig::default();
+        config.tls_cert_path = Some("/path/to/cert.pem".to_string());
+        assert!(!config.is_tls_enabled()); // only one path set
+        assert!(
+            config.validate().is_err(),
+            "a set TLS path must be rejected"
+        );
+
+        config.tls_key_path = Some("/path/to/key.pem".to_string());
+        assert!(config.is_tls_enabled());
+        assert!(
+            config.validate().is_err(),
+            "is_tls_enabled() true but in-process TLS unsupported -> reject"
+        );
     }
 
     #[test]
