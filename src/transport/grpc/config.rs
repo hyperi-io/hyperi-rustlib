@@ -40,6 +40,13 @@ pub struct GrpcConfig {
     /// Receive timeout in milliseconds (0 = non-blocking).
     pub recv_timeout_ms: u64,
 
+    /// Per-RPC send deadline in milliseconds (0 = no deadline).
+    ///
+    /// Bounds a single `push` call so a hung or black-holing server cannot
+    /// block a sender task forever. Applied as the gRPC request deadline
+    /// (`grpc-timeout` header) on every outbound RPC. Default 30s.
+    pub send_timeout_ms: u64,
+
     /// Maximum message size in bytes (both send and receive).
     pub max_message_size: usize,
 
@@ -67,6 +74,7 @@ impl Default for GrpcConfig {
             endpoint: None,
             recv_buffer_size: 10_000,
             recv_timeout_ms: 100,
+            send_timeout_ms: 30_000, // 30s -- bound a single push RPC
             max_message_size: 16 * 1024 * 1024, // 16 MB
             compression: false,
             #[cfg(feature = "transport-grpc-vector-compat")]

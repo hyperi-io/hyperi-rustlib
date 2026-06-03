@@ -231,8 +231,12 @@ pub struct HttpTransport {
     receiver: Option<tokio::sync::Mutex<tokio::sync::mpsc::Receiver<Message<HttpToken>>>>,
 
     /// Shutdown signal for the server task.
+    ///
+    /// Behind a `parking_lot::Mutex` for interior mutability: `close(&self)`
+    /// fires it to stop the embedded server promptly (graceful shutdown),
+    /// rather than waiting for `Drop`. `take()` makes both paths idempotent.
     #[cfg(feature = "http-server")]
-    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    shutdown_tx: parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 
     /// Server background task handle.
     #[cfg(feature = "http-server")]
@@ -335,7 +339,7 @@ impl HttpTransport {
             #[cfg(feature = "http-server")]
             receiver,
             #[cfg(feature = "http-server")]
-            shutdown_tx,
+            shutdown_tx: parking_lot::Mutex::new(shutdown_tx),
             #[cfg(feature = "http-server")]
             _server_handle: server_handle,
             closed,
@@ -434,6 +438,12 @@ async fn ingest_handler(
 impl TransportBase for HttpTransport {
     async fn close(&self) -> TransportResult<()> {
         self.closed.store(true, Ordering::Relaxed);
+        // Stop the embedded server now (graceful shutdown) rather than on Drop.
+        // take() => idempotent: a later close()/drop() is a no-op.
+        #[cfg(feature = "http-server")]
+        if let Some(tx) = self.shutdown_tx.lock().take() {
+            let _ = tx.send(());
+        }
         Ok(())
     }
 
@@ -637,7 +647,7 @@ impl TransportReceiver for HttpTransport {
 impl Drop for HttpTransport {
     fn drop(&mut self) {
         #[cfg(feature = "http-server")]
-        if let Some(tx) = self.shutdown_tx.take() {
+        if let Some(tx) = self.shutdown_tx.lock().take() {
             let _ = tx.send(());
         }
     }

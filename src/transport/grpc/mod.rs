@@ -79,6 +79,9 @@ pub struct GrpcTransport {
     /// Receive timeout (milliseconds).
     recv_timeout_ms: u64,
 
+    /// Per-RPC send deadline (milliseconds, 0 = none).
+    send_timeout_ms: u64,
+
     /// In-flight send count (for metrics).
     #[cfg(feature = "metrics")]
     inflight: AtomicU64,
@@ -222,6 +225,7 @@ impl GrpcTransport {
             closed: AtomicBool::new(false),
             healthy,
             recv_timeout_ms: config.recv_timeout_ms,
+            send_timeout_ms: config.send_timeout_ms,
             #[cfg(feature = "metrics")]
             inflight: AtomicU64::new(0),
             filter_engine,
@@ -291,11 +295,18 @@ impl TransportSender for GrpcTransport {
             metadata.insert(super::propagation::TRACEPARENT_HEADER.to_string(), tp);
         }
 
-        let request = proto::PushRequest {
+        let mut request = tonic::Request::new(proto::PushRequest {
             payload: payload.to_vec(),
             format: proto::Format::Auto.into(),
             metadata,
-        };
+        });
+
+        // Bound the RPC so a hung/black-holing server cannot wedge the sender
+        // task forever. Sent as the grpc-timeout header; the server aborts and
+        // the client surfaces Code::DeadlineExceeded when it elapses.
+        if self.send_timeout_ms > 0 {
+            request.set_timeout(std::time::Duration::from_millis(self.send_timeout_ms));
+        }
 
         #[cfg(feature = "metrics")]
         let start = std::time::Instant::now();
@@ -311,7 +322,12 @@ impl TransportSender for GrpcTransport {
                 SendResult::Ok
             }
             Err(status) => match status.code() {
-                tonic::Code::Unavailable | tonic::Code::ResourceExhausted => {
+                // DeadlineExceeded = our send_timeout_ms fired (slow/hung server).
+                // Transient -- treat as backpressure so the caller retries rather
+                // than dropping the message.
+                tonic::Code::Unavailable
+                | tonic::Code::ResourceExhausted
+                | tonic::Code::DeadlineExceeded => {
                     #[cfg(feature = "metrics")]
                     metrics::counter!(
                         "dfe_transport_backpressured_total",
@@ -535,6 +551,7 @@ mod tests {
         assert!(config.endpoint.is_none());
         assert_eq!(config.recv_buffer_size, 10_000);
         assert_eq!(config.recv_timeout_ms, 100);
+        assert_eq!(config.send_timeout_ms, 30_000);
         assert_eq!(config.max_message_size, 16 * 1024 * 1024);
         assert!(!config.compression);
     }
