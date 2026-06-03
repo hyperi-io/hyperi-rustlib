@@ -53,6 +53,28 @@ pub struct GrpcConfig {
     /// Enable gzip compression for gRPC messages.
     pub compression: bool,
 
+    // --- Client TLS (tonic owns its TLS stack -- like Kafka/librdkafka -- so
+    // these map the unified TlsTrust vocabulary onto tonic's ClientTlsConfig
+    // rather than consuming crate::tls's rustls ClientConfig directly. Note:
+    // in-cluster DFE gRPC is usually mesh-mTLS (Istio/Linkerd); set these only
+    // for DIRECT TLS to a remote endpoint.) ---
+    /// Enable client TLS for the `endpoint` connection.
+    #[serde(default)]
+    pub tls_enabled: bool,
+    /// Private-CA PEM (maps to `TlsTrust.extra_roots`). When unset with
+    /// `tls_enabled`, falls back to OS native roots.
+    #[serde(default)]
+    pub tls_ca_path: Option<String>,
+    /// Domain name for SNI / certificate verification (overrides the URI host).
+    #[serde(default)]
+    pub tls_domain: Option<String>,
+    /// Client certificate PEM for mTLS (with `tls_client_key_path`).
+    #[serde(default)]
+    pub tls_client_cert_path: Option<String>,
+    /// Client key PEM for mTLS (with `tls_client_cert_path`).
+    #[serde(default)]
+    pub tls_client_key_path: Option<String>,
+
     /// Enable Vector wire protocol compatibility on the same server.
     /// When true, the server also accepts `/vector.Vector/PushEvents` RPCs
     /// from legacy Vector sinks.
@@ -77,6 +99,11 @@ impl Default for GrpcConfig {
             send_timeout_ms: 30_000, // 30s -- bound a single push RPC
             max_message_size: 16 * 1024 * 1024, // 16 MB
             compression: false,
+            tls_enabled: false,
+            tls_ca_path: None,
+            tls_domain: None,
+            tls_client_cert_path: None,
+            tls_client_key_path: None,
             #[cfg(feature = "transport-grpc-vector-compat")]
             vector_compat: false,
             filters_in: Vec::new(),

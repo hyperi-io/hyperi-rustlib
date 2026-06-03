@@ -90,6 +90,54 @@ pub struct GrpcTransport {
     filter_engine: super::filter::TransportFilterEngine,
 }
 
+/// Build a tonic `ClientTlsConfig` from the unified TLS fields on `GrpcConfig`.
+///
+/// tonic owns its TLS stack (like librdkafka), so this maps the unified
+/// `TlsTrust` vocabulary onto `ClientTlsConfig`: private-CA PEM (else OS native
+/// roots), optional SNI domain override, and optional mTLS client identity.
+fn build_grpc_client_tls(
+    config: &GrpcConfig,
+) -> TransportResult<tonic::transport::ClientTlsConfig> {
+    use tonic::transport::{Certificate, ClientTlsConfig, Identity};
+
+    let mut tls = ClientTlsConfig::new();
+
+    if let Some(ref ca) = config.tls_ca_path {
+        let pem = std::fs::read(ca)
+            .map_err(|e| TransportError::Config(format!("gRPC TLS: cannot read ca {ca}: {e}")))?;
+        tls = tls.ca_certificate(Certificate::from_pem(pem));
+    } else {
+        // No private CA -> trust the OS native roots.
+        tls = tls.with_native_roots();
+    }
+
+    if let Some(ref domain) = config.tls_domain {
+        tls = tls.domain_name(domain.clone());
+    }
+
+    // mTLS identity -- both cert and key, or neither.
+    match (&config.tls_client_cert_path, &config.tls_client_key_path) {
+        (Some(cert), Some(key)) => {
+            let cert_pem = std::fs::read(cert).map_err(|e| {
+                TransportError::Config(format!("gRPC TLS: cannot read client cert {cert}: {e}"))
+            })?;
+            let key_pem = std::fs::read(key).map_err(|e| {
+                TransportError::Config(format!("gRPC TLS: cannot read client key {key}: {e}"))
+            })?;
+            tls = tls.identity(Identity::from_pem(cert_pem, key_pem));
+        }
+        (None, None) => {}
+        _ => {
+            return Err(TransportError::Config(
+                "gRPC TLS: mTLS requires BOTH tls_client_cert_path and tls_client_key_path"
+                    .to_string(),
+            ));
+        }
+    }
+
+    Ok(tls)
+}
+
 impl GrpcTransport {
     /// Create a new gRPC transport.
     ///
@@ -111,9 +159,18 @@ impl GrpcTransport {
 
         // Set up client (lazy connection -- doesn't fail until first RPC)
         if let Some(endpoint) = &config.endpoint {
-            let channel = tonic::transport::Channel::from_shared(endpoint.clone())
-                .map_err(|e| TransportError::Config(format!("invalid endpoint: {e}")))?
-                .connect_lazy();
+            let mut ep = tonic::transport::Channel::from_shared(endpoint.clone())
+                .map_err(|e| TransportError::Config(format!("invalid endpoint: {e}")))?;
+
+            // Client TLS. tonic owns its TLS stack, so we map the unified
+            // vocabulary onto ClientTlsConfig (private CA, mTLS identity, SNI).
+            if config.tls_enabled {
+                ep = ep
+                    .tls_config(build_grpc_client_tls(config)?)
+                    .map_err(|e| TransportError::Config(format!("gRPC TLS config: {e}")))?;
+            }
+
+            let channel = ep.connect_lazy();
 
             let mut c = proto::dfe_transport_client::DfeTransportClient::new(channel)
                 .max_decoding_message_size(config.max_message_size)
@@ -554,6 +611,36 @@ mod tests {
         assert_eq!(config.send_timeout_ms, 30_000);
         assert_eq!(config.max_message_size, 16 * 1024 * 1024);
         assert!(!config.compression);
+        assert!(!config.tls_enabled);
+        assert!(config.tls_ca_path.is_none());
+    }
+
+    #[test]
+    fn grpc_client_tls_builds_with_private_ca_and_rejects_half_mtls() {
+        use std::io::Write;
+        let cert = rcgen::generate_simple_self_signed(vec!["grpc.test".to_string()]).unwrap();
+        let mut ca = tempfile::NamedTempFile::new().unwrap();
+        ca.write_all(cert.cert.pem().as_bytes()).unwrap();
+        ca.flush().unwrap();
+
+        // Private CA + SNI -> builds.
+        let cfg = GrpcConfig {
+            endpoint: Some("https://peer:6000".to_string()),
+            tls_enabled: true,
+            tls_ca_path: Some(ca.path().to_string_lossy().into_owned()),
+            tls_domain: Some("grpc.test".to_string()),
+            ..Default::default()
+        };
+        assert!(build_grpc_client_tls(&cfg).is_ok());
+
+        // Half-configured mTLS (cert without key) -> error.
+        let cfg = GrpcConfig {
+            tls_enabled: true,
+            tls_client_cert_path: Some(ca.path().to_string_lossy().into_owned()),
+            tls_client_key_path: None,
+            ..Default::default()
+        };
+        assert!(build_grpc_client_tls(&cfg).is_err());
     }
 
     #[test]

@@ -161,6 +161,14 @@ pub struct HttpTransportConfig {
     /// 16 MiB. Oversized POSTs are rejected with 413 before buffering.
     #[serde(default = "default_max_body_bytes")]
     pub max_body_bytes: usize,
+
+    /// Private-CA PEM path for the send-side HTTPS client. When set and the
+    /// `tls` feature is enabled, the client trusts this CA *in addition to* the
+    /// OS native roots, built via the unified `crate::tls` module and fed to
+    /// reqwest with `use_preconfigured_tls`. None = native roots only (reqwest
+    /// default). Maps to `TlsTrust { native_roots: true, extra_roots: [ca] }`.
+    #[serde(default)]
+    pub tls_ca_path: Option<String>,
 }
 
 impl Default for HttpTransportConfig {
@@ -176,6 +184,7 @@ impl Default for HttpTransportConfig {
             connect_timeout_ms: default_connect_timeout_ms(),
             send_timeout_ms: default_send_timeout_ms(),
             max_body_bytes: default_max_body_bytes(),
+            tls_ca_path: None,
         }
     }
 }
@@ -263,9 +272,36 @@ impl HttpTransport {
     ///
     /// Returns error if the listen address is invalid or the server fails to bind.
     pub async fn new(config: &HttpTransportConfig) -> TransportResult<Self> {
-        let client = reqwest::Client::builder()
+        // `mut` is only used on the TLS path; harmless without the feature.
+        #[cfg_attr(not(feature = "tls"), allow(unused_mut))]
+        let mut client_builder = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_millis(config.connect_timeout_ms))
-            .timeout(std::time::Duration::from_millis(config.send_timeout_ms))
+            .timeout(std::time::Duration::from_millis(config.send_timeout_ms));
+
+        // Private-CA trust via the unified TLS module (augments native roots).
+        #[cfg(feature = "tls")]
+        if let Some(ref ca) = config.tls_ca_path {
+            let trust = crate::tls::TlsTrust {
+                native_roots: true,
+                webpki_roots: false,
+                extra_roots: vec![ca.into()],
+                extra_intermediates: Vec::new(),
+                exclusive: false,
+            };
+            let tls_cfg =
+                crate::tls::build_client_config(crate::tls::TlsConfigSource::Trust(trust))
+                    .map_err(|e| TransportError::Config(format!("HTTP client TLS: {e}")))?;
+            client_builder = client_builder.use_preconfigured_tls((*tls_cfg).clone());
+        }
+        #[cfg(not(feature = "tls"))]
+        if config.tls_ca_path.is_some() {
+            tracing::warn!(
+                "http transport tls_ca_path is set but the `tls` feature is disabled -- \
+                 ignoring (using reqwest default roots)"
+            );
+        }
+
+        let client = client_builder
             .build()
             .map_err(|e| TransportError::Config(format!("failed to create HTTP client: {e}")))?;
 

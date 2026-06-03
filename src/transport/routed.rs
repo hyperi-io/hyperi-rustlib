@@ -70,6 +70,7 @@ pub struct RoutedSender {
 
 impl RoutedSender {
     /// Create a new routed sender with explicit routes and optional default.
+    #[must_use]
     pub fn new(routes: HashMap<String, AnySender>, default: Option<AnySender>) -> Self {
         Self {
             routes,
