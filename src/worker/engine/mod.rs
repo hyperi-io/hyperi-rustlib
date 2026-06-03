@@ -434,6 +434,11 @@ impl BatchEngine {
                         .map(RawMessage::from)
                         .collect();
 
+                    // Account in-flight ingress bytes against the MemoryGuard;
+                    // released on every exit path of this arm via Drop.
+                    #[cfg(feature = "memory")]
+                    let _ingress_lease = self.lease_ingress(&raw);
+
                     // Process: pre-route + parse + parallel transform.
                     let results = self.process_mid_tier(&raw, &transform);
 
@@ -509,6 +514,11 @@ impl BatchEngine {
                     let raw: Vec<RawMessage> = messages.into_iter()
                         .map(RawMessage::from)
                         .collect();
+
+                    // Account in-flight ingress bytes against the MemoryGuard;
+                    // released on every exit path of this arm via Drop.
+                    #[cfg(feature = "memory")]
+                    let _ingress_lease = self.lease_ingress(&raw);
 
                     let results = self.process_raw(&raw, &transform);
 
@@ -626,6 +636,11 @@ impl BatchEngine {
                         .map(RawMessage::from)
                         .collect();
 
+                    // Account in-flight ingress bytes against the MemoryGuard;
+                    // released on every exit path of this arm via Drop.
+                    #[cfg(feature = "memory")]
+                    let _ingress_lease = self.lease_ingress(&raw);
+
                     // Process: pre-route + parse + parallel transform.
                     let results = self.process_mid_tier(&raw, &transform);
 
@@ -724,6 +739,11 @@ impl BatchEngine {
                         .map(RawMessage::from)
                         .collect();
 
+                    // Account in-flight ingress bytes against the MemoryGuard;
+                    // released on every exit path of this arm via Drop.
+                    #[cfg(feature = "memory")]
+                    let _ingress_lease = self.lease_ingress(&raw);
+
                     let results = self.process_raw(&raw, &transform);
 
                     if let Err(e) = sink(results, tokens).await {
@@ -732,6 +752,29 @@ impl BatchEngine {
                 }
             }
         }
+    }
+
+    /// Account a received batch's payload bytes against the [`MemoryGuard`]
+    /// and return an RAII lease that releases them on drop.
+    ///
+    /// Ingress is consume-side: by the time `recv()` returns we already hold
+    /// the bytes and cannot reject them, so this TRACKS (`add_bytes`) rather
+    /// than gates (`try_reserve`). The accounting is what drives
+    /// `under_pressure()`, which both the inter-chunk
+    /// [`check_memory_pressure`](Self::check_memory_pressure) pause and the
+    /// worker-pool scaler's memory signal consult -- so a deep in-flight
+    /// ingress backlog now actually throttles processing and down-scales the
+    /// pool, instead of the guard only ever seeing externally-sampled RSS.
+    /// The returned lease releases the bytes on every loop exit path (commit,
+    /// sink-error `continue`, `?`-return) via `Drop`.
+    ///
+    /// [`MemoryGuard`]: crate::memory::MemoryGuard
+    #[cfg(feature = "memory")]
+    fn lease_ingress(&self, raw: &[RawMessage]) -> Option<IngressLease<'_>> {
+        let guard = self.memory_guard.as_ref()?;
+        let bytes: u64 = raw.iter().map(|m| m.payload.len() as u64).sum();
+        guard.add_bytes(bytes);
+        Some(IngressLease { guard, bytes })
     }
 
     /// Pause between chunks when memory pressure is detected.
@@ -753,6 +796,25 @@ impl BatchEngine {
                 self.config.memory_pressure_pause_ms,
             ));
         }
+    }
+}
+
+/// RAII lease over in-flight ingress bytes tracked by a [`MemoryGuard`].
+///
+/// Created by [`BatchEngine::lease_ingress`]; releases the accounted bytes
+/// back to the guard on drop so no loop exit path can leak the reservation.
+///
+/// [`MemoryGuard`]: crate::memory::MemoryGuard
+#[cfg(feature = "memory")]
+struct IngressLease<'a> {
+    guard: &'a crate::memory::MemoryGuard,
+    bytes: u64,
+}
+
+#[cfg(feature = "memory")]
+impl Drop for IngressLease<'_> {
+    fn drop(&mut self) {
+        self.guard.release(self.bytes);
     }
 }
 
@@ -792,6 +854,45 @@ mod engine_tests {
 
     fn default_engine() -> BatchEngine {
         BatchEngine::new(BatchProcessingConfig::default())
+    }
+
+    #[cfg(feature = "memory")]
+    #[test]
+    fn ingress_lease_accounts_and_releases() {
+        use crate::memory::{MemoryGuard, MemoryGuardConfig};
+
+        let mut engine = default_engine();
+        let guard = Arc::new(MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 1024 * 1024,
+            ..Default::default()
+        }));
+        engine.memory_guard = Some(Arc::clone(&guard));
+
+        let msgs = make_json_messages(10);
+        let expected: u64 = msgs.iter().map(|m| m.payload.len() as u64).sum();
+        assert_eq!(guard.current_bytes(), 0, "starts at zero");
+
+        {
+            let _lease = engine.lease_ingress(&msgs).expect("guard present");
+            assert_eq!(
+                guard.current_bytes(),
+                expected,
+                "bytes accounted while lease held"
+            );
+        }
+        // Lease dropped -> bytes released.
+        assert_eq!(guard.current_bytes(), 0, "bytes released on drop");
+    }
+
+    #[cfg(feature = "memory")]
+    #[test]
+    fn ingress_lease_none_without_guard() {
+        let engine = default_engine();
+        let msgs = make_json_messages(5);
+        assert!(
+            engine.lease_ingress(&msgs).is_none(),
+            "no lease when no guard wired"
+        );
     }
 
     #[test]
