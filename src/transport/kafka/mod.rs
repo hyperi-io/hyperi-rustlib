@@ -15,7 +15,7 @@
 //!
 //! - **Batch-first**: Designed for 10K+ messages per batch
 //! - **Zero-copy where possible**: Minimizes allocations in hot path
-//! - **Lock-free topic cache**: Pre-populated, no per-message locking
+//! - **Interned topic cache**: shared RwLock map, read-fast-path per message
 //! - **Non-blocking batch drain**: Uses zero-timeout poll to drain internal queue
 //! - **At-least-once delivery**: Manual commit after processing
 //!
@@ -107,16 +107,18 @@ pub mod tuning {
 /// High-throughput Kafka transport using rdkafka.
 ///
 /// Optimized for batch-oriented consumption at PB/day scale:
-/// - Uses `BaseConsumer` for direct poll control
-/// - Pre-populates topic cache to eliminate per-message locking
+/// - Uses `BaseConsumer` for direct poll control (see recv() decision note)
+/// - Interns topic strings in a shared cache (read-fast-path per message)
 /// - Drains internal queue with zero-timeout polls
 /// - Minimizes allocations in hot path
 pub struct KafkaTransport {
     consumer: BaseConsumer<StatsContext>,
     producer: FutureProducer<StatsContext>,
-    /// Pre-populated topic cache - populated on construction, read-only after.
-    /// Key optimization: no locks in the hot path.
-    topic_cache: HashMap<String, Arc<str>>,
+    /// Persistent topic-string interner. Shared across `recv()` calls so a
+    /// newly-discovered topic is interned once (not re-`Arc`'d every batch) --
+    /// the previous per-recv clone discarded new entries. RwLock: reads
+    /// dominate (topics repeat), writes only on first sight of a topic.
+    topic_cache: parking_lot::RwLock<HashMap<String, Arc<str>>>,
     closed: AtomicBool,
     /// Shared healthy flag -- read by health registry closure, written by close().
     healthy: Arc<AtomicBool>,
@@ -310,7 +312,7 @@ impl KafkaTransport {
         Ok(Self {
             consumer,
             producer,
-            topic_cache,
+            topic_cache: parking_lot::RwLock::new(topic_cache),
             closed: AtomicBool::new(false),
             healthy,
             subscribed_topics: parking_lot::RwLock::new(subscribed_topics),
@@ -459,15 +461,29 @@ impl TransportReceiver for KafkaTransport {
         let timeout = Duration::from_millis(tuning::POLL_TIMEOUT_MS);
         let max_msgs = max;
 
-        // Clone topic cache for use - this is a shallow clone (Arc pointers)
-        let mut local_cache = self.topic_cache.clone();
+        // DECISION (at-scale hardening 2.6): we KEEP synchronous
+        // `BaseConsumer::poll` inside this async `recv` rather than switching
+        // to `StreamConsumer`. Rationale:
+        //   - librdkafka does the network fetch on its OWN background threads;
+        //     `poll` just dequeues from an in-memory queue. The initial poll
+        //     only blocks the worker (<= POLL_TIMEOUT_MS = 50ms) when the queue
+        //     is EMPTY -- i.e. idle/low-traffic, when nothing else contends.
+        //     Under load the poll returns immediately.
+        //   - The drain loop uses ZERO-timeout polls bounded by MAX_DRAIN_MS
+        //     (100ms); that is useful ingest work, not a block.
+        //   - `StreamConsumer` would change commit/rebalance semantics on the
+        //     critical ingress path -- real regression risk for an unmeasured
+        //     latency benefit. So we MEASURE first (the poll-duration metric
+        //     below); only escalate to spawn_blocking/StreamConsumer if it
+        //     shows real Tokio-worker starvation. See the plan decision ledger.
+        let poll_start = std::time::Instant::now();
 
-        // Poll synchronously - BaseConsumer::poll is thread-safe
         let mut messages = Vec::with_capacity(max_msgs.min(tuning::INITIAL_BATCH_CAPACITY));
         let drain_deadline =
             std::time::Instant::now() + Duration::from_millis(tuning::MAX_DRAIN_MS);
 
-        // Phase 1: Initial blocking poll (triggers network fetch if queue empty)
+        // Phase 1: Initial poll (drains librdkafka's queue; blocks <= timeout
+        // only when the queue is empty).
         if let Some(result) = self.consumer.poll(timeout) {
             match result {
                 Ok(msg) => {
@@ -492,7 +508,7 @@ impl TransportReceiver for KafkaTransport {
                     }
 
                     let topic_str = msg.topic();
-                    let topic: Arc<str> = get_or_insert_topic(&mut local_cache, topic_str);
+                    let topic: Arc<str> = get_or_insert_topic(&self.topic_cache, topic_str);
                     let payload = msg.payload().map_or_else(Vec::new, |p| p.to_vec());
                     let partition = msg.partition();
                     let offset = msg.offset();
@@ -511,6 +527,9 @@ impl TransportReceiver for KafkaTransport {
                 }
             }
         } else {
+            #[cfg(feature = "metrics")]
+            ::metrics::histogram!("kafka_poll_duration_seconds")
+                .record(poll_start.elapsed().as_secs_f64());
             return Ok(RecvBatch::from_messages(messages));
         }
 
@@ -525,7 +544,7 @@ impl TransportReceiver for KafkaTransport {
             match self.consumer.poll(Duration::ZERO) {
                 Some(Ok(msg)) => {
                     let topic_str = msg.topic();
-                    let topic: Arc<str> = get_or_insert_topic(&mut local_cache, topic_str);
+                    let topic: Arc<str> = get_or_insert_topic(&self.topic_cache, topic_str);
                     let payload = msg.payload().map_or_else(Vec::new, |p| p.to_vec());
                     let partition = msg.partition();
                     let offset = msg.offset();
@@ -610,12 +629,18 @@ impl TransportReceiver for KafkaTransport {
 ///
 /// Inline helper for hot path - avoids method call overhead.
 #[inline]
-fn get_or_insert_topic(cache: &mut HashMap<String, Arc<str>>, topic: &str) -> Arc<str> {
-    if let Some(arc) = cache.get(topic) {
+fn get_or_insert_topic(
+    cache: &parking_lot::RwLock<HashMap<String, Arc<str>>>,
+    topic: &str,
+) -> Arc<str> {
+    // Fast path: shared read lock, hit on the common case (topic seen before).
+    if let Some(arc) = cache.read().get(topic) {
         return arc.clone();
     }
+    // First sight: take the write lock and intern. A benign race (two callers
+    // miss and both insert) just converges on equivalent Arcs -- harmless.
     let arc: Arc<str> = Arc::from(topic);
-    cache.insert(topic.to_string(), arc.clone());
+    cache.write().insert(topic.to_string(), arc.clone());
     arc
 }
 
@@ -643,11 +668,12 @@ mod tests {
 
     #[test]
     fn test_get_or_insert_topic_cached() {
-        let mut cache = HashMap::new();
-        cache.insert("events".to_string(), Arc::from("events"));
+        let mut map = HashMap::new();
+        map.insert("events".to_string(), Arc::from("events"));
+        let cache = parking_lot::RwLock::new(map);
 
-        let arc1 = get_or_insert_topic(&mut cache, "events");
-        let arc2 = get_or_insert_topic(&mut cache, "events");
+        let arc1 = get_or_insert_topic(&cache, "events");
+        let arc2 = get_or_insert_topic(&cache, "events");
 
         // Should return same Arc (pointer equality)
         assert!(Arc::ptr_eq(&arc1, &arc2));
@@ -655,11 +681,14 @@ mod tests {
 
     #[test]
     fn test_get_or_insert_topic_new() {
-        let mut cache = HashMap::new();
+        let cache = parking_lot::RwLock::new(HashMap::new());
 
-        let arc = get_or_insert_topic(&mut cache, "new-topic");
+        let arc = get_or_insert_topic(&cache, "new-topic");
         assert_eq!(&*arc, "new-topic");
-        assert!(cache.contains_key("new-topic"));
+        assert!(cache.read().contains_key("new-topic"));
+        // Insert persists across calls (the previous per-recv clone lost it).
+        let arc2 = get_or_insert_topic(&cache, "new-topic");
+        assert!(Arc::ptr_eq(&arc, &arc2));
     }
 
     #[test]
