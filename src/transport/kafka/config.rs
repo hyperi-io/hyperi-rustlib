@@ -741,11 +741,36 @@ impl KafkaConfig {
 
     /// Skip SSL certificate verification.
     ///
-    /// **WARNING**: Only use in development/test environments!
+    /// **WARNING**: Only use in development/test environments! Rejected in
+    /// production by [`validate`](Self::validate).
     #[must_use]
     pub fn with_ssl_skip_verify(mut self) -> Self {
         self.ssl_skip_verify = true;
         self
+    }
+
+    /// Validate the Kafka config against the deployment profile.
+    ///
+    /// `ssl_skip_verify` disables TLS certificate verification (MITM-exposed),
+    /// and is set by the `devtest`/`for_testing` profiles by design. It is
+    /// permitted only in dev/test; under a production profile this returns an
+    /// error. Call at startup with [`crate::env::is_production`].
+    ///
+    /// NOTE: `ssl_skip_verify` is slated for removal at GA -- supply the broker
+    /// CA via `ssl_ca_location` (private-CA trust) instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` when `is_production` and `ssl_skip_verify` is set.
+    pub fn validate(&self, is_production: bool) -> Result<(), String> {
+        if is_production && self.ssl_skip_verify {
+            return Err(
+                "kafka: ssl_skip_verify (TLS verification disabled) is not permitted \
+                 in production -- configure ssl_ca_location for private-CA trust instead"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 
     /// Enable SSL but accept any certificate (for dev/test with self-signed certs).
@@ -956,6 +981,23 @@ impl KafkaConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validate_rejects_ssl_skip_verify_in_production() {
+        // devtest sets ssl_skip_verify -- fine in dev, rejected in prod.
+        let dev = KafkaConfig::devtest();
+        assert!(dev.ssl_skip_verify);
+        assert!(dev.validate(false).is_ok(), "dev allows skip_verify");
+        assert!(
+            dev.validate(true).is_err(),
+            "production must reject ssl_skip_verify"
+        );
+
+        // A verifying config validates in production.
+        let prod = KafkaConfig::default();
+        assert!(!prod.ssl_skip_verify);
+        assert!(prod.validate(true).is_ok());
+    }
 
     #[test]
     fn kafka_config_topic_resolution_defaults() {

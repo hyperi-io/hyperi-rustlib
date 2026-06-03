@@ -476,6 +476,7 @@ impl TransportReceiver for KafkaTransport {
         //     latency benefit. So we MEASURE first (the poll-duration metric
         //     below); only escalate to spawn_blocking/StreamConsumer if it
         //     shows real Tokio-worker starvation. See the plan decision ledger.
+        #[cfg(feature = "metrics")]
         let poll_start = std::time::Instant::now();
 
         let mut messages = Vec::with_capacity(max_msgs.min(tuning::INITIAL_BATCH_CAPACITY));

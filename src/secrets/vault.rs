@@ -205,11 +205,36 @@ impl OpenBaoConfig {
         self
     }
 
-    /// Enable TLS skip verification (not recommended for production).
+    /// Enable TLS skip verification (dev/test only -- rejected in production
+    /// by [`validate`](Self::validate)).
     #[must_use]
     pub fn with_skip_verify(mut self) -> Self {
         self.skip_verify = true;
         self
+    }
+
+    /// Validate the Vault config against the deployment profile.
+    ///
+    /// `skip_verify` disables TLS certificate verification, which exposes the
+    /// connection to MITM. It is permitted only in dev/test; under a
+    /// production profile this returns an error. Call at startup with
+    /// [`crate::env::is_production`].
+    ///
+    /// NOTE: `skip_verify` is slated for removal at GA -- private-CA trust via
+    /// `ca_cert` (the unified TLS module) is the supported path.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` when `is_production` and `skip_verify` is set.
+    pub fn validate(&self, is_production: bool) -> Result<(), String> {
+        if is_production && self.skip_verify {
+            return Err(
+                "vault: skip_verify (TLS verification disabled) is not permitted in \
+                 production -- configure ca_cert for private-CA trust instead"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -488,6 +513,21 @@ mod tests {
         );
         // role_id is a non-secret identifier and is allowed through.
         assert!(json.contains("role-abc"));
+    }
+
+    #[test]
+    fn validate_rejects_skip_verify_in_production() {
+        let insecure = OpenBaoConfig::with_token("https://vault:8200", "t").with_skip_verify();
+        assert!(insecure.skip_verify);
+        assert!(insecure.validate(false).is_ok(), "dev allows skip_verify");
+        assert!(
+            insecure.validate(true).is_err(),
+            "production must reject skip_verify"
+        );
+
+        let secure = OpenBaoConfig::with_token("https://vault:8200", "t");
+        assert!(!secure.skip_verify);
+        assert!(secure.validate(true).is_ok());
     }
 
     #[test]

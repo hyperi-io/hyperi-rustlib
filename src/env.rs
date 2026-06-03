@@ -325,6 +325,20 @@ pub fn get_app_env() -> String {
         .unwrap_or_else(|_| "development".to_string())
 }
 
+/// Whether the current app environment is production-like.
+///
+/// True when [`get_app_env`] resolves (case-insensitively) to `production`
+/// or `prod`. Used by config `validate(is_production)` methods to reject
+/// insecure-by-design settings (e.g. TLS `skip_verify`, plaintext disk
+/// caches) outside of dev/test.
+#[must_use]
+pub fn is_production() -> bool {
+    matches!(
+        get_app_env().to_ascii_lowercase().as_str(),
+        "production" | "prod"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
