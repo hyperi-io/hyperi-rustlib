@@ -6,6 +6,45 @@
 // License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
+//! # Threading model and the CPU vs memory asymmetry
+//!
+//! **Foundational assumption: Tokio is HyperI's async + multithreading
+//! substrate.** We do not build our own runtime or our own cgroup-aware
+//! thread-count plumbing -- we lean on the existing wheels:
+//!
+//! - **Sizing** of both the Tokio runtime (`worker_threads`) and the rayon
+//!   [`AdaptiveWorkerPool`] ceiling derives from
+//!   [`std::thread::available_parallelism`], which on Linux is **cgroup-aware**
+//!   (`cpu.max` / `cpuset`, Rust 1.74+). So both pools auto-size to the
+//!   container's CPU budget at startup with no bespoke detection.
+//! - **CPU throttling** is the kernel CFS scheduler's job (`cpu.max`). We do
+//!   not, and need not, replicate it.
+//!
+//! ## Why there is no cgroup-CPU backpressure signal (but there IS for memory)
+//!
+//! CPU and memory are not symmetric, so they are not plumbed symmetrically:
+//!
+//! | Resource | Over-use outcome | Self-correcting? | Dynamic backpressure |
+//! |----------|------------------|------------------|----------------------|
+//! | Memory   | OOM-kill         | No -- fatal      | Yes -- the `MemoryGuard` + cgroup-first pressure signal |
+//! | CPU      | CFS throttle     | Yes -- graceful  | No -- the kernel already handles it |
+//!
+//! Exceeding the CPU quota is graceful and automatic (the scheduler throttles
+//! us); exceeding the memory limit is fatal. So the dynamic pressure signal
+//! that actually matters is **memory**, which is cgroup-aware here. There is
+//! deliberately no `cpu.stat` reader: feeding a bespoke cgroup-CPU signal into
+//! the scaler would prop up a scale-DOWN that the cgroup case does not want
+//! (under a hard quota you want to USE your whole budget; CFS bounds it).
+//!
+//! ## What `ScalingInput::cpu_util` is for
+//!
+//! The host-wide CPU sample (via `sysinfo`) drives scale-DOWN as a
+//! **bare-metal / unlimited-deployment good-neighbour heuristic** -- backing
+//! off when sharing an un-capped node. Under a cgroup `cpu.max` it is largely
+//! redundant with CFS and the cgroup-aware static sizing above. If in-process
+//! scheduler busyness is ever needed as a finer signal, the existing wheel is
+//! `tokio-metrics` (runtime busy-ratio), not a hand-rolled parser.
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,6 +56,9 @@ use super::pool::AdaptiveWorkerPool;
 /// Inputs to the watermark scaling algorithm.
 #[derive(Debug, Clone)]
 pub struct ScalingInput {
+    /// Host-wide CPU utilisation (0.0-1.0), a bare-metal good-neighbour
+    /// scale-down heuristic -- NOT a cgroup mechanism. See the module docs
+    /// for the CPU-vs-memory asymmetry and why there is no cgroup-CPU signal.
     pub cpu_util: f64,
     pub memory_pressure: f64,
     pub current: usize,
