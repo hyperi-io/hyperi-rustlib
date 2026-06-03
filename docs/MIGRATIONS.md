@@ -133,6 +133,36 @@ where `Config` contains `SensitiveString` fields. Symptom of missing
 this: secrets land as literal `***REDACTED***` post round-trip and
 auth fails.
 
+### `memory::set_heap_source` — total-heap backpressure (additive, opt-in)
+
+New crate hook `hyperi_rustlib::memory::set_heap_source(fn() -> usize)`.
+When registered, every `MemoryGuard` switches its read path
+(`current_bytes`, pressure checks, `try_reserve` admission) from the
+per-batch reservation counter to a true **total-process heap** figure --
+catching growth the reservations never see (e.g. a transform ballooning a
+`Vec`). Not registering it keeps the existing per-batch behaviour, so this
+is **optional**, not a required migration.
+
+To adopt in a DFE app, install a tracking allocator and wire it once at
+startup. Prefer an actively-maintained allocator -- `tikv-jemalloc-ctl`
+(`cap` works but is unmaintained since 2023):
+
+```rust
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+fn main() {
+    hyperi_rustlib::memory::set_heap_source(|| {
+        tikv_jemalloc_ctl::epoch::advance().ok();
+        tikv_jemalloc_ctl::stats::allocated::read().unwrap_or(0)
+    });
+    // ... ServiceRuntime / MemoryGuard built afterwards pick it up ...
+}
+```
+
+rustlib intentionally takes **no allocator dependency** (the global
+allocator is the binary's choice, and rustlib is `#![forbid(unsafe_code)]`).
+
 ### `SinkDrain::flush_durable` (additive, default no-op)
 
 New trait method; existing impls compile unchanged. Custom drains

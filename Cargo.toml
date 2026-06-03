@@ -197,13 +197,18 @@ secrets-vault = ["secrets", "vaultrs"]
 secrets-aws = ["secrets", "aws-config", "aws-sdk-secretsmanager"]
 secrets-all = ["secrets-vault", "secrets-aws"]
 
+# Unified TLS trust + client-config construction (src/tls.rs). Private-CA
+# first: native + webpki + extra-PEM roots, explicit aws-lc-rs crypto provider.
+# Opt-in; TLS-consuming transports enable it as they adopt the module.
+tls = ["dep:rustls", "dep:rustls-native-certs", "dep:rustls-pki-types", "dep:webpki-roots"]
+
 # Diagnostics escape hatches that can leak secrets if mis-used.
 # Off in every shipping build. NOT included in `full`. Operators
 # opt-in deliberately for one-off debugging.
 dangerous-diagnostics = []
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "otel-tracing", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "database", "cache", "transport-all", "transport-trace", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "worker", "cli-service", "io", "dlq", "dlq-kafka", "dlq-http", "dlq-redis", "output-file", "expression"]
+full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "otel-tracing", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "database", "cache", "transport-all", "transport-trace", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "worker", "cli-service", "io", "dlq", "dlq-kafka", "dlq-http", "dlq-redis", "output-file", "expression", "tls"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -281,6 +286,18 @@ anyhow = { version = "1", optional = true }
 # Percent-encoding for database URL builders (avoids string interpolation
 # that breaks when user/password/db contain `:`, `/`, `@`, `?`, `#`).
 percent-encoding = { version = ">=2.3, <3", optional = true }
+
+# Unified TLS trust module (src/tls.rs, `tls` feature). All already present
+# transitively (reqwest/aws-smithy pull rustls 0.23 + aws-lc-rs); these are
+# direct optional deps so the module can build a ClientConfig with an EXPLICIT
+# aws-lc-rs provider (the graph has both aws-lc-rs AND ring, so there is no
+# unambiguous process-default provider). Versions web-checked 2026-06-03.
+# `default-features = false` on rustls avoids pulling the `ring` provider in
+# addition to `aws_lc_rs`. pki-types `std` enables CertificateDer PEM file IO.
+rustls = { version = ">=0.23.40, <0.24", default-features = false, features = ["aws_lc_rs", "tls12", "logging", "std"], optional = true }
+rustls-native-certs = { version = ">=0.8.1, <0.9", optional = true }
+rustls-pki-types = { version = ">=1.14, <2", features = ["std"], optional = true }
+webpki-roots = { version = ">=1.0.7, <2", optional = true }
 
 # In-memory cache (TinyLFU, async, concurrent)
 moka = { version = ">=0.12, <0.13", features = ["future"], optional = true }
@@ -398,6 +415,9 @@ pretty_assertions = ">=1.4.1, <2"
 temp-env = ">=0.3.6, <0.4"
 async-trait = ">=0.1.88, <0.2"
 git2 = ">=0.20.0, <0.21"
+# Generate self-signed certs in-process for the `tls` module's unit tests
+# (no checked-in PEM fixtures to rot). Web-checked 2026-06-03.
+rcgen = ">=0.14.7, <0.15"
 
 [lints.rust]
 unsafe_code = "deny"
