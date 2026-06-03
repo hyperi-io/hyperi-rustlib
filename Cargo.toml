@@ -179,7 +179,7 @@ config-postgres = ["config", "sqlx", "tokio", "serde_json"]
 # - transport-trace: + W3C traceparent propagation via opentelemetry
 # Apps that send/receive but don't propagate distributed-trace context
 # avoid pulling in the OpenTelemetry SDK.
-transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait", "regex", "memchr", "sonic-rs", "parking_lot", "tracing", "metrics-core"]
+transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait", "regex", "memchr", "sonic-rs", "parking_lot", "tracing", "metrics-core", "bytes"]
 transport-trace = ["transport", "dep:opentelemetry"]
 transport-memory = ["transport"]
 transport-kafka = ["transport", "rdkafka", "regex", "tokio-util"]

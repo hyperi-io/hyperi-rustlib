@@ -351,21 +351,21 @@ impl TransportBase for KafkaTransport {
 }
 
 impl TransportSender for KafkaTransport {
-    async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
             }
         }
 
-        let record: FutureRecord<'_, str, [u8]> = FutureRecord::to(key).payload(payload);
+        let record: FutureRecord<'_, str, [u8]> = FutureRecord::to(key).payload(payload.as_ref());
 
         // Inject W3C traceparent into Kafka message headers for distributed tracing
         #[cfg(feature = "transport-trace")]

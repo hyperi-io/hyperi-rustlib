@@ -27,7 +27,7 @@
 //!
 //! let config = FileTransportConfig { path: "/tmp/events.ndjson".into(), append: true, ..Default::default() };
 //! let transport = FileTransport::new(&config).await?;
-//! transport.send("events", b"{\"msg\":\"hello\"}").await;
+//! transport.send("events", bytes::Bytes::from_static(b"{\"msg\":\"hello\"}")).await;
 //! ```
 
 use super::error::{TransportError, TransportResult};
@@ -95,15 +95,7 @@ impl FileTransportConfig {
     /// Load from the config cascade under the `transport.file` key.
     #[must_use]
     pub fn from_cascade() -> Self {
-        #[cfg(feature = "config")]
-        {
-            if let Some(cfg) = crate::config::try_get()
-                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.file")
-            {
-                return tc;
-            }
-        }
-        Self::default()
+        <Self as super::traits::FromCascade>::from_cascade_key("transport.file")
     }
 }
 
@@ -288,14 +280,14 @@ impl TransportBase for FileTransport {
 }
 
 impl TransportSender for FileTransport {
-    async fn send(&self, _key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, _key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
@@ -312,7 +304,7 @@ impl TransportSender for FileTransport {
         };
 
         // Write payload + newline as a single operation
-        if let Err(e) = state.file.write_all(payload).await {
+        if let Err(e) = state.file.write_all(&payload).await {
             #[cfg(feature = "logger")]
             tracing::warn!(error = %e, "File transport: write error");
             return SendResult::Fatal(TransportError::Send(format!("write failed: {e}")));
@@ -433,6 +425,8 @@ impl TransportReceiver for FileTransport {
     }
 }
 
+impl super::traits::FromCascade for FileTransportConfig {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -462,9 +456,13 @@ mod tests {
         };
         let sender = FileTransport::new(&config).await.unwrap();
 
-        let r1 = sender.send("key", b"{\"msg\":\"hello\"}").await;
+        let r1 = sender
+            .send("key", bytes::Bytes::from_static(b"{\"msg\":\"hello\"}"))
+            .await;
         assert!(r1.is_ok());
-        let r2 = sender.send("key", b"{\"msg\":\"world\"}").await;
+        let r2 = sender
+            .send("key", bytes::Bytes::from_static(b"{\"msg\":\"world\"}"))
+            .await;
         assert!(r2.is_ok());
         sender.close().await.unwrap();
 
@@ -498,9 +496,9 @@ mod tests {
             ..Default::default()
         };
         let sender = FileTransport::new(&config).await.unwrap();
-        sender.send("k", b"line1").await;
-        sender.send("k", b"line2").await;
-        sender.send("k", b"line3").await;
+        sender.send("k", bytes::Bytes::from_static(b"line1")).await;
+        sender.send("k", bytes::Bytes::from_static(b"line2")).await;
+        sender.send("k", bytes::Bytes::from_static(b"line3")).await;
         sender.close().await.unwrap();
 
         // Read first 2 messages and commit
@@ -542,7 +540,9 @@ mod tests {
         transport.close().await.unwrap();
         assert!(!transport.is_healthy());
 
-        let result = transport.send("k", b"data").await;
+        let result = transport
+            .send("k", bytes::Bytes::from_static(b"data"))
+            .await;
         assert!(result.is_fatal());
 
         let result = transport.recv(1).await;
@@ -568,7 +568,9 @@ mod tests {
             ..Default::default()
         };
         let transport = FileTransport::new(&config).await.unwrap();
-        transport.send("k", b"only_line").await;
+        transport
+            .send("k", bytes::Bytes::from_static(b"only_line"))
+            .await;
         transport.close().await.unwrap();
 
         // Read all, then read again -- should get empty

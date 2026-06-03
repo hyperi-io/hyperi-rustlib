@@ -20,7 +20,7 @@
 //! let transport = PipeTransport::new(&config);
 //!
 //! // Send writes payload + newline to stdout
-//! transport.send("ignored", b"hello world").await;
+//! transport.send("ignored", bytes::Bytes::from_static(b"hello world")).await;
 //!
 //! // Recv reads lines from stdin
 //! let messages = transport.recv(10).await?.messages;
@@ -86,15 +86,7 @@ impl PipeTransportConfig {
     /// Load from the config cascade under the `transport.pipe` key.
     #[must_use]
     pub fn from_cascade() -> Self {
-        #[cfg(feature = "config")]
-        {
-            if let Some(cfg) = crate::config::try_get()
-                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.pipe")
-            {
-                return tc;
-            }
-        }
-        Self::default()
+        <Self as super::traits::FromCascade>::from_cascade_key("transport.pipe")
     }
 }
 
@@ -181,14 +173,14 @@ impl TransportBase for PipeTransport {
 }
 
 impl TransportSender for PipeTransport {
-    async fn send(&self, _key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, _key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
@@ -198,7 +190,7 @@ impl TransportSender for PipeTransport {
         let mut stdout = self.stdout.lock().await;
 
         // Write payload + newline
-        if let Err(e) = stdout.write_all(payload).await {
+        if let Err(e) = stdout.write_all(&payload).await {
             return SendResult::Fatal(TransportError::Send(format!("stdout write failed: {e}")));
         }
         if let Err(e) = stdout.write_all(b"\n").await {
@@ -333,6 +325,8 @@ impl TransportReceiver for PipeTransport {
     }
 }
 
+impl super::traits::FromCascade for PipeTransportConfig {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,7 +397,9 @@ mod tests {
         let transport = PipeTransport::new(&config);
 
         transport.close().await.unwrap();
-        let result = transport.send("key", b"data").await;
+        let result = transport
+            .send("key", bytes::Bytes::from_static(b"data"))
+            .await;
         assert!(result.is_fatal());
     }
 

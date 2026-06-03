@@ -153,7 +153,7 @@ impl TransportSender for AnySender {
         )),
         allow(unused_variables)
     )]
-    async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, key: &str, payload: bytes::Bytes) -> SendResult {
         match self {
             #[cfg(feature = "transport-kafka")]
             Self::Kafka(t) => t.send(key, payload).await,

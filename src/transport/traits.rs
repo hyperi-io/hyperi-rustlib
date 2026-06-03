@@ -102,7 +102,7 @@ pub trait TransportSender: TransportBase {
     /// - File: filename suffix or ignored
     /// - Redis: stream name
     /// - Pipe: ignored (single stdout)
-    fn send(&self, key: &str, payload: &[u8]) -> impl Future<Output = SendResult> + Send;
+    fn send(&self, key: &str, payload: bytes::Bytes) -> impl Future<Output = SendResult> + Send;
 }
 
 /// Receive-side transport -- generic over commit token type.
@@ -158,3 +158,31 @@ pub trait Transport: TransportSender + TransportReceiver {}
 
 /// Blanket impl: anything that implements both traits is a Transport.
 impl<T: TransportSender + TransportReceiver> Transport for T {}
+
+/// Load a transport config from the cascade under a fixed key.
+///
+/// Consolidates the byte-identical `from_cascade()` bodies that each transport
+/// config previously repeated (try the cascade under a key, register the
+/// section, fall back to `Default`). Implementors only name their key; the
+/// loading logic lives here once. Without the `config` feature the default
+/// method just returns `Default::default()`.
+pub trait FromCascade: Default + serde::Serialize + serde::de::DeserializeOwned + 'static {
+    /// Load `Self` from the config cascade under `key`, registering the section
+    /// in the global registry; falls back to `Default` if the cascade is
+    /// unavailable or the key is absent/invalid.
+    #[must_use]
+    fn from_cascade_key(key: &str) -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(value) = cfg.unmarshal_key_registered::<Self>(key)
+            {
+                return value;
+            }
+        }
+        // Without `config`, or on any cascade miss, use defaults.
+        #[cfg(not(feature = "config"))]
+        let _ = key;
+        Self::default()
+    }
+}

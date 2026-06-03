@@ -650,7 +650,7 @@ async fn test_kafka_send_receive_batch() {
     // Send a batch of messages
     for i in 0..10 {
         let payload = format!(r#"{{"id": {i}, "data": "test"}}"#);
-        let result = transport.send(topic, payload.as_bytes()).await;
+        let result = transport.send(topic, bytes::Bytes::from(payload)).await;
         assert!(result.is_ok(), "Send failed: {result:?}");
     }
 

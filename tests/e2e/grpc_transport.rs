@@ -84,7 +84,9 @@ async fn test_send_and_receive() {
     let (server, client) = create_pair(port).await;
 
     // Send a message
-    let result = client.send("test-topic", b"hello world").await;
+    let result = client
+        .send("test-topic", bytes::Bytes::from_static(b"hello world"))
+        .await;
     assert!(
         matches!(result, SendResult::Ok),
         "send should succeed: {result:?}"
@@ -111,7 +113,7 @@ async fn test_multiple_messages() {
     // Send 10 messages
     for i in 0..10u32 {
         let payload = format!("message-{i}");
-        let result = client.send("topic", payload.as_bytes()).await;
+        let result = client.send("topic", bytes::Bytes::from(payload)).await;
         assert!(
             matches!(result, SendResult::Ok),
             "send {i} should succeed: {result:?}"
@@ -149,7 +151,7 @@ async fn test_large_payload() {
 
     // Send 1MB payload
     let payload = vec![0xABu8; 1024 * 1024];
-    let result = client.send("large", &payload).await;
+    let result = client.send("large", bytes::Bytes::from(payload)).await;
     assert!(
         matches!(result, SendResult::Ok),
         "large send should succeed: {result:?}"
@@ -175,7 +177,9 @@ async fn test_commit_is_noop() {
     let (server, client) = create_pair(port).await;
 
     // Send and receive
-    let _ = client.send("topic", b"data").await;
+    let _ = client
+        .send("topic", bytes::Bytes::from_static(b"data"))
+        .await;
     tokio::time::sleep(Duration::from_millis(50)).await;
     let messages = server.recv(10).await.expect("recv should succeed").messages;
     assert!(!messages.is_empty());
@@ -198,7 +202,9 @@ async fn test_close_prevents_operations() {
     client.close().await.expect("close should succeed");
 
     // Send after close should fail
-    let result = client.send("topic", b"data").await;
+    let result = client
+        .send("topic", bytes::Bytes::from_static(b"data"))
+        .await;
     assert!(
         matches!(result, SendResult::Fatal(_)),
         "send after close should fail: {result:?}"
@@ -249,7 +255,9 @@ async fn test_compression() {
 
     // Send and receive with compression
     let payload = b"compressed payload test data";
-    let result = client.send("compressed", payload).await;
+    let result = client
+        .send("compressed", bytes::Bytes::from_static(payload))
+        .await;
     assert!(
         matches!(result, SendResult::Ok),
         "compressed send should succeed: {result:?}"

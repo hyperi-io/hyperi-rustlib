@@ -36,7 +36,7 @@
 //!     ..Default::default()
 //! };
 //! let transport = RedisTransport::new(&config).await?;
-//! transport.send("events", b"{\"msg\":\"hello\"}").await;
+//! transport.send("events", bytes::Bytes::from_static(b"{\"msg\":\"hello\"}")).await;
 //! ```
 
 use super::error::{TransportError, TransportResult};
@@ -146,15 +146,7 @@ impl RedisTransportConfig {
     /// Load from the config cascade under the `transport.redis` key.
     #[must_use]
     pub fn from_cascade() -> Self {
-        #[cfg(feature = "config")]
-        {
-            if let Some(cfg) = crate::config::try_get()
-                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.redis")
-            {
-                return tc;
-            }
-        }
-        Self::default()
+        <Self as super::traits::FromCascade>::from_cascade_key("transport.redis")
     }
 }
 
@@ -298,14 +290,14 @@ impl TransportBase for RedisTransport {
 }
 
 impl TransportSender for RedisTransport {
-    async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
@@ -324,11 +316,12 @@ impl TransportSender for RedisTransport {
                 &stream,
                 StreamMaxlen::Approx(max_len),
                 "*",
-                &[("payload", payload)],
+                &[("payload", payload.as_ref())],
             )
             .await
         } else {
-            conn.xadd(&stream, "*", &[("payload", payload)]).await
+            conn.xadd(&stream, "*", &[("payload", payload.as_ref())])
+                .await
         };
 
         match result {
@@ -492,6 +485,8 @@ fn parse_entry_timestamp(entry_id: &str) -> Option<i64> {
         .and_then(|(ms_str, _)| ms_str.parse::<i64>().ok())
 }
 
+impl super::traits::FromCascade for RedisTransportConfig {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -631,10 +626,14 @@ block_ms: 2000
         let transport = RedisTransport::new(&config).await.unwrap();
 
         // Send two messages
-        let r1 = transport.send("", b"{\"n\":1}").await;
+        let r1 = transport
+            .send("", bytes::Bytes::from_static(b"{\"n\":1}"))
+            .await;
         assert!(r1.is_ok(), "first send should succeed");
 
-        let r2 = transport.send("", b"{\"n\":2}").await;
+        let r2 = transport
+            .send("", bytes::Bytes::from_static(b"{\"n\":2}"))
+            .await;
         assert!(r2.is_ok(), "second send should succeed");
 
         // Receive messages

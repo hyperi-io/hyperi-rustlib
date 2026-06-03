@@ -215,14 +215,14 @@ impl TransportBase for MemoryTransport {
 }
 
 impl TransportSender for MemoryTransport {
-    async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
@@ -331,7 +331,9 @@ mod tests {
         let transport = MemoryTransport::new(&config)
             .expect("memory transport with valid config must construct");
         // Send a message
-        let result = transport.send("test-key", b"hello world").await;
+        let result = transport
+            .send("test-key", bytes::Bytes::from_static(b"hello world"))
+            .await;
         assert!(result.is_ok());
 
         // Receive it
@@ -386,7 +388,9 @@ mod tests {
         assert!(!transport.is_healthy());
 
         // Send should fail
-        let result = transport.send("key", b"data").await;
+        let result = transport
+            .send("key", bytes::Bytes::from_static(b"data"))
+            .await;
         assert!(result.is_fatal());
 
         // Recv should fail
@@ -405,11 +409,15 @@ mod tests {
             .expect("memory transport with valid config must construct");
 
         // Fill the channel
-        let result1 = transport.send("key", b"msg1").await;
+        let result1 = transport
+            .send("key", bytes::Bytes::from_static(b"msg1"))
+            .await;
         assert!(result1.is_ok());
 
         // Next send should backpressure
-        let result2 = transport.send("key", b"msg2").await;
+        let result2 = transport
+            .send("key", bytes::Bytes::from_static(b"msg2"))
+            .await;
         assert!(result2.is_backpressured());
     }
 }

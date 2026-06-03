@@ -31,7 +31,7 @@
 //!     ..Default::default()
 //! };
 //! let transport = HttpTransport::new(&config).await?;
-//! transport.send("events", b"{\"msg\":\"hello\"}").await;
+//! transport.send("events", bytes::Bytes::from_static(b"{\"msg\":\"hello\"}")).await;
 //! ```
 
 use super::error::{TransportError, TransportResult};
@@ -193,15 +193,7 @@ impl HttpTransportConfig {
     /// Load from the config cascade under the `transport.http` key.
     #[must_use]
     pub fn from_cascade() -> Self {
-        #[cfg(feature = "config")]
-        {
-            if let Some(cfg) = crate::config::try_get()
-                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.http")
-            {
-                return tc;
-            }
-        }
-        Self::default()
+        <Self as super::traits::FromCascade>::from_cascade_key("transport.http")
     }
 
     /// Create a send-only config pointing at the given endpoint URL.
@@ -493,14 +485,14 @@ impl TransportBase for HttpTransport {
 }
 
 impl TransportSender for HttpTransport {
-    async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
@@ -538,10 +530,12 @@ impl TransportSender for HttpTransport {
             request_builder
         };
 
-        let result = match request_builder.body(payload.to_vec()).send().await {
+        #[cfg(feature = "logger")]
+        let payload_len = payload.len();
+        let result = match request_builder.body(payload).send().await {
             Ok(resp) if resp.status().is_success() => {
                 #[cfg(feature = "logger")]
-                tracing::debug!(url = %url, bytes = payload.len(), "HTTP transport: POST sent");
+                tracing::debug!(url = %url, bytes = payload_len, "HTTP transport: POST sent");
 
                 #[cfg(feature = "metrics")]
                 metrics::counter!("dfe_transport_sent_total", "transport" => "http").increment(1);
@@ -689,6 +683,8 @@ impl Drop for HttpTransport {
     }
 }
 
+impl super::traits::FromCascade for HttpTransportConfig {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -742,7 +738,9 @@ mod tests {
         assert_eq!(transport.name(), "http");
 
         // Send without endpoint should fail
-        let result = transport.send("test", b"payload").await;
+        let result = transport
+            .send("test", bytes::Bytes::from_static(b"payload"))
+            .await;
         assert!(result.is_fatal());
 
         // Commit is always ok
@@ -757,7 +755,9 @@ mod tests {
         transport.close().await.unwrap();
         assert!(!transport.is_healthy());
 
-        let result = transport.send("test", b"data").await;
+        let result = transport
+            .send("test", bytes::Bytes::from_static(b"data"))
+            .await;
         assert!(result.is_fatal());
     }
 
@@ -798,7 +798,9 @@ mod tests {
             HttpTransportConfig::sender(&format!("http://127.0.0.1:{}/ingest", addr.port()));
         let sender = HttpTransport::new(&send_config).await.unwrap();
 
-        let result = sender.send("", b"{\"msg\":\"hello\"}").await;
+        let result = sender
+            .send("", bytes::Bytes::from_static(b"{\"msg\":\"hello\"}"))
+            .await;
         assert!(result.is_ok(), "send failed: {result:?}");
 
         // Receive it

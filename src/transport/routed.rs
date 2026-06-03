@@ -160,7 +160,7 @@ impl TransportBase for RoutedSender {
 }
 
 impl TransportSender for RoutedSender {
-    async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(std::sync::atomic::Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
@@ -211,14 +211,20 @@ mod tests {
 
         let sender = RoutedSender::new(route_map, Some(make_memory_sender()));
 
-        let result_land = sender.send("events.land", b"land-payload").await;
+        let result_land = sender
+            .send("events.land", bytes::Bytes::from_static(b"land-payload"))
+            .await;
         assert!(result_land.is_ok());
 
-        let result_load = sender.send("events.load", b"load-payload").await;
+        let result_load = sender
+            .send("events.load", bytes::Bytes::from_static(b"load-payload"))
+            .await;
         assert!(result_load.is_ok());
 
         // Unknown key falls through to default
-        let result_default = sender.send("unknown.key", b"default-payload").await;
+        let result_default = sender
+            .send("unknown.key", bytes::Bytes::from_static(b"default-payload"))
+            .await;
         assert!(result_default.is_ok());
 
         assert!(sender.is_healthy());
@@ -229,7 +235,9 @@ mod tests {
     async fn no_route_no_default_returns_fatal() {
         let sender = RoutedSender::new(HashMap::new(), None);
 
-        let result = sender.send("unknown", b"payload").await;
+        let result = sender
+            .send("unknown", bytes::Bytes::from_static(b"payload"))
+            .await;
         assert!(result.is_fatal());
     }
 
@@ -258,7 +266,9 @@ mod tests {
         let sender = RoutedSender::new(HashMap::new(), None);
         sender.close().await.unwrap();
 
-        let result = sender.send("key", b"payload").await;
+        let result = sender
+            .send("key", bytes::Bytes::from_static(b"payload"))
+            .await;
         assert!(result.is_fatal());
     }
 

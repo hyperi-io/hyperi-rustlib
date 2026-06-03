@@ -52,6 +52,40 @@ Custom `TransportReceiver` impls: change the `recv` signature to return
 NB: this supersedes the bounded `DlqStaging` buffer (no internal buffer
 exists now), which was removed.
 
+### `TransportSender::send` takes owned `Bytes` (BREAKING)
+
+| Old | `send(&self, key: &str, payload: &[u8]) -> SendResult` |
+| New | `send(&self, key: &str, payload: bytes::Bytes) -> SendResult` |
+
+Owned-bytes send (Phase 4.1) removes the per-send `payload.to_vec()` copy on
+the HTTP path (reqwest `Body::from(Bytes)` is zero-copy) and lets a caller that
+already holds `Bytes` (the `BatchEngine`) flow it through without re-copying.
+
+**Consumer adjustment** — at each `send` call, pass owned `Bytes`:
+
+```rust
+// Old:
+sender.send("topic", &payload_slice).await;
+sender.send("topic", b"literal").await;
+
+// New (all conversions from Vec<u8>/String/&'static [u8] are cheap):
+sender.send("topic", bytes::Bytes::from(payload_vec)).await;        // Vec<u8>  (free)
+sender.send("topic", bytes::Bytes::from_static(b"literal")).await;  // &'static [u8]
+sender.send("topic", bytes::Bytes::copy_from_slice(slice)).await;   // &[u8]    (copies)
+```
+
+A caller holding `&[u8]` now copies once at the call site (`copy_from_slice`)
+instead of inside the transport — net-neutral. Callers holding `Vec<u8>` or
+`Bytes` (the hot path) are now zero-copy. `bytes` is a `transport`-feature dep.
+
+### `transport::FromCascade` trait (additive, non-breaking)
+
+New `transport::FromCascade` trait with a default `from_cascade_key(key)`
+consolidates the byte-identical `from_cascade()` bodies the 5 transport configs
+(grpc/http/file/pipe/redis) each repeated. Each config's inherent
+`from_cascade()` is unchanged in signature — it just delegates — so this is
+**not** a consumer migration; it only removes internal duplication.
+
 ### `AdaptiveWorkerPool::fan_out_async` return type
 
 | Old | `Vec<Result<R, E>>` |

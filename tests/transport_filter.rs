@@ -135,7 +135,10 @@ async fn outbound_filter_blocks_send() {
 
     // Send a debug message — should be silently dropped
     let result = transport
-        .send("topic", br#"{"debug":true,"msg":"test"}"#)
+        .send(
+            "topic",
+            bytes::Bytes::from_static(br#"{"debug":true,"msg":"test"}"#),
+        )
         .await;
     assert!(
         result.is_ok(),
@@ -143,7 +146,9 @@ async fn outbound_filter_blocks_send() {
     );
 
     // Send a normal message — should go through
-    let result = transport.send("topic", br#"{"msg":"normal"}"#).await;
+    let result = transport
+        .send("topic", bytes::Bytes::from_static(br#"{"msg":"normal"}"#))
+        .await;
     assert!(result.is_ok());
 
     // Only the normal message should be receivable
@@ -163,7 +168,10 @@ async fn outbound_filter_dlq_returns_filtered_dlq() {
     }]);
 
     let result = transport
-        .send("topic", br#"{"status":"bad","data":"x"}"#)
+        .send(
+            "topic",
+            bytes::Bytes::from_static(br#"{"status":"bad","data":"x"}"#),
+        )
         .await;
     assert!(
         result.is_filtered_dlq(),
@@ -171,7 +179,10 @@ async fn outbound_filter_dlq_returns_filtered_dlq() {
     );
 
     let result = transport
-        .send("topic", br#"{"status":"good","data":"x"}"#)
+        .send(
+            "topic",
+            bytes::Bytes::from_static(br#"{"status":"good","data":"x"}"#),
+        )
         .await;
     assert!(result.is_ok(), "Non-matching message should send normally");
 }

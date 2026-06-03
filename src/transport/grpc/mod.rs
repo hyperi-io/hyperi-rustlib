@@ -321,14 +321,14 @@ impl TransportBase for GrpcTransport {
 }
 
 impl TransportSender for GrpcTransport {
-    async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
@@ -694,7 +694,9 @@ mod tests {
         assert!(transport.is_healthy());
 
         // send should error (no client)
-        let result = transport.send("test", b"payload").await;
+        let result = transport
+            .send("test", bytes::Bytes::from_static(b"payload"))
+            .await;
         assert!(result.is_fatal());
 
         // Close

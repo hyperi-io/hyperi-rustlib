@@ -116,15 +116,7 @@ impl GrpcConfig {
     /// Load from the config cascade under the `grpc` key.
     #[must_use]
     pub fn from_cascade() -> Self {
-        #[cfg(feature = "config")]
-        {
-            if let Some(cfg) = crate::config::try_get()
-                && let Ok(grpc) = cfg.unmarshal_key_registered::<Self>("grpc")
-            {
-                return grpc;
-            }
-        }
-        Self::default()
+        <Self as crate::transport::traits::FromCascade>::from_cascade_key("grpc")
     }
 
     /// Create a server-only config.
@@ -167,3 +159,5 @@ impl GrpcConfig {
         self
     }
 }
+
+impl crate::transport::traits::FromCascade for GrpcConfig {}

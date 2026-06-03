@@ -380,7 +380,7 @@ async fn test_vector_and_native_coexist() {
 
     for i in 0..3u32 {
         let payload = format!("native-{i}");
-        let result = client.send("topic", payload.as_bytes()).await;
+        let result = client.send("topic", bytes::Bytes::from(payload)).await;
         assert!(
             matches!(result, SendResult::Ok),
             "native send {i} should succeed: {result:?}"
