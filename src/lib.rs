@@ -157,6 +157,10 @@ pub mod directory_config;
 #[cfg_attr(docsrs, doc(cfg(feature = "memory")))]
 pub mod memory;
 
+#[cfg(feature = "tls")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tls")))]
+pub mod tls;
+
 #[cfg(feature = "scaling")]
 #[cfg_attr(docsrs, doc(cfg(feature = "scaling")))]
 pub mod scaling;
