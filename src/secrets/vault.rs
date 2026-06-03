@@ -250,6 +250,12 @@ impl OpenBaoProvider {
     ///
     /// Returns an error if client initialization fails.
     pub fn new(config: &OpenBaoConfig) -> SecretsResult<Self> {
+        // Enforce the production guardrail at the construction boundary -- a
+        // shared library cannot rely on every app remembering to call
+        // validate() at startup (Codex review 2026-06-03).
+        config
+            .validate(crate::env::is_production())
+            .map_err(SecretsError::ConfigError)?;
         Ok(Self {
             config: config.clone(),
         })

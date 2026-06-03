@@ -148,6 +148,14 @@ impl KafkaTransport {
     ///
     /// Returns error if Kafka client creation fails.
     pub async fn new(config: &KafkaConfig) -> TransportResult<Self> {
+        // Enforce the production guardrail at construction (Codex review
+        // 2026-06-03): reject ssl_skip_verify (and insecure transport without
+        // an explicit override) in prod here, not only when an app remembers
+        // to call validate() at startup.
+        config
+            .validate(crate::env::is_production())
+            .map_err(TransportError::Config)?;
+
         let mut client_config = ClientConfig::new();
 
         // Required settings

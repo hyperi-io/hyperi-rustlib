@@ -108,6 +108,10 @@ impl HttpServer {
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
+        // Enforce config validity before binding (Codex review 2026-06-03): a
+        // config requesting unsupported in-process TLS must fail loudly here,
+        // not bind cleartext while is_tls_enabled() reports true.
+        self.config.validate().map_err(HttpServerError::TlsConfig)?;
         let shutdown_timeout = self.config.shutdown_timeout();
         let app = self.build_router(app);
 
@@ -182,6 +186,8 @@ impl HttpServer {
     ///
     /// Returns an error if binding fails.
     pub async fn serve_with_handle(self, app: Router) -> Result<(ShutdownHandle, ServerFuture)> {
+        // Same validation gate as serve_with_shutdown (Codex review 2026-06-03).
+        self.config.validate().map_err(HttpServerError::TlsConfig)?;
         let (tx, rx) = watch::channel(());
         let handle = ShutdownHandle { sender: tx };
 

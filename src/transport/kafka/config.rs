@@ -425,6 +425,14 @@ pub struct KafkaConfig {
     #[serde(default)]
     pub ssl_skip_verify: bool,
 
+    /// Deliberately permit an unencrypted transport (`plaintext` /
+    /// `sasl_plaintext`) in production. Default `false`: production
+    /// [`validate`](KafkaConfig::validate) rejects unencrypted transports so a
+    /// misconfiguration cannot ship data/credentials in the clear. Set `true`
+    /// only for an audited case (e.g. mesh-encrypted in-cluster traffic).
+    #[serde(default)]
+    pub allow_insecure_transport: bool,
+
     // --- Consumer Settings (explicit fields for common options) ---
     /// Enable auto-commit (default: false for manual commit).
     #[serde(default)]
@@ -579,6 +587,7 @@ impl Default for KafkaConfig {
             ssl_certificate_location: None,
             ssl_key_location: None,
             ssl_skip_verify: false,
+            allow_insecure_transport: false,
             enable_auto_commit: false,
             auto_commit_interval_ms: default_auto_commit_interval(),
             session_timeout_ms: default_session_timeout(),
@@ -772,14 +781,31 @@ impl KafkaConfig {
     ///
     /// # Errors
     ///
-    /// Returns `Err` when `is_production` and `ssl_skip_verify` is set.
+    /// Returns `Err` when `is_production` and either `ssl_skip_verify` is set,
+    /// or an unencrypted transport (`plaintext`/`sasl_plaintext`) is configured
+    /// without the explicit `allow_insecure_transport` opt-in.
     pub fn validate(&self, is_production: bool) -> Result<(), String> {
-        if is_production && self.ssl_skip_verify {
+        if !is_production {
+            return Ok(());
+        }
+        if self.ssl_skip_verify {
             return Err(
                 "kafka: ssl_skip_verify (TLS verification disabled) is not permitted \
                  in production -- configure ssl_ca_location for private-CA trust instead"
                     .to_string(),
             );
+        }
+        // An unencrypted transport ships data (and SASL/PLAIN credentials) in
+        // the clear. Reject in prod unless deliberately opted into.
+        let proto = self.security_protocol.to_ascii_lowercase();
+        if !self.allow_insecure_transport && (proto == "plaintext" || proto == "sasl_plaintext") {
+            return Err(format!(
+                "kafka: security_protocol='{}' sends data/credentials unencrypted and is not \
+                 permitted in production -- use 'ssl'/'sasl_ssl', or set \
+                 allow_insecure_transport=true to deliberately opt in (e.g. mesh-encrypted \
+                 in-cluster traffic)",
+                self.security_protocol
+            ));
         }
         Ok(())
     }
@@ -1004,10 +1030,43 @@ mod tests {
             "production must reject ssl_skip_verify"
         );
 
-        // A verifying config validates in production.
-        let prod = KafkaConfig::default();
+        // A TLS-verifying config validates in production.
+        let prod = KafkaConfig {
+            security_protocol: "ssl".to_string(),
+            ..Default::default()
+        };
         assert!(!prod.ssl_skip_verify);
         assert!(prod.validate(true).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_unencrypted_transport_in_production() {
+        // Default is plaintext -> rejected in prod, allowed in dev.
+        let cfg = KafkaConfig::default();
+        assert_eq!(cfg.security_protocol, "plaintext");
+        assert!(cfg.validate(false).is_ok(), "dev allows plaintext");
+        assert!(
+            cfg.validate(true).is_err(),
+            "production must reject plaintext transport"
+        );
+
+        // sasl_plaintext is likewise rejected in prod.
+        let sasl = KafkaConfig {
+            security_protocol: "sasl_plaintext".to_string(),
+            ..Default::default()
+        };
+        assert!(sasl.validate(true).is_err());
+
+        // The explicit, auditable override permits it (e.g. mesh-encrypted).
+        let opted_in = KafkaConfig {
+            security_protocol: "plaintext".to_string(),
+            allow_insecure_transport: true,
+            ..Default::default()
+        };
+        assert!(
+            opted_in.validate(true).is_ok(),
+            "allow_insecure_transport opts into plaintext in prod"
+        );
     }
 
     #[test]

@@ -65,6 +65,12 @@ impl SecretCache {
     ///
     /// Returns an error if the cache directory cannot be created.
     pub fn new(config: &CacheConfig) -> SecretsResult<Self> {
+        // Enforce the production guardrail at construction (Codex review
+        // 2026-06-03): reject plaintext disk cache in prod here, not only when
+        // an app remembers to call validate() at startup.
+        config
+            .validate(crate::env::is_production())
+            .map_err(SecretsError::ConfigError)?;
         let cache_dir = if config.enabled {
             let dir = config.directory.clone().unwrap_or_else(|| {
                 // Auto-detect cache directory
