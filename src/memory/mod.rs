@@ -22,5 +22,5 @@
 pub mod cgroup;
 pub mod guard;
 
-pub use cgroup::detect_memory_limit;
+pub use cgroup::{detect_memory_limit, detect_memory_pressure};
 pub use guard::{MemoryGuard, MemoryGuardConfig, MemoryPressure};

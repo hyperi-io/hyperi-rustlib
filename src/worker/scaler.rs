@@ -113,25 +113,37 @@ impl ScalingController {
         self.system.refresh_cpu_all();
         let cpu_util = f64::from(self.system.global_cpu_usage()) / 100.0;
 
-        // Sample memory -- dual source: sysinfo process RSS + MemoryGuard if attached
-        self.system.refresh_memory();
-        let sysinfo_mem_pressure = if self.system.total_memory() > 0 {
-            self.system.used_memory() as f64 / self.system.total_memory() as f64
-        } else {
-            0.0
-        };
-
+        // Memory signal, container-first. Priority:
+        //   1. Attached MemoryGuard pressure (app-tracked bytes vs the cgroup
+        //      limit) -- the most accurate signal for THIS service.
+        //   2. The cgroup's own current/limit -- what the OOM killer acts on.
+        //   3. Host used/total (sysinfo) -- ONLY as a bare-metal fallback.
+        // Host memory must NOT drive container decisions: on a large shared
+        // host it is unrelated to this container's cgroup limit (it can be
+        // high from other tenants, or mask this container nearing its own cap).
         #[cfg(feature = "memory")]
-        let memory_guard_pressure = self
+        let guard_pressure = self
             .pool
             .memory_guard
             .lock()
             .as_ref()
-            .map_or(0.0, |g| g.pressure_ratio());
+            .map(|g| g.pressure_ratio());
         #[cfg(not(feature = "memory"))]
-        let memory_guard_pressure = 0.0;
+        let guard_pressure: Option<f64> = None;
 
-        let effective_memory_pressure = sysinfo_mem_pressure.max(memory_guard_pressure);
+        #[cfg(feature = "memory")]
+        let cgroup_pressure = crate::memory::detect_memory_pressure();
+        #[cfg(not(feature = "memory"))]
+        let cgroup_pressure: Option<f64> = None;
+
+        let effective_memory_pressure = guard_pressure.or(cgroup_pressure).unwrap_or_else(|| {
+            self.system.refresh_memory();
+            if self.system.total_memory() > 0 {
+                self.system.used_memory() as f64 / self.system.total_memory() as f64
+            } else {
+                0.0
+            }
+        });
 
         // Read config (may have been hot-reloaded via Arc<RwLock<>>)
         let cfg = self.pool.config.read().clone();
