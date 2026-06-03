@@ -272,8 +272,15 @@ impl OpenBaoProvider {
             settings.namespace(Some(ns.clone()));
         }
 
-        // Note: vaultrs handles TLS configuration via the address URL scheme
-        // For custom CA certs, users should configure system trust store or use VAULT_CACERT env var
+        // Private-CA trust + verification (finding 9: these were previously
+        // ignored). vaultrs owns its reqwest client, so we route through its
+        // native settings rather than the unified `tls` module: a PEM CA file
+        // for private-CA deployments, and TLS verification on unless the
+        // dev-only `skip_verify` is set (rejected in prod by `validate`).
+        if let Some(ref ca) = self.config.ca_cert {
+            settings.ca_certs(vec![ca.clone()]);
+        }
+        settings.verify(!self.config.skip_verify);
 
         let settings = settings.build().map_err(|e| {
             SecretsError::ConfigError(format!("failed to build Vault client settings: {e}"))
