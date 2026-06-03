@@ -87,7 +87,7 @@ pub struct GrpcTransport {
 
     /// Buffer for messages staged to DLQ by inbound filters.
     /// Drained by `take_filtered_dlq_entries()`.
-    filtered_dlq_buffer: parking_lot::Mutex<Vec<super::filter::FilteredDlqEntry>>,
+    filtered_dlq_buffer: super::filter::DlqStaging,
 }
 
 impl GrpcTransport {
@@ -228,7 +228,7 @@ impl GrpcTransport {
             #[cfg(feature = "metrics")]
             inflight: AtomicU64::new(0),
             filter_engine,
-            filtered_dlq_buffer: parking_lot::Mutex::new(Vec::new()),
+            filtered_dlq_buffer: super::filter::DlqStaging::default(),
         })
     }
 }
@@ -401,31 +401,22 @@ impl TransportReceiver for GrpcTransport {
             }
         }
 
-        // Apply inbound filters: drop messages, stage DLQ entries
-        if self.filter_engine.has_inbound_filters() {
-            let mut staged_dlq: Vec<super::filter::FilteredDlqEntry> = Vec::new();
-            messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
-                super::filter::FilterDisposition::Pass => true,
-                super::filter::FilterDisposition::Drop => false,
-                super::filter::FilterDisposition::Dlq => {
-                    staged_dlq.push(super::filter::FilteredDlqEntry {
-                        payload: msg.payload.clone(),
-                        key: msg.key.clone(),
-                        reason: "transport filter".to_string(),
-                    });
-                    false
-                }
-            });
-            if !staged_dlq.is_empty() {
-                self.filtered_dlq_buffer.lock().extend(staged_dlq);
-            }
-        }
+        // Apply inbound filters: drop/DLQ-stage matched messages via the
+        // shared partition helper. Staging is bounded (DlqStaging) so a flood
+        // or a missed drain cannot grow memory without bound (finding 4).
+        let batch = self.filter_engine.partition_batch(
+            messages,
+            |m| m.payload.as_slice(),
+            |m| m.key.clone(),
+        );
+        self.filtered_dlq_buffer.push_all(batch.dlq_entries);
+        let messages = batch.messages;
 
         Ok(messages)
     }
 
     fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
-        std::mem::take(&mut *self.filtered_dlq_buffer.lock())
+        self.filtered_dlq_buffer.drain()
     }
 
     async fn commit(&self, _tokens: &[Self::Token]) -> TransportResult<()> {
