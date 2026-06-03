@@ -665,7 +665,10 @@ async fn fan_out_with_policy_times_out_slow_items_preserving_order() {
 
     assert_eq!(results.len(), 3);
     assert!(matches!(results[0], FanOutResult::Ok(0)));
-    assert!(matches!(results[1], FanOutResult::TimedOut), "slow item times out");
+    assert!(
+        matches!(results[1], FanOutResult::TimedOut),
+        "slow item times out"
+    );
     assert!(matches!(results[2], FanOutResult::Ok(20)));
 }
 
