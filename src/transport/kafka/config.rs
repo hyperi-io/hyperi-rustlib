@@ -396,15 +396,26 @@ pub struct KafkaConfig {
     pub sasl_password: Option<crate::SensitiveString>,
 
     // --- TLS Configuration ---
-    /// SSL CA certificate file path.
+    //
+    // Kafka TLS is configured by FILE PATH because librdkafka (the C library)
+    // owns the TLS stack and reads PEM files directly -- it does not accept a
+    // Rust rustls `ClientConfig`, so the unified `crate::tls` module does not
+    // apply here. The mapping from the unified `TlsTrust` vocabulary is:
+    //   TlsTrust.extra_roots (private CA, single bundle ok) -> ssl_ca_location
+    //   client cert / key (mTLS)                             -> ssl_certificate_location / ssl_key_location
+    //   native/webpki roots                                  -> librdkafka uses the system store by default (omit ssl_ca_location)
+    //   exclusive private-CA pin                             -> set ssl_ca_location to the private CA only
+    /// SSL CA certificate file path (private-CA bundle; maps to
+    /// `TlsTrust.extra_roots` -- a single combined root+intermediate PEM is
+    /// accepted).
     #[serde(default)]
     pub ssl_ca_location: Option<String>,
 
-    /// SSL client certificate file path.
+    /// SSL client certificate file path (mTLS).
     #[serde(default)]
     pub ssl_certificate_location: Option<String>,
 
-    /// SSL client key file path.
+    /// SSL client key file path (mTLS).
     #[serde(default)]
     pub ssl_key_location: Option<String>,
 
