@@ -18,11 +18,15 @@ pub fn register(manager: &MetricsManager, config: &WorkerPoolConfig) {
     // Operational metrics -- register descriptions (return values intentionally unused)
     let _ = manager.gauge(
         "worker_pool_active_threads",
-        "Current active worker threads",
+        "Permits currently leased (in-flight worker count)",
     );
     let _ = manager.gauge(
         "worker_pool_target_threads",
-        "Target thread count from scaler",
+        "Target thread count from scaler (admission ceiling)",
+    );
+    let _ = manager.gauge(
+        "worker_pool_available_threads",
+        "Headroom: leasable permits right now (target - leased)",
     );
     let _ = manager.gauge("worker_pool_max_threads", "Maximum pool threads");
     let _ = manager.gauge(

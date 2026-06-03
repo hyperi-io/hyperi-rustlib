@@ -340,20 +340,19 @@ async fn test_graceful_shutdown_drains_work() {
 // --- Pool active_threads test ---
 
 #[test]
-fn test_active_threads_reports_correct_count() {
+fn test_thread_accounting_target_leased_available() {
     let config = WorkerPoolConfig {
         min_threads: 3,
         max_threads: 8,
         ..Default::default()
     };
     let pool = AdaptiveWorkerPool::new(config);
-    // Initially, semaphore has min_threads (3) permits available out of 8 total
-    // active = max - available = 8 - 3 = 5 ... wait that's not right
-    // Actually at rest, no work in flight, all permits available = min_threads
-    // active = max_threads - available_permits = 8 - 3 = 5
-    // Hmm, this is tricky. Let me just verify the initial state makes sense.
-    let max = pool.max_threads();
-    assert_eq!(max, 8);
+    // Idle pool: zero in-flight, regardless of the scaler target.
+    assert_eq!(pool.active_threads(), 0, "idle pool reports zero active");
+    // Target starts at min_threads; headroom equals the target when idle.
+    assert_eq!(pool.target_threads(), 3, "initial target is min_threads");
+    assert_eq!(pool.available_threads(), 3, "idle headroom equals target");
+    assert_eq!(pool.max_threads(), 8);
 }
 
 // =============================================================================

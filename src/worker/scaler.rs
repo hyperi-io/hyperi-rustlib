@@ -136,12 +136,15 @@ impl ScalingController {
         // Read config (may have been hot-reloaded via Arc<RwLock<>>)
         let cfg = self.pool.config.read().clone();
 
-        let current_permits = self.pool.active_threads();
+        // Control input is the CURRENT TARGET (the ceiling we are adjusting),
+        // not the in-flight count -- the watermark algorithm evolves the
+        // target up/down from where it currently sits.
+        let current_target = self.pool.target_threads();
 
         let decision = ScalingDecision::evaluate(&ScalingInput {
             cpu_util,
             memory_pressure: effective_memory_pressure,
-            current: current_permits,
+            current: current_target,
             min_threads: cfg.min_threads,
             max_threads: cfg.max_threads,
             grow_below: cfg.grow_below,
@@ -153,14 +156,14 @@ impl ScalingController {
         if decision.direction == "steady" {
             tracing::debug!(
                 cpu = format!("{cpu_util:.2}"),
-                current = current_permits,
+                current = current_target,
                 "Worker pool steady"
             );
         } else {
             tracing::debug!(
                 cpu = format!("{cpu_util:.2}"),
                 mem = format!("{effective_memory_pressure:.2}"),
-                current = current_permits,
+                current = current_target,
                 target = decision.target,
                 direction = decision.direction,
                 "Worker pool scaling"
@@ -169,12 +172,16 @@ impl ScalingController {
                 .increment(1);
         }
 
-        // Adjust semaphore permits
-        self.pool.semaphore.set_permits(decision.target);
+        // Apply the new target concurrency.
+        self.pool.semaphore.set_target(decision.target);
 
-        // Emit operational metrics
-        metrics::gauge!("worker_pool_active_threads").set(decision.target as f64);
+        // Emit operational metrics -- active (leased, in-flight) and target
+        // (admission ceiling) are DISTINCT; do not conflate them.
+        let leased = self.pool.active_threads();
+        metrics::gauge!("worker_pool_active_threads").set(leased as f64);
         metrics::gauge!("worker_pool_target_threads").set(decision.target as f64);
+        metrics::gauge!("worker_pool_available_threads")
+            .set(decision.target.saturating_sub(leased) as f64);
         metrics::gauge!("worker_pool_cpu_utilisation").set(cpu_util);
         metrics::gauge!("worker_pool_memory_utilisation").set(effective_memory_pressure);
         metrics::gauge!("worker_pool_saturation")

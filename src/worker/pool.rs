@@ -7,10 +7,8 @@
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
 
-use parking_lot::RwLock;
+use parking_lot::{Condvar, Mutex, RwLock};
 use rayon::ThreadPool;
 
 use super::config::WorkerPoolConfig;
@@ -36,93 +34,102 @@ pub struct AdaptiveWorkerPool {
     pub(crate) scaling_pressure: parking_lot::Mutex<Option<Arc<crate::scaling::ScalingPressure>>>,
 }
 
-/// Counting semaphore for throttling rayon thread usage.
+/// Concurrency limiter for throttling rayon thread usage.
 ///
-/// Rayon pools cannot be resized, so we use a semaphore to control how many
-/// threads actively pick up work. Threads that cannot acquire a permit sleep
-/// on [`std::thread::yield_now`].
+/// Rayon pools cannot be resized, so a limiter controls how many threads
+/// actively pick up work. Models explicit `target` (the scaler's desired
+/// concurrency) and `leased` (permits currently held by in-flight work);
+/// available headroom is the derived `target - leased`. A thread that cannot
+/// lease (`leased >= target`) PARKS on a condvar -- it does not spin -- so the
+/// throttle conserves CPU exactly when the scaler is trying to.
+///
+/// Why this shape (vs the old `available`/`max_permits` atomic): the scaler
+/// sets a *target*, and `active_threads()` reports *leased* (true in-flight),
+/// so an idle pool reports zero active and a downscale cannot be undone by
+/// guard drops refilling toward `max` -- drops only decrement `leased`, and
+/// no new lease is admitted while `leased >= target`.
 pub(crate) struct Semaphore {
-    permits: AtomicUsize,
+    state: Mutex<SemState>,
+    /// Signalled when a permit frees or the target grows.
+    available: Condvar,
+    /// Architectural ceiling (rayon pool size); `target` never exceeds it.
     max_permits: usize,
 }
 
+struct SemState {
+    /// Scaler-controlled desired concurrency, kept in `[1, max_permits]`.
+    target: usize,
+    /// Permits currently held by in-flight work.
+    leased: usize,
+}
+
 impl Semaphore {
-    fn new(initial_permits: usize, max_permits: usize) -> Self {
+    fn new(initial_target: usize, max_permits: usize) -> Self {
+        let max_permits = max_permits.max(1);
         Self {
-            permits: AtomicUsize::new(initial_permits),
+            state: Mutex::new(SemState {
+                target: initial_target.clamp(1, max_permits),
+                leased: 0,
+            }),
+            available: Condvar::new(),
             max_permits,
         }
     }
 
-    /// Acquire a permit (blocking). Returns a guard that releases on drop.
+    /// Lease a permit, parking until `leased < target`. Releases on drop.
     fn acquire(&self) -> SemaphoreGuard<'_> {
-        let start = Instant::now();
-        loop {
-            let current = self.permits.load(Ordering::Acquire);
-            if current > 0
-                && self
-                    .permits
-                    .compare_exchange_weak(
-                        current,
-                        current - 1,
-                        Ordering::AcqRel,
-                        Ordering::Relaxed,
-                    )
-                    .is_ok()
-            {
-                return SemaphoreGuard {
-                    semaphore: self,
-                    wait_duration: start.elapsed(),
-                };
-            }
-            std::thread::yield_now();
+        let mut st = self.state.lock();
+        while st.leased >= st.target {
+            self.available.wait(&mut st);
+        }
+        st.leased += 1;
+        SemaphoreGuard { semaphore: self }
+    }
+
+    /// Set the target concurrency (called by the scaler). Clamped to
+    /// `[1, max_permits]`. Growing the target wakes parked acquirers so they
+    /// re-check; shrinking simply stops new leases until `leased` falls below
+    /// the new target -- in-flight work drains naturally.
+    pub(crate) fn set_target(&self, target: usize) {
+        let clamped = target.clamp(1, self.max_permits);
+        let mut st = self.state.lock();
+        let grew = clamped > st.target;
+        st.target = clamped;
+        drop(st);
+        if grew {
+            self.available.notify_all();
         }
     }
 
-    /// Set the number of available permits (called by scaler).
-    pub(crate) fn set_permits(&self, count: usize) {
-        let clamped = count.min(self.max_permits);
-        self.permits.store(clamped, Ordering::Release);
+    /// Current target concurrency.
+    pub(crate) fn target(&self) -> usize {
+        self.state.lock().target
     }
 
-    /// Current number of available (unacquired) permits.
-    pub(crate) fn available_permits(&self) -> usize {
-        self.permits.load(Ordering::Relaxed)
+    /// Permits currently leased (in-flight work).
+    pub(crate) fn leased(&self) -> usize {
+        self.state.lock().leased
+    }
+
+    /// Headroom: how many more permits can be leased right now.
+    pub(crate) fn available(&self) -> usize {
+        let st = self.state.lock();
+        st.target.saturating_sub(st.leased)
     }
 }
 
 struct SemaphoreGuard<'a> {
     semaphore: &'a Semaphore,
-    #[allow(dead_code)]
-    wait_duration: std::time::Duration,
 }
 
 impl Drop for SemaphoreGuard<'_> {
     fn drop(&mut self) {
-        // Release the permit, but never let the available count exceed
-        // the current cap. `set_permits` (called by the scaler when
-        // shrinking) writes a smaller value while N guards may still be
-        // outstanding; if each unconditionally added 1 on drop, the
-        // post-drain `available` would overshoot the new cap and admit
-        // too much work.
-        //
-        // CAS loop reads the current available count, adds 1 clamped to
-        // max_permits, and retries on contention with another dropping
-        // guard.
-        let max = self.semaphore.max_permits;
-        let mut cur = self.semaphore.permits.load(Ordering::Acquire);
-        loop {
-            let new = (cur + 1).min(max);
-            match self.semaphore.permits.compare_exchange_weak(
-                cur,
-                new,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => return,
-                Err(actual) => cur = actual,
-            }
-        }
+        let mut st = self.semaphore.state.lock();
+        st.leased = st.leased.saturating_sub(1);
+        drop(st);
+        // Wake one parked acquirer; the freed permit is now leasable
+        // (subject to the current target, which it re-checks).
+        self.semaphore.available.notify_one();
     }
 }
 
@@ -300,17 +307,141 @@ impl AdaptiveWorkerPool {
         *self.scaling_pressure.lock() = Some(pressure);
     }
 
-    /// Current number of active worker threads (permits in use).
+    /// Number of permits currently leased -- true in-flight worker count.
+    ///
+    /// An idle pool reports 0 regardless of the scaler target. This is the
+    /// telemetry-grade "active" count (vs [`target_threads`](Self::target_threads),
+    /// the scaler's desired ceiling).
     #[must_use]
     pub fn active_threads(&self) -> usize {
-        let cfg = self.config.read();
-        cfg.max_threads
-            .saturating_sub(self.semaphore.available_permits())
+        self.semaphore.leased()
+    }
+
+    /// Current scaler target concurrency (the admission ceiling).
+    #[must_use]
+    pub fn target_threads(&self) -> usize {
+        self.semaphore.target()
+    }
+
+    /// Headroom: permits that could be leased right now (`target - leased`).
+    #[must_use]
+    pub fn available_threads(&self) -> usize {
+        self.semaphore.available()
     }
 
     /// Maximum thread count (pool size).
     #[must_use]
     pub fn max_threads(&self) -> usize {
         self.config.read().max_threads
+    }
+}
+
+#[cfg(test)]
+mod semaphore_tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::Semaphore;
+
+    #[test]
+    fn idle_reports_zero_leased() {
+        let s = Semaphore::new(2, 8);
+        assert_eq!(s.leased(), 0);
+        assert_eq!(s.target(), 2);
+        assert_eq!(s.available(), 2);
+    }
+
+    #[test]
+    fn lease_and_drop_track_leased() {
+        let s = Semaphore::new(4, 8);
+        {
+            let _g1 = s.acquire();
+            let _g2 = s.acquire();
+            assert_eq!(s.leased(), 2);
+            assert_eq!(s.available(), 2);
+        }
+        assert_eq!(s.leased(), 0, "drops release leases");
+        assert_eq!(s.available(), 4);
+    }
+
+    #[test]
+    fn downscale_does_not_overshoot_on_drop() {
+        // Lease the full target, shrink the target while leased, then drain.
+        // The old model refilled `available` toward max_permits on drop,
+        // undoing the downscale; the new model derives available from the
+        // target, so post-drain available == target, not max.
+        let s = Semaphore::new(8, 8);
+        let guards: Vec<_> = (0..8).map(|_| s.acquire()).collect();
+        assert_eq!(s.leased(), 8);
+        s.set_target(2);
+        assert_eq!(s.target(), 2);
+        assert_eq!(
+            s.available(),
+            0,
+            "leased (8) exceeds target (2): no headroom"
+        );
+        drop(guards);
+        assert_eq!(s.leased(), 0);
+        assert_eq!(
+            s.available(),
+            2,
+            "available equals target after drain, not max_permits"
+        );
+    }
+
+    #[test]
+    fn set_target_clamps_to_one_and_max() {
+        let s = Semaphore::new(4, 8);
+        s.set_target(0);
+        assert_eq!(s.target(), 1, "target floored at 1 to avoid deadlock");
+        s.set_target(100);
+        assert_eq!(s.target(), 8, "target capped at max_permits");
+    }
+
+    #[test]
+    fn contention_never_exceeds_target() {
+        // 8 threads hammer a target=2 limiter; leased must never exceed 2.
+        let s = Arc::new(Semaphore::new(2, 2));
+        let max_seen = Arc::new(AtomicUsize::new(0));
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let s = Arc::clone(&s);
+                let max_seen = Arc::clone(&max_seen);
+                std::thread::spawn(move || {
+                    for _ in 0..50 {
+                        let _g = s.acquire();
+                        max_seen.fetch_max(s.leased(), Ordering::Relaxed);
+                        std::thread::yield_now();
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert!(
+            max_seen.load(Ordering::Relaxed) <= 2,
+            "leased never exceeded target=2"
+        );
+        assert_eq!(s.leased(), 0);
+    }
+
+    #[test]
+    fn grow_target_wakes_parked_acquirer() {
+        // target=1, one lease held; a second acquirer parks until the target
+        // grows -- proving wakeup on set_target, not a spin.
+        let s = Arc::new(Semaphore::new(1, 4));
+        let held = s.acquire();
+        assert_eq!(s.leased(), 1);
+        let s2 = Arc::clone(&s);
+        let handle = std::thread::spawn(move || {
+            let _g = s2.acquire();
+            s2.leased()
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        s.set_target(2);
+        let observed = handle.join().unwrap();
+        assert!(observed >= 1, "parked acquirer proceeded after target grew");
+        drop(held);
     }
 }
