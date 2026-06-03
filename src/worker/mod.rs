@@ -61,6 +61,6 @@ pub use engine::{
 };
 #[cfg(all(feature = "worker-batch", feature = "transport"))]
 pub use engine::{EngineError, FilterDlqPolicy};
-pub use pool::AdaptiveWorkerPool;
+pub use pool::{AdaptiveWorkerPool, FanOutPolicy, FanOutResult};
 pub use scaler::{ScalingDecision, ScalingInput};
 pub use stats::{PipelineStats, PipelineStatsSnapshot};

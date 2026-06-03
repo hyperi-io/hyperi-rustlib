@@ -133,6 +133,37 @@ impl Drop for SemaphoreGuard<'_> {
     }
 }
 
+/// Policy for [`AdaptiveWorkerPool::fan_out_async_with_policy`].
+///
+/// The plain [`fan_out_async`](AdaptiveWorkerPool::fan_out_async) helper has no
+/// timeout or cancellation, and a single hung future stalls its whole chunk. At
+/// fleet scale, user code eventually passes a future that ignores deadlines, so
+/// reusable external-I/O fan-out needs a deadline + cancellation contract
+/// (Codex review 2026-06-03).
+#[derive(Debug, Clone, Default)]
+pub struct FanOutPolicy {
+    /// Per-item timeout. `None` = no timeout (caller must bound the future).
+    pub per_item_timeout: Option<std::time::Duration>,
+    /// Cancellation token. When cancelled, no NEW items are spawned; in-flight
+    /// items are still awaited. Remaining unspawned items report `Cancelled`.
+    pub cancel: Option<tokio_util::sync::CancellationToken>,
+}
+
+/// Per-item outcome from [`AdaptiveWorkerPool::fan_out_async_with_policy`].
+#[derive(Debug)]
+pub enum FanOutResult<R, E> {
+    /// The future completed with `Ok`.
+    Ok(R),
+    /// The future completed with `Err`.
+    Err(E),
+    /// The future exceeded `per_item_timeout`.
+    TimedOut,
+    /// The task panicked (logged at `error`).
+    Panicked,
+    /// Not spawned because the cancellation token fired first.
+    Cancelled,
+}
+
 impl AdaptiveWorkerPool {
     /// Create a new worker pool with the given configuration, validating it.
     ///
@@ -286,6 +317,108 @@ impl AdaptiveWorkerPool {
                     }
                 }
             }
+        }
+
+        results
+    }
+
+    /// Concurrency-bounded async fan-out with per-item timeout + cancellation.
+    ///
+    /// Unlike [`fan_out_async`](Self::fan_out_async), this streams completions
+    /// (a `JoinSet`) so a slow item never blocks faster ones, applies an
+    /// optional per-item timeout, and stops spawning new work when the policy's
+    /// cancellation token fires. Results are returned in input order; each is a
+    /// [`FanOutResult`]. Emits `dfe_fanout_*` metrics (in-flight gauge, timeout/
+    /// panic counters, batch-duration histogram) when the `metrics` feature is on.
+    pub async fn fan_out_async_with_policy<T, R, E, F, Fut>(
+        &self,
+        items: &[T],
+        policy: &FanOutPolicy,
+        f: F,
+    ) -> Vec<FanOutResult<R, E>>
+    where
+        T: Sync + Send,
+        R: Send + 'static,
+        E: Send + 'static,
+        F: Fn(&T) -> Fut + Send + Sync,
+        Fut: std::future::Future<Output = Result<R, E>> + Send + 'static,
+    {
+        let concurrency = self.config.read().async_concurrency.max(1);
+        let mut results: Vec<FanOutResult<R, E>> =
+            (0..items.len()).map(|_| FanOutResult::Cancelled).collect();
+
+        #[cfg(feature = "metrics")]
+        let started = std::time::Instant::now();
+
+        let mut set: tokio::task::JoinSet<(usize, FanOutResult<R, E>)> =
+            tokio::task::JoinSet::new();
+        // task Id -> input idx, so a panicked task (JoinError carries no payload)
+        // still maps back to its slot.
+        let mut id_to_idx: std::collections::HashMap<tokio::task::Id, usize> =
+            std::collections::HashMap::new();
+        let mut next = 0;
+        let cancelled = || policy.cancel.as_ref().is_some_and(|c| c.is_cancelled());
+
+        loop {
+            // Seed up to the concurrency limit (unless cancelled).
+            while set.len() < concurrency && next < items.len() && !cancelled() {
+                let fut = f(&items[next]);
+                let timeout = policy.per_item_timeout;
+                let idx = next;
+                let handle = set.spawn(async move {
+                    let outcome = match timeout {
+                        Some(d) => match tokio::time::timeout(d, fut).await {
+                            Ok(Ok(r)) => FanOutResult::Ok(r),
+                            Ok(Err(e)) => FanOutResult::Err(e),
+                            Err(_) => FanOutResult::TimedOut,
+                        },
+                        None => match fut.await {
+                            Ok(r) => FanOutResult::Ok(r),
+                            Err(e) => FanOutResult::Err(e),
+                        },
+                    };
+                    (idx, outcome)
+                });
+                id_to_idx.insert(handle.id(), idx);
+                next += 1;
+            }
+
+            #[cfg(feature = "metrics")]
+            ::metrics::gauge!("dfe_fanout_inflight").set(set.len() as f64);
+
+            let Some(joined) = set.join_next().await else {
+                break; // nothing in flight -- done (or cancelled with none left)
+            };
+            match joined {
+                Ok((idx, outcome)) => {
+                    #[cfg(feature = "metrics")]
+                    if matches!(outcome, FanOutResult::TimedOut) {
+                        ::metrics::counter!("dfe_fanout_timeout_total").increment(1);
+                    }
+                    results[idx] = outcome;
+                }
+                Err(join_err) => {
+                    // Panicked task -- map its task Id back to the input slot.
+                    if let Some(&idx) = id_to_idx.get(&join_err.id()) {
+                        results[idx] = FanOutResult::Panicked;
+                    }
+                    #[cfg(feature = "metrics")]
+                    ::metrics::counter!("dfe_fanout_panic_total").increment(1);
+                    tracing::error!(error = %join_err, "fan_out_async_with_policy task panicked");
+                }
+            }
+
+            // If cancelled and nothing left in flight, stop (remaining stay Cancelled).
+            if cancelled() && set.is_empty() {
+                break;
+            }
+        }
+
+        #[cfg(feature = "metrics")]
+        {
+            ::metrics::gauge!("dfe_fanout_inflight").set(0.0);
+            ::metrics::histogram!("dfe_fanout_batch_duration_seconds")
+                .record(started.elapsed().as_secs_f64());
         }
 
         results

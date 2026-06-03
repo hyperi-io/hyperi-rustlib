@@ -3,7 +3,9 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use hyperi_rustlib::worker::{AdaptiveWorkerPool, ScalingDecision, ScalingInput, WorkerPoolConfig};
+use hyperi_rustlib::worker::{
+    AdaptiveWorkerPool, FanOutPolicy, FanOutResult, ScalingDecision, ScalingInput, WorkerPoolConfig,
+};
 
 // --- Config tests ---
 
@@ -639,4 +641,47 @@ async fn test_fan_out_async_mixed_success_failure_preserves_order() {
     assert_eq!(*results[1].as_ref().unwrap().as_ref().unwrap(), 10);
     assert_eq!(*results[2].as_ref().unwrap().as_ref().unwrap(), 20);
     assert_eq!(*results[4].as_ref().unwrap().as_ref().unwrap(), 40);
+}
+
+// --- fan_out_async_with_policy ---
+
+#[tokio::test]
+async fn fan_out_with_policy_times_out_slow_items_preserving_order() {
+    let pool = AdaptiveWorkerPool::new(WorkerPoolConfig::default());
+    let policy = FanOutPolicy {
+        per_item_timeout: Some(std::time::Duration::from_millis(100)),
+        cancel: None,
+    };
+    // Item 1 sleeps past the timeout; 0 and 2 are fast.
+    let items = vec![0u64, 1, 2];
+    let results: Vec<FanOutResult<u64, ()>> = pool
+        .fan_out_async_with_policy(&items, &policy, |&n| async move {
+            if n == 1 {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+            Ok(n * 10)
+        })
+        .await;
+
+    assert_eq!(results.len(), 3);
+    assert!(matches!(results[0], FanOutResult::Ok(0)));
+    assert!(matches!(results[1], FanOutResult::TimedOut), "slow item times out");
+    assert!(matches!(results[2], FanOutResult::Ok(20)));
+}
+
+#[tokio::test]
+async fn fan_out_with_policy_cancellation_stops_spawning() {
+    let pool = AdaptiveWorkerPool::new(WorkerPoolConfig::default());
+    let token = tokio_util::sync::CancellationToken::new();
+    token.cancel(); // pre-cancelled
+    let policy = FanOutPolicy {
+        per_item_timeout: None,
+        cancel: Some(token),
+    };
+    let items = vec![0u64, 1, 2];
+    let results: Vec<FanOutResult<u64, ()>> = pool
+        .fan_out_async_with_policy(&items, &policy, |&n| async move { Ok(n) })
+        .await;
+    // Nothing spawned -> all Cancelled.
+    assert!(results.iter().all(|r| matches!(r, FanOutResult::Cancelled)));
 }
