@@ -47,9 +47,7 @@ fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
 }
 
 fn main() {
-    let cap_on = std::env::var("HARNESS_CAP")
-        .map(|v| v != "off")
-        .unwrap_or(true);
+    let cap_on = std::env::var("HARNESS_CAP").map_or(true, |v| v != "off");
     let payload_bytes: usize = env_or("HARNESS_PAYLOAD_BYTES", 65_536);
     let rate_hz: u64 = env_or("HARNESS_RATE_HZ", 20_000);
     let hold_ms: u64 = env_or("HARNESS_HOLD_MS", 3_000);
@@ -75,16 +73,17 @@ fn main() {
     let start = Instant::now();
     let deadline = start + Duration::from_secs(duration_secs);
     // Inter-arrival sleep target; we batch sleeps to keep overhead low.
+    #[allow(clippy::cast_precision_loss)] // rate_hz is small; exactness irrelevant
     let per_op = Duration::from_secs_f64(1.0 / rate_hz as f64);
     let mut last_report = start;
 
     while Instant::now() < deadline {
         // Drain: release payloads older than hold_ms (the slow sink).
         let now = Instant::now();
-        let hold = Duration::from_millis(hold_ms);
+        let hold_window = Duration::from_millis(hold_ms);
         let mut i = 0;
         while i < held.len() {
-            if now.duration_since(held[i].0) >= hold {
+            if now.duration_since(held[i].0) >= hold_window {
                 let (_, buf) = held.swap_remove(i);
                 if cap_on {
                     guard.release(buf.len() as u64);

@@ -209,7 +209,9 @@ mod vault_env {
         let config = OpenBaoConfig::from_env().expect("Should load from env");
 
         assert_eq!(config.address, "https://vault.example.com:8200");
-        assert!(matches!(config.auth, OpenBaoAuth::Token { token } if token == "s.test-token"));
+        assert!(
+            matches!(config.auth, OpenBaoAuth::Token { token } if token.expose() == "s.test-token")
+        );
     }
 
     #[test]
@@ -230,7 +232,7 @@ mod vault_env {
                 role_id,
                 secret_id,
                 ..
-            } if role_id == "role-123" && secret_id == "secret-456"
+            } if role_id == "role-123" && secret_id.expose() == "secret-456"
         ));
     }
 
@@ -263,7 +265,9 @@ mod vault_env {
         let config = OpenBaoConfig::from_env().expect("Should load from env");
 
         assert_eq!(config.address, "https://openbao:8200");
-        assert!(matches!(config.auth, OpenBaoAuth::Token { token } if token == "s.openbao-token"));
+        assert!(
+            matches!(config.auth, OpenBaoAuth::Token { token } if token.expose() == "s.openbao-token")
+        );
     }
 
     #[test]
@@ -281,7 +285,9 @@ mod vault_env {
 
         // VAULT_* should win
         assert_eq!(config.address, "https://vault-wins:8200");
-        assert!(matches!(config.auth, OpenBaoAuth::Token { token } if token == "vault-token"));
+        assert!(
+            matches!(config.auth, OpenBaoAuth::Token { token } if token.expose() == "vault-token")
+        );
     }
 
     #[test]

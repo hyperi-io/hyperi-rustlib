@@ -603,9 +603,9 @@ mod tests {
     // test in its own process, so registering it here is contained to this
     // test and does not leak into the per-batch-counter tests above. (This is
     // the single test in this module that touches the global hook.)
-    static TEST_HEAP: AtomicU64 = AtomicU64::new(0);
+    static TEST_HEAP: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     fn test_heap_source() -> usize {
-        TEST_HEAP.load(Ordering::Relaxed) as usize
+        TEST_HEAP.load(Ordering::Relaxed)
     }
 
     #[test]
