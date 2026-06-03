@@ -36,8 +36,6 @@ pub enum EngineError {
 
 use std::sync::Arc;
 
-use rayon::prelude::*;
-
 use super::pool::AdaptiveWorkerPool;
 use super::stats::PipelineStats;
 
@@ -277,16 +275,14 @@ impl BatchEngine {
                 }
             }
 
-            // Parallel transform
-            let transformed: Vec<(usize, Result<O, E>)> = self.pool.install(|| {
-                to_transform
-                    .into_par_iter()
-                    .map(|(idx, mut pm)| {
-                        let result = transform(&mut pm);
-                        (idx, result)
-                    })
-                    .collect()
-            });
+            // Parallel transform, throttled by the scaler target (map_owned
+            // applies the semaphore per item -- unlike the old install() path,
+            // which bypassed it and let the parsed path ignore the CPU cap).
+            let transformed: Vec<(usize, Result<O, E>)> =
+                self.pool.map_owned(to_transform, |(idx, mut pm)| {
+                    let result = transform(&mut pm);
+                    (idx, result)
+                });
 
             chunk_results.extend(transformed);
 

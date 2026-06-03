@@ -266,13 +266,43 @@ impl AdaptiveWorkerPool {
         results
     }
 
+    /// Map owned items in parallel under the concurrency limiter.
+    ///
+    /// Like [`process_batch`](Self::process_batch) but takes OWNED items and a
+    /// closure that consumes each (so the transform may mutate its own copy),
+    /// returning an arbitrary `R` per item. Crucially the semaphore IS applied
+    /// per item, so this path obeys the scaler target -- unlike
+    /// [`install`](Self::install). Results are collected in input order.
+    ///
+    /// Used by `BatchEngine`'s parsed mid-tier transform so the parsed path is
+    /// throttled identically to the raw path.
+    pub fn map_owned<T, R, F>(&self, items: Vec<T>, f: F) -> Vec<R>
+    where
+        T: Send,
+        R: Send,
+        F: Fn(T) -> R + Sync,
+    {
+        let sem = &self.semaphore;
+        self.rayon_pool.install(|| {
+            use rayon::prelude::*;
+            items
+                .into_par_iter()
+                .map(|item| {
+                    let _permit = sem.acquire();
+                    f(item)
+                })
+                .collect()
+        })
+    }
+
     /// Execute a closure on the rayon thread pool.
     ///
     /// Provides direct access to the rayon pool for operations that need
-    /// `par_iter_mut` or other rayon primitives not covered by `process_batch`.
-    /// The semaphore is NOT applied -- callers manage their own concurrency.
-    ///
-    /// Used by `BatchEngine` for the mutable transform phase.
+    /// `par_iter_mut` or other rayon primitives not covered by the throttled
+    /// helpers. The semaphore is NOT applied -- callers manage their own
+    /// concurrency. Prefer [`process_batch`](Self::process_batch) or
+    /// [`map_owned`](Self::map_owned), which respect the scaler target; reach
+    /// for `install` only for genuine rayon-primitive escape hatches.
     pub fn install<R: Send>(&self, f: impl FnOnce() -> R + Send) -> R {
         self.rayon_pool.install(f)
     }

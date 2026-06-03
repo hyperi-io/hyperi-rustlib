@@ -340,6 +340,44 @@ async fn test_graceful_shutdown_drains_work() {
 // --- Pool active_threads test ---
 
 #[test]
+fn test_map_owned_throttles_to_target_not_rayon_size() {
+    // Pool with 4 rayon threads but target=1 (min_threads=1). map_owned must
+    // cap concurrent execution at the target (1), proving the parsed path is
+    // throttled by the scaler -- not by the rayon pool size. Without the
+    // semaphore (the old install() path) peak concurrency would reach 4.
+    let config = WorkerPoolConfig {
+        min_threads: 1,
+        max_threads: 4,
+        ..Default::default()
+    };
+    let pool = AdaptiveWorkerPool::new(config);
+    assert_eq!(pool.target_threads(), 1);
+
+    let in_flight = Arc::new(AtomicUsize::new(0));
+    let peak = Arc::new(AtomicUsize::new(0));
+    let items: Vec<usize> = (0..40).collect();
+
+    let inflight2 = Arc::clone(&in_flight);
+    let peak2 = Arc::clone(&peak);
+    let out: Vec<usize> = pool.map_owned(items, move |i| {
+        let now = inflight2.fetch_add(1, Ordering::SeqCst) + 1;
+        peak2.fetch_max(now, Ordering::SeqCst);
+        // Hold the permit briefly so overlap would occur if unthrottled.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        inflight2.fetch_sub(1, Ordering::SeqCst);
+        i * 2
+    });
+
+    assert_eq!(out.len(), 40);
+    assert_eq!(out[10], 20, "map_owned preserves per-item mapping/order");
+    assert_eq!(
+        peak.load(Ordering::SeqCst),
+        1,
+        "concurrent execution never exceeded target=1"
+    );
+}
+
+#[test]
 fn test_thread_accounting_target_leased_available() {
     let config = WorkerPoolConfig {
         min_threads: 3,
