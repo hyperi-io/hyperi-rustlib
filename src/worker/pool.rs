@@ -134,15 +134,40 @@ impl Drop for SemaphoreGuard<'_> {
 }
 
 impl AdaptiveWorkerPool {
+    /// Create a new worker pool with the given configuration, validating it.
+    ///
+    /// Resolves `max_threads = 0` to the detected CPU count, then validates the
+    /// resolved config (rejects `min_threads > max_threads`, bad watermark
+    /// ordering, zero `async_concurrency`, etc.) before building. This prevents
+    /// invalid runtime state that would otherwise panic later in the scaler's
+    /// `clamp(min, max)` (Codex review 2026-06-03).
+    ///
+    /// # Errors
+    ///
+    /// Returns `ConfigError` if the resolved config is invalid.
+    pub fn try_new(config: WorkerPoolConfig) -> Result<Self, crate::config::ConfigError> {
+        let mut resolved = config;
+        resolved.resolve_max_threads();
+        resolved.validate()?;
+        Ok(Self::build(resolved))
+    }
+
     /// Create a new worker pool with the given configuration.
     ///
     /// Resolves `max_threads = 0` to the detected CPU count.
-    /// Creates a fixed rayon thread pool and a semaphore starting at `min_threads`.
+    ///
+    /// # Panics
+    ///
+    /// Panics immediately with a clear message if the config is invalid (e.g.
+    /// `min_threads > max_threads`). Use [`try_new`](Self::try_new) for fallible
+    /// construction from untrusted config.
     #[must_use]
     pub fn new(config: WorkerPoolConfig) -> Self {
-        let mut resolved = config;
-        resolved.resolve_max_threads();
+        Self::try_new(config).expect("invalid WorkerPoolConfig (use try_new to handle the error)")
+    }
 
+    /// Build the pool from an already-resolved, validated config.
+    fn build(resolved: WorkerPoolConfig) -> Self {
         let max_threads = resolved.max_threads;
         let min_threads = resolved.min_threads;
 
@@ -172,7 +197,7 @@ impl AdaptiveWorkerPool {
     /// Returns an error if the config cascade is not initialised or validation fails.
     pub fn from_cascade(key: &str) -> Result<Self, crate::config::ConfigError> {
         let config = WorkerPoolConfig::from_cascade(key)?;
-        Ok(Self::new(config))
+        Self::try_new(config)
     }
 
     /// Process a batch of items in parallel using rayon (CPU-bound work).

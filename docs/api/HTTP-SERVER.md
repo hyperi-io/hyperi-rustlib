@@ -76,10 +76,14 @@ shutdown_token.cancel();                  // now drain
 
 ## TLS
 
-Configured via `HttpServerConfig::tls`. When set, the server listens
-with rustls (no native OpenSSL link). Cert and key paths are loaded
-from disk at startup; rotation is handled by restarting the server
-(typically through a `SecretsManager` rotation event).
+**In-process TLS termination is not supported.** The K8s pattern is to
+terminate TLS at the ingress / service mesh and run cleartext in-pod.
+
+`HttpServerConfig` exposes `tls_cert_path` / `tls_key_path`, but they are
+**not wired** — setting either is rejected by `HttpServerConfig::validate()`,
+which `serve` / `serve_with_shutdown` / `serve_with_handle` call before
+binding, so a config expecting in-pod TLS fails loudly rather than silently
+serving cleartext. Front the service with a TLS sidecar or ingress instead.
 
 ---
 

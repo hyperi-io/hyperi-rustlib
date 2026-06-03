@@ -128,7 +128,7 @@ pub trait TransportReceiver: TransportBase {
     /// # Example
     ///
     /// ```rust,ignore
-    /// let batch = transport.recv(100).await?.messages;
+    /// let batch = transport.recv(100).await?;
     /// for entry in batch.dlq_entries {
     ///     dlq.send(DlqEntry::new("filter", entry.reason, entry.payload)).await?;
     /// }

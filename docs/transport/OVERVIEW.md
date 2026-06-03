@@ -27,9 +27,8 @@ classDiagram
     }
     class TransportReceiver {
         <<trait>>
-        +recv(max)
+        +recv(max) RecvBatch
         +commit(tokens)
-        +take_filtered_dlq_entries()
     }
     class Transport {
         <<trait>>
@@ -142,20 +141,20 @@ into the DLQ when downstream processing fails.
 Every backend wires the filter engine on construction. Inbound
 filters drop or DLQ-stage messages inside `recv()` before the caller
 ever sees them; outbound filters do the same on `send()`. Filters
-that match `action: dlq` don't route to a DLQ directly — they stage
-entries that the caller drains:
+that match `action: dlq` don't route to a DLQ directly — they come back
+**inline** in `recv()`'s `RecvBatch.dlq_entries`, which the caller routes:
 
 ```rust
-let messages = transport.recv(100).await?;
-for entry in transport.take_filtered_dlq_entries() {
+let batch = transport.recv(100).await?;
+for entry in batch.dlq_entries {
     dlq.send(DlqEntry::from(entry)).await?;
 }
-process(messages).await;
+process(batch.messages).await;
 ```
 
-The default `take_filtered_dlq_entries()` returns an empty `Vec` —
-backends with no filter wiring don't have to override. Full design
-and tier model in [FILTER-ENGINE.md](FILTER-ENGINE.md).
+When filters are disabled, `dlq_entries` is empty — backends with no
+filter wiring return `RecvBatch::from_messages(..)`. Full design and tier
+model in [FILTER-ENGINE.md](FILTER-ENGINE.md).
 
 ---
 
@@ -174,9 +173,8 @@ sink stages do 1:1. See [ROUTING.md](ROUTING.md).
 |------|---------|
 | `TransportBase` | `close`, `is_healthy`, `name` — every backend |
 | `TransportSender::send(key, payload)` | Async send, returns `SendResult` |
-| `TransportReceiver::recv(max)` | Async batch receive, returns `Vec<Message<Token>>` |
+| `TransportReceiver::recv(max)` | Async batch receive, returns `RecvBatch<Token>` (`messages` + `dlq_entries`) |
 | `TransportReceiver::commit(&tokens)` | Ack a slice of tokens through the same transport |
-| `TransportReceiver::take_filtered_dlq_entries()` | Drain filter-staged DLQ entries |
 | `CommitToken` | `Clone + Send + Sync + Debug + Display`, `as_str()` |
 | `Transport` | Blanket impl for any `T: Sender + Receiver` |
 | `AnySender::from_config(key).await` | Cascade factory — **async** |

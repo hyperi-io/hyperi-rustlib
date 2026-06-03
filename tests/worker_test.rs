@@ -32,6 +32,25 @@ fn test_config_validation_rejects_min_greater_than_max() {
 }
 
 #[test]
+fn test_try_new_rejects_invalid_config() {
+    // try_new validates after resolving max_threads -- an invalid config is
+    // rejected at construction, not surfaced as a later scaler clamp panic.
+    let bad = WorkerPoolConfig {
+        min_threads: 16,
+        max_threads: 4,
+        ..Default::default()
+    };
+    assert!(AdaptiveWorkerPool::try_new(bad).is_err());
+
+    let good = WorkerPoolConfig {
+        min_threads: 1,
+        max_threads: 0,
+        ..Default::default()
+    };
+    assert!(AdaptiveWorkerPool::try_new(good).is_ok());
+}
+
+#[test]
 fn test_config_validation_accepts_max_zero_auto_detect() {
     let cfg = WorkerPoolConfig {
         min_threads: 2,

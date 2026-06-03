@@ -87,11 +87,13 @@ See [src/transport/filter/classify.rs](../../src/transport/filter/classify.rs).
   passes.
 - **`drop` action** silently discards. Recorded via the metric
   `filter_{direction}_{action}_total{tier,rule_index}`.
-- **`dlq` action** stages a `FilteredDlqEntry` on the engine. The
-  transport's receiver code then drains those entries via
-  `take_filtered_dlq_entries()` after every `recv()` batch — the engine
-  does **not** route to a DLQ directly. The app/runtime sends the
-  drained entries to the DLQ of its choice.
+- **`dlq` action** produces a `FilteredDlqEntry` returned **inline** in
+  `recv()`'s `RecvBatch.dlq_entries` (alongside the passing
+  `RecvBatch.messages`) — the transport does **not** route to a DLQ
+  directly. The caller routes `batch.dlq_entries` to the DLQ of its
+  choice; they cannot be silently lost. (When the `BatchEngine` run
+  loops own the receive, a `FilterDlqPolicy` governs this — `Reject` by
+  default, or `Route`/`DiscardWithMetric`.)
 - **Inbound and outbound are independent.** Each transport has
   `filters_in` and `filters_out`, evaluated separately.
 - **Startup fails fast** on rules above the allowed tier, on invalid
@@ -220,11 +222,12 @@ let engine = TransportFilterEngine::new(
 match engine.apply_inbound(&payload, &key) {
     FilterDisposition::Pass => process(payload),
     FilterDisposition::Drop => continue,
-    FilterDisposition::Dlq  => continue,   // entry staged for drain
+    FilterDisposition::Dlq  => continue,   // returned in RecvBatch.dlq_entries
 }
 
-// Caller drains DLQ entries after each batch:
-for entry in engine.take_filtered_dlq_entries() {
+// DLQ entries come back inline from recv() -- route them per batch:
+let batch = transport.recv(max).await?;
+for entry in batch.dlq_entries {
     dlq_sender.send(entry).await?;
 }
 
