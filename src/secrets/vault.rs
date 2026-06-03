@@ -21,6 +21,7 @@ use vaultrs::kv2;
 use super::error::{SecretsError, SecretsResult};
 use super::provider::SecretProvider;
 use super::types::{SecretMetadata, SecretValue};
+use crate::sensitive::SensitiveString;
 
 /// OpenBao/Vault connection configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,16 +51,18 @@ pub struct OpenBaoConfig {
 pub enum OpenBaoAuth {
     /// Token authentication.
     Token {
-        /// Vault token.
-        token: String,
+        /// Vault token. Redacted in `Debug`/serialised output; `.expose()`
+        /// only at the auth call site.
+        token: SensitiveString,
     },
 
     /// AppRole authentication.
     AppRole {
-        /// Role ID.
+        /// Role ID. An identifier (like a username), not a credential.
         role_id: String,
-        /// Secret ID.
-        secret_id: String,
+        /// Secret ID. The AppRole credential -- redacted in
+        /// `Debug`/serialised output; `.expose()` only at the auth call site.
+        secret_id: SensitiveString,
         /// Mount path (default: "approle").
         #[serde(default = "default_approle_mount")]
         mount: String,
@@ -126,14 +129,16 @@ impl OpenBaoConfig {
 
         // Determine authentication method
         let auth = if let Some(token) = vault::token().get() {
-            OpenBaoAuth::Token { token }
+            OpenBaoAuth::Token {
+                token: token.into(),
+            }
         } else if let (Some(role_id), Some(secret_id)) = (
             vault::approle_role_id().get(),
             vault::approle_secret_id().get(),
         ) {
             OpenBaoAuth::AppRole {
                 role_id,
-                secret_id,
+                secret_id: secret_id.into(),
                 mount: default_approle_mount(),
             }
         } else if let Some(role) = vault::k8s_role().get() {
@@ -162,7 +167,7 @@ impl OpenBaoConfig {
         Self {
             address: address.to_string(),
             auth: OpenBaoAuth::Token {
-                token: token.to_string(),
+                token: token.into(),
             },
             namespace: None,
             ca_cert: None,
@@ -177,7 +182,7 @@ impl OpenBaoConfig {
             address: address.to_string(),
             auth: OpenBaoAuth::AppRole {
                 role_id: role_id.to_string(),
-                secret_id: secret_id.to_string(),
+                secret_id: secret_id.into(),
                 mount: default_approle_mount(),
             },
             namespace: None,
@@ -256,14 +261,14 @@ impl OpenBaoProvider {
         // Authenticate based on method
         match &self.config.auth {
             OpenBaoAuth::Token { token } => {
-                client.set_token(token);
+                client.set_token(token.expose());
             }
             OpenBaoAuth::AppRole {
                 role_id,
                 secret_id,
                 mount,
             } => {
-                self.auth_approle(&mut client, role_id, secret_id, mount)
+                self.auth_approle(&mut client, role_id, secret_id.expose(), mount)
                     .await?;
             }
             OpenBaoAuth::Kubernetes {
@@ -452,6 +457,37 @@ mod tests {
         let json = serde_json::to_string(&auth).unwrap();
         assert!(json.contains("\"method\":\"app_role\""));
         assert!(json.contains("role_id"));
+    }
+
+    #[test]
+    fn test_openbao_auth_redacts_secrets() {
+        // Token + secret_id values must never appear in Debug or serialised
+        // output -- they are SensitiveString. role_id (an identifier) may.
+        let token_auth = OpenBaoAuth::Token {
+            token: "super-secret-token".into(),
+        };
+        let dbg = format!("{token_auth:?}");
+        let json = serde_json::to_string(&token_auth).unwrap();
+        assert!(!dbg.contains("super-secret-token"), "token leaked in Debug");
+        assert!(!json.contains("super-secret-token"), "token leaked in JSON");
+
+        let approle = OpenBaoAuth::AppRole {
+            role_id: "role-abc".into(),
+            secret_id: "super-secret-id".into(),
+            mount: "approle".into(),
+        };
+        let dbg = format!("{approle:?}");
+        let json = serde_json::to_string(&approle).unwrap();
+        assert!(
+            !dbg.contains("super-secret-id"),
+            "secret_id leaked in Debug"
+        );
+        assert!(
+            !json.contains("super-secret-id"),
+            "secret_id leaked in JSON"
+        );
+        // role_id is a non-secret identifier and is allowed through.
+        assert!(json.contains("role-abc"));
     }
 
     #[test]

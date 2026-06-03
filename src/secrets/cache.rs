@@ -78,6 +78,25 @@ impl SecretCache {
             // every new(). F6: previously skipped chmod on existing
             // dirs, leaving umask-default perms.
             ensure_dir_private(&dir, config.dir_mode)?;
+
+            // Loud at startup when the disk tier would persist plaintext
+            // secrets, and a quiet note when it falls back to memory-only.
+            if config.encryption_key.is_none() {
+                if config.allow_plaintext_disk_cache {
+                    warn!(
+                        directory = %dir.display(),
+                        "secrets disk cache is writing UNENCRYPTED secrets \
+                         (allow_plaintext_disk_cache=true, no encryption_key) -- \
+                         configure an encryption_key; this is rejected in production"
+                    );
+                } else {
+                    debug!(
+                        directory = %dir.display(),
+                        "secrets disk cache is memory-only (no encryption_key); \
+                         set encryption_key to persist secrets encrypted"
+                    );
+                }
+            }
             Some(dir)
         } else {
             None
@@ -257,13 +276,12 @@ impl SecretCache {
 
     /// Save a secret to disk cache.
     ///
-    /// When `CacheConfig.encryption_key` is set, the serialised
-    /// `CacheEntry` is encrypted via AES-256-GCM (see [`crypto`]).
-    /// Without a key, the previous plaintext-base64-JSON shape is
-    /// retained -- this keeps the cache usable in development without
-    /// forcing operators to provision a key, but the misleading
-    /// `encryption_key: None` plaintext path is now loud at startup
-    /// (a `tracing::warn!` from `SecretCache::new`).
+    /// When `CacheConfig.encryption_key` is set, the serialised `CacheEntry`
+    /// is encrypted via AES-256-GCM (see [`crypto`]). Without a key the disk
+    /// tier is skipped (memory-only) by default -- secrets are NEVER written
+    /// as plaintext unless `allow_plaintext_disk_cache` is explicitly set,
+    /// which `SecretCache::new` warns about at startup and `validate` rejects
+    /// under a production profile.
     fn save_to_disk(&self, key: &str, value: &SecretValue) -> SecretsResult<()> {
         let Some(ref cache_dir) = self.cache_dir else {
             return Ok(());
@@ -278,8 +296,20 @@ impl SecretCache {
 
         let payload: Vec<u8> = if let Some(ref user_key) = self.config.encryption_key {
             crypto::seal(user_key.expose(), &plaintext, &crypto::aad_for(key))?.into_bytes()
-        } else {
+        } else if self.config.allow_plaintext_disk_cache {
+            // Explicit opt-in to plaintext on disk (legacy). Flagged by the
+            // startup warning in `new()` and rejected by `validate()` in prod.
             plaintext
+        } else {
+            // Default: no key + no opt-in -> never persist plaintext secrets.
+            // The disk tier is skipped (memory cache still serves this key);
+            // persistence resumes once an encryption_key is configured.
+            debug!(
+                key = %key,
+                "skipping disk cache write: no encryption_key and \
+                 allow_plaintext_disk_cache=false (memory-only)"
+            );
+            return Ok(());
         };
 
         write_private_file_atomic(&cache_file, &payload, self.config.file_mode)?;
@@ -368,6 +398,9 @@ mod tests {
             refresh_interval_secs: 1800,
             refresh_jitter_secs: 300,
             encryption_key: None,
+            // These tests exercise the disk tier's mechanics (persistence,
+            // perms), so they explicitly opt into the plaintext disk path.
+            allow_plaintext_disk_cache: true,
             dir_mode: Some(0o700),
             file_mode: Some(0o600),
         }
@@ -538,6 +571,8 @@ mod tests {
         let cfg = CacheConfig {
             enabled: true,
             directory: Some(temp_dir.path().to_path_buf()),
+            // This test asserts on-disk file perms, so it needs files written.
+            allow_plaintext_disk_cache: true,
             ..Default::default()
         };
         let mut cache = SecretCache::new(&cfg).unwrap();
@@ -563,5 +598,66 @@ mod tests {
             .mode()
             & 0o7777;
         assert_eq!(post_clear_file_mode, 0o600);
+    }
+
+    #[test]
+    fn default_never_writes_plaintext_to_disk() {
+        // No encryption_key and no opt-in -> the disk tier is skipped entirely.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let dir = temp_dir.path().to_path_buf();
+        let cfg = CacheConfig {
+            enabled: true,
+            directory: Some(dir.clone()),
+            encryption_key: None,
+            allow_plaintext_disk_cache: false, // the default
+            ..Default::default()
+        };
+        let mut cache = SecretCache::new(&cfg).unwrap();
+        cache
+            .set("k", &SecretValue::new(b"plaintext-secret".to_vec()))
+            .unwrap();
+
+        // Memory cache still serves it...
+        assert_eq!(
+            cache.get("k").unwrap().as_bytes(),
+            b"plaintext-secret",
+            "memory tier still works"
+        );
+        // ...but NOTHING was written to disk.
+        let cache_file = dir.join(SecretCache::key_to_filename("k"));
+        assert!(
+            !cache_file.exists(),
+            "default config must not persist plaintext secrets to disk"
+        );
+    }
+
+    #[test]
+    fn plaintext_disk_requires_explicit_opt_in() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let dir = temp_dir.path().to_path_buf();
+        let cfg = CacheConfig {
+            enabled: true,
+            directory: Some(dir.clone()),
+            encryption_key: None,
+            allow_plaintext_disk_cache: true, // opt-in
+            ..Default::default()
+        };
+        let mut cache = SecretCache::new(&cfg).unwrap();
+        cache
+            .set("k", &SecretValue::new(b"plaintext-secret".to_vec()))
+            .unwrap();
+
+        let cache_file = dir.join(SecretCache::key_to_filename("k"));
+        assert!(cache_file.exists(), "opt-in must persist to disk");
+
+        // It is genuinely plaintext, not an AES-GCM envelope: a fresh cache
+        // with NO encryption_key can still read it back (an encrypted entry
+        // would be undecryptable without the key).
+        let fresh = SecretCache::new(&cfg).unwrap();
+        assert_eq!(
+            fresh.get("k").unwrap().as_bytes(),
+            b"plaintext-secret",
+            "plaintext entry is readable from disk without a key"
+        );
     }
 }

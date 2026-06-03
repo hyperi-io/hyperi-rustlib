@@ -83,9 +83,19 @@ pub struct CacheConfig {
     /// Refresh jitter in seconds (randomize to avoid thundering herd).
     pub refresh_jitter_secs: u64,
 
-    /// Reserved for future use. Cache is currently stored unencrypted.
-    /// If set, the value will be redacted in serialisation and debug output.
+    /// Disk-cache encryption key. When set, on-disk cache entries are sealed
+    /// with AES-256-GCM (see `secrets::crypto`); the value is redacted in
+    /// serialisation and debug output. When `None`, the disk cache is
+    /// memory-only UNLESS `allow_plaintext_disk_cache` is explicitly enabled.
     pub encryption_key: Option<crate::SensitiveString>,
+
+    /// Explicitly permit writing UNENCRYPTED secrets to the disk cache when
+    /// no `encryption_key` is configured. Default `false`: without a key the
+    /// disk tier is silently skipped (memory-only) rather than persisting
+    /// plaintext secrets. Enabling this is rejected by
+    /// [`validate`](CacheConfig::validate) under a production profile.
+    #[serde(default)]
+    pub allow_plaintext_disk_cache: bool,
 
     /// Unix permission mode for the cache directory. Default `0o700`.
     /// Set to `None` to skip chmod entirely -- required on backing
@@ -109,9 +119,39 @@ impl Default for CacheConfig {
             refresh_interval_secs: 1800, // 30 minutes
             refresh_jitter_secs: 300,    // 5 minutes
             encryption_key: None,
+            allow_plaintext_disk_cache: false,
             dir_mode: Some(0o700),
             file_mode: Some(0o600),
         }
+    }
+}
+
+impl CacheConfig {
+    /// Validate the cache configuration against the deployment profile.
+    ///
+    /// Rejects writing plaintext secrets to disk in production: if the disk
+    /// cache is enabled with no `encryption_key` and
+    /// `allow_plaintext_disk_cache` is set, this returns an error under a
+    /// production profile. Call at startup (e.g. from the config registry).
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` when `is_production` and the config would persist
+    /// unencrypted secrets to disk.
+    pub fn validate(&self, is_production: bool) -> Result<(), String> {
+        if is_production
+            && self.enabled
+            && self.encryption_key.is_none()
+            && self.allow_plaintext_disk_cache
+        {
+            return Err(
+                "secrets cache: allow_plaintext_disk_cache=true is not permitted in \
+                 production -- configure an encryption_key for the disk cache, or leave \
+                 it memory-only (allow_plaintext_disk_cache=false)"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -296,6 +336,41 @@ impl CacheEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_config_validate_rejects_plaintext_disk_in_prod() {
+        // Plaintext disk opt-in is rejected in production...
+        let cfg = CacheConfig {
+            allow_plaintext_disk_cache: true,
+            encryption_key: None,
+            ..Default::default()
+        };
+        assert!(
+            cfg.validate(true).is_err(),
+            "prod must reject plaintext disk"
+        );
+        // ...but allowed outside production (dev/test convenience).
+        assert!(
+            cfg.validate(false).is_ok(),
+            "non-prod allows plaintext disk"
+        );
+
+        // Default (memory-only) is fine everywhere.
+        let safe = CacheConfig::default();
+        assert!(safe.validate(true).is_ok());
+        assert!(safe.validate(false).is_ok());
+
+        // An encryption_key makes disk persistence acceptable in prod.
+        let encrypted = CacheConfig {
+            allow_plaintext_disk_cache: true,
+            encryption_key: Some(crate::SensitiveString::from("0123456789abcdef")),
+            ..Default::default()
+        };
+        assert!(
+            encrypted.validate(true).is_ok(),
+            "an encryption_key satisfies prod validation"
+        );
+    }
 
     #[test]
     fn test_secret_value_new() {
