@@ -52,6 +52,39 @@ Custom `TransportReceiver` impls: change the `recv` signature to return
 NB: this supersedes the bounded `DlqStaging` buffer (no internal buffer
 exists now), which was removed.
 
+### `BatchEngine` filter-DLQ policy (BEHAVIOUR CHANGE)
+
+The generic `BatchEngine` run loops (`run`/`run_raw`/`run_async`/
+`run_raw_async`) previously **silently dropped** inbound-filter DLQ entries
+after incrementing a metric. They now apply a `FilterDlqPolicy`, defaulting to
+`Reject`: if an inbound `action: dlq` filter produces entries and no policy is
+set, the run loop returns `EngineError::FilterDlqUnrouted` instead of dropping
+data. (Metrics are not delivery — Codex review.)
+
+**Who is affected:** only apps whose transport has inbound `action: dlq`
+filters AND use the generic run loops. Apps with no inbound DLQ filters are
+unaffected (the policy never triggers).
+
+**Consumer adjustment** — pick a policy explicitly:
+
+```rust
+use hyperi_rustlib::worker::engine::FilterDlqPolicy;
+
+// Route dead-letters onward (recommended):
+let engine = BatchEngine::new(cfg).with_filter_dlq_policy(
+    FilterDlqPolicy::Route(std::sync::Arc::new(move |entries| {
+        // enqueue / tokio::spawn a DLQ send -- keep it cheap
+    })),
+);
+
+// Or deliberately drop with a metric (the old behaviour, now explicit):
+let engine = BatchEngine::new(cfg)
+    .with_filter_dlq_policy(FilterDlqPolicy::DiscardWithMetric);
+```
+
+The metric `dfe_engine_filter_dlq_unrouted_total` is replaced by
+`dfe_engine_filter_dlq_discarded_total` (emitted only under `DiscardWithMetric`).
+
 ### `TransportSender::send` takes owned `Bytes` (BREAKING)
 
 | Old | `send(&self, key: &str, payload: &[u8]) -> SendResult` |

@@ -32,6 +32,48 @@ pub enum EngineError {
     /// Shutdown was requested via cancellation token.
     #[error("shutdown")]
     Shutdown,
+    /// Inbound-filter DLQ entries appeared but no routing policy was configured
+    /// (the default [`FilterDlqPolicy::Reject`]). Metrics are not delivery, so
+    /// the engine fails fast rather than silently dropping dead-letters.
+    #[error(
+        "{0} inbound-filter DLQ entries were produced but no FilterDlqPolicy is \
+         configured -- set a policy via BatchEngine::with_filter_dlq_policy \
+         (Route to forward, or DiscardWithMetric to deliberately drop)"
+    )]
+    FilterDlqUnrouted(usize),
+}
+
+/// What a [`BatchEngine`] run loop does with inbound-filter DLQ entries
+/// ([`RecvBatch::dlq_entries`](crate::transport::RecvBatch)).
+///
+/// Inbound `action: dlq` filters remove messages from the normal batch; those
+/// entries must go somewhere. The default is [`Reject`](Self::Reject) so a
+/// data-loss-shaped config never passes silently.
+#[cfg(feature = "transport")]
+#[derive(Clone, Default)]
+pub enum FilterDlqPolicy {
+    /// Fail the run loop ([`EngineError::FilterDlqUnrouted`]) if any DLQ entries
+    /// appear. The safe default -- forces a deliberate choice.
+    #[default]
+    Reject,
+    /// Deliberately discard DLQ entries, counting them in the
+    /// `dfe_engine_filter_dlq_discarded_total` metric. Explicit opt-in.
+    DiscardWithMetric,
+    /// Hand each batch's DLQ entries to a sink (e.g. enqueue onto a DLQ
+    /// transport, or `tokio::spawn` an async send). Called on the run loop, so
+    /// keep it cheap -- offload slow work.
+    Route(Arc<dyn Fn(Vec<crate::transport::filter::FilteredDlqEntry>) + Send + Sync>),
+}
+
+#[cfg(feature = "transport")]
+impl std::fmt::Debug for FilterDlqPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Reject => f.write_str("Reject"),
+            Self::DiscardWithMetric => f.write_str("DiscardWithMetric"),
+            Self::Route(_) => f.write_str("Route(..)"),
+        }
+    }
 }
 
 use std::sync::Arc;
@@ -65,6 +107,10 @@ pub struct BatchEngine {
     filters: Vec<pre_route::PreRouteFilter>,
     #[cfg(feature = "memory")]
     memory_guard: Option<Arc<crate::memory::MemoryGuard>>,
+    /// What the run loops do with inbound-filter DLQ entries. Default
+    /// [`FilterDlqPolicy::Reject`] (no silent data loss).
+    #[cfg(feature = "transport")]
+    filter_dlq_policy: FilterDlqPolicy,
 }
 
 impl BatchEngine {
@@ -95,7 +141,21 @@ impl BatchEngine {
             filters,
             #[cfg(feature = "memory")]
             memory_guard: None,
+            #[cfg(feature = "transport")]
+            filter_dlq_policy: FilterDlqPolicy::default(),
         }
+    }
+
+    /// Set the policy for inbound-filter DLQ entries in the run loops.
+    ///
+    /// Default is [`FilterDlqPolicy::Reject`] -- the run loop errors if an
+    /// inbound `action: dlq` filter produces entries and no routing is set, so
+    /// dead-letters are never silently dropped.
+    #[cfg(feature = "transport")]
+    #[must_use]
+    pub fn with_filter_dlq_policy(mut self, policy: FilterDlqPolicy) -> Self {
+        self.filter_dlq_policy = policy;
+        self
     }
 
     /// Load configuration from the cascade and create a standalone engine.
@@ -411,15 +471,9 @@ impl BatchEngine {
                 }
                 recv_result = receiver.recv(self.config.max_chunk_size) => {
                     let batch = recv_result.map_err(EngineError::Transport)?;
-                    // The generic run loop has no DLQ handle; apps needing
-                    // filter-DLQ routing call recv() directly. Count any
-                    // unrouted entries so the drop is observable, not silent.
-                    #[cfg(feature = "metrics")]
-                    if !batch.dlq_entries.is_empty() {
-                        ::metrics::counter!("dfe_engine_filter_dlq_unrouted_total")
-                            .increment(batch.dlq_entries.len() as u64);
-                    }
-                    let messages = batch.messages;
+                    // Route/discard/reject inbound-filter DLQ entries per the
+                    // configured policy -- never silently dropped.
+                    let messages = self.apply_filter_dlq_policy(batch)?;
                     if messages.is_empty() {
                         continue;
                     }
@@ -494,15 +548,9 @@ impl BatchEngine {
                 }
                 recv_result = receiver.recv(self.config.max_chunk_size) => {
                     let batch = recv_result.map_err(EngineError::Transport)?;
-                    // The generic run loop has no DLQ handle; apps needing
-                    // filter-DLQ routing call recv() directly. Count any
-                    // unrouted entries so the drop is observable, not silent.
-                    #[cfg(feature = "metrics")]
-                    if !batch.dlq_entries.is_empty() {
-                        ::metrics::counter!("dfe_engine_filter_dlq_unrouted_total")
-                            .increment(batch.dlq_entries.len() as u64);
-                    }
-                    let messages = batch.messages;
+                    // Route/discard/reject inbound-filter DLQ entries per the
+                    // configured policy -- never silently dropped.
+                    let messages = self.apply_filter_dlq_policy(batch)?;
                     if messages.is_empty() {
                         continue;
                     }
@@ -613,15 +661,9 @@ impl BatchEngine {
 
                 recv_result = receiver.recv(self.config.max_chunk_size) => {
                     let batch = recv_result.map_err(EngineError::Transport)?;
-                    // The generic run loop has no DLQ handle; apps needing
-                    // filter-DLQ routing call recv() directly. Count any
-                    // unrouted entries so the drop is observable, not silent.
-                    #[cfg(feature = "metrics")]
-                    if !batch.dlq_entries.is_empty() {
-                        ::metrics::counter!("dfe_engine_filter_dlq_unrouted_total")
-                            .increment(batch.dlq_entries.len() as u64);
-                    }
-                    let messages = batch.messages;
+                    // Route/discard/reject inbound-filter DLQ entries per the
+                    // configured policy -- never silently dropped.
+                    let messages = self.apply_filter_dlq_policy(batch)?;
                     if messages.is_empty() {
                         continue;
                     }
@@ -718,15 +760,9 @@ impl BatchEngine {
 
                 recv_result = receiver.recv(self.config.max_chunk_size) => {
                     let batch = recv_result.map_err(EngineError::Transport)?;
-                    // The generic run loop has no DLQ handle; apps needing
-                    // filter-DLQ routing call recv() directly. Count any
-                    // unrouted entries so the drop is observable, not silent.
-                    #[cfg(feature = "metrics")]
-                    if !batch.dlq_entries.is_empty() {
-                        ::metrics::counter!("dfe_engine_filter_dlq_unrouted_total")
-                            .increment(batch.dlq_entries.len() as u64);
-                    }
-                    let messages = batch.messages;
+                    // Route/discard/reject inbound-filter DLQ entries per the
+                    // configured policy -- never silently dropped.
+                    let messages = self.apply_filter_dlq_policy(batch)?;
                     if messages.is_empty() {
                         continue;
                     }
@@ -775,6 +811,35 @@ impl BatchEngine {
         let bytes: u64 = raw.iter().map(|m| m.payload.len() as u64).sum();
         guard.add_bytes(bytes);
         Some(IngressLease { guard, bytes })
+    }
+
+    /// Apply the [`FilterDlqPolicy`] to a received batch, returning the passing
+    /// messages. DLQ entries are routed/discarded/rejected per the policy --
+    /// never silently dropped (Codex review 2026-06-03).
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::FilterDlqUnrouted`] when entries appear under
+    /// [`FilterDlqPolicy::Reject`].
+    #[cfg(feature = "transport")]
+    fn apply_filter_dlq_policy<T: crate::transport::CommitToken>(
+        &self,
+        batch: crate::transport::RecvBatch<T>,
+    ) -> Result<Vec<crate::transport::Message<T>>, EngineError> {
+        if !batch.dlq_entries.is_empty() {
+            match &self.filter_dlq_policy {
+                FilterDlqPolicy::Reject => {
+                    return Err(EngineError::FilterDlqUnrouted(batch.dlq_entries.len()));
+                }
+                FilterDlqPolicy::DiscardWithMetric => {
+                    #[cfg(feature = "metrics")]
+                    ::metrics::counter!("dfe_engine_filter_dlq_discarded_total")
+                        .increment(batch.dlq_entries.len() as u64);
+                }
+                FilterDlqPolicy::Route(sink) => sink(batch.dlq_entries),
+            }
+        }
+        Ok(batch.messages)
     }
 
     /// Pause between chunks when memory pressure is detected.
@@ -828,6 +893,8 @@ impl std::fmt::Debug for BatchEngine {
             .field("filters", &self.filters);
         #[cfg(feature = "memory")]
         s.field("memory_guard", &self.memory_guard.is_some());
+        #[cfg(feature = "transport")]
+        s.field("filter_dlq_policy", &self.filter_dlq_policy);
         s.finish()
     }
 }
@@ -854,6 +921,74 @@ mod engine_tests {
 
     fn default_engine() -> BatchEngine {
         BatchEngine::new(BatchProcessingConfig::default())
+    }
+
+    #[cfg(feature = "transport")]
+    #[test]
+    fn filter_dlq_policy_routes_discards_or_rejects() {
+        use crate::transport::RecvBatch;
+        use crate::transport::filter::FilteredDlqEntry;
+        use std::sync::Arc as StdArc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // Minimal CommitToken for the generic helper.
+        #[derive(Clone, Debug)]
+        struct TestTok;
+        impl std::fmt::Display for TestTok {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("test")
+            }
+        }
+        impl crate::transport::CommitToken for TestTok {}
+
+        let entry = || FilteredDlqEntry {
+            payload: b"x".to_vec(),
+            key: None,
+            reason: "r".to_string(),
+        };
+
+        // Reject (default): any DLQ entries -> fail fast, not silent drop.
+        let eng = default_engine();
+        let batch = RecvBatch::<TestTok> {
+            messages: vec![],
+            dlq_entries: vec![entry()],
+        };
+        assert!(matches!(
+            eng.apply_filter_dlq_policy(batch),
+            Err(EngineError::FilterDlqUnrouted(1))
+        ));
+        // Reject + no entries -> ok.
+        assert!(
+            eng.apply_filter_dlq_policy(RecvBatch::<TestTok>::from_messages(vec![]))
+                .is_ok()
+        );
+
+        // DiscardWithMetric -> ok (deliberately dropped).
+        let eng = default_engine().with_filter_dlq_policy(FilterDlqPolicy::DiscardWithMetric);
+        let batch = RecvBatch::<TestTok> {
+            messages: vec![],
+            dlq_entries: vec![entry()],
+        };
+        assert!(eng.apply_filter_dlq_policy(batch).is_ok());
+
+        // Route -> the sink receives every entry.
+        let seen = StdArc::new(AtomicUsize::new(0));
+        let s = StdArc::clone(&seen);
+        let eng = default_engine().with_filter_dlq_policy(FilterDlqPolicy::Route(StdArc::new(
+            move |e: Vec<FilteredDlqEntry>| {
+                s.fetch_add(e.len(), Ordering::Relaxed);
+            },
+        )));
+        let batch = RecvBatch::<TestTok> {
+            messages: vec![],
+            dlq_entries: vec![entry(), entry()],
+        };
+        assert!(eng.apply_filter_dlq_policy(batch).is_ok());
+        assert_eq!(
+            seen.load(Ordering::Relaxed),
+            2,
+            "Route sink received all entries"
+        );
     }
 
     #[cfg(feature = "memory")]
