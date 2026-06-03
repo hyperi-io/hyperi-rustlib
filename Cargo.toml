@@ -451,4 +451,10 @@ required-features = ["strmatch"]
 name = "mem_loadgen"
 required-features = ["memory"]
 
+# CPU oversubscription operational-test harness (not a product binary).
+# Driven under a cgroup --cpus cap by scripts/operational-cpu-test.sh.
+[[example]]
+name = "cpu_loadgen"
+required-features = ["worker"]
+
 # Release marker: trigger v2.8.0 publish via hyperi-ci version-first pipeline.
