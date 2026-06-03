@@ -102,6 +102,18 @@ fn default_recv_timeout_ms() -> u64 {
     100
 }
 
+fn default_connect_timeout_ms() -> u64 {
+    5_000
+}
+
+fn default_send_timeout_ms() -> u64 {
+    30_000
+}
+
+fn default_max_body_bytes() -> usize {
+    16 * 1024 * 1024
+}
+
 /// Configuration for HTTP transport.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpTransportConfig {
@@ -133,6 +145,20 @@ pub struct HttpTransportConfig {
     /// Outbound message filters (applied on send before transport dispatches).
     #[serde(default)]
     pub filters_out: Vec<super::filter::FilterRule>,
+
+    /// Connect timeout (ms) for the send-side HTTP client. Default 5000.
+    #[serde(default = "default_connect_timeout_ms")]
+    pub connect_timeout_ms: u64,
+
+    /// Total request timeout (ms) per send. Default 30000. Prevents a hung
+    /// send from consuming worker capacity indefinitely.
+    #[serde(default = "default_send_timeout_ms")]
+    pub send_timeout_ms: u64,
+
+    /// Maximum accepted request body size in bytes (receive side). Default
+    /// 16 MiB. Oversized POSTs are rejected with 413 before buffering.
+    #[serde(default = "default_max_body_bytes")]
+    pub max_body_bytes: usize,
 }
 
 impl Default for HttpTransportConfig {
@@ -145,6 +171,9 @@ impl Default for HttpTransportConfig {
             recv_timeout_ms: default_recv_timeout_ms(),
             filters_in: Vec::new(),
             filters_out: Vec::new(),
+            connect_timeout_ms: default_connect_timeout_ms(),
+            send_timeout_ms: default_send_timeout_ms(),
+            max_body_bytes: default_max_body_bytes(),
         }
     }
 }
@@ -233,6 +262,8 @@ impl HttpTransport {
     /// Returns error if the listen address is invalid or the server fails to bind.
     pub async fn new(config: &HttpTransportConfig) -> TransportResult<Self> {
         let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_millis(config.connect_timeout_ms))
+            .timeout(std::time::Duration::from_millis(config.send_timeout_ms))
             .build()
             .map_err(|e| TransportError::Config(format!("failed to create HTTP client: {e}")))?;
 
@@ -248,7 +279,7 @@ impl HttpTransport {
             let sequence = Arc::new(AtomicU64::new(0));
             let recv_path = config.recv_path.clone();
 
-            let app = build_receiver_router(tx, sequence, &recv_path);
+            let app = build_receiver_router(tx, sequence, &recv_path, config.max_body_bytes);
 
             let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
                 TransportError::Connection(format!("failed to bind to {addr}: {e}"))
@@ -324,6 +355,7 @@ fn build_receiver_router(
     sender: tokio::sync::mpsc::Sender<Message<HttpToken>>,
     sequence: Arc<AtomicU64>,
     recv_path: &str,
+    max_body_bytes: usize,
 ) -> axum::Router {
     use axum::routing::post;
 
@@ -331,6 +363,8 @@ fn build_receiver_router(
 
     axum::Router::new()
         .route(recv_path, post(ingest_handler))
+        // Reject oversized bodies with 413 before the handler buffers them.
+        .layer(axum::extract::DefaultBodyLimit::max(max_body_bytes))
         .with_state(state)
 }
 
@@ -767,6 +801,41 @@ mod tests {
         // recv should timeout with no messages
         let messages = receiver.recv(10).await.unwrap();
         assert!(messages.is_empty());
+
+        receiver.close().await.unwrap();
+    }
+
+    /// Oversized bodies are rejected with 413 before the handler buffers them.
+    #[cfg(feature = "http-server")]
+    #[tokio::test]
+    async fn receive_rejects_oversized_body() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+
+        let recv_config = HttpTransportConfig {
+            listen: Some(addr.to_string()),
+            recv_timeout_ms: 200,
+            max_body_bytes: 1024, // 1 KiB cap
+            ..Default::default()
+        };
+        let receiver = HttpTransport::new(&recv_config).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // POST 8 KiB -- over the 1 KiB cap.
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("http://127.0.0.1:{}/ingest", addr.port()))
+            .body(vec![b'x'; 8 * 1024])
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), reqwest::StatusCode::PAYLOAD_TOO_LARGE);
+
+        // The oversized POST never reached the queue.
+        let messages = receiver.recv(10).await.unwrap();
+        assert!(messages.is_empty(), "oversized body must not be queued");
 
         receiver.close().await.unwrap();
     }
