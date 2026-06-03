@@ -55,40 +55,22 @@ impl Default for FilterBudget {
 }
 
 /// Budget violation discovered at config-load or evaluation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum BudgetError {
     /// AST exceeded `max_ast_nodes`.
+    #[error("CEL filter AST has {count} nodes, exceeds budget {limit}")]
     TooManyNodes { count: usize, limit: usize },
     /// Iteration nesting exceeded `max_iteration_depth`.
+    #[error("CEL filter iteration nests to depth {depth}, exceeds budget {limit}")]
     IterationTooDeep { depth: u8, limit: u8 },
     /// Payload bytes exceeded `max_payload_bytes`.
+    #[error("CEL filter payload is {size} bytes, exceeds budget {limit}")]
     PayloadTooLarge { size: usize, limit: usize },
     /// CEL parse failed during budget check.
+    #[error("CEL filter parse failed: {0}")]
     Parse(String),
 }
-
-impl std::fmt::Display for BudgetError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::TooManyNodes { count, limit } => write!(
-                f,
-                "CEL filter AST has {count} nodes, exceeds budget {limit}"
-            ),
-            Self::IterationTooDeep { depth, limit } => write!(
-                f,
-                "CEL filter iteration nests to depth {depth}, exceeds budget {limit}"
-            ),
-            Self::PayloadTooLarge { size, limit } => write!(
-                f,
-                "CEL filter payload is {size} bytes, exceeds budget {limit}"
-            ),
-            Self::Parse(msg) => write!(f, "CEL filter parse failed: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for BudgetError {}
 
 /// Static budget check on the CEL AST.
 ///

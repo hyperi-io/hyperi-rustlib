@@ -75,7 +75,10 @@ impl ProcessMetrics {
 
     /// Update process metrics.
     pub fn update(&self) {
-        let mut system = self.system.lock().expect("lock poisoned");
+        // Recover from a poisoned lock rather than panicking: a panic in a
+        // prior update must not turn metrics collection into a repeat-panic.
+        // Observability degrades, it does not crash.
+        let mut system = self.system.lock().unwrap_or_else(|e| e.into_inner());
         system.refresh_processes_specifics(
             ProcessesToUpdate::Some(&[self.pid]),
             true,

@@ -306,11 +306,12 @@ mod tests {
     /// Tests share global statics -- serialise them.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    macro_rules! serial_test {
-        () => {
-            let _guard = TEST_LOCK.lock().unwrap();
-            clear();
-        };
+    /// Acquire the shared test lock and reset global registry state.
+    /// Returned guard holds the lock for the caller's test body.
+    fn serial_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear();
+        guard
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
@@ -339,7 +340,7 @@ mod tests {
 
     #[test]
     fn register_and_retrieve() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = TestConfig {
             enabled: true,
@@ -366,7 +367,7 @@ mod tests {
 
     #[test]
     fn sections_returns_sorted() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         register::<TestConfig>("zebra", &TestConfig::default());
         register::<TestConfig>("alpha", &TestConfig::default());
@@ -378,7 +379,7 @@ mod tests {
 
     #[test]
     fn dump_effective_redacts_sensitive_fields() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = SensitiveConfig {
             host: "db.example.com".into(),
@@ -409,7 +410,7 @@ mod tests {
     #[cfg(feature = "dangerous-diagnostics")]
     #[test]
     fn dump_unredacted_preserves_all_fields() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = SensitiveConfig {
             password: "visible".into(),
@@ -423,7 +424,7 @@ mod tests {
 
     #[test]
     fn dump_defaults_returns_default_values() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         register::<TestConfig>(
             "my_module",
@@ -441,7 +442,7 @@ mod tests {
 
     #[test]
     fn re_register_overwrites() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let v1 = TestConfig {
             threshold: 0.5,
@@ -460,7 +461,7 @@ mod tests {
 
     #[test]
     fn empty_registry() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         assert!(sections().is_empty());
         assert_eq!(dump_effective(), JsonValue::Object(serde_json::Map::new()));
@@ -473,7 +474,7 @@ mod tests {
 
     #[test]
     fn on_change_fires_on_update() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
@@ -497,7 +498,7 @@ mod tests {
 
     #[test]
     fn on_change_receives_new_value() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let captured = Arc::new(Mutex::new(JsonValue::Null));
         let captured_clone = captured.clone();
@@ -522,7 +523,7 @@ mod tests {
 
     #[test]
     fn on_change_only_fires_for_subscribed_key() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
@@ -542,7 +543,7 @@ mod tests {
 
     #[test]
     fn update_also_registers() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         assert!(!is_registered("fresh"));
         update::<TestConfig>(
@@ -640,7 +641,7 @@ mod tests {
 
     #[test]
     fn redaction_covers_all_sensitive_patterns() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = AllSensitivePatterns {
             my_password: "pass123".into(),
@@ -683,7 +684,7 @@ mod tests {
 
     #[test]
     fn redaction_is_case_insensitive() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = MixedCase {
             password_upper: "visible_if_broken".into(),
@@ -702,7 +703,7 @@ mod tests {
 
     #[test]
     fn redaction_handles_deeply_nested_secrets() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = DeepNested {
             level1: Level1 {
@@ -725,7 +726,7 @@ mod tests {
 
     #[test]
     fn redaction_handles_arrays_with_sensitive_objects() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = WithArray {
             items: vec![
@@ -751,7 +752,7 @@ mod tests {
 
     #[test]
     fn no_secret_values_in_redacted_dump_string() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let secrets = [
             "hunter2",
@@ -783,7 +784,7 @@ mod tests {
 
     #[test]
     fn defaults_dump_also_redacted() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         register::<WithDefaultSecret>("default_secrets", &WithDefaultSecret::default());
 
@@ -794,7 +795,7 @@ mod tests {
 
     #[test]
     fn skip_serializing_plus_heuristic_double_protection() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = DoubleProtected {
             hidden_secret: "should_not_appear".into(),
@@ -823,7 +824,7 @@ mod tests {
 
     #[test]
     fn multiple_listeners_on_same_key() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let c1 = Arc::new(AtomicU32::new(0));
         let c2 = Arc::new(AtomicU32::new(0));

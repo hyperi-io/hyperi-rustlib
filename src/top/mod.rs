@@ -47,29 +47,20 @@ pub use metrics::{MetricSample, MetricType, ScrapeResult, fetch_metrics_http, pa
 pub use oneshot::run_oneshot;
 
 /// Errors from the TUI dashboard.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum TopError {
     /// Terminal initialisation or rendering error.
+    #[error("terminal error: {0}")]
     Terminal(String),
 
     /// Metrics fetch error.
+    #[error("fetch error: {0}")]
     Fetch(String),
 
     /// Runtime/threading error.
+    #[error("runtime error: {0}")]
     Runtime(String),
 }
-
-impl std::fmt::Display for TopError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Terminal(e) => write!(f, "terminal error: {e}"),
-            Self::Fetch(e) => write!(f, "fetch error: {e}"),
-            Self::Runtime(e) => write!(f, "runtime error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for TopError {}
 
 /// Run the metrics dashboard or one-shot output.
 ///

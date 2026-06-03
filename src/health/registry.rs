@@ -218,16 +218,17 @@ mod tests {
     /// Tests share global statics -- serialise them.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    macro_rules! serial_test {
-        () => {
-            let _guard = TEST_LOCK.lock().unwrap();
-            HealthRegistry::reset();
-        };
+    /// Acquire the shared test lock and reset global registry state.
+    /// Returned guard holds the lock for the caller's test body.
+    fn serial_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        HealthRegistry::reset();
+        guard
     }
 
     #[test]
     fn empty_registry_is_healthy() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         assert!(HealthRegistry::is_healthy());
         assert!(HealthRegistry::is_ready());
@@ -236,7 +237,7 @@ mod tests {
 
     #[test]
     fn register_and_check_healthy() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         HealthRegistry::register("transport", || HealthStatus::Healthy);
         HealthRegistry::register("database", || HealthStatus::Healthy);
@@ -254,7 +255,7 @@ mod tests {
 
     #[test]
     fn unhealthy_component_fails_check() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         HealthRegistry::register("transport", || HealthStatus::Healthy);
         HealthRegistry::register("database", || HealthStatus::Unhealthy);
@@ -265,7 +266,7 @@ mod tests {
 
     #[test]
     fn degraded_is_ready_but_not_healthy() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         HealthRegistry::register("transport", || HealthStatus::Healthy);
         HealthRegistry::register("circuit_breaker", || HealthStatus::Degraded);
@@ -276,7 +277,7 @@ mod tests {
 
     #[test]
     fn dynamic_health_check_reflects_state_changes() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         // Simulate a component whose health changes at runtime
         let state = Arc::new(AtomicU8::new(0)); // 0=healthy, 1=degraded, 2=unhealthy
@@ -320,7 +321,7 @@ mod tests {
     #[test]
     #[cfg(feature = "serde_json")]
     fn to_json_includes_all_components() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         HealthRegistry::register("kafka", || HealthStatus::Healthy);
         HealthRegistry::register("clickhouse", || HealthStatus::Degraded);
@@ -342,7 +343,7 @@ mod tests {
     #[test]
     #[cfg(feature = "serde_json")]
     fn to_json_empty_registry() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let json = HealthRegistry::to_json();
         assert_eq!(json["status"], "healthy");
@@ -352,7 +353,7 @@ mod tests {
     #[test]
     #[cfg(feature = "serde_json")]
     fn to_json_unhealthy_status() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         HealthRegistry::register("broken", || HealthStatus::Unhealthy);
 

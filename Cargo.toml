@@ -120,7 +120,7 @@ scaling = ["parking_lot", "tracing"]
 # Adaptive worker pool tiers (2.6.0 split):
 # - worker-pool: just AdaptiveWorkerPool (rayon + tokio + sysinfo)
 # - worker-batch: + BatchEngine (sonic-rs SIMD JSON, dashmap interning, bytes)
-# - worker: back-compat alias for worker-batch
+# - worker: back-compat alias for worker-batch (candidate for post-GA deprecation)
 worker-pool = ["rayon", "config", "metrics", "tokio", "tokio-util", "sysinfo", "parking_lot", "tracing"]
 worker-batch = ["worker-pool", "sonic-rs", "dashmap", "bytes"]
 worker = ["worker-batch"]

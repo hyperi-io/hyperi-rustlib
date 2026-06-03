@@ -117,7 +117,6 @@ impl<T> FilteredBatch<T> {
 pub struct TransportFilterEngine {
     filters_in: Vec<CompiledFilter>,
     filters_out: Vec<CompiledFilter>,
-    #[allow(dead_code)]
     metrics: FilterMetrics,
 }
 
