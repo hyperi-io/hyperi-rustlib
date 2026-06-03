@@ -200,7 +200,7 @@ secrets-all = ["secrets-vault", "secrets-aws"]
 # Unified TLS trust + client-config construction (src/tls.rs). Private-CA
 # first: native + webpki + extra-PEM roots, explicit aws-lc-rs crypto provider.
 # Opt-in; TLS-consuming transports enable it as they adopt the module.
-tls = ["dep:rustls", "dep:rustls-native-certs", "dep:rustls-pki-types", "dep:webpki-roots"]
+tls = ["dep:rustls", "dep:rustls-native-certs", "dep:rustls-pki-types", "dep:webpki-roots", "tracing"]
 
 # Diagnostics escape hatches that can leak secrets if mis-used.
 # Off in every shipping build. NOT included in `full`. Operators

@@ -1,0 +1,33 @@
+# Docker build context exclusions.
+#
+# The operational-test Dockerfiles (scripts/operational/*) use `COPY . .` to
+# build the harness examples from source. Without this file the context
+# includes the ~32G `target/` dir (Codex review 2026-06-03: a 33.68G context
+# was sent before the build even started). Keep the context to source only.
+
+# Build artefacts (the big one)
+target/
+**/target/
+
+# VCS + history
+.git/
+.gitignore
+
+# Docs, specs, plans (not needed to compile the harness). README/licence at
+# root are KB-sized and may be referenced by Cargo.toml, so leave them.
+docs/
+
+# Benches + local dev / agent artefacts
+benches/
+.claude/
+.codex/
+.cursor/
+.gemini/
+.mcp.json
+.ai-version
+
+# Editor / OS noise
+.vscode/
+.idea/
+**/*.swp
+.DS_Store
