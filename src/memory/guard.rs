@@ -63,6 +63,31 @@ fn default_cgroup_headroom() -> f64 {
     DEFAULT_CGROUP_HEADROOM
 }
 
+/// A fraction is valid iff it is finite and within `(0.0, 1.0]`.
+fn check_fraction(v: f64, name: &str) -> Result<(), String> {
+    if !v.is_finite() || v <= 0.0 || v > 1.0 {
+        return Err(format!(
+            "memory.{name} must be a finite fraction in (0.0, 1.0], got {v}"
+        ));
+    }
+    Ok(())
+}
+
+/// Return `v` if it is a valid fraction, else log an error and substitute
+/// `default`. Defensive guard so a bad config cannot produce a zero/`NaN`
+/// limit and a divide-by-zero pressure ratio.
+fn sane_fraction(v: f64, default: f64, name: &str) -> f64 {
+    if check_fraction(v, name).is_err() {
+        tracing::error!(
+            value = v,
+            "invalid memory.{name} (need finite fraction in (0,1]); using default {default}"
+        );
+        default
+    } else {
+        v
+    }
+}
+
 /// Default cgroup headroom: use 85% of cgroup limit.
 ///
 /// Rationale: Rust has no GC so no spike headroom needed (unlike JVM 75% / Go 80%).
@@ -162,6 +187,21 @@ impl MemoryGuardConfig {
 
         config
     }
+
+    /// Validate the config, returning an error describing the first invalid
+    /// field. `pressure_threshold` and `cgroup_headroom` must each be a finite
+    /// fraction in `(0.0, 1.0]`. Call this at startup to fail fast on bad
+    /// config rather than relying on [`MemoryGuard::new`]'s defensive clamping.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` with a human-readable message if a fraction field is
+    /// non-finite, `<= 0.0`, or `> 1.0`.
+    pub fn validate(&self) -> Result<(), String> {
+        check_fraction(self.pressure_threshold, "pressure_threshold")?;
+        check_fraction(self.cgroup_headroom, "cgroup_headroom")?;
+        Ok(())
+    }
 }
 
 /// Cgroup-aware memory tracking with backpressure signals.
@@ -211,24 +251,38 @@ impl MemoryGuard {
     #[must_use]
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn new(config: MemoryGuardConfig) -> Self {
+        // Defensive: a non-finite / out-of-range threshold or headroom would
+        // produce a zero/NaN limit and a divide-by-zero pressure ratio. Clamp
+        // to the safe default and log loudly. Callers wanting hard rejection
+        // should call `config.validate()` at startup.
+        let pressure_threshold = sane_fraction(
+            config.pressure_threshold,
+            DEFAULT_PRESSURE_THRESHOLD,
+            "pressure_threshold",
+        );
+        let cgroup_headroom = sane_fraction(
+            config.cgroup_headroom,
+            DEFAULT_CGROUP_HEADROOM,
+            "cgroup_headroom",
+        );
+
         let raw_limit = if config.limit_bytes > 0 {
             config.limit_bytes
         } else {
             let detected = cgroup::detect_memory_limit();
             // Apply headroom -- don't use 100% of cgroup limit
-            (detected as f64 * config.cgroup_headroom) as u64
+            (detected as f64 * cgroup_headroom) as u64
         };
+        // Never permit a zero effective limit: every pressure calculation
+        // divides by it.
+        let limit_bytes = raw_limit.max(1);
 
-        tracing::info!(
-            limit_bytes = raw_limit,
-            pressure_threshold = config.pressure_threshold,
-            "memory guard initialised"
-        );
+        tracing::info!(limit_bytes, pressure_threshold, "memory guard initialised");
 
         Self {
             current_bytes: AtomicU64::new(0),
-            limit_bytes: raw_limit,
-            pressure_threshold: config.pressure_threshold,
+            limit_bytes,
+            pressure_threshold,
             under_pressure: AtomicBool::new(false),
         }
     }
@@ -519,6 +573,61 @@ mod tests {
         let guard = MemoryGuard::new(config);
         // Auto-detected, so limit should be 85% of system/cgroup memory
         assert!(guard.limit_bytes() > 0);
+    }
+
+    #[test]
+    fn test_validate_accepts_defaults_and_rejects_bad_fractions() {
+        assert!(MemoryGuardConfig::default().validate().is_ok());
+
+        for bad in [0.0, -0.1, 1.5, f64::NAN, f64::INFINITY] {
+            let cfg = MemoryGuardConfig {
+                pressure_threshold: bad,
+                ..Default::default()
+            };
+            assert!(
+                cfg.validate().is_err(),
+                "pressure_threshold={bad} must be rejected"
+            );
+            let cfg = MemoryGuardConfig {
+                cgroup_headroom: bad,
+                ..Default::default()
+            };
+            assert!(
+                cfg.validate().is_err(),
+                "cgroup_headroom={bad} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_new_clamps_invalid_config_no_divide_by_zero() {
+        // A zero/NaN headroom with auto-detect could yield a zero limit ->
+        // divide-by-zero. A zero pressure_threshold would make every ratio
+        // "over". new() must clamp to safe defaults and keep ratios finite.
+        let guard = MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 0,
+            pressure_threshold: 0.0,
+            cgroup_headroom: 0.0,
+        });
+        assert!(guard.limit_bytes() >= 1, "limit floored at >=1");
+        guard.add_bytes(10);
+        assert!(
+            guard.pressure_ratio().is_finite(),
+            "pressure ratio must be finite, not div-by-zero"
+        );
+    }
+
+    #[test]
+    fn test_new_with_nan_threshold_is_finite() {
+        let guard = MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 1000,
+            pressure_threshold: f64::NAN,
+            cgroup_headroom: f64::NAN,
+        });
+        assert_eq!(guard.limit_bytes(), 1000);
+        guard.add_bytes(900);
+        // Clamped threshold (0.8 default) -> 90% is over -> under pressure.
+        assert!(guard.under_pressure());
     }
 
     #[test]
