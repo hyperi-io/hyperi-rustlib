@@ -37,13 +37,11 @@ pub mod classify;
 pub mod compiled;
 pub mod config;
 pub mod metrics;
-pub mod staging;
 
 pub use budget::{BudgetError, FilterBudget};
 pub use config::{
     FilterAction, FilterDirection, FilterRule, FilterTier, TransportFilterTierConfig,
 };
-pub use staging::DlqStaging;
 
 use compiled::CompiledFilter;
 use metrics::FilterMetrics;

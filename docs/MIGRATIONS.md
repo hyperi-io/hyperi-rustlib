@@ -10,7 +10,47 @@ six core DFE apps migrate in lockstep.
 
 ---
 
-## Unreleased — pre-GA hardening (branch `fix/secret-yaml-hyphens`)
+## Unreleased — pre-GA hardening (at-scale Phase 2)
+
+### `TransportReceiver::recv` returns `RecvBatch` (BREAKING)
+
+| Old | `recv(max) -> TransportResult<Vec<Message<Token>>>` + separate `take_filtered_dlq_entries() -> Vec<FilteredDlqEntry>` |
+| New | `recv(max) -> TransportResult<RecvBatch<Token>>` where `RecvBatch { messages, dlq_entries }`; `take_filtered_dlq_entries()` removed |
+
+Inbound-filter DLQ entries are now returned **inline** with the passing
+messages instead of staged in an internal buffer the caller had to drain
+separately (the old two-call contract silently lost dead-letters if the
+drain was forgotten). `RecvBatch` is re-exported as
+`hyperi_rustlib::transport::RecvBatch`.
+
+**Consumer adjustment** — anywhere you call `recv()`:
+
+```rust
+// Old:
+let messages = transport.recv(100).await?;
+for entry in transport.take_filtered_dlq_entries() {
+    dlq.send(DlqEntry::new("filter", entry.reason, entry.payload)).await?;
+}
+for msg in messages { /* process */ }
+
+// New:
+let batch = transport.recv(100).await?;
+for entry in batch.dlq_entries {
+    dlq.send(DlqEntry::new("filter", entry.reason, entry.payload)).await?;
+}
+for msg in batch.messages { /* process */ }
+```
+
+If you only used the messages (and never drained DLQ): replace
+`transport.recv(n).await?` with `transport.recv(n).await?.messages`.
+
+Custom `TransportReceiver` impls: change the `recv` signature to return
+`RecvBatch` (use `RecvBatch::from_messages(v)` when filters are disabled,
+`RecvBatch::empty()` for the no-data case) and delete any
+`take_filtered_dlq_entries` override.
+
+NB: this supersedes the bounded `DlqStaging` buffer (no internal buffer
+exists now), which was removed.
 
 ### `AdaptiveWorkerPool::fan_out_async` return type
 

@@ -31,7 +31,7 @@
 //! ```
 
 use super::error::{TransportError, TransportResult};
-use super::traits::{CommitToken, TransportBase, TransportReceiver, TransportSender};
+use super::traits::{CommitToken, RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -130,9 +130,6 @@ pub struct FileTransport {
     reader: Mutex<Option<ReadState>>,
     closed: Arc<AtomicBool>,
     filter_engine: super::filter::TransportFilterEngine,
-    /// Buffer for messages staged to DLQ by inbound filters.
-    /// Drained by `take_filtered_dlq_entries()`.
-    filtered_dlq_buffer: super::filter::DlqStaging,
 }
 
 impl FileTransport {
@@ -177,7 +174,6 @@ impl FileTransport {
             reader: Mutex::new(None),
             closed,
             filter_engine,
-            filtered_dlq_buffer: super::filter::DlqStaging::default(),
         })
     }
 
@@ -345,7 +341,7 @@ impl TransportSender for FileTransport {
 impl TransportReceiver for FileTransport {
     type Token = FileToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
+    async fn recv(&self, max: usize) -> TransportResult<RecvBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -395,16 +391,15 @@ impl TransportReceiver for FileTransport {
             });
         }
 
-        // Apply inbound filters: drop/DLQ-stage matched messages via the
-        // shared partition helper. Staging is bounded (DlqStaging) so a flood
-        // or a missed drain cannot grow memory without bound (finding 4).
+        // Apply inbound filters via the shared partition helper; DLQ entries
+        // are returned in the RecvBatch for the caller to route onward.
         let batch = self.filter_engine.partition_batch(
             messages,
             |m| m.payload.as_slice(),
             |m| m.key.clone(),
         );
-        self.filtered_dlq_buffer.push_all(batch.dlq_entries);
         let messages = batch.messages;
+        let dlq_entries = batch.dlq_entries;
 
         #[cfg(feature = "logger")]
         if !messages.is_empty() {
@@ -417,11 +412,10 @@ impl TransportReceiver for FileTransport {
                 .increment(messages.len() as u64);
         }
 
-        Ok(messages)
-    }
-
-    fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
-        self.filtered_dlq_buffer.drain()
+        Ok(RecvBatch {
+            messages,
+            dlq_entries,
+        })
     }
 
     async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
@@ -481,7 +475,7 @@ mod tests {
             ..Default::default()
         };
         let reader = FileTransport::new(&reader_config).await.unwrap();
-        let messages = reader.recv(10).await.unwrap();
+        let messages = reader.recv(10).await.unwrap().messages;
 
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].payload, b"{\"msg\":\"hello\"}");
@@ -517,7 +511,7 @@ mod tests {
         })
         .await
         .unwrap();
-        let msgs = r1.recv(2).await.unwrap();
+        let msgs = r1.recv(2).await.unwrap().messages;
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0].payload, b"line1");
         assert_eq!(msgs[1].payload, b"line2");
@@ -535,7 +529,7 @@ mod tests {
         })
         .await
         .unwrap();
-        let remaining = r2.recv(10).await.unwrap();
+        let remaining = r2.recv(10).await.unwrap().messages;
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].payload, b"line3");
     }
@@ -585,10 +579,10 @@ mod tests {
         })
         .await
         .unwrap();
-        let msgs = reader.recv(10).await.unwrap();
+        let msgs = reader.recv(10).await.unwrap().messages;
         assert_eq!(msgs.len(), 1);
 
-        let more = reader.recv(10).await.unwrap();
+        let more = reader.recv(10).await.unwrap().messages;
         assert!(more.is_empty());
     }
 

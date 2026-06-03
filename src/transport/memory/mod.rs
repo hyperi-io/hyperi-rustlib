@@ -23,7 +23,7 @@
 //! let sender = transport.sender();
 //! sender.send(b"test payload".to_vec()).await?;
 //!
-//! let messages = transport.recv(10).await?;
+//! let messages = transport.recv(10).await?.messages;
 //! assert_eq!(messages.len(), 1);
 //! ```
 
@@ -32,7 +32,7 @@ mod token;
 pub use token::MemoryToken;
 
 use super::error::{TransportError, TransportResult};
-use super::traits::{TransportBase, TransportReceiver, TransportSender};
+use super::traits::{RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -93,9 +93,6 @@ pub struct MemoryTransport {
     closed: AtomicBool,
     recv_timeout_ms: u64,
     filter_engine: super::filter::TransportFilterEngine,
-    /// Buffer for messages staged to DLQ by inbound filters.
-    /// Drained by `take_filtered_dlq_entries()`.
-    filtered_dlq_buffer: super::filter::DlqStaging,
 }
 
 impl MemoryTransport {
@@ -124,7 +121,6 @@ impl MemoryTransport {
             closed: AtomicBool::new(false),
             recv_timeout_ms: config.recv_timeout_ms,
             filter_engine,
-            filtered_dlq_buffer: super::filter::DlqStaging::default(),
         })
     }
 
@@ -254,7 +250,7 @@ impl TransportSender for MemoryTransport {
 impl TransportReceiver for MemoryTransport {
     type Token = MemoryToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
+    async fn recv(&self, max: usize) -> TransportResult<RecvBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -301,22 +297,20 @@ impl TransportReceiver for MemoryTransport {
             }
         }
 
-        // Apply inbound filters: drop/DLQ-stage matched messages via the
-        // shared partition helper. Staging is bounded (DlqStaging) so a flood
-        // or a missed drain cannot grow memory without bound (finding 4).
+        // Apply inbound filters via the shared partition helper; DLQ entries
+        // are returned in the RecvBatch for the caller to route onward.
         let batch = self.filter_engine.partition_batch(
             messages,
             |m| m.payload.as_slice(),
             |m| m.key.clone(),
         );
-        self.filtered_dlq_buffer.push_all(batch.dlq_entries);
         let messages = batch.messages;
+        let dlq_entries = batch.dlq_entries;
 
-        Ok(messages)
-    }
-
-    fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
-        self.filtered_dlq_buffer.drain()
+        Ok(RecvBatch {
+            messages,
+            dlq_entries,
+        })
     }
 
     async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
@@ -341,7 +335,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Receive it
-        let messages = transport.recv(10).await.unwrap();
+        let messages = transport.recv(10).await.unwrap().messages;
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].key.as_deref(), Some("test-key"));
         assert_eq!(messages[0].payload, b"hello world");
@@ -363,7 +357,7 @@ mod tests {
             .unwrap();
 
         // Receive them
-        let messages = transport.recv(10).await.unwrap();
+        let messages = transport.recv(10).await.unwrap().messages;
         assert_eq!(messages.len(), 2);
     }
 
@@ -373,7 +367,7 @@ mod tests {
         let transport = MemoryTransport::new(&config)
             .expect("memory transport with valid config must construct");
         transport.inject(None, b"msg".to_vec()).await.unwrap();
-        let messages = transport.recv(1).await.unwrap();
+        let messages = transport.recv(1).await.unwrap().messages;
 
         // Commit the message
         let tokens: Vec<_> = messages.iter().map(|m| m.token).collect();

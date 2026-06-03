@@ -410,7 +410,16 @@ impl BatchEngine {
                     return Ok(());
                 }
                 recv_result = receiver.recv(self.config.max_chunk_size) => {
-                    let messages = recv_result.map_err(EngineError::Transport)?;
+                    let batch = recv_result.map_err(EngineError::Transport)?;
+                    // The generic run loop has no DLQ handle; apps needing
+                    // filter-DLQ routing call recv() directly. Count any
+                    // unrouted entries so the drop is observable, not silent.
+                    #[cfg(feature = "metrics")]
+                    if !batch.dlq_entries.is_empty() {
+                        ::metrics::counter!("dfe_engine_filter_dlq_unrouted_total")
+                            .increment(batch.dlq_entries.len() as u64);
+                    }
+                    let messages = batch.messages;
                     if messages.is_empty() {
                         continue;
                     }
@@ -479,7 +488,16 @@ impl BatchEngine {
                     return Ok(());
                 }
                 recv_result = receiver.recv(self.config.max_chunk_size) => {
-                    let messages = recv_result.map_err(EngineError::Transport)?;
+                    let batch = recv_result.map_err(EngineError::Transport)?;
+                    // The generic run loop has no DLQ handle; apps needing
+                    // filter-DLQ routing call recv() directly. Count any
+                    // unrouted entries so the drop is observable, not silent.
+                    #[cfg(feature = "metrics")]
+                    if !batch.dlq_entries.is_empty() {
+                        ::metrics::counter!("dfe_engine_filter_dlq_unrouted_total")
+                            .increment(batch.dlq_entries.len() as u64);
+                    }
+                    let messages = batch.messages;
                     if messages.is_empty() {
                         continue;
                     }
@@ -584,7 +602,16 @@ impl BatchEngine {
                 }
 
                 recv_result = receiver.recv(self.config.max_chunk_size) => {
-                    let messages = recv_result.map_err(EngineError::Transport)?;
+                    let batch = recv_result.map_err(EngineError::Transport)?;
+                    // The generic run loop has no DLQ handle; apps needing
+                    // filter-DLQ routing call recv() directly. Count any
+                    // unrouted entries so the drop is observable, not silent.
+                    #[cfg(feature = "metrics")]
+                    if !batch.dlq_entries.is_empty() {
+                        ::metrics::counter!("dfe_engine_filter_dlq_unrouted_total")
+                            .increment(batch.dlq_entries.len() as u64);
+                    }
+                    let messages = batch.messages;
                     if messages.is_empty() {
                         continue;
                     }
@@ -675,7 +702,16 @@ impl BatchEngine {
                 }
 
                 recv_result = receiver.recv(self.config.max_chunk_size) => {
-                    let messages = recv_result.map_err(EngineError::Transport)?;
+                    let batch = recv_result.map_err(EngineError::Transport)?;
+                    // The generic run loop has no DLQ handle; apps needing
+                    // filter-DLQ routing call recv() directly. Count any
+                    // unrouted entries so the drop is observable, not silent.
+                    #[cfg(feature = "metrics")]
+                    if !batch.dlq_entries.is_empty() {
+                        ::metrics::counter!("dfe_engine_filter_dlq_unrouted_total")
+                            .increment(batch.dlq_entries.len() as u64);
+                    }
+                    let messages = batch.messages;
                     if messages.is_empty() {
                         continue;
                     }

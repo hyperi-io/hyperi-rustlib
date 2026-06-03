@@ -23,6 +23,53 @@ pub trait CommitToken: Clone + Send + Sync + Debug + Display + 'static {
     }
 }
 
+/// Result of a [`TransportReceiver::recv`] call.
+///
+/// Carries the messages that passed inbound filtering AND any entries those
+/// filters routed to DLQ, so a caller cannot accidentally lose dead-letters by
+/// forgetting a separate drain step (the previous two-call
+/// `recv()` + `take_filtered_dlq_entries()` contract). The caller routes
+/// `dlq_entries` onward via its own DLQ handle.
+#[derive(Debug)]
+pub struct RecvBatch<T: CommitToken> {
+    /// Messages that passed all inbound filters (or had no filter match).
+    pub messages: Vec<Message<T>>,
+    /// Entries matched by `action: dlq` inbound filters. Caller routes to DLQ.
+    pub dlq_entries: Vec<FilteredDlqEntry>,
+}
+
+impl<T: CommitToken> RecvBatch<T> {
+    /// An empty batch (no messages, no DLQ entries).
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            messages: Vec::new(),
+            dlq_entries: Vec::new(),
+        }
+    }
+
+    /// A batch of messages with no DLQ entries (e.g. filters disabled).
+    #[must_use]
+    pub fn from_messages(messages: Vec<Message<T>>) -> Self {
+        Self {
+            messages,
+            dlq_entries: Vec::new(),
+        }
+    }
+
+    /// Whether the batch has no messages (DLQ entries may still be present).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.messages.is_empty()
+    }
+
+    /// Number of passing messages.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.messages.len()
+    }
+}
+
 /// Common transport operations shared by senders and receivers.
 ///
 /// Every transport implementation provides these lifecycle and
@@ -70,18 +117,27 @@ pub trait TransportReceiver: TransportBase {
     /// Receive up to `max` messages.
     ///
     /// Returns immediately with available messages (may be fewer than `max`).
-    /// Returns empty vec if no messages are available.
+    /// Returns an empty batch if no messages are available.
     ///
     /// **Filter behaviour:** if the transport has inbound filters configured,
-    /// `recv()` removes messages that match `action: drop` filters and stages
-    /// messages matching `action: dlq` filters into an internal queue. Use
-    /// [`take_filtered_dlq_entries`](Self::take_filtered_dlq_entries) after
-    /// each `recv()` call to retrieve the staged DLQ entries and route them
-    /// via your DLQ handle.
+    /// `recv()` removes messages matching `action: drop` filters and returns
+    /// messages matching `action: dlq` filters in [`RecvBatch`]`.dlq_entries`
+    /// alongside the passing [`RecvBatch`]`.messages`. Route the DLQ entries via
+    /// your own DLQ handle -- they cannot be silently lost.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let batch = transport.recv(100).await?.messages;
+    /// for entry in batch.dlq_entries {
+    ///     dlq.send(DlqEntry::new("filter", entry.reason, entry.payload)).await?;
+    /// }
+    /// for msg in batch.messages { /* process */ }
+    /// ```
     fn recv(
         &self,
         max: usize,
-    ) -> impl Future<Output = TransportResult<Vec<Message<Self::Token>>>> + Send;
+    ) -> impl Future<Output = TransportResult<RecvBatch<Self::Token>>> + Send;
 
     /// Commit/acknowledge processed messages.
     ///
@@ -91,29 +147,6 @@ pub trait TransportReceiver: TransportBase {
     /// - File: advances read position
     /// - Memory: advances internal sequence
     fn commit(&self, tokens: &[Self::Token]) -> impl Future<Output = TransportResult<()>> + Send;
-
-    /// Drain DLQ entries staged by inbound filtering.
-    ///
-    /// When a transport's inbound filters classify messages as `action: dlq`,
-    /// the messages are removed from the `recv()` result and staged in an
-    /// internal queue. Call this method after each `recv()` to drain the
-    /// staged entries and route them to your DLQ.
-    ///
-    /// Default implementation returns an empty vec -- transports without
-    /// filter support don't need to override this.
-    ///
-    /// # Example
-    ///
-    /// ```rust,ignore
-    /// let messages = transport.recv(100).await?;
-    /// for entry in transport.take_filtered_dlq_entries() {
-    ///     dlq.send(DlqEntry::new("filter", entry.reason, entry.payload)).await?;
-    /// }
-    /// // Process passing messages...
-    /// ```
-    fn take_filtered_dlq_entries(&self) -> Vec<FilteredDlqEntry> {
-        Vec::new()
-    }
 }
 
 /// Combined transport -- implements both send and receive.

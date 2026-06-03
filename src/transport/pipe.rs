@@ -23,11 +23,11 @@
 //! transport.send("ignored", b"hello world").await;
 //!
 //! // Recv reads lines from stdin
-//! let messages = transport.recv(10).await?;
+//! let messages = transport.recv(10).await?.messages;
 //! ```
 
 use super::error::{TransportError, TransportResult};
-use super::traits::{CommitToken, TransportBase, TransportReceiver, TransportSender};
+use super::traits::{CommitToken, RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -110,9 +110,6 @@ pub struct PipeTransport {
     closed: Arc<AtomicBool>,
     recv_timeout_ms: u64,
     filter_engine: super::filter::TransportFilterEngine,
-    /// Buffer for messages staged to DLQ by inbound filters.
-    /// Drained by `take_filtered_dlq_entries()`.
-    filtered_dlq_buffer: super::filter::DlqStaging,
 }
 
 impl PipeTransport {
@@ -156,7 +153,6 @@ impl PipeTransport {
             closed,
             recv_timeout_ms: config.recv_timeout_ms,
             filter_engine,
-            filtered_dlq_buffer: super::filter::DlqStaging::default(),
         }
     }
 }
@@ -230,7 +226,7 @@ impl TransportSender for PipeTransport {
 impl TransportReceiver for PipeTransport {
     type Token = PipeToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
+    async fn recv(&self, max: usize) -> TransportResult<RecvBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -307,16 +303,15 @@ impl TransportReceiver for PipeTransport {
             }
         }
 
-        // Apply inbound filters: drop/DLQ-stage matched messages via the
-        // shared partition helper. Staging is bounded (DlqStaging) so a flood
-        // or a missed drain cannot grow memory without bound (finding 4).
+        // Apply inbound filters via the shared partition helper; DLQ entries
+        // are returned in the RecvBatch for the caller to route onward.
         let batch = self.filter_engine.partition_batch(
             messages,
             |m| m.payload.as_slice(),
             |m| m.key.clone(),
         );
-        self.filtered_dlq_buffer.push_all(batch.dlq_entries);
         let messages = batch.messages;
+        let dlq_entries = batch.dlq_entries;
 
         #[cfg(feature = "logger")]
         if !messages.is_empty() {
@@ -326,11 +321,10 @@ impl TransportReceiver for PipeTransport {
             );
         }
 
-        Ok(messages)
-    }
-
-    fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
-        self.filtered_dlq_buffer.drain()
+        Ok(RecvBatch {
+            messages,
+            dlq_entries,
+        })
     }
 
     async fn commit(&self, _tokens: &[Self::Token]) -> TransportResult<()> {

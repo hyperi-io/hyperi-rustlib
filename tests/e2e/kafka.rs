@@ -658,7 +658,7 @@ async fn test_kafka_send_receive_batch() {
     let messages = transport.recv(100).await;
     assert!(messages.is_ok(), "Recv failed: {:?}", messages.err());
 
-    let messages = messages.unwrap();
+    let messages = messages.unwrap().messages;
     println!("Received {} messages", messages.len());
 
     // Commit if we got messages

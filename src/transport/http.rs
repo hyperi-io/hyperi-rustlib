@@ -35,10 +35,12 @@
 //! ```
 
 use super::error::{TransportError, TransportResult};
-use super::traits::{CommitToken, TransportBase, TransportReceiver, TransportSender};
+use super::traits::{CommitToken, RecvBatch, TransportBase, TransportReceiver, TransportSender};
+#[cfg(feature = "http-server")]
+use super::types::Message;
 #[cfg(feature = "http-server")]
 use super::types::PayloadFormat;
-use super::types::{Message, SendResult};
+use super::types::SendResult;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 #[cfg(feature = "http-server")]
@@ -245,10 +247,6 @@ pub struct HttpTransport {
 
     /// Transport-level message filter engine.
     filter_engine: super::filter::TransportFilterEngine,
-
-    /// Buffer for messages staged to DLQ by inbound filters.
-    /// Drained by `take_filtered_dlq_entries()`.
-    filtered_dlq_buffer: super::filter::DlqStaging,
 }
 
 impl HttpTransport {
@@ -344,7 +342,6 @@ impl HttpTransport {
             #[cfg(feature = "http-server")]
             recv_timeout_ms: config.recv_timeout_ms,
             filter_engine,
-            filtered_dlq_buffer: super::filter::DlqStaging::default(),
         })
     }
 }
@@ -551,7 +548,7 @@ impl TransportSender for HttpTransport {
 impl TransportReceiver for HttpTransport {
     type Token = HttpToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
+    async fn recv(&self, max: usize) -> TransportResult<RecvBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -601,23 +598,25 @@ impl TransportReceiver for HttpTransport {
                 }
             }
 
-            // Apply inbound filters: drop/DLQ-stage matched messages via the
-            // shared partition helper. Staging is bounded (DlqStaging) so a
-            // flood or a missed drain cannot grow memory unbounded (finding 4).
+            // Apply inbound filters via the shared partition helper; DLQ
+            // entries are returned in the RecvBatch for the caller to route.
             let batch = self.filter_engine.partition_batch(
                 messages,
                 |m| m.payload.as_slice(),
                 |m| m.key.clone(),
             );
-            self.filtered_dlq_buffer.push_all(batch.dlq_entries);
             let messages = batch.messages;
+            let dlq_entries = batch.dlq_entries;
 
             #[cfg(feature = "logger")]
             if !messages.is_empty() {
                 tracing::debug!(messages = messages.len(), "HTTP transport: batch received");
             }
 
-            Ok(messages)
+            Ok(RecvBatch {
+                messages,
+                dlq_entries,
+            })
         }
 
         #[cfg(not(feature = "http-server"))]
@@ -627,10 +626,6 @@ impl TransportReceiver for HttpTransport {
                 "HTTP receive requires the 'http-server' feature".into(),
             ))
         }
-    }
-
-    fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
-        self.filtered_dlq_buffer.drain()
     }
 
     async fn commit(&self, _tokens: &[Self::Token]) -> TransportResult<()> {
@@ -761,7 +756,7 @@ mod tests {
         assert!(result.is_ok(), "send failed: {result:?}");
 
         // Receive it
-        let messages = receiver.recv(10).await.unwrap();
+        let messages = receiver.recv(10).await.unwrap().messages;
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].payload, b"{\"msg\":\"hello\"}");
         assert!(messages[0].token.source_addr.is_some());
@@ -799,7 +794,7 @@ mod tests {
         assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
 
         // recv should timeout with no messages
-        let messages = receiver.recv(10).await.unwrap();
+        let messages = receiver.recv(10).await.unwrap().messages;
         assert!(messages.is_empty());
 
         receiver.close().await.unwrap();
@@ -834,7 +829,7 @@ mod tests {
         assert_eq!(resp.status(), reqwest::StatusCode::PAYLOAD_TOO_LARGE);
 
         // The oversized POST never reached the queue.
-        let messages = receiver.recv(10).await.unwrap();
+        let messages = receiver.recv(10).await.unwrap().messages;
         assert!(messages.is_empty(), "oversized body must not be queued");
 
         receiver.close().await.unwrap();

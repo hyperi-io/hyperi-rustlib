@@ -98,7 +98,9 @@ pub mod routed;
 pub use error::{TransportError, TransportResult};
 pub use factory::AnySender;
 pub use routed::RoutedSender;
-pub use traits::{CommitToken, Transport, TransportBase, TransportReceiver, TransportSender};
+pub use traits::{
+    CommitToken, RecvBatch, Transport, TransportBase, TransportReceiver, TransportSender,
+};
 pub use types::{Message, SendResult, TransportConfig, TransportType};
 
 #[cfg(feature = "transport-kafka")]

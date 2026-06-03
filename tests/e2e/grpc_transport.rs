@@ -92,7 +92,7 @@ async fn test_send_and_receive() {
 
     // Receive the message
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let messages = server.recv(10).await.expect("recv should succeed");
+    let messages = server.recv(10).await.expect("recv should succeed").messages;
 
     assert_eq!(messages.len(), 1, "should receive exactly one message");
     assert_eq!(messages[0].payload, b"hello world");
@@ -120,7 +120,11 @@ async fn test_multiple_messages() {
 
     // Receive all messages
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let messages = server.recv(100).await.expect("recv should succeed");
+    let messages = server
+        .recv(100)
+        .await
+        .expect("recv should succeed")
+        .messages;
 
     assert_eq!(messages.len(), 10, "should receive all 10 messages");
 
@@ -152,7 +156,7 @@ async fn test_large_payload() {
     );
 
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let messages = server.recv(10).await.expect("recv should succeed");
+    let messages = server.recv(10).await.expect("recv should succeed").messages;
 
     assert_eq!(messages.len(), 1, "should receive the large message");
     assert_eq!(messages[0].payload.len(), 1024 * 1024);
@@ -173,7 +177,7 @@ async fn test_commit_is_noop() {
     // Send and receive
     let _ = client.send("topic", b"data").await;
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let messages = server.recv(10).await.expect("recv should succeed");
+    let messages = server.recv(10).await.expect("recv should succeed").messages;
     assert!(!messages.is_empty());
 
     // Commit tokens — should succeed (no-op)
@@ -252,7 +256,7 @@ async fn test_compression() {
     );
 
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let messages = server.recv(10).await.expect("recv should succeed");
+    let messages = server.recv(10).await.expect("recv should succeed").messages;
 
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].payload, payload);
@@ -274,7 +278,7 @@ async fn test_recv_timeout_returns_empty() {
         .expect("failed to create server");
 
     // Recv with no messages sent — should return empty after timeout
-    let messages = server.recv(10).await.expect("recv should succeed");
+    let messages = server.recv(10).await.expect("recv should succeed").messages;
     assert!(
         messages.is_empty(),
         "recv with no messages should return empty, got {} messages",

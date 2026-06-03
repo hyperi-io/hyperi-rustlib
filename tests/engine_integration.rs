@@ -236,7 +236,7 @@ async fn transport_inject_recv_roundtrip() {
     transport.inject(None, b"hello".to_vec()).await.unwrap();
 
     use hyperi_rustlib::transport::TransportReceiver;
-    let messages = transport.recv(1).await.unwrap();
+    let messages = transport.recv(1).await.unwrap().messages;
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].payload, b"hello");
 }
@@ -253,7 +253,7 @@ async fn raw_message_from_transport_message() {
         .await
         .unwrap();
 
-    let messages = transport.recv(1).await.unwrap();
+    let messages = transport.recv(1).await.unwrap().messages;
     let raw: Vec<RawMessage> = messages.into_iter().map(RawMessage::from).collect();
     assert_eq!(raw.len(), 1);
     assert_eq!(raw[0].payload, Bytes::from(br#"{"x":1}"#.to_vec()));
