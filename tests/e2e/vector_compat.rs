@@ -204,12 +204,11 @@ async fn test_vector_grpc_sink_to_transport() {
     server_config.recv_timeout_ms = 5000;
     let server_config = server_config.with_vector_compat();
 
+    // GrpcTransport::new binds the listener synchronously, so the server
+    // is accepting connections on return -- no post-construction wait.
     let server = GrpcTransport::new(&server_config)
         .await
         .expect("failed to create vector-compat server");
-
-    // Give server time to bind
-    tokio::time::sleep(Duration::from_millis(200)).await;
 
     let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let config_path = tmp_dir.path().join("vector.yaml");

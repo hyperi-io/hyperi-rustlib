@@ -183,7 +183,7 @@ transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait", "regex
 transport-trace = ["transport", "dep:opentelemetry"]
 transport-memory = ["transport"]
 transport-kafka = ["transport", "rdkafka", "regex", "tokio-util"]
-transport-grpc = ["transport", "dep:tonic", "dep:tonic-prost", "dep:prost", "dep:prost-types", "dep:tonic-prost-build", "dep:prost-build"]
+transport-grpc = ["transport", "dep:tonic", "dep:tonic-prost", "dep:prost", "dep:prost-types", "dep:tonic-prost-build", "dep:prost-build", "dep:tokio-stream"]
 transport-grpc-vector-compat = ["transport-grpc"]
 transport-file = ["transport", "io"]
 transport-pipe = ["transport"]
@@ -309,6 +309,9 @@ tonic = { version = ">=0.14, <0.15", features = ["gzip"], optional = true }
 tonic-prost = { version = ">=0.14.5, <0.15", optional = true }
 prost = { version = ">=0.14, <0.15", optional = true }
 prost-types = { version = ">=0.14, <0.15", optional = true }
+# TcpListenerStream — lets GrpcTransport::new bind the listener synchronously
+# and serve_with_incoming_shutdown, so server readiness is guaranteed on return.
+tokio-stream = { version = ">=0.1, <0.2", features = ["net"], optional = true }
 
 # TUI dashboard (ratatui re-exports crossterm)
 ratatui = { version = ">=0.29, <0.32", optional = true }

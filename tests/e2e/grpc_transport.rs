@@ -32,12 +32,12 @@ async fn create_pair(port: u16) -> (GrpcTransport, GrpcTransport) {
     let addr = format!("127.0.0.1:{port}");
 
     let server_config = GrpcConfig::server(&addr);
+    // No post-construction sleep needed: GrpcTransport::new binds the
+    // listener synchronously, so the server is accepting connections the
+    // moment this returns.
     let server = GrpcTransport::new(&server_config)
         .await
         .expect("failed to create server");
-
-    // Give server time to bind
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
     let client_config = GrpcConfig::client(&format!("http://{addr}"));
     let client = GrpcTransport::new(&client_config)
