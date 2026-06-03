@@ -27,6 +27,37 @@ async fn find_available_port() -> u16 {
     listener.local_addr().unwrap().port()
 }
 
+#[tokio::test]
+async fn test_close_frees_port_and_is_idempotent() {
+    let port = find_available_port().await;
+    let addr = format!("127.0.0.1:{port}");
+
+    let server = GrpcTransport::new(&GrpcConfig::server(&addr))
+        .await
+        .expect("first server should bind");
+    // close() must actually stop the listener (not just on Drop), and be
+    // idempotent.
+    server.close().await.expect("first close");
+    server.close().await.expect("close is idempotent");
+
+    // The serve task needs a moment to react to the shutdown signal and drop
+    // the listener; poll-retry the rebind rather than sleep a fixed budget.
+    let mut rebound = None;
+    for _ in 0..40 {
+        match GrpcTransport::new(&GrpcConfig::server(&addr)).await {
+            Ok(s) => {
+                rebound = Some(s);
+                break;
+            }
+            Err(_) => tokio::time::sleep(Duration::from_millis(50)).await,
+        }
+    }
+    assert!(
+        rebound.is_some(),
+        "port {port} not freed within 2s after close() -- the listener did not stop"
+    );
+}
+
 /// Create a server+client pair on a given port.
 async fn create_pair(port: u16) -> (GrpcTransport, GrpcTransport) {
     let addr = format!("127.0.0.1:{port}");

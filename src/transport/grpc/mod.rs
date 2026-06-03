@@ -63,8 +63,9 @@ pub struct GrpcTransport {
     /// Receiver channel (None if client-only mode).
     receiver: Option<tokio::sync::Mutex<mpsc::Receiver<Message<GrpcToken>>>>,
 
-    /// Shutdown signal for the server task.
-    shutdown_tx: Option<oneshot::Sender<()>>,
+    /// Shutdown signal for the server task. Behind a `Mutex<Option<..>>` so
+    /// `close(&self)` (not just `Drop`) can take and fire it.
+    shutdown_tx: parking_lot::Mutex<Option<oneshot::Sender<()>>>,
 
     /// Server background task handle (kept alive, aborted on drop).
     _server_handle: Option<tokio::task::JoinHandle<Result<(), tonic::transport::Error>>>,
@@ -220,7 +221,7 @@ impl GrpcTransport {
         Ok(Self {
             client,
             receiver,
-            shutdown_tx,
+            shutdown_tx: parking_lot::Mutex::new(shutdown_tx),
             _server_handle: server_handle,
             closed: AtomicBool::new(false),
             healthy,
@@ -238,9 +239,12 @@ impl TransportBase for GrpcTransport {
         self.closed.store(true, Ordering::Relaxed);
         self.healthy.store(false, Ordering::Relaxed);
 
-        // Signal server shutdown
-        // Note: we can't take from Option behind &self, so we use a flag
-        // The server task will complete when the oneshot is dropped
+        // Actually stop the server: fire the shutdown oneshot so
+        // serve_with_incoming_shutdown completes and the listener is freed.
+        // Idempotent -- a second close() (or Drop) finds None.
+        if let Some(tx) = self.shutdown_tx.lock().take() {
+            let _ = tx.send(());
+        }
         Ok(())
     }
 
@@ -428,8 +432,8 @@ impl TransportReceiver for GrpcTransport {
 
 impl Drop for GrpcTransport {
     fn drop(&mut self) {
-        // Take and send shutdown signal
-        if let Some(tx) = self.shutdown_tx.take() {
+        // Fire the shutdown signal if close() didn't already (idempotent).
+        if let Some(tx) = self.shutdown_tx.lock().take() {
             let _ = tx.send(());
         }
         // Server handle will be dropped, which aborts the task
