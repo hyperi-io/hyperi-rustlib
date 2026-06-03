@@ -285,8 +285,6 @@ async fn test_vector_grpc_multiple_events() {
         .await
         .expect("failed to create vector-compat server");
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
     let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let config_path = tmp_dir.path().join("vector.yaml");
     let data_dir = tmp_dir.path().join("vector-data");
@@ -365,8 +363,6 @@ async fn test_vector_and_native_coexist() {
     let server = GrpcTransport::new(&server_config)
         .await
         .expect("failed to create vector-compat server");
-
-    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Send native DFE messages
     let client_config = GrpcConfig::client(&format!("http://127.0.0.1:{port}"));
@@ -459,8 +455,6 @@ async fn test_vector_compat_client_send() {
     let server = GrpcTransport::new(&server_config)
         .await
         .expect("failed to create vector-compat server");
-
-    tokio::time::sleep(Duration::from_millis(200)).await;
 
     let client = VectorCompatClient::connect_lazy(&format!("http://127.0.0.1:{port}"))
         .expect("failed to create VectorCompatClient");
@@ -639,8 +633,6 @@ async fn test_vector_compat_client_health_check() {
     let server = GrpcTransport::new(&server_config)
         .await
         .expect("failed to create vector-compat server");
-
-    tokio::time::sleep(Duration::from_millis(200)).await;
 
     let client = VectorCompatClient::connect_lazy(&format!("http://127.0.0.1:{port}"))
         .expect("failed to create VectorCompatClient");

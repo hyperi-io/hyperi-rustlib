@@ -17,7 +17,8 @@ use crate::deployment::contract::DeploymentContract;
 /// Configuration for ArgoCD `Application` generation.
 ///
 /// All fields have sensible defaults. The Helm chart that the Application
-/// points at is the one [`generate_chart`] writes to a repo path.
+/// points at is the one [`generate_chart`](crate::deployment::generate_chart)
+/// writes to a repo path.
 #[derive(Debug, Clone)]
 pub struct ArgocdConfig {
     /// ArgoCD namespace (where the Application CR lives). Default: `argocd`.
@@ -72,7 +73,7 @@ impl Default for ArgocdConfig {
 /// contract.
 ///
 /// The CR points at a Helm chart in a git repo (typically the chart that
-/// [`generate_chart`] produces). Apply with:
+/// [`generate_chart`](crate::deployment::generate_chart) produces). Apply with:
 ///
 /// ```bash
 /// kubectl apply -n argocd -f application.yaml

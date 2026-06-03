@@ -179,9 +179,9 @@ impl GrpcTransport {
             // immediately with no polling. `serve_with_shutdown(addr, ..)`
             // bound inside the spawned task, which made `new()` return before
             // the socket existed and forced every consumer to poll the port.
-            let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-                TransportError::Config(format!("failed to bind {addr}: {e}"))
-            })?;
+            let listener = tokio::net::TcpListener::bind(addr)
+                .await
+                .map_err(|e| TransportError::Config(format!("failed to bind {addr}: {e}")))?;
             let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
 
             let handle = tokio::spawn(async move {

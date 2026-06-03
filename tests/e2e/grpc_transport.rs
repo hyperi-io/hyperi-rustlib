@@ -207,8 +207,6 @@ async fn test_compression() {
         .await
         .expect("failed to create compressed server");
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
     let client_config = GrpcConfig::client(&format!("http://{addr}")).with_compression();
     let client = GrpcTransport::new(&client_config)
         .await
@@ -243,8 +241,6 @@ async fn test_recv_timeout_returns_empty() {
     let server = GrpcTransport::new(&server_config)
         .await
         .expect("failed to create server");
-
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Recv with no messages sent — should return empty after timeout
     let messages = server.recv(10).await.expect("recv should succeed");

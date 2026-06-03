@@ -7,7 +7,8 @@
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Generate deployment artifacts (Dockerfile, Helm chart, Compose fragment,
-//! container manifest, ArgoCD Application) from a [`DeploymentContract`].
+//! container manifest, ArgoCD Application) from a
+//! [`DeploymentContract`](crate::deployment::DeploymentContract).
 //!
 //! Apps provide ~20% customisation (ports, secrets, config); this module
 //! generates ~80% boilerplate. Split by artefact kind into submodules;
