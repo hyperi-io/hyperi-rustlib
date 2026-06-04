@@ -249,11 +249,7 @@ sinks:
     assert_no_vector_errors(&stderr);
 
     // Receive events from the server
-    let messages = server
-        .recv(100)
-        .await
-        .expect("recv should succeed")
-        .messages;
+    let messages = server.recv(100).await.expect("recv should succeed").records;
 
     assert!(
         !messages.is_empty(),
@@ -330,11 +326,7 @@ sinks:
     // Collect all messages (may need multiple recv calls)
     let mut all_messages = Vec::new();
     loop {
-        let messages = server
-            .recv(100)
-            .await
-            .expect("recv should succeed")
-            .messages;
+        let messages = server.recv(100).await.expect("recv should succeed").records;
         if messages.is_empty() {
             break;
         }
@@ -429,11 +421,7 @@ sinks:
     // Collect all messages
     let mut all_messages = Vec::new();
     loop {
-        let messages = server
-            .recv(100)
-            .await
-            .expect("recv should succeed")
-            .messages;
+        let messages = server.recv(100).await.expect("recv should succeed").records;
         if messages.is_empty() {
             break;
         }
@@ -489,11 +477,7 @@ async fn test_vector_compat_client_send() {
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    let messages = server
-        .recv(100)
-        .await
-        .expect("recv should succeed")
-        .messages;
+    let messages = server.recv(100).await.expect("recv should succeed").records;
 
     assert_eq!(messages.len(), 5, "should receive all 5 events");
 

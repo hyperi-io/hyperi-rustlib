@@ -23,8 +23,8 @@
 //! let sender = transport.sender();
 //! sender.send(b"test payload".to_vec()).await?;
 //!
-//! let messages = transport.recv(10).await?.messages;
-//! assert_eq!(messages.len(), 1);
+//! let records = transport.recv(10).await?.records;
+//! assert_eq!(records.len(), 1);
 //! ```
 
 mod token;
@@ -34,6 +34,7 @@ pub use token::MemoryToken;
 use super::error::{TransportError, TransportResult};
 use super::traits::{RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
+use super::work_batch::WorkBatch;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -250,7 +251,7 @@ impl TransportSender for MemoryTransport {
 impl TransportReceiver for MemoryTransport {
     type Token = MemoryToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<RecvBatch<Self::Token>> {
+    async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -286,10 +287,11 @@ impl TransportReceiver for MemoryTransport {
             };
 
             if let Some(internal) = result {
-                let format = PayloadFormat::detect(&internal.payload);
+                let payload: bytes::Bytes = internal.payload.into();
+                let format = PayloadFormat::detect(&payload);
                 messages.push(Message {
                     key: internal.key,
-                    payload: internal.payload,
+                    payload,
                     token: MemoryToken { seq: internal.seq },
                     timestamp_ms: Some(internal.timestamp_ms),
                     format,
@@ -299,18 +301,17 @@ impl TransportReceiver for MemoryTransport {
 
         // Apply inbound filters via the shared partition helper; DLQ entries
         // are returned in the RecvBatch for the caller to route onward.
-        let batch = self.filter_engine.partition_batch(
-            messages,
-            |m| m.payload.as_slice(),
-            |m| m.key.clone(),
-        );
+        let batch =
+            self.filter_engine
+                .partition_batch(messages, |m| m.payload.as_ref(), |m| m.key.clone());
         let messages = batch.messages;
         let dlq_entries = batch.dlq_entries;
 
         Ok(RecvBatch {
             messages,
             dlq_entries,
-        })
+        }
+        .into())
     }
 
     async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
@@ -337,10 +338,79 @@ mod tests {
         assert!(result.is_ok());
 
         // Receive it
-        let messages = transport.recv(10).await.unwrap().messages;
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].key.as_deref(), Some("test-key"));
-        assert_eq!(messages[0].payload, b"hello world");
+        let records = transport.recv(10).await.unwrap().records;
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].key.as_deref(), Some("test-key"));
+        assert_eq!(records[0].payload.as_ref(), b"hello world");
+    }
+
+    /// MemoryTransport does NOT override `send_batch`, so this exercises the
+    /// trait's per-record default fallback (Task 0.7c): every record is sent
+    /// individually via `send`, using its own key, and all arrive intact.
+    #[tokio::test]
+    async fn send_batch_default_fallback_sends_each_record() {
+        use super::super::work_batch::{Record, RecordMeta};
+
+        let transport = MemoryTransport::new(&MemoryConfig::default())
+            .expect("memory transport with valid config must construct");
+
+        let records: Vec<Record> = (0..3)
+            .map(|i| Record {
+                payload: bytes::Bytes::from(format!(r#"{{"id":{i}}}"#)),
+                key: Some(Arc::from(format!("k{i}").as_str())),
+                headers: Vec::new(),
+                metadata: RecordMeta {
+                    timestamp_ms: None,
+                    format: PayloadFormat::Json,
+                },
+            })
+            .collect();
+
+        // Default fallback: one send per record, returns Ok for the whole block.
+        let result = transport.send_batch(&records).await;
+        assert!(
+            result.is_ok(),
+            "default send_batch must succeed: {result:?}"
+        );
+
+        // All three records loop back through recv with keys + payloads intact.
+        let got = transport.recv(10).await.unwrap().records;
+        assert_eq!(got.len(), 3, "every record in the block was sent");
+        assert_eq!(got[0].key.as_deref(), Some("k0"));
+        assert_eq!(got[0].payload.as_ref(), br#"{"id":0}"#);
+        assert_eq!(got[2].key.as_deref(), Some("k2"));
+        assert_eq!(got[2].payload.as_ref(), br#"{"id":2}"#);
+    }
+
+    /// The default `send_batch` short-circuits on the first non-Ok result so the
+    /// caller retries the unconfirmed remainder (at-least-once). A closed
+    /// transport makes every `send` Fatal, so a non-empty block returns Fatal.
+    #[tokio::test]
+    async fn send_batch_default_short_circuits_on_error() {
+        use super::super::work_batch::{Record, RecordMeta};
+
+        let transport = MemoryTransport::new(&MemoryConfig::default())
+            .expect("memory transport with valid config must construct");
+        transport.close().await.unwrap();
+
+        let records = vec![Record {
+            payload: bytes::Bytes::from_static(b"{}"),
+            key: None,
+            headers: Vec::new(),
+            metadata: RecordMeta {
+                timestamp_ms: None,
+                format: PayloadFormat::Json,
+            },
+        }];
+
+        let result = transport.send_batch(&records).await;
+        assert!(
+            result.is_fatal(),
+            "closed transport must surface the send failure, got {result:?}"
+        );
+
+        // An empty block is a trivial Ok (nothing to send).
+        assert!(transport.send_batch(&[]).await.is_ok());
     }
 
     #[tokio::test]
@@ -359,8 +429,8 @@ mod tests {
             .unwrap();
 
         // Receive them
-        let messages = transport.recv(10).await.unwrap().messages;
-        assert_eq!(messages.len(), 2);
+        let records = transport.recv(10).await.unwrap().records;
+        assert_eq!(records.len(), 2);
     }
 
     #[tokio::test]
@@ -369,11 +439,10 @@ mod tests {
         let transport = MemoryTransport::new(&config)
             .expect("memory transport with valid config must construct");
         transport.inject(None, b"msg".to_vec()).await.unwrap();
-        let messages = transport.recv(1).await.unwrap().messages;
+        let batch = transport.recv(1).await.unwrap();
 
-        // Commit the message
-        let tokens: Vec<_> = messages.iter().map(|m| m.token).collect();
-        transport.commit(&tokens).await.unwrap();
+        // Commit the message via the batch's commit tokens.
+        transport.commit(&batch.commit_tokens).await.unwrap();
 
         // Verify committed sequence advanced
         assert_eq!(transport.committed_sequence(), 0);

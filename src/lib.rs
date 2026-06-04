@@ -165,6 +165,10 @@ pub mod tls;
 #[cfg_attr(docsrs, doc(cfg(feature = "scaling")))]
 pub mod scaling;
 
+#[cfg(feature = "governor")]
+#[cfg_attr(docsrs, doc(cfg(feature = "governor")))]
+pub mod governor;
+
 #[cfg(any(feature = "worker-pool", feature = "worker-batch", feature = "worker"))]
 #[cfg_attr(
     docsrs,
@@ -317,6 +321,15 @@ pub use memory::{MemoryGuard, MemoryGuardConfig, MemoryPressure, detect_memory_l
 pub use scaling::{
     ComponentSnapshot, GateType, PressureSnapshot, RateWindow, ScalingComponent, ScalingPressure,
     ScalingPressureConfig,
+};
+
+#[cfg(feature = "governor")]
+#[cfg_attr(docsrs, doc(cfg(feature = "governor")))]
+pub use governor::{
+    Admit, ByteBudgetConfig, ByteBudgetController, GateActuator, Hysteresis, InboundGate,
+    MemoryPressureSource, NoopActuator, ObservingActuator, Pressure, PressureSource,
+    SelfRegulationConfig, SelfRegulationGovernor, SelfRegulationProfile, UnifiedPressure,
+    UnifiedPressureSnapshot,
 };
 
 #[cfg(any(feature = "worker-pool", feature = "worker-batch", feature = "worker"))]

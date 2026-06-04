@@ -31,11 +31,12 @@
 //! let config = GrpcConfig::server("0.0.0.0:6000");
 //! let transport = GrpcTransport::new(&config).await?;
 //!
-//! let messages = transport.recv(100).await?.messages;
+//! let records = transport.recv(100).await?.records;
 //! // commit is a no-op for gRPC (no persistence)
 //! transport.commit(&[]).await?;
 //! ```
 
+pub mod batch;
 pub mod config;
 pub mod proto;
 pub mod token;
@@ -46,6 +47,7 @@ pub use token::GrpcToken;
 use super::error::{TransportError, TransportResult};
 use super::traits::{RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
+use super::work_batch::{Record, WorkBatch};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -151,6 +153,39 @@ impl GrpcTransport {
     ///
     /// Returns error if the listen address is invalid or the server fails to start.
     pub async fn new(config: &GrpcConfig) -> TransportResult<Self> {
+        Self::new_inner(
+            config,
+            #[cfg(feature = "governor")]
+            None,
+        )
+        .await
+    }
+
+    /// Create a gRPC transport bound to a pressure governor (G3, `governor`
+    /// feature).
+    ///
+    /// Identical to [`new`](Self::new) except the receive server consults
+    /// `pressure` BEFORE enqueuing each inbound Push / batch record: while
+    /// [`UnifiedPressure::should_hold`](crate::governor::UnifiedPressure::should_hold)
+    /// holds, the RPC is rejected with `Status::unavailable` (the gRPC analogue
+    /// of HTTP 503, matching the existing channel-full backpressure mapping).
+    /// Passing `None` is exactly equivalent to [`new`](Self::new).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`new`](Self::new).
+    #[cfg(feature = "governor")]
+    pub async fn with_pressure(
+        config: &GrpcConfig,
+        pressure: Option<Arc<crate::governor::UnifiedPressure>>,
+    ) -> TransportResult<Self> {
+        Self::new_inner(config, pressure).await
+    }
+
+    async fn new_inner(
+        config: &GrpcConfig,
+        #[cfg(feature = "governor")] pressure: Option<Arc<crate::governor::UnifiedPressure>>,
+    ) -> TransportResult<Self> {
         let mut client = None;
         let mut receiver = None;
         let mut shutdown_tx = None;
@@ -198,6 +233,8 @@ impl GrpcTransport {
             let dfe_svc = DfeTransportServiceImpl {
                 sender: tx.clone(),
                 sequence: sequence.clone(),
+                #[cfg(feature = "governor")]
+                pressure: pressure.clone(),
             };
 
             let dfe_server = proto::dfe_transport_server::DfeTransportServer::new(dfe_svc)
@@ -252,6 +289,11 @@ impl GrpcTransport {
             receiver = Some(tokio::sync::Mutex::new(rx));
             shutdown_tx = Some(sd_tx);
             server_handle = Some(handle);
+        } else {
+            // No receive server -> nothing to attach the governor to. Consume
+            // it so the param stays uniform with no unused-variable warning.
+            #[cfg(feature = "governor")]
+            let _ = pressure;
         }
 
         let healthy = Arc::new(AtomicBool::new(true));
@@ -290,36 +332,6 @@ impl GrpcTransport {
     }
 }
 
-impl TransportBase for GrpcTransport {
-    async fn close(&self) -> TransportResult<()> {
-        self.closed.store(true, Ordering::Relaxed);
-        self.healthy.store(false, Ordering::Relaxed);
-
-        // Actually stop the server: fire the shutdown oneshot so
-        // serve_with_incoming_shutdown completes and the listener is freed.
-        // Idempotent -- a second close() (or Drop) finds None.
-        if let Some(tx) = self.shutdown_tx.lock().take() {
-            let _ = tx.send(());
-        }
-        Ok(())
-    }
-
-    fn is_healthy(&self) -> bool {
-        let healthy = self.healthy.load(Ordering::Relaxed);
-        #[cfg(feature = "metrics")]
-        metrics::gauge!("dfe_transport_healthy", "transport" => "grpc").set(if healthy {
-            1.0
-        } else {
-            0.0
-        });
-        healthy
-    }
-
-    fn name(&self) -> &'static str {
-        "grpc"
-    }
-}
-
 impl TransportSender for GrpcTransport {
     async fn send(&self, key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
@@ -353,7 +365,9 @@ impl TransportSender for GrpcTransport {
         }
 
         let mut request = tonic::Request::new(proto::PushRequest {
-            payload: payload.to_vec(),
+            // `payload` is already `bytes::Bytes` and the proto field is now
+            // `Bytes` too (`.bytes(".")` in build.rs) -- move the handle, no copy.
+            payload,
             format: proto::Format::Auto.into(),
             metadata,
         });
@@ -419,12 +433,144 @@ impl TransportSender for GrpcTransport {
 
         result
     }
+
+    /// Send a whole batch of records in ONE `RouteBatch` RPC (Task 0.6).
+    ///
+    /// The native batch override of [`TransportSender::send_batch`]: serde-less
+    /// rustlib<->rustlib transfer. The records map to a proto
+    /// [`Batch`](proto::Batch) via [`batch::records_to_proto`] -- payloads travel
+    /// as OPAQUE `bytes` and the JSON / MsgPack codec is NEVER invoked in
+    /// transit. The whole batch goes in a single call (batch-at-a-time, NOT
+    /// record-by-record streaming), so unlike the trait's per-record default
+    /// there is no partial-send window: the block is accepted or not as a unit.
+    ///
+    /// Commit tokens and inline-DLQ entries are NOT sent -- they are the
+    /// SENDER's local concern. Pass the records (e.g. `&workbatch.records`); the
+    /// caller fires its commit tokens locally after this returns `Ok`.
+    ///
+    /// # Errors / result
+    ///
+    /// Returns a [`SendResult`]. `Backpressured` maps the same transient gRPC
+    /// codes as [`send`](TransportSender::send) so the caller retries the whole
+    /// block rather than dropping it (at-least-once).
+    async fn send_batch(&self, records: &[Record]) -> SendResult {
+        if self.closed.load(Ordering::Relaxed) {
+            return SendResult::Fatal(TransportError::Closed);
+        }
+
+        let Some(client) = &self.client else {
+            return SendResult::Fatal(TransportError::Config(
+                "no endpoint configured for sending".into(),
+            ));
+        };
+
+        // Map records -> proto Batch. Payloads are MOVED (Bytes handle), opaque.
+        let proto_batch = batch::records_to_proto(records.to_vec());
+
+        let mut request = tonic::Request::new(proto_batch);
+
+        // Inject W3C traceparent into gRPC metadata for distributed tracing.
+        #[cfg(feature = "transport-trace")]
+        if let Some(tp) = super::propagation::current_traceparent()
+            && let Ok(val) = tp.parse()
+        {
+            request
+                .metadata_mut()
+                .insert(super::propagation::TRACEPARENT_HEADER, val);
+        }
+
+        if self.send_timeout_ms > 0 {
+            request.set_timeout(std::time::Duration::from_millis(self.send_timeout_ms));
+        }
+
+        #[cfg(feature = "metrics")]
+        let start = std::time::Instant::now();
+        #[cfg(feature = "metrics")]
+        self.inflight.fetch_add(1, Ordering::Relaxed);
+
+        let result = match client.clone().route_batch(request).await {
+            Ok(_) => {
+                #[cfg(feature = "metrics")]
+                metrics::counter!(
+                    "dfe_transport_sent_total",
+                    "transport" => "grpc",
+                    "path" => "batch"
+                )
+                .increment(records.len() as u64);
+                SendResult::Ok
+            }
+            Err(status) => match status.code() {
+                tonic::Code::Unavailable
+                | tonic::Code::ResourceExhausted
+                | tonic::Code::DeadlineExceeded => {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!(
+                        "dfe_transport_backpressured_total",
+                        "transport" => "grpc"
+                    )
+                    .increment(1);
+                    SendResult::Backpressured
+                }
+                _ => {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!(
+                        "dfe_transport_send_errors_total",
+                        "transport" => "grpc"
+                    )
+                    .increment(1);
+                    SendResult::Fatal(TransportError::Send(status.message().to_string()))
+                }
+            },
+        };
+
+        #[cfg(feature = "metrics")]
+        {
+            self.inflight.fetch_sub(1, Ordering::Relaxed);
+            metrics::histogram!(
+                "dfe_transport_send_duration_seconds",
+                "transport" => "grpc"
+            )
+            .record(start.elapsed().as_secs_f64());
+        }
+
+        result
+    }
+}
+
+impl TransportBase for GrpcTransport {
+    async fn close(&self) -> TransportResult<()> {
+        self.closed.store(true, Ordering::Relaxed);
+        self.healthy.store(false, Ordering::Relaxed);
+
+        // Actually stop the server: fire the shutdown oneshot so
+        // serve_with_incoming_shutdown completes and the listener is freed.
+        // Idempotent -- a second close() (or Drop) finds None.
+        if let Some(tx) = self.shutdown_tx.lock().take() {
+            let _ = tx.send(());
+        }
+        Ok(())
+    }
+
+    fn is_healthy(&self) -> bool {
+        let healthy = self.healthy.load(Ordering::Relaxed);
+        #[cfg(feature = "metrics")]
+        metrics::gauge!("dfe_transport_healthy", "transport" => "grpc").set(if healthy {
+            1.0
+        } else {
+            0.0
+        });
+        healthy
+    }
+
+    fn name(&self) -> &'static str {
+        "grpc"
+    }
 }
 
 impl TransportReceiver for GrpcTransport {
     type Token = GrpcToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<RecvBatch<Self::Token>> {
+    async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -475,18 +621,17 @@ impl TransportReceiver for GrpcTransport {
 
         // Apply inbound filters via the shared partition helper; DLQ entries
         // are returned in the RecvBatch for the caller to route onward.
-        let batch = self.filter_engine.partition_batch(
-            messages,
-            |m| m.payload.as_slice(),
-            |m| m.key.clone(),
-        );
+        let batch =
+            self.filter_engine
+                .partition_batch(messages, |m| m.payload.as_ref(), |m| m.key.clone());
         let messages = batch.messages;
         let dlq_entries = batch.dlq_entries;
 
         Ok(RecvBatch {
             messages,
             dlq_entries,
-        })
+        }
+        .into())
     }
 
     async fn commit(&self, _tokens: &[Self::Token]) -> TransportResult<()> {
@@ -513,6 +658,13 @@ impl Drop for GrpcTransport {
 struct DfeTransportServiceImpl {
     sender: mpsc::Sender<Message<GrpcToken>>,
     sequence: Arc<AtomicU64>,
+    /// Optional pressure governor (G3, `governor` feature). `None` by default
+    /// -> the handlers never consult it and behaviour is byte-identical. When
+    /// `Some`, an inbound Push / batch record is rejected with
+    /// `Status::unavailable` while [`UnifiedPressure::should_hold`] holds --
+    /// pressure-driven shedding ON TOP of the existing channel-full rejection.
+    #[cfg(feature = "governor")]
+    pressure: Option<Arc<crate::governor::UnifiedPressure>>,
 }
 
 #[tonic::async_trait]
@@ -521,6 +673,24 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
         &self,
         request: Request<proto::PushRequest>,
     ) -> Result<Response<proto::PushResponse>, Status> {
+        // G3 pressure-driven shedding (governor feature, opt-in). BEFORE doing
+        // any work, if a governor is wired and it says hold, reject with
+        // `unavailable` -- the gRPC analogue of HTTP 503, mirroring the
+        // channel-full rejection below. Default `None` -> skipped, unchanged.
+        #[cfg(feature = "governor")]
+        if let Some(pressure) = &self.pressure
+            && pressure.should_hold()
+        {
+            #[cfg(feature = "metrics")]
+            metrics::counter!(
+                "dfe_transport_backpressured_total",
+                "transport" => "grpc",
+                "reason" => "pressure"
+            )
+            .increment(1);
+            return Err(Status::unavailable("under pressure -- inbound held"));
+        }
+
         let req = request.into_inner();
         let seq = self.sequence.fetch_add(1, Ordering::Relaxed);
 
@@ -535,6 +705,8 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
         let format = PayloadFormat::detect(&req.payload);
         let key = req.metadata.get("topic").map(|s| Arc::from(s.as_str()));
 
+        // `req.payload` is already prost `Bytes` (`.bytes(".")` in build.rs) --
+        // the decode was zero-copy, so this is a move, not a copy.
         let msg = Message {
             key,
             payload: req.payload,
@@ -576,6 +748,103 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
                 Err(Status::unavailable("receiver closed"))
             }
         }
+    }
+
+    async fn route_batch(
+        &self,
+        request: Request<proto::Batch>,
+    ) -> Result<Response<proto::BatchAck>, Status> {
+        // G3 pressure-driven shedding (governor feature, opt-in): reject the
+        // whole batch with `unavailable` while pressure holds. Default `None`
+        // -> skipped, byte-identical.
+        #[cfg(feature = "governor")]
+        if let Some(pressure) = &self.pressure
+            && pressure.should_hold()
+        {
+            #[cfg(feature = "metrics")]
+            metrics::counter!(
+                "dfe_transport_backpressured_total",
+                "transport" => "grpc",
+                "reason" => "pressure"
+            )
+            .increment(1);
+            return Err(Status::unavailable("under pressure -- inbound held"));
+        }
+
+        // Extract W3C traceparent from incoming gRPC metadata for distributed
+        // tracing, BEFORE consuming the request body.
+        #[cfg(feature = "transport-trace")]
+        if let Some(tp) = request
+            .metadata()
+            .get(super::propagation::TRACEPARENT_HEADER)
+            .and_then(|v| v.to_str().ok())
+            && super::propagation::is_valid_traceparent(tp)
+        {
+            tracing::Span::current().record("traceparent", tp);
+        }
+
+        let proto_batch = request.into_inner();
+
+        // Decode the proto Batch back into rustlib Records (payloads are
+        // zero-copy `Bytes`; the codec is NOT invoked here). Each record fans
+        // into the SAME mpsc channel the single-message Push path uses, so the
+        // existing recv() path delivers them unchanged.
+        let records = batch::proto_batch_to_records(proto_batch);
+        let accepted = records.len() as u64;
+
+        for record in records {
+            let seq = self.sequence.fetch_add(1, Ordering::Relaxed);
+            let format = record.metadata.format;
+            // A record carrying Auto means the sender did not pin a format
+            // (e.g. it framed but did not classify). Detect from the bytes so
+            // the receiver still gets a concrete hint -- this inspects the lead
+            // byte only, it does NOT parse/decode the payload.
+            let format = if format == PayloadFormat::Auto {
+                PayloadFormat::detect(&record.payload)
+            } else {
+                format
+            };
+
+            let msg = Message {
+                key: record.key,
+                payload: record.payload,
+                token: GrpcToken::new(seq),
+                timestamp_ms: record.metadata.timestamp_ms,
+                format,
+            };
+
+            match self.sender.try_send(msg) {
+                Ok(()) => {}
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!(
+                        "dfe_transport_backpressured_total",
+                        "transport" => "grpc"
+                    )
+                    .increment(1);
+                    return Err(Status::resource_exhausted("receiver buffer full"));
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!(
+                        "dfe_transport_refused_total",
+                        "transport" => "grpc"
+                    )
+                    .increment(1);
+                    return Err(Status::unavailable("receiver closed"));
+                }
+            }
+        }
+
+        #[cfg(feature = "metrics")]
+        metrics::counter!(
+            "dfe_transport_sent_total",
+            "transport" => "grpc",
+            "path" => "batch"
+        )
+        .increment(accepted);
+
+        Ok(Response::new(proto::BatchAck { accepted }))
     }
 
     async fn health_check(
@@ -680,6 +949,49 @@ mod tests {
 
         // commit is always ok
         transport.commit(&[]).await.unwrap();
+    }
+
+    /// G3: with a pressure governor pinned HIGH, the gRPC Push handler rejects
+    /// with `Status::unavailable` (the gRPC analogue of 503). The default `new`
+    /// (no governor) accepts as before.
+    #[cfg(feature = "governor")]
+    #[tokio::test]
+    async fn grpc_pressure_high_rejects_unavailable() {
+        use crate::governor::{Hysteresis, MemoryPressureSource, PressureSource, UnifiedPressure};
+        use crate::memory::{MemoryGuard, MemoryGuardConfig};
+
+        let guard = Arc::new(MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 1000,
+            pressure_threshold: 0.80,
+            ..Default::default()
+        }));
+        guard.add_bytes(950); // 95%
+        let pressure = Arc::new(UnifiedPressure::new(
+            vec![Arc::new(MemoryPressureSource::new(Arc::clone(&guard))) as Arc<dyn PressureSource>],
+            Hysteresis::new(0.80, 0.65).expect("valid band"),
+        ));
+        assert!(pressure.should_hold(), "pinned-high governor must hold");
+
+        // Server bound to the governor.
+        let server_cfg = GrpcConfig::server("127.0.0.1:16077");
+        let server = GrpcTransport::with_pressure(&server_cfg, Some(Arc::clone(&pressure)))
+            .await
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Client pushes -> rejected as backpressure (maps to Backpressured).
+        let client_cfg = GrpcConfig::client("http://127.0.0.1:16077");
+        let client = GrpcTransport::new(&client_cfg).await.unwrap();
+        let result = client
+            .send("events", bytes::Bytes::from_static(b"{\"x\":1}"))
+            .await;
+        assert!(
+            matches!(result, SendResult::Backpressured),
+            "push under pressure must surface as backpressure, got {result:?}"
+        );
+
+        client.close().await.unwrap();
+        server.close().await.unwrap();
     }
 
     #[tokio::test]

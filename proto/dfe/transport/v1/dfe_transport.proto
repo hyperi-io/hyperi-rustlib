@@ -13,6 +13,13 @@ service DfeTransport {
   // Push a batch of data to the receiver.
   rpc Push(PushRequest) returns (PushResponse);
 
+  // Route a whole WorkBatch (serde-less rustlib<->rustlib transfer).
+  //
+  // Carries a block of records, payloads as OPAQUE bytes -- the codec is
+  // NOT invoked in transit. Whole batch per call (batch-at-a-time, NOT
+  // record-by-record streaming).
+  rpc RouteBatch(Batch) returns (BatchAck);
+
   // Health check.
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 }
@@ -38,6 +45,59 @@ message PushRequest {
 
 message PushResponse {
   // Number of events accepted by the receiver.
+  uint64 accepted = 1;
+}
+
+// --- Native batch transport (serde-less WorkBatch transfer) ---
+//
+// Mirrors the Rust `WorkBatch<T>` records (Record + RecordMeta). Payloads
+// travel as OPAQUE bytes -- prost decodes the `payload` field zero-copy into
+// `bytes::Bytes` (configured via `.bytes(".")` in build.rs), so no JSON /
+// MsgPack codec is ever invoked on a payload in transit. The on-the-wire codec
+// is protobuf by default but SWAPPABLE: the WorkBatch<->wire mapping lives in a
+// single isolated mapper module so a future hand-rolled frame can replace it.
+
+// One application/transport header (key + opaque value bytes).
+message Header {
+  string key = 1;
+  bytes value = 2;
+}
+
+// One work record. Mirrors the Rust `Record` + `RecordMeta`. The `payload`
+// bytes field is OPAQUE and decodes zero-copy into `bytes::Bytes`.
+message Record {
+  // Raw payload bytes -- opaque, never parsed in transit (zero-copy Bytes).
+  bytes payload = 1;
+
+  // Routing key (Kafka topic, gRPC metadata key, Redis stream, ...).
+  // Empty string means "no key" (Rust `Option<Arc<str>>` -> None).
+  string key = 2;
+
+  // Transport / application headers.
+  repeated Header headers = 3;
+
+  // Source timestamp (milliseconds since epoch), if the source provided one.
+  // Carried alongside `has_timestamp_ms` so a genuine 0 is distinguishable
+  // from "absent" (proto3 scalars have no presence by default).
+  int64 timestamp_ms = 4;
+
+  // Whether `timestamp_ms` is present (Rust `Option<i64>` -> Some/None).
+  bool has_timestamp_ms = 5;
+
+  // Payload format hint (mirrors the Rust `PayloadFormat`).
+  Format format = 6;
+}
+
+// A whole WorkBatch's records. Commit tokens and inline-DLQ entries are NOT
+// sent on the wire: tokens are the SENDER's source acks (fired locally after
+// the block is sent), and DLQ entries are a local no-silent-drop concern.
+message Batch {
+  repeated Record records = 1;
+}
+
+// Acknowledgement for a RouteBatch call.
+message BatchAck {
+  // Number of records accepted by the receiver.
   uint64 accepted = 1;
 }
 

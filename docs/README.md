@@ -97,6 +97,12 @@ sub-components (filter engine lives inside every transport).
 - [AUTO-WIRING.md](AUTO-WIRING.md) — what's wired into what, and why
 - [FEATURE-FLAGS.md](FEATURE-FLAGS.md) — feature tree, native deps, recommended bundles
 
+### Data plane (WorkBatch + self-regulation)
+
+- [SELF-REGULATION.md](SELF-REGULATION.md) -- ON by default; the three brains (MemoryGuard / ScalingPressure / UnifiedPressure), observe + tune
+- [BACKPRESSURE.md](BACKPRESSURE.md) -- gate the source never the sink; the per-stage brake/commit-token table; streaming sub-blocks
+- [KAFKA-PATH.md](KAFKA-PATH.md) -- the three batch sizes, sizing profiles + librdkafka names, rho~0.7 loop, partition-limited diagnostic
+
 ### Core pillars (always-on, auto-wired)
 
 - [core-pillars/CONFIG.md](core-pillars/CONFIG.md) — 8-layer cascade, hot-reload, registry, `/config` endpoint

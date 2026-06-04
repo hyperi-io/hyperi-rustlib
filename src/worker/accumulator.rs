@@ -130,6 +130,31 @@ impl<T: Send + 'static> BatchAccumulator<T> {
     }
 }
 
+/// Drain accumulated [`Record`]s into a [`WorkBatch`] for push-ingest sources.
+///
+/// Push-ingest transports (HTTP, gRPC) accumulate [`Record`]s via a
+/// `BatchAccumulator<Record>` and, on drain, must turn the drained block into
+/// the canonical [`WorkBatch`] currency to feed the engine driver. This helper
+/// is that bridge: it pairs the drained records with the caller-supplied source
+/// commit tokens (the per-request responders / acks) into one block.
+///
+/// Additive -- the generic [`BatchAccumulator`] / [`BatchDrainer`] core is
+/// untouched; this is a free function over the `Record` element type. The
+/// `commit_tokens` are supplied by the caller because the push source owns the
+/// ack (an HTTP responder, a gRPC stream slot) -- the accumulator only carries
+/// the payload records.
+///
+/// [`Record`]: crate::transport::Record
+/// [`WorkBatch`]: crate::transport::WorkBatch
+#[cfg(feature = "transport")]
+#[must_use]
+pub fn records_into_work_batch<T: crate::transport::CommitToken>(
+    records: Vec<crate::transport::Record>,
+    commit_tokens: Vec<T>,
+) -> crate::transport::WorkBatch<T> {
+    crate::transport::WorkBatch::new(records, commit_tokens)
+}
+
 impl<T> BatchDrainer<T> {
     /// Wait for the next batch.
     ///
@@ -376,5 +401,54 @@ mod tests {
 
         let remaining = drainer.drain_remaining();
         assert!(remaining.is_empty());
+    }
+
+    /// Push-ingest helper: drained Records + supplied tokens become a WorkBatch.
+    #[cfg(feature = "transport")]
+    #[tokio::test]
+    async fn test_records_drain_into_work_batch() {
+        use crate::transport::{CommitToken, PayloadFormat, Record, RecordMeta};
+        use bytes::Bytes;
+
+        #[derive(Debug, Clone)]
+        struct PushTok(u64);
+        impl std::fmt::Display for PushTok {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "push-{}", self.0)
+            }
+        }
+        impl CommitToken for PushTok {}
+
+        let record = |payload: &'static [u8]| Record {
+            payload: Bytes::from_static(payload),
+            key: None,
+            headers: vec![],
+            metadata: RecordMeta {
+                timestamp_ms: None,
+                format: PayloadFormat::Json,
+            },
+        };
+
+        let config = AccumulatorConfig {
+            channel_capacity: 100,
+            max_items: 3,
+            max_bytes: usize::MAX,
+            max_wait: Duration::from_mins(1),
+        };
+        let (acc, mut drainer) = BatchAccumulator::<Record>::new(config);
+        acc.push(record(b"{\"a\":1}"), 7).await.unwrap();
+        acc.push(record(b"{\"b\":2}"), 7).await.unwrap();
+        acc.push(record(b"{\"c\":3}"), 7).await.unwrap();
+
+        let block = drainer.next_batch().await;
+        assert_eq!(block.len(), 3);
+
+        // Two source acks for a three-record block (push sources ack per request,
+        // not per record) -- the helper must NOT tie token count to record count.
+        let tokens = vec![PushTok(1), PushTok(2)];
+        let wb = records_into_work_batch(block, tokens);
+        assert_eq!(wb.record_count(), 3);
+        assert_eq!(wb.commit_tokens.len(), 2);
+        assert!(wb.dlq_entries.is_empty());
     }
 }

@@ -35,12 +35,15 @@
 //! ```
 
 use super::error::{TransportError, TransportResult};
-use super::traits::{CommitToken, RecvBatch, TransportBase, TransportReceiver, TransportSender};
+#[cfg(feature = "http-server")]
+use super::traits::RecvBatch;
+use super::traits::{CommitToken, TransportBase, TransportReceiver, TransportSender};
 #[cfg(feature = "http-server")]
 use super::types::Message;
 #[cfg(feature = "http-server")]
 use super::types::PayloadFormat;
 use super::types::SendResult;
+use super::work_batch::WorkBatch;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 #[cfg(feature = "http-server")]
@@ -264,6 +267,40 @@ impl HttpTransport {
     ///
     /// Returns error if the listen address is invalid or the server fails to bind.
     pub async fn new(config: &HttpTransportConfig) -> TransportResult<Self> {
+        // Default path: no pressure governor -> byte-identical to before.
+        Self::new_inner(
+            config,
+            #[cfg(feature = "governor")]
+            None,
+        )
+        .await
+    }
+
+    /// Create an HTTP transport bound to a pressure governor (G3, `governor`
+    /// feature).
+    ///
+    /// Identical to [`new`](Self::new) except the embedded receive server
+    /// consults `pressure` BEFORE enqueuing each request: while
+    /// [`UnifiedPressure::should_hold`](crate::governor::UnifiedPressure::should_hold)
+    /// holds, the handler returns 503 (SERVICE_UNAVAILABLE) -- the same status
+    /// the existing channel-full backpressure path uses. Passing `None` is
+    /// exactly equivalent to [`new`](Self::new).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`new`](Self::new).
+    #[cfg(feature = "governor")]
+    pub async fn with_pressure(
+        config: &HttpTransportConfig,
+        pressure: Option<Arc<crate::governor::UnifiedPressure>>,
+    ) -> TransportResult<Self> {
+        Self::new_inner(config, pressure).await
+    }
+
+    async fn new_inner(
+        config: &HttpTransportConfig,
+        #[cfg(feature = "governor")] pressure: Option<Arc<crate::governor::UnifiedPressure>>,
+    ) -> TransportResult<Self> {
         // `mut` is only used on the TLS path; harmless without the feature.
         #[cfg_attr(not(feature = "tls"), allow(unused_mut))]
         let mut client_builder = reqwest::Client::builder()
@@ -309,7 +346,14 @@ impl HttpTransport {
             let sequence = Arc::new(AtomicU64::new(0));
             let recv_path = config.recv_path.clone();
 
-            let app = build_receiver_router(tx, sequence, &recv_path, config.max_body_bytes);
+            let app = build_receiver_router(
+                tx,
+                sequence,
+                &recv_path,
+                config.max_body_bytes,
+                #[cfg(feature = "governor")]
+                pressure.clone(),
+            );
 
             let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
                 TransportError::Connection(format!("failed to bind to {addr}: {e}"))
@@ -331,6 +375,12 @@ impl HttpTransport {
         } else {
             (None, None, None)
         };
+
+        // When the governor feature is on but http-server is off there is no
+        // receive server to attach the pressure governor to; consume it so the
+        // signature stays uniform without an unused-variable warning.
+        #[cfg(all(feature = "governor", not(feature = "http-server")))]
+        let _ = pressure;
 
         #[cfg(feature = "logger")]
         tracing::info!(
@@ -385,10 +435,16 @@ fn build_receiver_router(
     sequence: Arc<AtomicU64>,
     recv_path: &str,
     max_body_bytes: usize,
+    #[cfg(feature = "governor")] pressure: Option<Arc<crate::governor::UnifiedPressure>>,
 ) -> axum::Router {
     use axum::routing::post;
 
-    let state = ReceiverState { sender, sequence };
+    let state = ReceiverState {
+        sender,
+        sequence,
+        #[cfg(feature = "governor")]
+        pressure,
+    };
 
     axum::Router::new()
         .route(recv_path, post(ingest_handler))
@@ -403,6 +459,13 @@ fn build_receiver_router(
 struct ReceiverState {
     sender: tokio::sync::mpsc::Sender<Message<HttpToken>>,
     sequence: Arc<AtomicU64>,
+    /// Optional pressure governor (G3, `governor` feature). `None` by default
+    /// -> the handler never consults it and behaviour is byte-identical. When
+    /// `Some`, the handler rejects with 503 while [`UnifiedPressure::should_hold`]
+    /// holds -- pressure-driven shedding ON TOP of the existing channel-full
+    /// 503, never replacing it.
+    #[cfg(feature = "governor")]
+    pressure: Option<Arc<crate::governor::UnifiedPressure>>,
 }
 
 /// POST handler that accepts raw bytes and queues them into the mpsc channel.
@@ -415,6 +478,20 @@ async fn ingest_handler(
 ) -> axum::http::StatusCode {
     if body.is_empty() {
         return axum::http::StatusCode::BAD_REQUEST;
+    }
+
+    // G3 pressure-driven shedding (governor feature, opt-in). BEFORE enqueuing,
+    // if a governor is wired and it says hold, shed the request with 503 --
+    // consistent with the existing channel-full 503 below (NOT 429). Default
+    // `None` -> this is skipped and behaviour is byte-identical.
+    #[cfg(feature = "governor")]
+    if let Some(pressure) = &state.pressure
+        && pressure.should_hold()
+    {
+        #[cfg(feature = "metrics")]
+        metrics::counter!("dfe_transport_backpressured_total", "transport" => "http", "reason" => "pressure")
+            .increment(1);
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE;
     }
 
     // Extract W3C traceparent from incoming HTTP headers for distributed tracing
@@ -435,9 +512,11 @@ async fn ingest_handler(
     let format = PayloadFormat::detect(&body);
     let timestamp_ms = chrono::Utc::now().timestamp_millis();
 
+    // `body` is `axum::body::Bytes` (= `bytes::Bytes`) -- move it directly,
+    // no copy needed.
     let msg = Message {
         key: None,
-        payload: body.to_vec(),
+        payload: body,
         token: HttpToken::with_source(seq, addr.to_string()),
         timestamp_ms: Some(timestamp_ms),
         format,
@@ -588,7 +667,7 @@ impl TransportSender for HttpTransport {
 impl TransportReceiver for HttpTransport {
     type Token = HttpToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<RecvBatch<Self::Token>> {
+    async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -642,7 +721,7 @@ impl TransportReceiver for HttpTransport {
             // entries are returned in the RecvBatch for the caller to route.
             let batch = self.filter_engine.partition_batch(
                 messages,
-                |m| m.payload.as_slice(),
+                |m| m.payload.as_ref(),
                 |m| m.key.clone(),
             );
             let messages = batch.messages;
@@ -656,7 +735,8 @@ impl TransportReceiver for HttpTransport {
             Ok(RecvBatch {
                 messages,
                 dlq_entries,
-            })
+            }
+            .into())
         }
 
         #[cfg(not(feature = "http-server"))]
@@ -804,10 +884,11 @@ mod tests {
         assert!(result.is_ok(), "send failed: {result:?}");
 
         // Receive it
-        let messages = receiver.recv(10).await.unwrap().messages;
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].payload, b"{\"msg\":\"hello\"}");
-        assert!(messages[0].token.source_addr.is_some());
+        let batch = receiver.recv(10).await.unwrap();
+        assert_eq!(batch.records.len(), 1);
+        assert_eq!(batch.records[0].payload.as_ref(), b"{\"msg\":\"hello\"}");
+        // The source address rides on the batch commit token, not the record.
+        assert!(batch.commit_tokens[0].source_addr.is_some());
 
         // Cleanup
         sender.close().await.unwrap();
@@ -842,8 +923,8 @@ mod tests {
         assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
 
         // recv should timeout with no messages
-        let messages = receiver.recv(10).await.unwrap().messages;
-        assert!(messages.is_empty());
+        let records = receiver.recv(10).await.unwrap().records;
+        assert!(records.is_empty());
 
         receiver.close().await.unwrap();
     }
@@ -877,8 +958,8 @@ mod tests {
         assert_eq!(resp.status(), reqwest::StatusCode::PAYLOAD_TOO_LARGE);
 
         // The oversized POST never reached the queue.
-        let messages = receiver.recv(10).await.unwrap().messages;
-        assert!(messages.is_empty(), "oversized body must not be queued");
+        let records = receiver.recv(10).await.unwrap().records;
+        assert!(records.is_empty(), "oversized body must not be queued");
 
         receiver.close().await.unwrap();
     }
@@ -892,6 +973,92 @@ mod tests {
 
         let result = transport.recv(10).await;
         assert!(result.is_err());
+    }
+
+    /// G3: with a pressure governor pinned HIGH, the ingest handler sheds with
+    /// 503 (SERVICE_UNAVAILABLE) -- the same status as the channel-full path.
+    /// With `None` (the default `new`), POST is accepted (200) as before.
+    #[cfg(all(feature = "http-server", feature = "governor"))]
+    #[tokio::test]
+    async fn pressure_high_sheds_with_503_and_none_is_normal() {
+        use crate::governor::{Hysteresis, MemoryPressureSource, PressureSource, UnifiedPressure};
+        use crate::memory::{MemoryGuard, MemoryGuardConfig};
+
+        // --- None default: POST accepted (200) ---
+        {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            drop(listener);
+            let cfg = HttpTransportConfig {
+                listen: Some(addr.to_string()),
+                recv_timeout_ms: 200,
+                ..Default::default()
+            };
+            let receiver = HttpTransport::new(&cfg).await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+            let client = reqwest::Client::new();
+            let resp = client
+                .post(format!("http://127.0.0.1:{}/ingest", addr.port()))
+                .body(b"{\"msg\":\"ok\"}".to_vec())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                reqwest::StatusCode::OK,
+                "no governor -> accepted"
+            );
+            receiver.close().await.unwrap();
+        }
+
+        // --- Governor pinned HIGH (HARD memory source at 95%): 503 ---
+        {
+            let guard = Arc::new(MemoryGuard::new(MemoryGuardConfig {
+                limit_bytes: 1000,
+                pressure_threshold: 0.80,
+                ..Default::default()
+            }));
+            guard.add_bytes(950); // 95% -> well above pause_above
+            let src = MemoryPressureSource::new(Arc::clone(&guard));
+            let pressure = Arc::new(UnifiedPressure::new(
+                vec![Arc::new(src) as Arc<dyn PressureSource>],
+                Hysteresis::new(0.80, 0.65).expect("valid band"),
+            ));
+            // Sanity: the latch is armed.
+            assert!(pressure.should_hold(), "pinned-high governor must hold");
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            drop(listener);
+            let cfg = HttpTransportConfig {
+                listen: Some(addr.to_string()),
+                recv_timeout_ms: 200,
+                ..Default::default()
+            };
+            let receiver = HttpTransport::with_pressure(&cfg, Some(Arc::clone(&pressure)))
+                .await
+                .unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+            let client = reqwest::Client::new();
+            let resp = client
+                .post(format!("http://127.0.0.1:{}/ingest", addr.port()))
+                .body(b"{\"msg\":\"shed\"}".to_vec())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                reqwest::StatusCode::SERVICE_UNAVAILABLE,
+                "pinned-high governor must shed with 503"
+            );
+
+            // The shed POST never reached the queue.
+            let records = receiver.recv(10).await.unwrap().records;
+            assert!(records.is_empty(), "shed request must not be queued");
+            receiver.close().await.unwrap();
+        }
     }
 
     #[test]

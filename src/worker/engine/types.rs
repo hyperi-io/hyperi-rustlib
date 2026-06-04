@@ -67,89 +67,25 @@ impl From<PayloadFormat> for crate::PayloadFormat {
     }
 }
 
-/// Type-erased commit token for use in [`MessageMetadata`].
+/// Metadata attached to a parsed message.
 ///
-/// Allows commit tokens from any transport to be stored without
-/// introducing a generic parameter on [`RawMessage`].
-pub trait CommitTokenErased: Send + Sync + std::fmt::Debug {
-    /// Clone this token into a new box.
-    fn clone_box(&self) -> Box<dyn CommitTokenErased>;
-}
-
-impl Clone for Box<dyn CommitTokenErased> {
-    fn clone(&self) -> Self {
-        self.clone_box()
-    }
-}
-
-/// Blanket impl: any `CommitToken` type auto-implements `CommitTokenErased`.
-#[cfg(feature = "transport")]
-impl<T: crate::CommitToken> CommitTokenErased for T {
-    fn clone_box(&self) -> Box<dyn CommitTokenErased> {
-        Box::new(self.clone())
-    }
-}
-
-/// Metadata attached to a raw message.
-///
-/// Carries transport provenance -- timestamp, detected format, and an optional
-/// type-erased commit token so the engine can acknowledge messages without
-/// knowing the concrete transport type.
+/// Carries transport provenance -- timestamp and detected format. Commit
+/// tokens are NOT carried here: they live on [`crate::transport::WorkBatch`]'s
+/// `commit_tokens` and are decoupled from individual records.
 #[derive(Debug, Clone)]
 pub struct MessageMetadata {
     /// Message timestamp from the transport layer (milliseconds since epoch).
     pub timestamp_ms: Option<i64>,
     /// Detected or declared payload format.
     pub format: PayloadFormat,
-    /// Type-erased commit token for acknowledgement after processing.
-    pub commit_token: Option<Box<dyn CommitTokenErased>>,
 }
 
-/// Transport-agnostic raw message.
+/// A JSON-parsed message.
 ///
-/// The lowest-level type in the engine -- holds raw bytes plus just enough
-/// metadata to route, parse, and commit. No generic parameters.
-#[derive(Debug, Clone)]
-pub struct RawMessage {
-    /// Raw payload bytes (JSON or MsgPack, unchanged from transport).
-    pub payload: Bytes,
-    /// Routing key (Kafka topic, gRPC metadata key, etc.).
-    pub key: Option<Arc<str>>,
-    /// Transport headers (HTTP headers, Kafka headers, etc.).
-    pub headers: Vec<(String, Vec<u8>)>,
-    /// Transport provenance metadata.
-    pub metadata: MessageMetadata,
-}
-
-/// Convert a typed `Message<T>` into a `RawMessage`.
-///
-/// The commit token is type-erased via `CommitTokenErased`. Requires the
-/// `transport` feature for `Message<T>` and `CommitToken`.
-#[cfg(feature = "transport")]
-impl<T: crate::CommitToken> From<crate::Message<T>> for RawMessage {
-    fn from(msg: crate::Message<T>) -> Self {
-        RawMessage {
-            payload: Bytes::from(msg.payload),
-            key: msg.key,
-            headers: vec![],
-            metadata: MessageMetadata {
-                timestamp_ms: msg.timestamp_ms,
-                format: msg.format.into(),
-                commit_token: Some(Box::new(msg.token)),
-            },
-        }
-    }
-}
-
-/// A message that may or may not have been JSON-parsed.
-///
-/// The `Raw` variant holds the original bytes when parsing has not yet
-/// occurred (or is deferred). The `Parsed` variant holds the parsed JSON
-/// value alongside extracted fields for fast routing lookups.
+/// Holds the parsed JSON value alongside extracted fields for fast routing
+/// lookups. Built by the engine's parse step from a [`crate::transport::Record`].
 #[derive(Debug, Clone)]
 pub enum ParsedMessage {
-    /// Unparsed message -- bytes only.
-    Raw(RawMessage),
     /// Successfully JSON-parsed message.
     Parsed {
         /// Full parsed JSON value.
@@ -180,67 +116,54 @@ impl ParsedMessage {
     /// `Raw` variant or when the field is absent.
     #[must_use]
     pub fn field(&self, name: &str) -> Option<&sonic_rs::Value> {
-        match self {
-            Self::Parsed {
-                value, extracted, ..
-            } => {
-                // Fast path: check pre-extracted interned keys first.
-                let interned = extracted
-                    .keys()
-                    .find(|k| k.as_ref() == name)
-                    .and_then(|k| extracted.get(k));
-                if interned.is_some() {
-                    return interned;
-                }
-                // Slow path: walk full JSON value.
-                value.get(name)
-            }
-            Self::Raw(_) => None,
+        let Self::Parsed {
+            value, extracted, ..
+        } = self;
+        // Fast path: check pre-extracted interned keys first.
+        let interned = extracted
+            .keys()
+            .find(|k| k.as_ref() == name)
+            .and_then(|k| extracted.get(k));
+        if interned.is_some() {
+            return interned;
         }
+        // Slow path: walk full JSON value.
+        value.get(name)
     }
 
-    /// Return a reference to the parsed JSON value, if available.
+    /// Return a reference to the parsed JSON value.
     #[must_use]
     pub fn value(&self) -> Option<&sonic_rs::Value> {
-        match self {
-            Self::Parsed { value, .. } => Some(value),
-            Self::Raw(_) => None,
-        }
+        let Self::Parsed { value, .. } = self;
+        Some(value)
     }
 
-    /// Return a mutable reference to the parsed JSON value, if available.
+    /// Return a mutable reference to the parsed JSON value.
     #[must_use]
     pub fn value_mut(&mut self) -> Option<&mut sonic_rs::Value> {
-        match self {
-            Self::Parsed { value, .. } => Some(value),
-            Self::Raw(_) => None,
-        }
+        let Self::Parsed { value, .. } = self;
+        Some(value)
     }
 
-    /// Return the raw payload bytes for both variants.
+    /// Return the raw payload bytes.
     #[must_use]
     pub fn raw_payload(&self) -> &[u8] {
-        match self {
-            Self::Parsed { raw, .. } => raw,
-            Self::Raw(msg) => &msg.payload,
-        }
+        let Self::Parsed { raw, .. } = self;
+        raw
     }
 
-    /// Return the routing key for both variants.
+    /// Return the routing key.
     #[must_use]
     pub fn key(&self) -> Option<&str> {
-        match self {
-            Self::Parsed { key, .. } => key.as_deref(),
-            Self::Raw(msg) => msg.key.as_deref(),
-        }
+        let Self::Parsed { key, .. } = self;
+        key.as_deref()
     }
 
-    /// Return transport provenance metadata for both variants.
+    /// Return transport provenance metadata.
     #[must_use]
     pub fn metadata(&self) -> &MessageMetadata {
-        match self {
-            Self::Parsed { metadata, .. } | Self::Raw(RawMessage { metadata, .. }) => metadata,
-        }
+        let Self::Parsed { metadata, .. } = self;
+        metadata
     }
 }
 
@@ -262,22 +185,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn raw_message_construction() {
-        let msg = RawMessage {
-            payload: Bytes::from_static(b"{\"key\":\"value\"}"),
-            key: Some(Arc::from("test-key")),
-            headers: vec![],
-            metadata: MessageMetadata {
-                timestamp_ms: Some(1_234_567_890),
-                format: PayloadFormat::Json,
-                commit_token: None,
-            },
-        };
-        assert_eq!(msg.payload.len(), 15);
-        assert_eq!(msg.key.as_deref(), Some("test-key"));
-    }
-
-    #[test]
     fn parsed_message_field_access() {
         let mut extracted = std::collections::HashMap::new();
         let table_key: Arc<str> = Arc::from("_table");
@@ -292,7 +199,6 @@ mod tests {
             metadata: MessageMetadata {
                 timestamp_ms: None,
                 format: PayloadFormat::Json,
-                commit_token: None,
             },
             extracted,
         };
@@ -300,22 +206,6 @@ mod tests {
         assert_eq!(msg.field("_table").and_then(|v| v.as_str()), Some("events"));
         assert!(msg.value().is_some());
         assert!(!msg.raw_payload().is_empty());
-    }
-
-    #[test]
-    fn parsed_message_raw_variant() {
-        let msg = ParsedMessage::Raw(RawMessage {
-            payload: Bytes::from_static(b"raw bytes"),
-            key: None,
-            headers: vec![],
-            metadata: MessageMetadata {
-                timestamp_ms: None,
-                format: PayloadFormat::Json,
-                commit_token: None,
-            },
-        });
-        assert!(msg.value().is_none());
-        assert_eq!(msg.raw_payload(), b"raw bytes");
     }
 
     #[test]
@@ -329,7 +219,6 @@ mod tests {
             metadata: MessageMetadata {
                 timestamp_ms: None,
                 format: PayloadFormat::Json,
-                commit_token: None,
             },
             extracted: std::collections::HashMap::new(),
         };
@@ -367,17 +256,19 @@ mod tests {
     }
 
     #[test]
-    fn metadata_accessor_on_raw() {
-        let msg = ParsedMessage::Raw(RawMessage {
-            payload: Bytes::from_static(b"data"),
+    fn metadata_accessor() {
+        let msg = ParsedMessage::Parsed {
+            value: sonic_rs::from_str(r#"{"x":1}"#).unwrap(),
+            raw: Bytes::from_static(b"{\"x\":1}"),
+            format: PayloadFormat::Auto,
             key: Some(Arc::from("k")),
             headers: vec![],
             metadata: MessageMetadata {
                 timestamp_ms: Some(42),
                 format: PayloadFormat::Auto,
-                commit_token: None,
             },
-        });
+            extracted: std::collections::HashMap::new(),
+        };
         assert_eq!(msg.metadata().timestamp_ms, Some(42));
         assert_eq!(msg.key(), Some("k"));
     }

@@ -655,16 +655,15 @@ async fn test_kafka_send_receive_batch() {
     }
 
     // Receive messages (may not get all if topic is shared)
-    let messages = transport.recv(100).await;
-    assert!(messages.is_ok(), "Recv failed: {:?}", messages.err());
+    let batch = transport.recv(100).await;
+    assert!(batch.is_ok(), "Recv failed: {:?}", batch.err());
 
-    let messages = messages.unwrap().messages;
-    println!("Received {} messages", messages.len());
+    let batch = batch.unwrap();
+    println!("Received {} records", batch.records.len());
 
-    // Commit if we got messages
-    if !messages.is_empty() {
-        let tokens: Vec<_> = messages.iter().map(|m| m.token.clone()).collect();
-        let result = transport.commit(&tokens).await;
+    // Commit if we got records.
+    if !batch.records.is_empty() {
+        let result = transport.commit(&batch.commit_tokens).await;
         assert!(result.is_ok(), "Commit failed: {:?}", result.err());
     }
 }

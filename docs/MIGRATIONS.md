@@ -10,7 +10,151 @@ six core DFE apps migrate in lockstep.
 
 ---
 
-## Unreleased — pre-GA hardening (at-scale Phase 2)
+## Unreleased -- WorkBatch data-plane spine + self-regulation (Phase 0)
+
+The data plane flips onto a single zero-copy currency -- `WorkBatch` (a block
+of `Record`s) -- driven `get -> process -> send -> commit` by ONE unified
+engine driver, with self-regulation (memory guard + inbound/byte-budget
+backpressure) ON by default. See [SELF-REGULATION.md](SELF-REGULATION.md),
+[BACKPRESSURE.md](BACKPRESSURE.md), [KAFKA-PATH.md](KAFKA-PATH.md).
+
+The six core DFE apps migrate in lockstep (Phase 6); items below are the
+consumer-facing surface changes.
+
+### `WorkBatch` / `Record` -- the canonical currency (BREAKING)
+
+A new `WorkBatch<T>` (a `Vec<Record>` + the block's `commit_tokens` + any
+inline `dlq_entries`) collapses the old `Message` / `RawMessage` / `RecvBatch`
+trio into ONE block type. `Record` is payload (`bytes::Bytes`, zero-copy) +
+routing key + headers + lean `RecordMeta` (timestamp + format), with **no**
+commit token.
+
+The headline contract: **commit tokens live on the BATCH, not the record**,
+and `commit_tokens.len()` is decoupled from `records.len()`. A transform that
+fans `N` records out to `2N` does NOT multiply the source acks -- the driver
+commits EXACTLY the `N` input tokens after the `2N`-record block is sent
+(at-least-once). Use `WorkBatch::map_records` to transform records while the
+commit tokens and DLQ entries flow through untouched.
+
+`WorkBatch`, `Record`, `RecordMeta`, `FramingError` are re-exported as
+`hyperi_rustlib::transport::*`. Zero-copy framing helpers: `WorkBatch::single`
+(whole blob), `WorkBatch::from_ndjson`, `WorkBatch::from_json_array` (each
+slices one inbound `Bytes` into per-record views -- no payload copy).
+
+### `TransportReceiver::recv` returns `WorkBatch<Token>` (BREAKING)
+
+| Old | `recv(max) -> TransportResult<RecvBatch<Token>>` (messages + dlq_entries) |
+| New | `recv(max) -> TransportResult<WorkBatch<Token>>` |
+
+`recv` now yields a `WorkBatch` natively -- no `RecvBatch` round-trip. The
+inbound-filter DLQ entries arrive on `WorkBatch.dlq_entries` alongside the
+passing `WorkBatch.records`; the source acks are on `WorkBatch.commit_tokens`.
+
+**Consumer adjustment** -- anywhere you call `recv()`:
+
+```rust
+let batch = transport.recv(100).await?;
+for entry in batch.dlq_entries {
+    dlq.send(DlqEntry::new("filter", entry.reason, entry.payload)).await?;
+}
+for record in batch.records { /* process */ }
+```
+
+Custom `TransportReceiver` impls: change the `recv` signature to return
+`WorkBatch` (build via `WorkBatch::new(records, tokens)` /
+`WorkBatch::from_records(records)` / `WorkBatch::empty()`).
+
+### Unified driver: `run_governed` / `run_workbatch*` replace the four run loops (BREAKING)
+
+The four legacy `BatchEngine` run loops (`run` / `run_raw` / `run_async` /
+`run_raw_async`) are DELETED. One unified driver family replaces them
+(`src/worker/engine/driver.rs`):
+
+| New method | Use |
+|---|---|
+| `run_governed` | The default for a self-regulating app. Streams in byte-budget sub-blocks when the governor is on; delegates to `run_workbatch` when off (byte-identical). |
+| `run_workbatch` | On-demand parse (default). The driver does not pre-parse; a transform calls `codec::parse` when it needs a field. Pass-through apps pay zero parse. |
+| `run_workbatch_parsed` | Opt-in hot path. The driver pre-parses the whole block (SIMD JSON / native MsgPack) on the pool and hands the closure a `ParsedBatch` (records + aligned `ParsedPayload`s + shared `FieldInterner`). Parse failures route to DLQ, no silent drop. |
+| `run_workbatch_streaming` | Explicit sub-block streaming with a caller-supplied byte size (peak memory bounded to one sub-block). |
+
+`process` is now `Fn(WorkBatch<Token>) -> Result<WorkBatch<Token>, EngineError>`
+(or `Fn(ParsedBatch<'_, Token>) -> Result<WorkBatch<Token>, EngineError>` for
+the parsed path). It MUST preserve `commit_tokens` -- use
+`WorkBatch::map_records`, which does so automatically. `CommitMode::Auto`
+(engine commits after sink `Ok`) vs `CommitMode::SinkManaged` (sink owns the
+commit) selects who fires the acks.
+
+Custom in-process callers: `process_mid_tier` / `process_raw` now take a
+`Record` (not a `Message`); only the four run LOOPS were removed.
+
+### `TransportSender::send_batch` (additive, default provided)
+
+New trait method `send_batch(&self, records: &[Record]) -> SendResult`. The
+default loops `send` per record (using each record's own key + payload
+`Bytes`); transports with a native batch RPC (gRPC `RouteBatch`) override it
+to send the whole block in one serde-less call. Commit tokens + DLQ entries
+are NOT sent -- they are the sender's local concern; pass `&workbatch.records`
+and fire the commit tokens locally after `SendResult::Ok`. Existing `send`
+callers are unaffected; the default is non-atomic (a mid-block failure leaves
+the already-sent prefix on the wire -- at-least-once, retried by the caller).
+
+### Codec consolidation -- native rmpv, JSON bridge removed (BREAKING for codec users)
+
+`src/transport/codec.rs` is the parse-on-demand codec for the WorkBatch spine.
+`parse(&Bytes, PayloadFormat) -> ParsedPayload` decodes JSON via `sonic_rs`
+(SIMD) and MsgPack via **native `rmpv`** -- NOT the old
+`rmp_serde -> serde_json::Value -> serde_json::to_vec -> sonic_rs` bridge
+(two parses + a re-serialise per MsgPack record). `ParsedPayload` keeps its
+native value (`sonic_rs::Value` / `rmpv::Value`); `field_str` / `field` are
+the format-agnostic routing-field accessors; `to_json_bytes` / `to_msgpack_bytes`
+/ `ParsedPayload::to_bytes` serialise back to the OWN wire format (no
+cross-format bridge). Pass-through contract: an UNMODIFIED record must reuse
+its original `Record.payload` -- `to_bytes` is only for a record a transform
+actually mutated.
+
+- The read-side `transport/payload.rs` is removed.
+- The MsgPack-via-`serde_json` bridge is removed.
+- `rmpv` is a new dependency (`transport` feature).
+- `ParsedMessage -> ParsedPayload` rename is DEFERRED (see KEPT-but-deferred).
+
+`CodecError`, `FieldRef`, `ParsedPayload`, `parse` are re-exported as
+`hyperi_rustlib::transport::*`.
+
+### Self-regulation default-ON (BEHAVIOUR CHANGE, opt-out)
+
+A new `self_regulation` config section turns the data-plane governor ON by
+default. When the `governor` feature is compiled in, the runtime builds the
+pressure governor (memory HARD source), the inbound gate, and the byte-budget
+controller, and threads them into the transports + driver. Memory pressure
+brakes inbound intake; the byte budget sizes streaming sub-blocks. To opt out
+(byte-identical to pre-governor behaviour -- nothing is constructed):
+
+```yaml
+self_regulation:
+  enabled: false
+```
+
+Full tuning surface (profile / pause_above / resume_below / target_rho /
+md_factor) in [SELF-REGULATION.md](SELF-REGULATION.md). Off-pressure cost is
+near zero: the budget sits at its big start value so a block is one sub-block
+with no per-record overhead.
+
+### Originator brake / token wiring (BEHAVIOUR CHANGE)
+
+Data-originator stages get the inbound brake wired into the receive transport:
+Kafka pauses ASSIGNED partitions (member stays in group, no rebalance);
+HTTP/gRPC returns 503 / `UNAVAILABLE`; the fetcher pauses its poll. Each pairs
+with the at-least-once commit token (offset / responder / cursor) so a paused
+intake never advances the source position. `SelfRegulationGovernor::attach_kafka_gate`
+is the one-call form of the gate dance. See [BACKPRESSURE.md](BACKPRESSURE.md).
+
+### KEPT but deferred
+
+- `Message` / `RecvBatch` remain as internal build-helpers (with
+  `From<Message>` / `From<RecvBatch>` conversions into `WorkBatch`). Fully
+  retiring them needs a filter-layer rework -- deferred.
+- `ParsedMessage -> ParsedPayload` rename deferred (the engine still uses
+  `ParsedMessage` for the in-process callers).
 
 ### `TransportReceiver::recv` returns `RecvBatch` (BREAKING)
 

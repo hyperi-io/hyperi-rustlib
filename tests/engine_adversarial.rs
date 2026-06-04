@@ -6,33 +6,34 @@
 // License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-#![cfg(feature = "worker")]
+// process_mid_tier / process_raw take the canonical transport Record (Task
+// 0.7c), so this suite needs the transport feature for Record/RecordMeta.
+#![cfg(all(feature = "worker", feature = "transport"))]
 
 use std::sync::Arc;
 
 use bytes::Bytes;
+use hyperi_rustlib::transport::{PayloadFormat, Record, RecordMeta};
 use hyperi_rustlib::worker::engine::config::PreRouteFilterConfig;
 use hyperi_rustlib::worker::engine::intern::FieldInterner;
-use hyperi_rustlib::worker::engine::types::{MessageMetadata, PayloadFormat, RawMessage};
 use hyperi_rustlib::worker::engine::{BatchEngine, BatchProcessingConfig};
 use sonic_rs::JsonValueTrait as _;
 
 // --- Helpers ---
 
-fn make_raw(payload: &[u8]) -> RawMessage {
-    RawMessage {
+fn make_raw(payload: &[u8]) -> Record {
+    Record {
         payload: Bytes::copy_from_slice(payload),
         key: None,
         headers: vec![],
-        metadata: MessageMetadata {
+        metadata: RecordMeta {
             timestamp_ms: None,
             format: PayloadFormat::Json,
-            commit_token: None,
         },
     }
 }
 
-fn make_json_messages(n: usize) -> Vec<RawMessage> {
+fn make_json_messages(n: usize) -> Vec<Record> {
     (0..n)
         .map(|i| make_raw(format!(r#"{{"_table":"events","id":{i}}}"#).as_bytes()))
         .collect()
@@ -96,7 +97,7 @@ fn chunk_boundary_plus_one() {
 #[test]
 fn all_parse_errors() {
     let engine = default_engine();
-    let msgs: Vec<RawMessage> = (0..20)
+    let msgs: Vec<Record> = (0..20)
         .map(|i| make_raw(format!("not json {i} {{{{").as_bytes()))
         .collect();
 
@@ -112,7 +113,7 @@ fn all_parse_errors() {
 #[test]
 fn mixed_valid_invalid() {
     let engine = default_engine();
-    let msgs: Vec<RawMessage> = (0..100)
+    let msgs: Vec<Record> = (0..100)
         .map(|i| {
             if i % 2 == 0 {
                 make_raw(format!(r#"{{"id":{i}}}"#).as_bytes())
@@ -218,7 +219,7 @@ fn pre_route_all_filtered() {
     let engine = BatchEngine::new(config);
 
     // All messages are missing _table
-    let msgs: Vec<RawMessage> = (0..20)
+    let msgs: Vec<Record> = (0..20)
         .map(|i| make_raw(format!(r#"{{"host":"web-{i}"}}"#).as_bytes()))
         .collect();
 
@@ -425,15 +426,16 @@ fn msgpack_auto_detection() {
     let msgpack_bytes = rmp_serde::to_vec(&json_value).expect("msgpack encode failed");
 
     let engine = default_engine();
-    // Use Auto format — engine should sniff the MsgPack header bytes
-    let msg = RawMessage {
+    // Use Auto format — engine should sniff the MsgPack header bytes, then
+    // decode natively via rmpv (no rmp_serde -> serde_json bridge on the
+    // engine parse path).
+    let msg = Record {
         payload: bytes::Bytes::from(msgpack_bytes),
         key: None,
         headers: vec![],
-        metadata: MessageMetadata {
+        metadata: RecordMeta {
             timestamp_ms: None,
             format: PayloadFormat::Auto,
-            commit_token: None,
         },
     };
 

@@ -114,6 +114,12 @@ cache = ["moka", "serde_json"]
 # Cgroup-aware memory backpressure (OOM prevention)
 memory = ["sysinfo", "tracing"]
 
+# Unified self-regulation governor: a pressure seam that combines a HARD
+# memory signal (never masked) with weighted SOFT signals under a
+# hysteresis latch. Additive, default-off. Depends on MemoryGuard, so it
+# implies `memory`.
+governor = ["memory"]
+
 # Scaling pressure calculation (KEDA autoscaling)
 scaling = ["parking_lot", "tracing"]
 
@@ -125,8 +131,11 @@ worker-pool = ["rayon", "config", "metrics", "tokio", "tokio-util", "sysinfo", "
 worker-batch = ["worker-pool", "sonic-rs", "dashmap", "bytes"]
 worker = ["worker-batch"]
 
-# Worker pool with msgpack batch serialisation support
-worker-msgpack = ["worker", "rmp-serde"]
+# Worker pool with msgpack batch serialisation support.
+# Uses `rmpv` (native schema-less MsgPack value) so the engine parse path
+# decodes MsgPack with a single native decode -- NO rmp_serde -> serde_json
+# bridge. `rmp-serde` stays for the typed (de)serialise helpers elsewhere.
+worker-msgpack = ["worker", "rmp-serde", "rmpv"]
 
 # CLI tiers (2.6.0 split):
 # - cli: bare clap types — CommonArgs, StandardCommand, VersionInfo, CliError,
@@ -135,7 +144,7 @@ worker-msgpack = ["worker", "rmp-serde"]
 # - cli-service: + DfeApp trait, run_app, ServiceRuntime (full DFE app
 #   scaffolding — pulls in metrics + memory + scaling + worker-pool).
 cli = ["clap", "tracing"]
-cli-service = ["cli", "metrics", "memory", "scaling", "worker-pool", "shutdown"]
+cli-service = ["cli", "metrics", "memory", "scaling", "worker-pool", "shutdown", "governor"]
 # TUI metrics dashboard (ratatui + crossterm via ratatui re-export)
 top = ["cli-service", "ratatui"]
 
@@ -179,7 +188,7 @@ config-postgres = ["config", "sqlx", "tokio", "serde_json"]
 # - transport-trace: + W3C traceparent propagation via opentelemetry
 # Apps that send/receive but don't propagate distributed-trace context
 # avoid pulling in the OpenTelemetry SDK.
-transport = ["tokio", "serde_json", "rmp-serde", "chrono", "async-trait", "regex", "memchr", "sonic-rs", "parking_lot", "tracing", "metrics-core", "bytes"]
+transport = ["tokio", "serde_json", "rmp-serde", "rmpv", "chrono", "async-trait", "regex", "memchr", "sonic-rs", "parking_lot", "tracing", "metrics-core", "bytes"]
 transport-trace = ["transport", "dep:opentelemetry"]
 transport-memory = ["transport"]
 transport-kafka = ["transport", "rdkafka", "regex", "tokio-util"]
@@ -312,6 +321,11 @@ chrono = { version = ">=0.4.43, <0.5", optional = true }
 
 # MessagePack (for transport)
 rmp-serde = { version = ">=1.3.1, <2", optional = true }
+# Native schema-less MsgPack Value decode (transport codec fast path). Same
+# `3Hren/msgpack-rust` workspace as rmp-serde, MIT, MSRV 1.85. Avoids the
+# rmp_serde -> serde_json -> sonic_rs bridge for parse-on-demand routing.
+# Web-checked 2026-06-04: latest 1.3.1, actively maintained.
+rmpv = { version = ">=1.3.1, <2", optional = true }
 
 # Kafka transport (dynamic-linking: use system librdkafka instead of compiling C++ from source)
 rdkafka = { version = ">=0.39.0, <0.40", features = ["dynamic-linking"], optional = true }
@@ -450,7 +464,7 @@ harness = false
 [[bench]]
 name = "engine_benchmark"
 harness = false
-required-features = ["worker"]
+required-features = ["worker", "transport"]
 
 [[bench]]
 name = "filter_benchmark"

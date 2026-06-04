@@ -23,12 +23,13 @@
 //! transport.send("ignored", bytes::Bytes::from_static(b"hello world")).await;
 //!
 //! // Recv reads lines from stdin
-//! let messages = transport.recv(10).await?.messages;
+//! let records = transport.recv(10).await?.records;
 //! ```
 
 use super::error::{TransportError, TransportResult};
 use super::traits::{CommitToken, RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
+use super::work_batch::WorkBatch;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -218,7 +219,7 @@ impl TransportSender for PipeTransport {
 impl TransportReceiver for PipeTransport {
     type Token = PipeToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<RecvBatch<Self::Token>> {
+    async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -272,7 +273,7 @@ impl TransportReceiver for PipeTransport {
                         continue;
                     }
 
-                    let payload_bytes = payload.as_bytes().to_vec();
+                    let payload_bytes: bytes::Bytes = payload.as_bytes().to_vec().into();
                     let seq = self.sequence.fetch_add(1, Ordering::Relaxed);
                     let format = PayloadFormat::detect(&payload_bytes);
                     let timestamp_ms = chrono::Utc::now().timestamp_millis();
@@ -297,11 +298,9 @@ impl TransportReceiver for PipeTransport {
 
         // Apply inbound filters via the shared partition helper; DLQ entries
         // are returned in the RecvBatch for the caller to route onward.
-        let batch = self.filter_engine.partition_batch(
-            messages,
-            |m| m.payload.as_slice(),
-            |m| m.key.clone(),
-        );
+        let batch =
+            self.filter_engine
+                .partition_batch(messages, |m| m.payload.as_ref(), |m| m.key.clone());
         let messages = batch.messages;
         let dlq_entries = batch.dlq_entries;
 
@@ -316,7 +315,8 @@ impl TransportReceiver for PipeTransport {
         Ok(RecvBatch {
             messages,
             dlq_entries,
-        })
+        }
+        .into())
     }
 
     async fn commit(&self, _tokens: &[Self::Token]) -> TransportResult<()> {

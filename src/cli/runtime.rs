@@ -88,6 +88,18 @@ pub struct ServiceRuntime {
     /// `None` if the `scaling` feature is not enabled.
     #[cfg(feature = "scaling")]
     pub scaling: Option<Arc<crate::ScalingPressure>>,
+
+    /// Self-regulation governor (`governor` feature). Built default-ON (opt-out
+    /// via `self_regulation.enabled = false`) from the cascade. `None` when
+    /// disabled by config -- in which case nothing was constructed and the data
+    /// path is byte-identical to pre-governor behaviour.
+    ///
+    /// Thread [`pressure`](crate::SelfRegulationGovernor::pressure) into your
+    /// receive transports' inbound gate / `with_pressure` hooks, and the
+    /// [`budget`](crate::SelfRegulationGovernor::budget) is already wired into
+    /// the [`batch_engine`](Self::batch_engine) governed run path.
+    #[cfg(feature = "governor")]
+    pub governor: Option<crate::SelfRegulationGovernor>,
 }
 
 impl ServiceRuntime {
@@ -122,6 +134,17 @@ impl ServiceRuntime {
         // --- Memory guard ---
         #[cfg(feature = "memory")]
         let memory_guard = Arc::new(MemoryGuard::new(MemoryGuardConfig::from_env(env_prefix)));
+
+        // --- Self-regulation governor (default-ON, opt-out) ---
+        //
+        // Constructed HERE -- before the worker pool, batch engine, and the
+        // transports the app builds in run_service() -- so the shared pressure
+        // and byte budget can be threaded into all of them. When
+        // `self_regulation.enabled = false`, `build` returns None and nothing
+        // is constructed: every downstream Option stays None and the data path
+        // is byte-identical to pre-governor behaviour.
+        #[cfg(feature = "governor")]
+        let governor = crate::SelfRegulationConfig::from_cascade().build(Arc::clone(&memory_guard));
 
         // --- Scaling pressure ---
         #[cfg(feature = "scaling")]
@@ -174,6 +197,13 @@ impl ServiceRuntime {
                     #[cfg(feature = "memory")]
                     Some(&memory_guard),
                 );
+                // Wire the governor's byte-budget lever so the engine's governed
+                // run path streams in budget-sized sub-blocks. None (governor
+                // off) leaves the engine on the whole-batch loop.
+                #[cfg(feature = "governor")]
+                if let Some(ref gov) = governor {
+                    engine.set_byte_budget(gov.budget());
+                }
                 Some(Arc::new(engine))
             } else {
                 None
@@ -226,6 +256,8 @@ impl ServiceRuntime {
             batch_engine,
             #[cfg(feature = "scaling")]
             scaling,
+            #[cfg(feature = "governor")]
+            governor,
         })
     }
 

@@ -8,6 +8,7 @@
 
 use super::error::TransportError;
 use super::traits::CommitToken;
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -87,8 +88,8 @@ pub struct Message<T: CommitToken> {
     /// Routing key (Kafka topic, gRPC metadata topic).
     pub key: Option<Arc<str>>,
 
-    /// Raw payload bytes - JSON or MsgPack, unchanged.
-    pub payload: Vec<u8>,
+    /// Raw payload bytes -- zero-copy / refcounted. JSON or MsgPack, unchanged.
+    pub payload: Bytes,
 
     /// Transport-specific commit token.
     pub token: T,
@@ -102,13 +103,17 @@ pub struct Message<T: CommitToken> {
 
 impl<T: CommitToken> Message<T> {
     /// Create a new message with auto-detected format.
+    ///
+    /// `payload` accepts any `impl Into<Bytes>` -- pass a `Vec<u8>` and it is
+    /// moved (zero copy); pass a `Bytes` slice and the refcount is bumped.
     #[must_use]
     pub fn new(
         key: Option<Arc<str>>,
-        payload: Vec<u8>,
+        payload: impl Into<Bytes>,
         token: T,
         timestamp_ms: Option<i64>,
     ) -> Self {
+        let payload = payload.into();
         let format = PayloadFormat::detect(&payload);
         Self {
             key,

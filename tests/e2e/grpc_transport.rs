@@ -16,8 +16,13 @@
 
 use std::time::Duration;
 
+use std::sync::Arc;
+
 use hyperi_rustlib::transport::grpc::{GrpcConfig, GrpcTransport};
-use hyperi_rustlib::transport::{SendResult, TransportBase, TransportReceiver, TransportSender};
+use hyperi_rustlib::transport::{
+    PayloadFormat, Record, RecordMeta, SendResult, TransportBase, TransportReceiver,
+    TransportSender,
+};
 
 /// Find an available port for testing.
 async fn find_available_port() -> u16 {
@@ -94,11 +99,11 @@ async fn test_send_and_receive() {
 
     // Receive the message
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let messages = server.recv(10).await.expect("recv should succeed").messages;
+    let records = server.recv(10).await.expect("recv should succeed").records;
 
-    assert_eq!(messages.len(), 1, "should receive exactly one message");
-    assert_eq!(messages[0].payload, b"hello world");
-    assert_eq!(messages[0].key.as_deref(), Some("test-topic"));
+    assert_eq!(records.len(), 1, "should receive exactly one record");
+    assert_eq!(records[0].payload.as_ref(), b"hello world");
+    assert_eq!(records[0].key.as_deref(), Some("test-topic"));
 
     // Cleanup
     let _ = client.close().await;
@@ -122,21 +127,17 @@ async fn test_multiple_messages() {
 
     // Receive all messages
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let messages = server
-        .recv(100)
-        .await
-        .expect("recv should succeed")
-        .messages;
+    let records = server.recv(100).await.expect("recv should succeed").records;
 
-    assert_eq!(messages.len(), 10, "should receive all 10 messages");
+    assert_eq!(records.len(), 10, "should receive all 10 records");
 
     // Verify ordering (sequence numbers should be monotonically increasing)
-    for (i, msg) in messages.iter().enumerate() {
+    for (i, record) in records.iter().enumerate() {
         let expected = format!("message-{i}");
         assert_eq!(
-            msg.payload,
+            record.payload,
             expected.as_bytes(),
-            "message {i} payload mismatch"
+            "record {i} payload mismatch"
         );
     }
 
@@ -158,12 +159,12 @@ async fn test_large_payload() {
     );
 
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let messages = server.recv(10).await.expect("recv should succeed").messages;
+    let records = server.recv(10).await.expect("recv should succeed").records;
 
-    assert_eq!(messages.len(), 1, "should receive the large message");
-    assert_eq!(messages[0].payload.len(), 1024 * 1024);
+    assert_eq!(records.len(), 1, "should receive the large record");
+    assert_eq!(records[0].payload.len(), 1024 * 1024);
     assert!(
-        messages[0].payload.iter().all(|&b| b == 0xAB),
+        records[0].payload.iter().all(|&b| b == 0xAB),
         "payload should be intact"
     );
 
@@ -181,12 +182,11 @@ async fn test_commit_is_noop() {
         .send("topic", bytes::Bytes::from_static(b"data"))
         .await;
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let messages = server.recv(10).await.expect("recv should succeed").messages;
-    assert!(!messages.is_empty());
+    let batch = server.recv(10).await.expect("recv should succeed");
+    assert!(!batch.records.is_empty());
 
     // Commit tokens — should succeed (no-op)
-    let tokens: Vec<_> = messages.iter().map(|m| m.token.clone()).collect();
-    let result = server.commit(&tokens).await;
+    let result = server.commit(&batch.commit_tokens).await;
     assert!(result.is_ok(), "commit should succeed (no-op): {result:?}");
 
     let _ = client.close().await;
@@ -264,10 +264,97 @@ async fn test_compression() {
     );
 
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let messages = server.recv(10).await.expect("recv should succeed").messages;
+    let records = server.recv(10).await.expect("recv should succeed").records;
 
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].payload, payload);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].payload.as_ref(), payload);
+
+    let _ = client.close().await;
+    let _ = server.close().await;
+}
+
+#[tokio::test]
+async fn test_route_batch_native_transport() {
+    // Native batch transport (Task 0.6): a whole WorkBatch's records cross the
+    // wire in ONE RouteBatch RPC, payloads OPAQUE. Include a non-UTF8 binary
+    // payload (NOT valid JSON or MsgPack) to prove no codec ran in transit.
+    let port = find_available_port().await;
+    let (server, client) = create_pair(port).await;
+
+    let records = vec![
+        Record {
+            payload: bytes::Bytes::from_static(b"{\"a\":1}"),
+            key: Some(Arc::from("events")),
+            headers: vec![("trace".to_string(), b"abc".to_vec())],
+            metadata: RecordMeta {
+                timestamp_ms: Some(1_717_000_000_000),
+                format: PayloadFormat::Json,
+            },
+        },
+        Record {
+            // Non-UTF8 binary: not JSON, not MsgPack -- must survive intact.
+            payload: bytes::Bytes::from_static(&[0x00, 0xff, 0xfe, 0x80, 0x01]),
+            key: None,
+            headers: Vec::new(),
+            metadata: RecordMeta {
+                timestamp_ms: None,
+                format: PayloadFormat::Auto,
+            },
+        },
+        Record {
+            payload: bytes::Bytes::from_static(&[0x81, 0xa1, b'k', 0x07]),
+            key: Some(Arc::from("metrics")),
+            headers: Vec::new(),
+            metadata: RecordMeta {
+                timestamp_ms: Some(42),
+                format: PayloadFormat::MsgPack,
+            },
+        },
+    ];
+
+    let result = client.send_batch(&records).await;
+    assert!(
+        matches!(result, SendResult::Ok),
+        "send_batch should succeed: {result:?}"
+    );
+
+    // Records fan into the same mpsc channel the single-message path uses, so
+    // the unchanged recv() trait path delivers them.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let received = server.recv(100).await.expect("recv should succeed").records;
+
+    assert_eq!(received.len(), 3, "should receive all 3 batch records");
+
+    // Record 0: JSON payload + key preserved.
+    assert_eq!(received[0].payload.as_ref(), b"{\"a\":1}");
+    assert_eq!(received[0].key.as_deref(), Some("events"));
+
+    // Record 1: the non-UTF8 binary payload survived byte-for-byte (opaque).
+    assert_eq!(
+        received[1].payload.as_ref(),
+        &[0x00, 0xff, 0xfe, 0x80, 0x01]
+    );
+    assert_eq!(received[1].key, None);
+
+    // Record 2: MsgPack-lead payload + key preserved.
+    assert_eq!(received[2].payload.as_ref(), &[0x81, 0xa1, b'k', 0x07]);
+    assert_eq!(received[2].key.as_deref(), Some("metrics"));
+
+    let _ = client.close().await;
+    let _ = server.close().await;
+}
+
+#[tokio::test]
+async fn test_route_batch_empty() {
+    // An empty batch is a valid, harmless no-op over the wire.
+    let port = find_available_port().await;
+    let (server, client) = create_pair(port).await;
+
+    let result = client.send_batch(&[]).await;
+    assert!(
+        matches!(result, SendResult::Ok),
+        "empty send_batch should succeed: {result:?}"
+    );
 
     let _ = client.close().await;
     let _ = server.close().await;
@@ -286,11 +373,11 @@ async fn test_recv_timeout_returns_empty() {
         .expect("failed to create server");
 
     // Recv with no messages sent — should return empty after timeout
-    let messages = server.recv(10).await.expect("recv should succeed").messages;
+    let records = server.recv(10).await.expect("recv should succeed").records;
     assert!(
-        messages.is_empty(),
-        "recv with no messages should return empty, got {} messages",
-        messages.len()
+        records.is_empty(),
+        "recv with no messages should return empty, got {} records",
+        records.len()
     );
 
     let _ = server.close().await;

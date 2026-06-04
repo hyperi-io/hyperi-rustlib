@@ -180,8 +180,17 @@ impl KafkaProducer {
             client_config.set(*key, *value);
         }
 
-        // Apply user overrides (highest priority)
+        // Apply user overrides (legacy; highest priority in the old system)
         for (key, value) in &config.librdkafka_overrides {
+            client_config.set(key, value);
+        }
+
+        // Apply the Task 0.5 sizing surface (producer side):
+        //   profile defaults < named producer knobs < sizing.producer_librdkafka
+        // Applied AFTER the legacy block so the sizing surface wins over it.
+        // The raw sizing.producer_librdkafka map wins over everything (applied
+        // last inside resolved_producer_map()).
+        for (key, value) in config.sizing.resolved_producer_map() {
             client_config.set(key, value);
         }
 

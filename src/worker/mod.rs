@@ -51,16 +51,18 @@ mod pool;
 pub(crate) mod scaler;
 mod stats;
 
+#[cfg(feature = "transport")]
+pub use accumulator::records_into_work_batch;
 pub use accumulator::{AccumulatorConfig, AccumulatorFull, BatchAccumulator, BatchDrainer};
 pub use batch::{BatchPipeline, BatchProcessor};
 pub use config::WorkerPoolConfig;
 #[cfg(feature = "worker-batch")]
 pub use engine::{
     BatchEngine, BatchProcessingConfig, FieldInterner, MessageMetadata, ParsedMessage,
-    PreRouteFilterConfig, RawMessage,
+    PreRouteFilterConfig,
 };
 #[cfg(all(feature = "worker-batch", feature = "transport"))]
-pub use engine::{EngineError, FilterDlqPolicy};
+pub use engine::{CommitMode, EngineError, FilterDlqPolicy, ParsedBatch};
 pub use pool::{AdaptiveWorkerPool, FanOutPolicy, FanOutResult};
 pub use scaler::{ScalingDecision, ScalingInput};
 pub use stats::{PipelineStats, PipelineStatsSnapshot};

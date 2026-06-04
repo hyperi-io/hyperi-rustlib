@@ -9,6 +9,7 @@
 use super::error::TransportResult;
 use super::filter::FilteredDlqEntry;
 use super::types::{Message, SendResult};
+use super::work_batch::{Record, WorkBatch};
 use std::fmt::{Debug, Display};
 use std::future::Future;
 
@@ -103,6 +104,44 @@ pub trait TransportSender: TransportBase {
     /// - Redis: stream name
     /// - Pipe: ignored (single stdout)
     fn send(&self, key: &str, payload: bytes::Bytes) -> impl Future<Output = SendResult> + Send;
+
+    /// Send a whole block of [`Record`]s in one shot.
+    ///
+    /// The default sends each record individually via [`send`](Self::send),
+    /// using the record's own `key` (empty string when `None`) and its payload
+    /// `Bytes` (a refcount bump, not a copy). Transports with a native batch RPC
+    /// (e.g. gRPC's `RouteBatch`) override this to send the whole block in a
+    /// single call -- serde-less and round-trip-cheaper.
+    ///
+    /// Commit tokens and inline-DLQ entries are NOT sent: they are the SENDER's
+    /// local concern. Pass the records (e.g. `&workbatch.records`) and fire the
+    /// commit tokens locally after this returns [`SendResult::Ok`].
+    ///
+    /// ## At-least-once caveat -- per-record fallback can partially send
+    ///
+    /// The default is NOT atomic. If record `k` of `n` returns a non-`Ok`
+    /// result, records `0..k` are already on the wire and this returns that
+    /// first non-`Ok` result WITHOUT unsending them. The caller treats the whole
+    /// block as not-yet-committed and retries it; the already-sent prefix is
+    /// re-delivered (at-least-once -- duplicates, never loss). A `Backpressured`
+    /// or `Fatal` short-circuits (no further records are attempted) so the caller
+    /// retries the remainder rather than skipping past a transient failure. A
+    /// native batch override (gRPC) avoids the partial-send window entirely: the
+    /// whole block is one RPC, accepted or not.
+    fn send_batch(&self, records: &[Record]) -> impl Future<Output = SendResult> + Send {
+        async move {
+            for record in records {
+                let key = record.key.as_deref().unwrap_or("");
+                let result = self.send(key, record.payload.clone()).await;
+                if !result.is_ok() {
+                    // Backpressured / Fatal / FilteredDlq -- stop here so the
+                    // caller retries the (unconfirmed) remainder of the block.
+                    return result;
+                }
+            }
+            SendResult::Ok
+        }
+    }
 }
 
 /// Receive-side transport -- generic over commit token type.
@@ -114,15 +153,17 @@ pub trait TransportReceiver: TransportBase {
     /// The token type for this transport.
     type Token: CommitToken;
 
-    /// Receive up to `max` messages.
+    /// Receive up to `max` records as one [`WorkBatch`].
     ///
-    /// Returns immediately with available messages (may be fewer than `max`).
-    /// Returns an empty batch if no messages are available.
+    /// Returns immediately with available records (may be fewer than `max`).
+    /// Returns an empty batch if no records are available. The source acks for
+    /// the whole block live on [`WorkBatch::commit_tokens`] -- they are decoupled
+    /// from `records.len()` so a downstream fan-out cannot disturb them.
     ///
     /// **Filter behaviour:** if the transport has inbound filters configured,
-    /// `recv()` removes messages matching `action: drop` filters and returns
-    /// messages matching `action: dlq` filters in [`RecvBatch`]`.dlq_entries`
-    /// alongside the passing [`RecvBatch`]`.messages`. Route the DLQ entries via
+    /// `recv()` removes records matching `action: drop` filters and carries
+    /// records matching `action: dlq` filters in [`WorkBatch`]`.dlq_entries`
+    /// alongside the passing [`WorkBatch`]`.records`. Route the DLQ entries via
     /// your own DLQ handle -- they cannot be silently lost.
     ///
     /// # Example
@@ -132,12 +173,12 @@ pub trait TransportReceiver: TransportBase {
     /// for entry in batch.dlq_entries {
     ///     dlq.send(DlqEntry::new("filter", entry.reason, entry.payload)).await?;
     /// }
-    /// for msg in batch.messages { /* process */ }
+    /// for record in batch.records { /* process */ }
     /// ```
     fn recv(
         &self,
         max: usize,
-    ) -> impl Future<Output = TransportResult<RecvBatch<Self::Token>>> + Send;
+    ) -> impl Future<Output = TransportResult<WorkBatch<Self::Token>>> + Send;
 
     /// Commit/acknowledge processed messages.
     ///

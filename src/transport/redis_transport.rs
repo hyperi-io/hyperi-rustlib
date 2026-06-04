@@ -42,6 +42,7 @@
 use super::error::{TransportError, TransportResult};
 use super::traits::{CommitToken, RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
+use super::work_batch::WorkBatch;
 use redis::AsyncCommands;
 use redis::streams::{StreamMaxlen, StreamReadOptions, StreamReadReply};
 use serde::{Deserialize, Serialize};
@@ -349,7 +350,7 @@ impl TransportSender for RedisTransport {
 impl TransportReceiver for RedisTransport {
     type Token = RedisToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<RecvBatch<Self::Token>> {
+    async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -392,7 +393,7 @@ impl TransportReceiver for RedisTransport {
                     .get("payload")
                     .and_then(|v| redis::from_redis_value(v.clone()).ok());
 
-                let payload = payload_bytes.unwrap_or_default();
+                let payload: bytes::Bytes = payload_bytes.unwrap_or_default().into();
                 let format = PayloadFormat::detect(&payload);
                 let timestamp_ms = parse_entry_timestamp(&stream_id.id);
 
@@ -411,11 +412,9 @@ impl TransportReceiver for RedisTransport {
 
         // Apply inbound filters via the shared partition helper; DLQ entries
         // are returned in the RecvBatch for the caller to route onward.
-        let batch = self.filter_engine.partition_batch(
-            messages,
-            |m| m.payload.as_slice(),
-            |m| m.key.clone(),
-        );
+        let batch =
+            self.filter_engine
+                .partition_batch(messages, |m| m.payload.as_ref(), |m| m.key.clone());
         let messages = batch.messages;
         let dlq_entries = batch.dlq_entries;
 
@@ -436,7 +435,8 @@ impl TransportReceiver for RedisTransport {
         Ok(RecvBatch {
             messages,
             dlq_entries,
-        })
+        }
+        .into())
     }
 
     async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
@@ -637,17 +637,16 @@ block_ms: 2000
         assert!(r2.is_ok(), "second send should succeed");
 
         // Receive messages
-        let messages = transport.recv(10).await.unwrap().messages;
-        assert_eq!(messages.len(), 2, "should receive 2 messages");
-        assert_eq!(messages[0].payload, b"{\"n\":1}");
-        assert_eq!(messages[1].payload, b"{\"n\":2}");
+        let batch = transport.recv(10).await.unwrap();
+        assert_eq!(batch.records.len(), 2, "should receive 2 records");
+        assert_eq!(batch.records[0].payload.as_ref(), b"{\"n\":1}");
+        assert_eq!(batch.records[1].payload.as_ref(), b"{\"n\":2}");
 
-        // Commit (XACK)
-        let tokens: Vec<_> = messages.iter().map(|m| m.token.clone()).collect();
-        transport.commit(&tokens).await.unwrap();
+        // Commit (XACK) via the batch's commit tokens.
+        transport.commit(&batch.commit_tokens).await.unwrap();
 
         // After commit, no new messages should be available
-        let more = transport.recv(10).await.unwrap().messages;
+        let more = transport.recv(10).await.unwrap().records;
         assert!(more.is_empty(), "no more messages after commit");
 
         // Clean up: delete the test stream

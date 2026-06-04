@@ -40,8 +40,449 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
+
+// ============================================================================
+// Self-Regulation Profile (Task 0.5: Kafka sizing surface)
+// ============================================================================
+
+/// Opinionated sizing profile for the Kafka GET/SEND surface.
+///
+/// The profile sets default values for all named knobs below. An explicit
+/// per-knob value in [`KafkaSizingConfig`] always wins over the profile
+/// default. The raw librdkafka escape hatch in [`KafkaConfig`] wins over
+/// everything.
+///
+/// Profiles target the BYTE-level throughput budget and latency envelope:
+///
+/// | Profile | Use case |
+/// |---|---|
+/// | `throughput` (default) | PB/day batch ingest, large fanout topics |
+/// | `balanced` | Mixed OLTP + analytics, moderate batch size |
+/// | `low_latency` | Near-real-time, event-driven, small messages |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SelfRegulationProfile {
+    /// Maximum throughput: generous byte budgets, tolerates batching delay.
+    ///
+    /// Consumer: 1 MiB fetch.min.bytes, 50 ms wait, 10 MiB per-partition,
+    /// 100 MiB total, 2000 poll-safety cap.
+    /// Producer: 128 KiB batch, 20 ms linger, lz4, 64 MiB buffer, 5 in-flight.
+    #[default]
+    Throughput,
+
+    /// Balanced: moderate batching, 5 ms linger, smaller per-partition budget.
+    ///
+    /// Consumer: 256 KiB fetch.min.bytes, 25 ms wait, 5 MiB per-partition,
+    /// 50 MiB total, 1000 poll-safety cap.
+    /// Producer: 64 KiB batch, 5 ms linger, lz4, 32 MiB buffer, 5 in-flight.
+    Balanced,
+
+    /// Low latency: minimal batching delay, smaller buffers.
+    ///
+    /// Consumer: 1 byte fetch.min.bytes, 5 ms wait, 1 MiB per-partition,
+    /// 10 MiB total, 500 poll-safety cap.
+    /// Producer: 16 KiB batch, 0 ms linger, lz4, 16 MiB buffer, 5 in-flight.
+    LowLatency,
+}
+
+impl SelfRegulationProfile {
+    /// Return the consumer knob defaults for this profile.
+    #[must_use]
+    pub fn consumer_defaults(self) -> ConsumerKnobs {
+        match self {
+            Self::Throughput => ConsumerKnobs {
+                // 1 MiB -- forces broker to batch at least one full record page.
+                fetch_min_bytes: Some(1_048_576),
+                // 50 ms -- gives broker time to fill the 1 MiB budget.
+                fetch_max_wait_ms: Some(50),
+                // 10 MiB -- generous per-partition ceiling for wide topics.
+                max_partition_fetch_bytes: Some(10_485_760),
+                // 100 MiB -- caps total network fetch per round-trip.
+                fetch_max_bytes: Some(104_857_600),
+                // 2000 -- poll-safety cap enforced by the recv() loop.
+                max_poll_records: Some(2000),
+            },
+            Self::Balanced => ConsumerKnobs {
+                fetch_min_bytes: Some(262_144), // 256 KiB
+                fetch_max_wait_ms: Some(25),
+                max_partition_fetch_bytes: Some(5_242_880), // 5 MiB
+                fetch_max_bytes: Some(52_428_800),          // 50 MiB
+                max_poll_records: Some(1000),
+            },
+            Self::LowLatency => ConsumerKnobs {
+                fetch_min_bytes: Some(1),                   // no batching threshold
+                fetch_max_wait_ms: Some(5),                 // return fast
+                max_partition_fetch_bytes: Some(1_048_576), // 1 MiB
+                fetch_max_bytes: Some(10_485_760),          // 10 MiB
+                max_poll_records: Some(500),
+            },
+        }
+    }
+
+    /// Return the producer knob defaults for this profile.
+    #[must_use]
+    pub fn producer_defaults(self) -> ProducerKnobs {
+        match self {
+            Self::Throughput => ProducerKnobs {
+                // 128 KiB per MessageSet -- batches up fast but not excessive.
+                batch_size_bytes: Some(131_072),
+                // 20 ms -- enough time to fill the 128 KiB batch.
+                linger_ms: Some(20),
+                // lz4 default; zstd is opt-in for storage-bound topics.
+                compression_type: Some("lz4".to_string()),
+                // 64 MiB total producer queue (queue.buffering.max.kbytes in KiB).
+                buffer_memory_bytes: Some(67_108_864),
+                // 5 in-flight per connection -- matches exactly-once safe limit.
+                max_in_flight: Some(5),
+            },
+            Self::Balanced => ProducerKnobs {
+                batch_size_bytes: Some(65_536), // 64 KiB
+                linger_ms: Some(5),
+                compression_type: Some("lz4".to_string()),
+                buffer_memory_bytes: Some(33_554_432), // 32 MiB
+                max_in_flight: Some(5),
+            },
+            Self::LowLatency => ProducerKnobs {
+                batch_size_bytes: Some(16_384), // 16 KiB
+                linger_ms: Some(0),             // send immediately
+                compression_type: Some("lz4".to_string()),
+                buffer_memory_bytes: Some(16_777_216), // 16 MiB
+                max_in_flight: Some(5),
+            },
+        }
+    }
+}
+
+/// Named consumer sizing knobs.
+///
+/// All fields are `Option<T>`: `None` means "use the profile default".
+/// An explicit `Some(v)` wins over the profile default.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ConsumerKnobs {
+    /// Minimum bytes the broker must have ready before responding to a Fetch.
+    ///
+    /// librdkafka: `fetch.min.bytes` (default 1 byte).
+    /// Raising this batches more data per round-trip but adds latency when
+    /// topic traffic is low.
+    #[serde(default)]
+    pub fetch_min_bytes: Option<i32>,
+
+    /// Maximum milliseconds the broker may wait to fill `fetch.min.bytes`.
+    ///
+    /// librdkafka: `fetch.wait.max.ms` (default 500 ms).
+    /// Works in tandem with `fetch_min_bytes` -- the broker returns whatever
+    /// it has when this timer fires even if `fetch.min.bytes` is not met.
+    #[serde(default)]
+    pub fetch_max_wait_ms: Option<u32>,
+
+    /// Maximum bytes returned per partition per Fetch request.
+    ///
+    /// librdkafka: `max.partition.fetch.bytes` (alias `fetch.message.max.bytes`,
+    /// default 1 MiB). Must be >= the topic's `max.message.bytes`.
+    #[serde(default)]
+    pub max_partition_fetch_bytes: Option<i32>,
+
+    /// Maximum total bytes returned by the broker for a single Fetch request
+    /// across all partitions.
+    ///
+    /// librdkafka: `fetch.max.bytes` (default 50 MiB).
+    #[serde(default)]
+    pub fetch_max_bytes: Option<i32>,
+
+    /// Maximum number of messages the recv() loop returns per call.
+    ///
+    /// NOTE: `max.poll.records` does NOT exist in librdkafka -- there is no
+    /// broker-level property for this. This is a purely CLIENT-SIDE cap,
+    /// enforced by passing this value as the `max` argument to
+    /// `KafkaTransport::recv()` via `KafkaSizingConfig::effective_poll_cap()`.
+    /// It bounds the batch size delivered to the WorkBatch layer, not the
+    /// network fetch size (which is byte-governed by the knobs above).
+    #[serde(default)]
+    pub max_poll_records: Option<usize>,
+}
+
+/// Named producer sizing knobs.
+///
+/// All fields are `Option<T>`: `None` means "use the profile default".
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProducerKnobs {
+    /// Maximum bytes per MessageSet (librdkafka `batch.size`, default 1 MiB).
+    ///
+    /// This is the PER-BATCH ceiling, not the total queue size. Raise this for
+    /// fewer, larger network writes. Note: `batch.size` in librdkafka is in
+    /// bytes (matches the Java Kafka client name and unit).
+    #[serde(default)]
+    pub batch_size_bytes: Option<i32>,
+
+    /// Accumulation delay before transmitting a MessageSet.
+    ///
+    /// librdkafka: `linger.ms` (alias for `queue.buffering.max.ms`, default 5 ms).
+    /// Higher values fill larger batches; 0 sends immediately.
+    #[serde(default)]
+    pub linger_ms: Option<u32>,
+
+    /// Compression codec for MessageSets.
+    ///
+    /// librdkafka: `compression.type` (alias for `compression.codec`).
+    /// Valid values: `none`, `gzip`, `snappy`, `lz4`, `zstd`.
+    /// Default (all profiles): `lz4` -- best throughput/ratio tradeoff.
+    /// Use `zstd` for storage-bound topics that can absorb the CPU cost.
+    #[serde(default)]
+    pub compression_type: Option<String>,
+
+    /// Total byte budget for the producer's in-memory queue.
+    ///
+    /// librdkafka: `queue.buffering.max.kbytes` (in KiB, default 1 GiB).
+    /// This is the TOTAL queue, not per-batch. Set lower to bound memory
+    /// usage in containers. Stored as bytes in this struct; divided by 1024
+    /// when applied to librdkafka.
+    #[serde(default)]
+    pub buffer_memory_bytes: Option<u64>,
+
+    /// Maximum concurrent in-flight requests per broker connection.
+    ///
+    /// librdkafka: `max.in.flight.requests.per.connection` (default 1,000,000).
+    /// Set to 5 to match the exactly-once safe limit (KIP-98) and to bound
+    /// memory/reorder window. Matches the Java Kafka producer default for
+    /// idempotent producers.
+    #[serde(default)]
+    pub max_in_flight: Option<u32>,
+}
+
+/// Kafka sizing surface: profile + named per-knob overrides + raw escape hatch.
+///
+/// Resolution precedence (lowest to highest):
+/// 1. `SelfRegulationProfile` defaults
+/// 2. Named knobs in `consumer` / `producer` (explicit `Some(v)` wins)
+/// 3. Raw librdkafka maps `consumer_librdkafka` / `producer_librdkafka` (wins
+///    over everything, applied last via `ClientConfig::set`)
+///
+/// The raw maps are logged (one line per key) when they override a property
+/// that the sizing surface depends on (the fetch byte sizes and
+/// `enable.auto.commit`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct KafkaSizingConfig {
+    /// Sizing profile (throughput / balanced / low_latency).
+    #[serde(default)]
+    pub profile: SelfRegulationProfile,
+
+    /// Per-knob consumer overrides (any `Some(v)` beats the profile default).
+    #[serde(default)]
+    pub consumer: ConsumerKnobs,
+
+    /// Per-knob producer overrides (any `Some(v)` beats the profile default).
+    #[serde(default)]
+    pub producer: ProducerKnobs,
+
+    /// Raw librdkafka consumer properties applied LAST, winning over everything.
+    ///
+    /// Keys must be valid librdkafka property names (e.g. `fetch.wait.max.ms`).
+    /// An invalid key silently no-ops in librdkafka -- double-check spelling.
+    #[serde(default)]
+    pub consumer_librdkafka: BTreeMap<String, String>,
+
+    /// Raw librdkafka producer properties applied LAST, winning over everything.
+    ///
+    /// Keys must be valid librdkafka property names (e.g. `linger.ms`).
+    #[serde(default)]
+    pub producer_librdkafka: BTreeMap<String, String>,
+}
+
+// ============================================================================
+// Keys the sizing governor depends on -- logged when raw-overridden.
+// ============================================================================
+
+/// Consumer property names whose values the sizing governor reads to compute
+/// byte budgets. When the raw escape hatch overrides one of these, we log a
+/// warning so the operator knows the governor's assumptions have changed.
+const GOVERNOR_CONSUMER_KEYS: &[&str] = &[
+    "fetch.min.bytes",
+    "fetch.max.bytes",
+    "fetch.wait.max.ms",
+    "max.partition.fetch.bytes",
+    "fetch.message.max.bytes",
+    "enable.auto.commit",
+];
+
+/// Producer property names the sizing governor sets.
+const GOVERNOR_PRODUCER_KEYS: &[&str] = &[
+    "batch.size",
+    "linger.ms",
+    "queue.buffering.max.ms",
+    "compression.type",
+    "compression.codec",
+    "queue.buffering.max.kbytes",
+    "max.in.flight.requests.per.connection",
+    "partitioner",
+    "sticky.partitioning.linger.ms",
+];
+
+impl KafkaSizingConfig {
+    /// Resolve the effective consumer librdkafka key/value map.
+    ///
+    /// Precedence: profile defaults < named knobs < raw `consumer_librdkafka`.
+    ///
+    /// This is a PURE function -- suitable for unit testing without a live
+    /// broker. The caller feeds the returned map into `ClientConfig::set`.
+    #[must_use]
+    pub fn resolved_consumer_map(&self) -> BTreeMap<String, String> {
+        let profile_knobs = self.profile.consumer_defaults();
+
+        // Merge: explicit `Some` wins over profile default.
+        let fetch_min_bytes = self
+            .consumer
+            .fetch_min_bytes
+            .or(profile_knobs.fetch_min_bytes)
+            .unwrap_or(1);
+        let fetch_max_wait_ms = self
+            .consumer
+            .fetch_max_wait_ms
+            .or(profile_knobs.fetch_max_wait_ms)
+            .unwrap_or(500);
+        let max_partition_fetch_bytes = self
+            .consumer
+            .max_partition_fetch_bytes
+            .or(profile_knobs.max_partition_fetch_bytes)
+            .unwrap_or(1_048_576);
+        let fetch_max_bytes = self
+            .consumer
+            .fetch_max_bytes
+            .or(profile_knobs.fetch_max_bytes)
+            .unwrap_or(52_428_800);
+
+        let mut map = BTreeMap::new();
+        map.insert("fetch.min.bytes".to_string(), fetch_min_bytes.to_string());
+        map.insert(
+            "fetch.wait.max.ms".to_string(),
+            fetch_max_wait_ms.to_string(),
+        );
+        map.insert(
+            "max.partition.fetch.bytes".to_string(),
+            max_partition_fetch_bytes.to_string(),
+        );
+        map.insert("fetch.max.bytes".to_string(), fetch_max_bytes.to_string());
+
+        // Apply the raw escape hatch last -- it wins.
+        for (k, v) in &self.consumer_librdkafka {
+            if GOVERNOR_CONSUMER_KEYS.contains(&k.as_str()) {
+                tracing::warn!(
+                    key = k.as_str(),
+                    value = v.as_str(),
+                    "kafka sizing: raw consumer_librdkafka overrides a governor key"
+                );
+            }
+            map.insert(k.clone(), v.clone());
+        }
+
+        map
+    }
+
+    /// Resolve the effective producer librdkafka key/value map.
+    ///
+    /// Precedence: profile defaults < named knobs < raw `producer_librdkafka`.
+    ///
+    /// KIP-794 note: librdkafka does not support `partitioner.ignore.keys` (a
+    /// Java-client-only property). The librdkafka equivalent for uniform sticky
+    /// null-key distribution is `sticky.partitioning.linger.ms` (default 10 ms,
+    /// works with the `consistent_random` default partitioner). We set this to
+    /// `linger_ms` so null-key batches accumulate for one full linger window
+    /// before rotation, which is the closest functional match to KIP-794's
+    /// intent for the librdkafka client.
+    ///
+    /// This is a PURE function -- suitable for unit testing without a live broker.
+    #[must_use]
+    pub fn resolved_producer_map(&self) -> BTreeMap<String, String> {
+        let profile_knobs = self.profile.producer_defaults();
+
+        let batch_size_bytes = self
+            .producer
+            .batch_size_bytes
+            .or(profile_knobs.batch_size_bytes)
+            .unwrap_or(1_000_000);
+        let linger_ms = self
+            .producer
+            .linger_ms
+            .or(profile_knobs.linger_ms)
+            .unwrap_or(5);
+        let compression_type = self
+            .producer
+            .compression_type
+            .clone()
+            .or(profile_knobs.compression_type)
+            .unwrap_or_else(|| "none".to_string());
+        let buffer_memory_bytes = self
+            .producer
+            .buffer_memory_bytes
+            .or(profile_knobs.buffer_memory_bytes)
+            .unwrap_or(1_073_741_824); // 1 GiB (librdkafka default)
+        let max_in_flight = self
+            .producer
+            .max_in_flight
+            .or(profile_knobs.max_in_flight)
+            .unwrap_or(1_000_000);
+
+        // queue.buffering.max.kbytes is in KiB -- convert from bytes.
+        let buffer_kib = (buffer_memory_bytes / 1024).max(1);
+
+        let mut map = BTreeMap::new();
+        map.insert("batch.size".to_string(), batch_size_bytes.to_string());
+        map.insert("linger.ms".to_string(), linger_ms.to_string());
+        map.insert("compression.type".to_string(), compression_type);
+        map.insert(
+            "queue.buffering.max.kbytes".to_string(),
+            buffer_kib.to_string(),
+        );
+        map.insert(
+            "max.in.flight.requests.per.connection".to_string(),
+            max_in_flight.to_string(),
+        );
+
+        // KIP-794 / uniform sticky for null-keyed messages.
+        // `partitioner.ignore.keys` is a Java-client-only property and does
+        // NOT exist in librdkafka. The librdkafka equivalent is to keep the
+        // default `consistent_random` partitioner (null keys -> random
+        // partition) and set `sticky.partitioning.linger.ms` equal to the
+        // linger window so null-key batches stick to one partition until the
+        // batch is full, then rotate. This is the closest functional match to
+        // KIP-794 available in librdkafka.
+        //
+        // We do NOT set `partitioner` here to avoid overriding any caller-
+        // supplied value (keyed RoutedSender paths set their own partitioner).
+        map.insert(
+            "sticky.partitioning.linger.ms".to_string(),
+            linger_ms.to_string(),
+        );
+
+        // Apply the raw escape hatch last -- it wins.
+        for (k, v) in &self.producer_librdkafka {
+            if GOVERNOR_PRODUCER_KEYS.contains(&k.as_str()) {
+                tracing::warn!(
+                    key = k.as_str(),
+                    value = v.as_str(),
+                    "kafka sizing: raw producer_librdkafka overrides a governor key"
+                );
+            }
+            map.insert(k.clone(), v.clone());
+        }
+
+        map
+    }
+
+    /// Return the effective poll-safety cap (max messages per recv() call).
+    ///
+    /// This is a CLIENT-SIDE cap only -- there is no librdkafka property for
+    /// `max.poll.records`. The value is passed as the `max` argument to
+    /// `KafkaTransport::recv()` by the ServiceRuntime / WorkBatch layer.
+    #[must_use]
+    pub fn effective_poll_cap(&self) -> usize {
+        self.consumer
+            .max_poll_records
+            .or(self.profile.consumer_defaults().max_poll_records)
+            .unwrap_or(10_000)
+    }
+}
 
 // ============================================================================
 // Topic Resolution Types
@@ -474,6 +915,28 @@ pub struct KafkaConfig {
     #[serde(default)]
     pub enable_partition_eof: bool,
 
+    /// Kafka sizing surface: profile + named knobs + raw librdkafka escape hatch.
+    ///
+    /// Controls the byte-budget and latency envelope for GET (consumer) and
+    /// SEND (producer) paths. See [`KafkaSizingConfig`] for full documentation.
+    ///
+    /// Example YAML:
+    /// ```yaml
+    /// kafka:
+    ///   sizing:
+    ///     profile: throughput
+    ///     consumer:
+    ///       fetch_min_bytes: 2097152  # 2 MiB, overrides profile default
+    ///     producer:
+    ///       compression_type: zstd    # opt into zstd for storage-bound topics
+    ///     consumer_librdkafka:
+    ///       fetch.wait.max.ms: "75"   # raw override wins over everything
+    ///     producer_librdkafka:
+    ///       linger.ms: "50"
+    /// ```
+    #[serde(default)]
+    pub sizing: KafkaSizingConfig,
+
     /// Librdkafka configuration overrides.
     ///
     /// These settings override both the profile defaults and explicit config fields.
@@ -598,6 +1061,7 @@ impl Default for KafkaConfig {
             max_partition_fetch_bytes: default_max_partition_fetch_bytes(),
             auto_offset_reset: default_auto_offset_reset(),
             enable_partition_eof: false,
+            sizing: KafkaSizingConfig::default(),
             librdkafka_overrides: HashMap::new(),
             extra_config: HashMap::new(),
             filters_in: Vec::new(),
@@ -1079,5 +1543,304 @@ mod tests {
         assert_eq!(config.topic_suppression_rules.len(), 1);
         assert_eq!(config.topic_suppression_rules[0].preferred_suffix, "_load");
         assert_eq!(config.topic_suppression_rules[0].suppressed_suffix, "_land");
+    }
+
+    // =========================================================================
+    // Task 0.5: SelfRegulationProfile + KafkaSizingConfig tests
+    // =========================================================================
+
+    /// Helper: build a KafkaSizingConfig with the given profile and no
+    /// per-knob overrides or raw maps. Tests the pure profile -> resolved map
+    /// path.
+    fn sizing_for_profile(profile: SelfRegulationProfile) -> KafkaSizingConfig {
+        KafkaSizingConfig {
+            profile,
+            ..Default::default()
+        }
+    }
+
+    // --- Consumer knob defaults by profile ---
+
+    #[test]
+    fn throughput_profile_consumer_knobs() {
+        let s = sizing_for_profile(SelfRegulationProfile::Throughput);
+        let map = s.resolved_consumer_map();
+        assert_eq!(map["fetch.min.bytes"], "1048576", "1 MiB fetch.min.bytes");
+        assert_eq!(map["fetch.wait.max.ms"], "50");
+        assert_eq!(
+            map["max.partition.fetch.bytes"], "10485760",
+            "10 MiB per-partition"
+        );
+        assert_eq!(map["fetch.max.bytes"], "104857600", "100 MiB total");
+        assert_eq!(
+            s.effective_poll_cap(),
+            2000,
+            "throughput poll-safety cap = 2000"
+        );
+    }
+
+    #[test]
+    fn low_latency_profile_consumer_knobs() {
+        let s = sizing_for_profile(SelfRegulationProfile::LowLatency);
+        let map = s.resolved_consumer_map();
+        assert_eq!(map["fetch.min.bytes"], "1", "no batching threshold");
+        assert_eq!(map["fetch.wait.max.ms"], "5", "return fast");
+        assert_eq!(map["max.partition.fetch.bytes"], "1048576", "1 MiB");
+        assert_eq!(map["fetch.max.bytes"], "10485760", "10 MiB total");
+        assert_eq!(s.effective_poll_cap(), 500);
+    }
+
+    #[test]
+    fn balanced_profile_consumer_knobs() {
+        let s = sizing_for_profile(SelfRegulationProfile::Balanced);
+        let map = s.resolved_consumer_map();
+        // Balanced sits between throughput and low_latency.
+        let fmb: i32 = map["fetch.min.bytes"].parse().unwrap();
+        let ll_min: i32 = 1;
+        let tp_min: i32 = 1_048_576;
+        assert!(
+            fmb > ll_min && fmb < tp_min,
+            "balanced fetch.min.bytes={fmb} should be between low_latency({ll_min}) and throughput({tp_min})"
+        );
+        assert_eq!(s.effective_poll_cap(), 1000);
+    }
+
+    /// Throughput and low_latency must differ on every key consumer knob.
+    #[test]
+    fn throughput_vs_low_latency_consumer_differ() {
+        let tp = sizing_for_profile(SelfRegulationProfile::Throughput).resolved_consumer_map();
+        let ll = sizing_for_profile(SelfRegulationProfile::LowLatency).resolved_consumer_map();
+        for key in &["fetch.min.bytes", "fetch.wait.max.ms", "fetch.max.bytes"] {
+            assert_ne!(
+                tp[*key], ll[*key],
+                "throughput and low_latency must differ on {key}"
+            );
+        }
+    }
+
+    // --- Producer knob defaults by profile ---
+
+    #[test]
+    fn throughput_profile_producer_knobs() {
+        let s = sizing_for_profile(SelfRegulationProfile::Throughput);
+        let map = s.resolved_producer_map();
+        assert_eq!(map["batch.size"], "131072", "128 KiB batch");
+        assert_eq!(map["linger.ms"], "20");
+        assert_eq!(map["compression.type"], "lz4");
+        // 64 MiB -> 65536 KiB
+        assert_eq!(map["queue.buffering.max.kbytes"], "65536");
+        assert_eq!(map["max.in.flight.requests.per.connection"], "5");
+    }
+
+    #[test]
+    fn low_latency_profile_producer_knobs() {
+        let s = sizing_for_profile(SelfRegulationProfile::LowLatency);
+        let map = s.resolved_producer_map();
+        assert_eq!(map["linger.ms"], "0", "send immediately");
+        assert_eq!(map["compression.type"], "lz4");
+        let batch: i32 = map["batch.size"].parse().unwrap();
+        assert!(batch < 131_072, "low_latency batch should be < throughput");
+    }
+
+    /// Throughput and low_latency must differ on every key producer knob.
+    #[test]
+    fn throughput_vs_low_latency_producer_differ() {
+        let tp = sizing_for_profile(SelfRegulationProfile::Throughput).resolved_producer_map();
+        let ll = sizing_for_profile(SelfRegulationProfile::LowLatency).resolved_producer_map();
+        for key in &["batch.size", "linger.ms", "queue.buffering.max.kbytes"] {
+            assert_ne!(
+                tp[*key], ll[*key],
+                "throughput and low_latency must differ on {key}"
+            );
+        }
+    }
+
+    // --- Named knob overrides beat the profile ---
+
+    #[test]
+    fn explicit_consumer_knob_beats_profile() {
+        let s = KafkaSizingConfig {
+            profile: SelfRegulationProfile::Throughput,
+            consumer: ConsumerKnobs {
+                fetch_min_bytes: Some(2_097_152), // 2 MiB, not the 1 MiB profile default
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let map = s.resolved_consumer_map();
+        assert_eq!(
+            map["fetch.min.bytes"], "2097152",
+            "explicit override must win over profile default"
+        );
+        // Other knobs still come from the throughput profile.
+        assert_eq!(map["fetch.wait.max.ms"], "50");
+    }
+
+    #[test]
+    fn explicit_producer_knob_beats_profile() {
+        let s = KafkaSizingConfig {
+            profile: SelfRegulationProfile::Throughput,
+            producer: ProducerKnobs {
+                linger_ms: Some(99), // override the 20 ms throughput default
+                compression_type: Some("zstd".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let map = s.resolved_producer_map();
+        assert_eq!(map["linger.ms"], "99");
+        assert_eq!(map["compression.type"], "zstd");
+        // sticky linger tracks the overridden linger_ms.
+        assert_eq!(map["sticky.partitioning.linger.ms"], "99");
+        // batch.size still comes from the throughput profile.
+        assert_eq!(map["batch.size"], "131072");
+    }
+
+    // --- Raw escape hatch wins over named knob ---
+
+    #[test]
+    fn raw_consumer_librdkafka_wins_over_named_knob() {
+        let mut consumer_raw = BTreeMap::new();
+        consumer_raw.insert("fetch.min.bytes".to_string(), "9999".to_string());
+
+        let s = KafkaSizingConfig {
+            profile: SelfRegulationProfile::Throughput,
+            consumer: ConsumerKnobs {
+                fetch_min_bytes: Some(2_097_152), // named knob
+                ..Default::default()
+            },
+            consumer_librdkafka: consumer_raw,
+            ..Default::default()
+        };
+        let map = s.resolved_consumer_map();
+        // Raw map must win over both profile AND named knob.
+        assert_eq!(
+            map["fetch.min.bytes"], "9999",
+            "raw consumer_librdkafka must win over named knob"
+        );
+    }
+
+    #[test]
+    fn raw_producer_librdkafka_wins_over_named_knob() {
+        let mut producer_raw = BTreeMap::new();
+        producer_raw.insert("linger.ms".to_string(), "777".to_string());
+        producer_raw.insert("compression.type".to_string(), "gzip".to_string());
+
+        let s = KafkaSizingConfig {
+            profile: SelfRegulationProfile::Throughput,
+            producer: ProducerKnobs {
+                linger_ms: Some(20),                       // named knob
+                compression_type: Some("lz4".to_string()), // named knob
+                ..Default::default()
+            },
+            producer_librdkafka: producer_raw,
+            ..Default::default()
+        };
+        let map = s.resolved_producer_map();
+        assert_eq!(
+            map["linger.ms"], "777",
+            "raw producer_librdkafka linger must win"
+        );
+        assert_eq!(
+            map["compression.type"], "gzip",
+            "raw producer_librdkafka compression must win"
+        );
+    }
+
+    // --- KIP-794 / sticky partitioner ---
+
+    #[test]
+    fn producer_map_sets_sticky_partitioning_linger() {
+        let s = sizing_for_profile(SelfRegulationProfile::Throughput);
+        let map = s.resolved_producer_map();
+        // sticky.partitioning.linger.ms should be set (not absent).
+        assert!(
+            map.contains_key("sticky.partitioning.linger.ms"),
+            "sticky.partitioning.linger.ms must be present"
+        );
+        // Its value must match the resolved linger.ms.
+        assert_eq!(
+            map["sticky.partitioning.linger.ms"], map["linger.ms"],
+            "sticky linger must track linger.ms"
+        );
+        // partitioner must NOT be set by default (we don't override the caller).
+        assert!(
+            !map.contains_key("partitioner"),
+            "producer map must NOT set partitioner to preserve caller's choice"
+        );
+    }
+
+    // --- compression.type present and consistent ---
+
+    #[test]
+    fn compression_type_present_in_all_profiles() {
+        for profile in [
+            SelfRegulationProfile::Throughput,
+            SelfRegulationProfile::Balanced,
+            SelfRegulationProfile::LowLatency,
+        ] {
+            let map = sizing_for_profile(profile).resolved_producer_map();
+            assert!(
+                map.contains_key("compression.type"),
+                "profile {profile:?} must set compression.type"
+            );
+            assert!(
+                !map["compression.type"].is_empty(),
+                "compression.type must not be empty"
+            );
+        }
+    }
+
+    // --- poll cap (max.poll.records is client-side only) ---
+
+    #[test]
+    fn poll_cap_override_beats_profile() {
+        let s = KafkaSizingConfig {
+            profile: SelfRegulationProfile::Throughput,
+            consumer: ConsumerKnobs {
+                max_poll_records: Some(500), // override throughput's 2000
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(s.effective_poll_cap(), 500);
+    }
+
+    #[test]
+    fn poll_cap_absent_falls_back_to_profile() {
+        // Throughput profile => 2000
+        let s = sizing_for_profile(SelfRegulationProfile::Throughput);
+        assert_eq!(s.effective_poll_cap(), 2000);
+    }
+
+    // --- buffer_memory_bytes KiB conversion ---
+
+    #[test]
+    fn buffer_memory_converts_to_kib() {
+        let s = KafkaSizingConfig {
+            profile: SelfRegulationProfile::Throughput,
+            producer: ProducerKnobs {
+                buffer_memory_bytes: Some(1_048_576), // exactly 1 MiB
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let map = s.resolved_producer_map();
+        assert_eq!(
+            map["queue.buffering.max.kbytes"], "1024",
+            "1 MiB = 1024 KiB"
+        );
+    }
+
+    // --- KafkaConfig.sizing field is default-initialised ---
+
+    #[test]
+    fn kafka_config_default_has_sizing_field() {
+        let cfg = KafkaConfig::default();
+        // Default profile is Throughput.
+        assert_eq!(cfg.sizing.profile, SelfRegulationProfile::Throughput);
+        // Raw maps are empty.
+        assert!(cfg.sizing.consumer_librdkafka.is_empty());
+        assert!(cfg.sizing.producer_librdkafka.is_empty());
     }
 }

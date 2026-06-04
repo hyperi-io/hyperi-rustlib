@@ -49,21 +49,16 @@
 //! sender.send("events.land", payload).await;
 //! ```
 
+pub mod codec;
 mod detect;
 mod error;
 pub mod factory;
 pub mod filter;
-mod payload;
 pub mod propagation;
 mod traits;
 mod types;
 mod work_batch;
 
-// Re-export payload utilities
-pub use payload::{
-    PayloadValue, extract_field, extract_nested_field, parse_payload, parse_payload_typed,
-    parse_payload_with_format, serialize_json, serialize_msgpack, serialize_payload,
-};
 pub use types::PayloadFormat;
 
 // Re-export stateful format detection
@@ -96,15 +91,16 @@ pub mod redis_transport;
 pub mod routed;
 
 // Re-exports -- traits and factory
+pub use codec::{CodecError, FieldRef, ParsedPayload, parse};
 pub use error::{TransportError, TransportResult};
-pub use factory::AnySender;
+pub use factory::{AnyReceiver, AnySender, AnyToken};
 pub use routed::RoutedSender;
 pub use traits::{
     CommitToken, FromCascade, RecvBatch, Transport, TransportBase, TransportReceiver,
     TransportSender,
 };
 pub use types::{Message, SendResult, TransportConfig, TransportType};
-pub use work_batch::{Record, RecordMeta, WorkBatch};
+pub use work_batch::{FramingError, Record, RecordMeta, WorkBatch};
 
 #[cfg(feature = "transport-kafka")]
 pub use kafka::{KafkaConfig, KafkaToken, KafkaTransport};

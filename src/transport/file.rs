@@ -33,6 +33,7 @@
 use super::error::{TransportError, TransportResult};
 use super::traits::{CommitToken, RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
+use super::work_batch::WorkBatch;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -333,7 +334,7 @@ impl TransportSender for FileTransport {
 impl TransportReceiver for FileTransport {
     type Token = FileToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<RecvBatch<Self::Token>> {
+    async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -368,7 +369,7 @@ impl TransportReceiver for FileTransport {
                 continue;
             }
 
-            let payload = line.as_bytes().to_vec();
+            let payload: bytes::Bytes = line.as_bytes().to_vec().into();
             let format = PayloadFormat::detect(&payload);
             let timestamp_ms = chrono::Utc::now().timestamp_millis();
 
@@ -385,11 +386,9 @@ impl TransportReceiver for FileTransport {
 
         // Apply inbound filters via the shared partition helper; DLQ entries
         // are returned in the RecvBatch for the caller to route onward.
-        let batch = self.filter_engine.partition_batch(
-            messages,
-            |m| m.payload.as_slice(),
-            |m| m.key.clone(),
-        );
+        let batch =
+            self.filter_engine
+                .partition_batch(messages, |m| m.payload.as_ref(), |m| m.key.clone());
         let messages = batch.messages;
         let dlq_entries = batch.dlq_entries;
 
@@ -407,7 +406,8 @@ impl TransportReceiver for FileTransport {
         Ok(RecvBatch {
             messages,
             dlq_entries,
-        })
+        }
+        .into())
     }
 
     async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
@@ -473,14 +473,15 @@ mod tests {
             ..Default::default()
         };
         let reader = FileTransport::new(&reader_config).await.unwrap();
-        let messages = reader.recv(10).await.unwrap().messages;
+        let batch = reader.recv(10).await.unwrap();
 
-        assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].payload, b"{\"msg\":\"hello\"}");
-        assert_eq!(messages[1].payload, b"{\"msg\":\"world\"}");
+        assert_eq!(batch.records.len(), 2);
+        assert_eq!(batch.records[0].payload.as_ref(), b"{\"msg\":\"hello\"}");
+        assert_eq!(batch.records[1].payload.as_ref(), b"{\"msg\":\"world\"}");
 
-        // Tokens should have increasing offsets
-        assert!(messages[1].token.offset > messages[0].token.offset);
+        // Commit tokens (carried on the batch, in record order) should have
+        // increasing offsets.
+        assert!(batch.commit_tokens[1].offset > batch.commit_tokens[0].offset);
     }
 
     #[tokio::test]
@@ -509,14 +510,13 @@ mod tests {
         })
         .await
         .unwrap();
-        let msgs = r1.recv(2).await.unwrap().messages;
-        assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0].payload, b"line1");
-        assert_eq!(msgs[1].payload, b"line2");
+        let batch = r1.recv(2).await.unwrap();
+        assert_eq!(batch.records.len(), 2);
+        assert_eq!(batch.records[0].payload.as_ref(), b"line1");
+        assert_eq!(batch.records[1].payload.as_ref(), b"line2");
 
-        // Commit up to message 2
-        let tokens: Vec<_> = msgs.iter().map(|m| m.token).collect();
-        r1.commit(&tokens).await.unwrap();
+        // Commit up to message 2 via the batch's commit tokens.
+        r1.commit(&batch.commit_tokens).await.unwrap();
         r1.close().await.unwrap();
 
         // Open a new transport -- should resume from committed position
@@ -527,9 +527,9 @@ mod tests {
         })
         .await
         .unwrap();
-        let remaining = r2.recv(10).await.unwrap().messages;
+        let remaining = r2.recv(10).await.unwrap().records;
         assert_eq!(remaining.len(), 1);
-        assert_eq!(remaining[0].payload, b"line3");
+        assert_eq!(remaining[0].payload.as_ref(), b"line3");
     }
 
     #[tokio::test]
@@ -581,10 +581,10 @@ mod tests {
         })
         .await
         .unwrap();
-        let msgs = reader.recv(10).await.unwrap().messages;
+        let msgs = reader.recv(10).await.unwrap().records;
         assert_eq!(msgs.len(), 1);
 
-        let more = reader.recv(10).await.unwrap().messages;
+        let more = reader.recv(10).await.unwrap().records;
         assert!(more.is_empty());
     }
 

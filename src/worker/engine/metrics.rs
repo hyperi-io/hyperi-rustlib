@@ -57,6 +57,28 @@ pub fn register(manager: &MetricsManager, config: &BatchProcessingConfig) {
         "Interned field name count",
     );
 
+    // Self-regulation governor observability (governor feature). Registered so
+    // the metrics manifest advertises them even before the first throttle.
+    #[cfg(feature = "governor")]
+    {
+        let _ = manager.gauge(
+            "self_regulation_byte_budget",
+            "Current AIMD byte budget (inbound block size lever)",
+        );
+        let _ = manager.gauge(
+            "pressure_ratio",
+            "Combined self-regulation pressure level (0.0-1.0)",
+        );
+        let _ = manager.gauge(
+            "inbound_paused",
+            "1 while the inbound gate is holding under pressure, else 0",
+        );
+        let _ = manager.counter(
+            "self_regulation_inbound_pauses_total",
+            "Inbound gate pause (rising-edge) events",
+        );
+    }
+
     // Config thresholds as gauges (emitted immediately).
     emit_thresholds(config);
 }

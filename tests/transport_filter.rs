@@ -90,7 +90,7 @@ async fn inbound_filter_drops_matching_messages() {
         .await
         .unwrap();
 
-    let messages = transport.recv(10).await.unwrap().messages;
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(
         messages.len(),
         3,
@@ -118,7 +118,7 @@ async fn inbound_filter_dlq_removes_from_batch() {
         .await
         .unwrap();
 
-    let messages = transport.recv(10).await.unwrap().messages;
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(
         messages.len(),
         2,
@@ -152,7 +152,7 @@ async fn outbound_filter_blocks_send() {
     assert!(result.is_ok());
 
     // Only the normal message should be receivable
-    let messages = transport.recv(10).await.unwrap().messages;
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(
         messages.len(),
         1,
@@ -198,7 +198,7 @@ async fn no_filters_passthrough() {
             .unwrap();
     }
 
-    let messages = transport.recv(20).await.unwrap().messages;
+    let messages = transport.recv(20).await.unwrap().records;
     assert_eq!(
         messages.len(),
         10,
@@ -240,7 +240,7 @@ async fn first_match_wins_integration() {
         .await
         .unwrap(); // matches nothing → pass
 
-    let messages = transport.recv(10).await.unwrap().messages;
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(messages.len(), 1, "Only the no-status message should pass");
 }
 
@@ -278,7 +278,7 @@ async fn mixed_tier1_filters() {
         .await
         .unwrap(); // pass
 
-    let messages = transport.recv(10).await.unwrap().messages;
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(messages.len(), 1);
 }
 
@@ -1027,7 +1027,7 @@ fn tier2_missing_field_safe() {
 }
 
 // ============================================================================
-// Section 8: filter DLQ entries returned via RecvBatch
+// Section 8: filter DLQ entries returned via WorkBatch
 // ============================================================================
 
 #[tokio::test]
@@ -1052,12 +1052,12 @@ async fn dlq_filter_entries_returned_in_recv_batch() {
 
     let batch = transport.recv(10).await.unwrap();
     assert_eq!(
-        batch.messages.len(),
+        batch.records.len(),
         1,
         "Only the non-poison message should be in result"
     );
 
-    // DLQ entries are returned inline in the RecvBatch (no separate drain).
+    // DLQ entries are carried inline on the WorkBatch (no separate drain).
     let dlq_entries = batch.dlq_entries;
     assert_eq!(dlq_entries.len(), 2, "Two DLQ entries should be returned");
     assert!(dlq_entries[0].payload.windows(6).any(|w| w == b"poison"));
@@ -1105,7 +1105,7 @@ async fn drop_filter_does_not_populate_dlq_buffer() {
         .unwrap();
 
     let batch = transport.recv(10).await.unwrap();
-    assert_eq!(batch.messages.len(), 1);
+    assert_eq!(batch.records.len(), 1);
 
     // Drop action should NOT produce DLQ entries.
     assert!(
@@ -1262,7 +1262,7 @@ async fn smoke_memory_transport_filters_field_present() {
         .await
         .unwrap();
 
-    let messages = transport.recv(10).await.unwrap().messages;
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(messages.len(), 1, "Filter must be wired in MemoryTransport");
 }
 
