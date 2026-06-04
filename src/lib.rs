@@ -267,8 +267,8 @@ pub use metrics::{OtelMetricsConfig, OtelProtocol};
 #[cfg(feature = "transport")]
 #[cfg_attr(docsrs, doc(cfg(feature = "transport")))]
 pub use transport::{
-    CommitToken, Message, PayloadFormat, SendResult, Transport, TransportConfig, TransportError,
-    TransportResult, TransportType,
+    CommitToken, Message, PayloadFormat, Record, RecordMeta, SendResult, Transport,
+    TransportConfig, TransportError, TransportResult, TransportType, WorkBatch,
 };
 
 #[cfg(feature = "http-server")]

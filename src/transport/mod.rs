@@ -57,6 +57,7 @@ mod payload;
 pub mod propagation;
 mod traits;
 mod types;
+mod work_batch;
 
 // Re-export payload utilities
 pub use payload::{
@@ -103,6 +104,7 @@ pub use traits::{
     TransportSender,
 };
 pub use types::{Message, SendResult, TransportConfig, TransportType};
+pub use work_batch::{Record, RecordMeta, WorkBatch};
 
 #[cfg(feature = "transport-kafka")]
 pub use kafka::{KafkaConfig, KafkaToken, KafkaTransport};
