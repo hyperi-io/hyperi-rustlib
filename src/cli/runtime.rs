@@ -276,4 +276,41 @@ impl ServiceRuntime {
     pub fn batch_engine(&self) -> Option<&Arc<crate::worker::BatchEngine>> {
         self.batch_engine.as_ref()
     }
+
+    /// Build a governed receive transport from config in ONE call
+    /// (`governor` + `transport` features).
+    ///
+    /// This is the receive-side analogue of the byte-budget wiring the runtime
+    /// already does for the [`batch_engine`](Self::batch_engine): it reads the
+    /// transport config at `key` and threads the runtime's
+    /// [`governor`](Self::governor) pressure into the receiver's inbound brake
+    /// (Kafka pause-partitions gate, HTTP/gRPC 503/`unavailable` shed) so an app
+    /// does NOT repeat the `gate_actuator -> InboundGate -> with_inbound_gate`
+    /// dance by hand.
+    ///
+    /// Construction order is respected for free: the
+    /// [`governor`](Self::governor) was built in `build` BEFORE
+    /// the app calls this in `run_service()`, so the pressure latch already
+    /// exists -- this just clones it (an `Arc` bump) into the transport.
+    ///
+    /// When the governor is disabled (`self_regulation.enabled = false`,
+    /// [`governor`](Self::governor) is `None`) this falls back to the plain
+    /// [`AnyReceiver::from_config`](crate::transport::factory::AnyReceiver::from_config)
+    /// so the data path stays byte-identical to pre-governor behaviour.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying transport error if the config is missing/invalid
+    /// or the backend fails to construct.
+    #[cfg(all(feature = "governor", feature = "transport"))]
+    pub async fn governed_receiver(
+        &self,
+        key: &str,
+    ) -> Result<crate::transport::factory::AnyReceiver, crate::transport::TransportError> {
+        use crate::transport::factory::AnyReceiver;
+        match self.governor {
+            Some(ref gov) => AnyReceiver::from_config_with_governor(key, gov).await,
+            None => AnyReceiver::from_config(key).await,
+        }
+    }
 }

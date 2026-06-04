@@ -394,6 +394,19 @@ impl KafkaTransport {
         self
     }
 
+    /// Whether an [`InboundGate`](crate::governor::InboundGate) is attached
+    /// (G3, `governor` feature).
+    ///
+    /// `true` once [`with_inbound_gate`](Self::with_inbound_gate) (directly or
+    /// via [`SelfRegulationGovernor::attach_kafka_gate`](crate::SelfRegulationGovernor::attach_kafka_gate))
+    /// has wired a gate. Used to assert governor-aware factory construction
+    /// without reaching into the private field.
+    #[cfg(feature = "governor")]
+    #[must_use]
+    pub fn has_inbound_gate(&self) -> bool {
+        self.inbound_gate.is_some()
+    }
+
     /// Build a [`GateActuator`](crate::governor::GateActuator) that pauses and
     /// resumes THIS transport's consumer (G3, `governor` feature).
     ///
@@ -637,6 +650,88 @@ impl TransportReceiver for KafkaTransport {
     ///
     /// For PB/day workloads, call with `max = 10_000` or higher.
     async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
+        // Record-bounded poll only -- byte-identical to before. The byte-aware
+        // governed path goes through `recv_limited`.
+        self.recv_inner(max, None).await
+    }
+
+    /// Byte-aware receive (governed path): bound the poll by BOTH the record cap
+    /// and `limits.max_bytes`. The drain stops once the recv-arena reaches
+    /// `max_bytes` (floor: always take at least one record so an oversized
+    /// record never stalls the loop), so each governed-recv arena is no larger
+    /// than `max_bytes + one record`. This is what makes the self-regulation
+    /// byte budget actually bound RECEIVE memory -- the whole-poll arena can no
+    /// longer dwarf the budget before the driver's sub-block split runs.
+    async fn recv_limited(
+        &self,
+        limits: super::traits::RecvLimits,
+    ) -> TransportResult<WorkBatch<Self::Token>> {
+        self.recv_inner(limits.max_records, Some(limits.max_bytes))
+            .await
+    }
+
+    /// Commit offsets for processed messages.
+    ///
+    /// The commit is batched by partition -- only the HIGHEST offset per
+    /// partition is committed (the offset list is built by
+    /// `highest_offsets_per_partition`, which is unit-tested broker-free).
+    ///
+    /// ## Observable (synchronous) commit -- the ack barrier requires it
+    ///
+    /// This is the ENGINE-CRITICAL commit: the `BatchEngine` governed driver
+    /// treats a commit failure as a TERMINAL ack-barrier error (it stops the run
+    /// loop so no later block's ordered commit advances the watermark past
+    /// un-acked offsets). For that to hold, a broker commit failure MUST be
+    /// visible to the driver. rdkafka's `CommitMode::Async` returns `Ok` as soon
+    /// as the request is ENQUEUED -- a broker-side rejection is never surfaced to
+    /// the caller, so a fire-and-forget async commit would silently swallow the
+    /// failure and DEFEAT the ack barrier. We therefore use the OBSERVABLE
+    /// [`CommitMode::Sync`]: it blocks until the broker acks (or errors), so the
+    /// driver sees the real outcome. The synchronous round-trip is the correct
+    /// default for at-least-once; an app that wants the weaker
+    /// throughput-over-correctness async commit can opt in explicitly via
+    /// [`commit_weak_async`](Self::commit_weak_async) (NOT used by the governed
+    /// driver -- it is documented as weaker).
+    async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
+        if tokens.is_empty() {
+            return Ok(());
+        }
+
+        let tpl = build_commit_tpl(tokens)?;
+
+        // OBSERVABLE commit: block until the broker acks so a commit failure is
+        // visible to the driver (the ack barrier depends on this).
+        self.consumer
+            .commit(&tpl, CommitMode::Sync)
+            .map_err(|e| TransportError::Commit(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
+impl KafkaTransport {
+    /// Shared poll + recv-arena body for [`recv`](TransportReceiver::recv) and
+    /// [`recv_limited`](TransportReceiver::recv_limited).
+    ///
+    /// `max_msgs` bounds the poll by record count (as before). `max_bytes`, when
+    /// `Some`, ADDITIONALLY stops the drain once the recv-arena has accumulated
+    /// at least that many payload bytes -- with a FLOOR of one record so an
+    /// oversized record is still returned (the loop never stalls). `None`
+    /// (the bare `recv` path) is byte-identical to the pre-Phase-2 behaviour:
+    /// no byte cap, record-bounded only.
+    ///
+    /// The recv-arena lifetime guarantee is UNCHANGED: every borrowed
+    /// librdkafka payload is copied OUT into the growable `arena` inside its
+    /// poll arm (never escapes the arm), the arena is frozen to ONE refcounted
+    /// `Bytes` after the polls, and each `Message::payload` is a zero-copy slice
+    /// into it. With a byte cap the arena is simply SMALLER -- bounded to
+    /// `max_bytes + one record` -- not different in kind.
+    #[allow(clippy::too_many_lines)]
+    async fn recv_inner(
+        &self,
+        max_msgs: usize,
+        max_bytes: Option<u64>,
+    ) -> TransportResult<WorkBatch<KafkaToken>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -669,7 +764,6 @@ impl TransportReceiver for KafkaTransport {
         }
 
         let timeout = Duration::from_millis(tuning::POLL_TIMEOUT_MS);
-        let max_msgs = max;
 
         // DECISION (at-scale hardening 2.6): we KEEP synchronous
         // `BaseConsumer::poll` inside this async `recv` rather than switching
@@ -697,10 +791,17 @@ impl TransportReceiver for KafkaTransport {
         // allocation. See `build_batch_from_spans` and the per-arm safety note.
         let span_cap = max_msgs.min(tuning::INITIAL_BATCH_CAPACITY);
         let mut spans: Vec<Span> = Vec::with_capacity(span_cap);
-        // Arena byte estimate: ~256 bytes/record is a conservative starting
-        // guess (typical JSON event); it grows as needed. One up-front alloc
-        // beats N small ones even when the guess is off.
-        let mut arena: Vec<u8> = Vec::with_capacity(span_cap.saturating_mul(256));
+        // Arena byte estimate: when a byte cap is set, size the up-front alloc
+        // to the cap (plus a one-record cushion) so the governed arena is right-
+        // sized; otherwise ~256 bytes/record (typical JSON event). It grows as
+        // needed either way. One up-front alloc beats N small ones.
+        let arena_hint = match max_bytes {
+            Some(cap) => usize::try_from(cap)
+                .unwrap_or(usize::MAX)
+                .saturating_add(256),
+            None => span_cap.saturating_mul(256),
+        };
+        let mut arena: Vec<u8> = Vec::with_capacity(arena_hint);
         let drain_deadline =
             std::time::Instant::now() + Duration::from_millis(tuning::MAX_DRAIN_MS);
 
@@ -772,8 +873,21 @@ impl TransportReceiver for KafkaTransport {
         // Phase 2: Drain queue with zero-timeout polls
         // This is where the batch magic happens - librdkafka has already
         // fetched a batch from the network, we just drain it fast.
+        //
+        // BYTE-AWARE STOP (Phase 2 remediation): when `max_bytes` is set, stop
+        // draining once the arena has reached the cap. Phase 1 already took one
+        // record (the floor), so a single oversized record is always returned
+        // and the loop never stalls; the arena is bounded to
+        // `max_bytes + one record`. Without a cap (`None`) this check is skipped
+        // and the drain is record-bounded exactly as before.
         while spans.len() < max_msgs {
             if std::time::Instant::now() >= drain_deadline {
+                break;
+            }
+            if arena_byte_limit_reached(arena.len(), spans.len(), max_bytes) {
+                // Arena hit the byte budget -- stop the governed poll here so the
+                // whole-poll arena cannot dwarf the budget. Already drained >= 1
+                // record (floor), so this never stalls.
                 break;
             }
 
@@ -830,44 +944,90 @@ impl TransportReceiver for KafkaTransport {
         .into())
     }
 
-    /// Commit offsets for processed messages.
+    /// WEAKER, opt-in fire-and-forget commit (throughput over correctness).
     ///
-    /// Uses async commit for better throughput. The commit is batched
-    /// by partition - only the highest offset per partition is committed.
-    async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
+    /// Uses rdkafka's `CommitMode::Async`, which returns once the commit request
+    /// is ENQUEUED -- it does NOT wait for the broker and does NOT surface a
+    /// broker-side commit failure. This is strictly WEAKER than the default
+    /// observable [`commit`](TransportReceiver::commit): a swallowed commit
+    /// failure breaks the ack barrier and can silently weaken at-least-once.
+    ///
+    /// The `BatchEngine` governed driver does NOT use this. Reach for it only
+    /// when a consumer has independently accepted the weaker guarantee (e.g. an
+    /// at-most-once / best-effort pipeline) and wants the throughput.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransportError::Commit`] only if the offset list cannot be built
+    /// or the request cannot be ENQUEUED -- never on a broker-side commit
+    /// rejection (which is invisible to async commit by construction).
+    pub fn commit_weak_async(&self, tokens: &[KafkaToken]) -> TransportResult<()> {
         if tokens.is_empty() {
             return Ok(());
         }
-
-        // Build topic-partition-offset list
-        // For each partition, commit the highest offset + 1 (next to be read)
-        let mut tpl = TopicPartitionList::new();
-        let mut partition_offsets: HashMap<(&str, i32), i64> =
-            HashMap::with_capacity(tokens.len() / 100);
-
-        for token in tokens {
-            let key = (token.topic.as_ref(), token.partition);
-            partition_offsets
-                .entry(key)
-                .and_modify(|current| {
-                    if token.offset > *current {
-                        *current = token.offset;
-                    }
-                })
-                .or_insert(token.offset);
-        }
-
-        for ((topic, partition), offset) in partition_offsets {
-            tpl.add_partition_offset(topic, partition, Offset::Offset(offset + 1))
-                .map_err(|e| TransportError::Commit(format!("Failed to build TPL: {e}")))?;
-        }
-
-        // Async commit for better throughput
+        let tpl = build_commit_tpl(tokens)?;
         self.consumer
             .commit(&tpl, CommitMode::Async)
             .map_err(|e| TransportError::Commit(e.to_string()))?;
-
         Ok(())
+    }
+}
+
+/// Highest offset per `(topic, partition)` across `tokens`.
+///
+/// Kafka commit is CUMULATIVE -- "commit up to offset N" -- so per partition we
+/// keep only the highest seen offset. The committed TPL then stores
+/// `highest + 1` (the next offset to be read). Extracted as a free function so
+/// the correctness-critical fold is unit-testable WITHOUT a live broker.
+fn highest_offsets_per_partition(tokens: &[KafkaToken]) -> HashMap<(Arc<str>, i32), i64> {
+    let mut partition_offsets: HashMap<(Arc<str>, i32), i64> =
+        HashMap::with_capacity(tokens.len().min(1024));
+    for token in tokens {
+        let key = (Arc::clone(&token.topic), token.partition);
+        partition_offsets
+            .entry(key)
+            .and_modify(|current| {
+                if token.offset > *current {
+                    *current = token.offset;
+                }
+            })
+            .or_insert(token.offset);
+    }
+    partition_offsets
+}
+
+/// Build the commit [`TopicPartitionList`] from `tokens`: highest offset per
+/// partition, stored as `highest + 1` (next-to-read). Shared by the observable
+/// and weak-async commit paths.
+fn build_commit_tpl(tokens: &[KafkaToken]) -> TransportResult<TopicPartitionList> {
+    let mut tpl = TopicPartitionList::new();
+    for ((topic, partition), offset) in highest_offsets_per_partition(tokens) {
+        tpl.add_partition_offset(topic.as_ref(), partition, Offset::Offset(offset + 1))
+            .map_err(|e| TransportError::Commit(format!("Failed to build TPL: {e}")))?;
+    }
+    Ok(tpl)
+}
+
+/// PURE byte-budget stop decision for the recv-arena drain loop (Phase 2
+/// remediation).
+///
+/// Returns `true` when the governed poll should STOP draining because the
+/// recv-arena has reached its byte budget:
+///
+/// - `max_bytes == None` -> never stop on bytes (the bare `recv` path is
+///   record-bounded only, byte-identical to before);
+/// - `span_count == 0` -> never stop (FLOOR one record: the arena must hold at
+///   least one record before a byte cap can close the poll, so an oversized
+///   record is still returned and the loop never stalls);
+/// - otherwise stop once `arena_len >= max_bytes`.
+///
+/// Free-standing + side-effect-free so the correctness-critical stop condition
+/// is unit-testable WITHOUT a live broker (the rest of the drain is a librdkafka
+/// poll loop).
+fn arena_byte_limit_reached(arena_len: usize, span_count: usize, max_bytes: Option<u64>) -> bool {
+    match max_bytes {
+        Some(cap) => span_count > 0 && arena_len as u64 >= cap,
+        None => false,
     }
 }
 
@@ -1240,6 +1400,132 @@ mod tests {
         assert_eq!(msgs[0].key.as_deref(), Some("events"));
         assert_eq!(msgs[0].token.topic.as_ref(), "events");
         assert_eq!(msgs[0].format, PayloadFormat::Json);
+    }
+
+    // --- Remediation Phase 2: byte-aware recv-arena stop (broker-free) ----
+    //
+    // The drain loop itself is a librdkafka poll loop (needs a broker), but the
+    // byte-budget STOP decision is a pure predicate extracted as
+    // `arena_byte_limit_reached`. These prove it stops the governed poll near
+    // the budget AND honours the one-oversized-record floor, WITHOUT a broker.
+
+    #[test]
+    fn arena_stop_record_bounded_when_no_byte_cap() {
+        // No byte cap (bare recv path) -> never stop on bytes, however large.
+        assert!(!arena_byte_limit_reached(10_000_000, 5, None));
+        assert!(!arena_byte_limit_reached(0, 0, None));
+    }
+
+    #[test]
+    fn arena_stop_floors_at_one_record() {
+        // Byte cap reached but ZERO records drained yet -> do NOT stop. The
+        // floor guarantees an oversized record (bigger than the whole budget) is
+        // still admitted as its own poll, so the loop never stalls forever.
+        assert!(
+            !arena_byte_limit_reached(50_000, 0, Some(1024)),
+            "floor: must take at least one record before a byte cap can stop"
+        );
+    }
+
+    #[test]
+    fn arena_stop_when_cap_reached_with_records() {
+        // >= 1 record AND arena at/over the cap -> stop the governed poll.
+        assert!(
+            arena_byte_limit_reached(1024, 1, Some(1024)),
+            "arena_len == cap with a record present -> stop"
+        );
+        assert!(
+            arena_byte_limit_reached(2048, 3, Some(1024)),
+            "arena_len > cap with records present -> stop"
+        );
+        // Under the cap with records present -> keep draining.
+        assert!(
+            !arena_byte_limit_reached(512, 2, Some(1024)),
+            "arena_len < cap -> keep draining toward the budget"
+        );
+    }
+
+    // --- Remediation Phase 1: highest-offset-per-partition commit list ----
+    //
+    // The ack barrier commits the HIGHEST offset per partition (cumulative,
+    // Kafka "commit up to N"). These prove the fold is correct WITHOUT a live
+    // broker -- broker-free, exactly as the recv-arena tests above.
+
+    #[test]
+    fn highest_offsets_picks_max_per_partition() {
+        let topic: Arc<str> = Arc::from("events");
+        // Out-of-order offsets across two partitions: p0 sees {5, 2, 9, 7},
+        // p1 sees {3, 1}. Highest per partition: p0 -> 9, p1 -> 3.
+        let tokens = vec![
+            KafkaToken::new(Arc::clone(&topic), 0, 5),
+            KafkaToken::new(Arc::clone(&topic), 1, 3),
+            KafkaToken::new(Arc::clone(&topic), 0, 2),
+            KafkaToken::new(Arc::clone(&topic), 0, 9),
+            KafkaToken::new(Arc::clone(&topic), 1, 1),
+            KafkaToken::new(Arc::clone(&topic), 0, 7),
+        ];
+        let map = highest_offsets_per_partition(&tokens);
+        assert_eq!(map.len(), 2, "two partitions");
+        assert_eq!(
+            map.get(&(Arc::clone(&topic), 0)),
+            Some(&9),
+            "partition 0 keeps the highest offset 9, not the last-seen 7"
+        );
+        assert_eq!(
+            map.get(&(Arc::clone(&topic), 1)),
+            Some(&3),
+            "partition 1 keeps the highest offset 3"
+        );
+    }
+
+    #[test]
+    fn highest_offsets_separates_distinct_topics() {
+        let a: Arc<str> = Arc::from("topic-a");
+        let b: Arc<str> = Arc::from("topic-b");
+        // Same partition number on two topics must NOT collide.
+        let tokens = vec![
+            KafkaToken::new(Arc::clone(&a), 0, 10),
+            KafkaToken::new(Arc::clone(&b), 0, 4),
+            KafkaToken::new(Arc::clone(&a), 0, 11),
+        ];
+        let map = highest_offsets_per_partition(&tokens);
+        assert_eq!(map.len(), 2, "two (topic, partition) keys");
+        assert_eq!(map.get(&(a, 0)), Some(&11));
+        assert_eq!(map.get(&(b, 0)), Some(&4));
+    }
+
+    #[test]
+    fn highest_offsets_empty_tokens_yield_empty_map() {
+        let map = highest_offsets_per_partition(&[]);
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn build_commit_tpl_stores_highest_plus_one() {
+        let topic: Arc<str> = Arc::from("events");
+        let tokens = vec![
+            KafkaToken::new(Arc::clone(&topic), 0, 5),
+            KafkaToken::new(Arc::clone(&topic), 0, 9),
+            KafkaToken::new(Arc::clone(&topic), 1, 3),
+        ];
+        let tpl = build_commit_tpl(&tokens).expect("valid tpl");
+        // Next-to-read offset is highest + 1: p0 -> 10, p1 -> 4.
+        let e0 = tpl
+            .find_partition("events", 0)
+            .expect("partition 0 present");
+        assert_eq!(
+            e0.offset(),
+            Offset::Offset(10),
+            "p0 commits highest(9) + 1 = 10 (next-to-read)"
+        );
+        let e1 = tpl
+            .find_partition("events", 1)
+            .expect("partition 1 present");
+        assert_eq!(
+            e1.offset(),
+            Offset::Offset(4),
+            "p1 commits highest(3) + 1 = 4 (next-to-read)"
+        );
     }
 
     // --- G3: partition_limited diagnostic + gate wiring -------------------

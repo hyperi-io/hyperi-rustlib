@@ -155,7 +155,7 @@ see [core-pillars/CONFIG.md](core-pillars/CONFIG.md)).
 ```yaml
 self_regulation:
   enabled: true            # master switch (default true)
-  profile: throughput      # throughput | balanced | lowlatency -- sizes the AIMD envelope
+  profile: throughput      # throughput | balanced | low_latency -- sizes the AIMD envelope
   pause_above: 0.80        # arm the inbound hold when combined pressure reaches this
   resume_below: 0.65       # release the hold when pressure drops to this (must be < pause_above)
   target_rho: 0.7          # target utilisation for the byte-budget AIMD loop, in (0, 1)
@@ -165,7 +165,7 @@ self_regulation:
 - **`enabled`** -- the only knob most apps touch. `false` builds nothing.
 - **`profile`** -- sizes the AIMD byte-budget envelope (start / ceiling /
   step / record cap). `throughput` starts big with a high ceiling;
-  `lowlatency` starts small so blocks stay small and bursty. It mirrors the
+  `low_latency` starts small so blocks stay small and bursty. It mirrors the
   Kafka `SelfRegulationProfile` names so one value reads the same regardless
   of transport.
 - **`pause_above` / `resume_below`** -- the hysteresis band. The gap between
@@ -181,3 +181,40 @@ self_regulation:
 
 Every default is set so an app that configures nothing gets a fully working,
 default-ON governor. Bad knobs are sanitised, not fatal.
+
+### Small / memory-tight pods
+
+The default profile is `throughput`, which starts with a large byte budget
+(start-big, back-off-on-pressure). That is the right call for a PB/day
+ingest pod with headroom, but on a small or memory-tight pod it can spike
+in the COLD-START WINDOW -- the very first block is sized to the start
+budget before the AIMD loop or the memory-hard override has seen any
+pressure to react to. The governor self-corrects after that first block
+(the memory-hard override drops the budget the moment in-flight bytes climb
+toward the limit), so this is a transient first-block spike, not a steady
+state.
+
+There is deliberately NO dedicated "small-pod" preset (YAGNI). For a
+small/memory-tight pod, do one of:
+
+- Set a lower start budget directly under `self_regulation` (cap the
+  first-block size so the cold-start window cannot overshoot the pod's
+  memory limit).
+- Use the `balanced` or `low_latency` profile -- both start with a smaller
+  byte-budget envelope, so the cold-start first block is correspondingly
+  smaller.
+
+Either way the memory-hard override remains the never-OOM backstop; the
+profile/start-budget choice only governs how large that first pre-feedback
+block is.
+
+### cgroup OOM-kill operational test (release checklist)
+
+The in-process logical never-OOM test asserts the governor's control loop
+never lets in-flight bytes exceed the configured limit. It does NOT prove
+the process survives a real OS-level cgroup OOM-killer under a hard
+container memory limit. The real test -- a memory-limited container under
+sustained load, asserting NO cgroup OOM-kill where an ungoverned pipeline
+would be killed -- is a RELEASE-CHECKLIST / CI-harness item, run out of
+process against a real cgroup. It is not covered by the in-process unit
+tests and must be exercised separately before a release.

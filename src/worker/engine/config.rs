@@ -73,10 +73,6 @@ pub struct BatchProcessingConfig {
     #[serde(default)]
     pub pre_route_filters: Vec<PreRouteFilterConfig>,
 
-    /// Milliseconds to pause between batches when memory pressure is high.
-    #[serde(default = "default_memory_pressure_pause_ms")]
-    pub memory_pressure_pause_ms: u64,
-
     /// Action to take when a message fails JSON parsing.
     #[serde(default = "default_parse_error_action")]
     pub parse_error_action: ParseErrorAction,
@@ -92,10 +88,6 @@ pub struct BatchProcessingConfig {
 
 fn default_max_chunk_size() -> usize {
     10_000
-}
-
-fn default_memory_pressure_pause_ms() -> u64 {
-    50
 }
 
 fn default_parse_error_action() -> ParseErrorAction {
@@ -120,7 +112,6 @@ impl Default for BatchProcessingConfig {
             format: PayloadFormat::default(),
             routing_field: None,
             pre_route_filters: vec![],
-            memory_pressure_pause_ms: default_memory_pressure_pause_ms(),
             parse_error_action: default_parse_error_action(),
             known_fields: default_known_fields(),
         }
@@ -157,7 +148,6 @@ mod tests {
         let config = BatchProcessingConfig::default();
         assert_eq!(config.max_chunk_size, 10_000);
         assert!(config.routing_field.is_none());
-        assert_eq!(config.memory_pressure_pause_ms, 50);
         assert_eq!(config.known_fields.len(), 6);
         assert!(config.known_fields.contains(&"_table".to_string()));
     }

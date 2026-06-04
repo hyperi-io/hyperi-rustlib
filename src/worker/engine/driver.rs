@@ -84,14 +84,23 @@ pub enum CommitMode {
 /// DLQ entries carried forward, and a shared [`FieldInterner`](super::FieldInterner)
 /// for hot routing-field dedup.
 ///
-/// ## Parse-failure contract (flagged decision)
+/// ## Parse-failure contract
 ///
 /// `records` and `parsed` are aligned 1:1 and contain ONLY records that parsed
-/// successfully. A record whose payload fails [`codec::parse`] is NOT dropped
-/// silently: its bytes are appended to [`dlq_entries`](Self::dlq_entries) with a
-/// `parse error: ...` reason, preserving the no-silent-drop contract. The
-/// process closure therefore sees a clean, fully-parsed view and the resulting
-/// [`WorkBatch`] inherits those DLQ entries.
+/// successfully. A record whose payload fails [`codec::parse`] is handled per
+/// the engine's configured [`ParseErrorAction`](super::ParseErrorAction) -- the
+/// same contract the legacy `process_mid_tier` honoured:
+///
+/// - [`Dlq`](super::ParseErrorAction::Dlq) (default): its bytes are appended to
+///   [`dlq_entries`](Self::dlq_entries) with a `parse error: ...` reason
+///   (no silent drop); the resulting [`WorkBatch`] inherits those entries and
+///   the driver routes them through the DLQ policy before commit.
+/// - [`Skip`](super::ParseErrorAction::Skip): the record is dropped (counted in
+///   errors) -- a deliberate, configured drop, not a silent vanish.
+/// - [`FailBatch`](super::ParseErrorAction::FailBatch): the whole block fails
+///   terminally (no commit), consistent with the ack barrier.
+///
+/// The process closure therefore always sees a clean, fully-parsed view.
 ///
 /// `commit_tokens` are the INPUT source acks and are carried through unchanged
 /// regardless of how many records survived parsing -- the same fan-out-safe
@@ -163,8 +172,16 @@ impl BatchEngine {
     /// Returns [`EngineError::Transport`] if `recv` fails fatally,
     /// [`EngineError::FilterDlqUnrouted`] if inline-DLQ entries appear under the
     /// default [`FilterDlqPolicy::Reject`](super::FilterDlqPolicy::Reject), or
-    /// the error returned by `process`. A sink error is logged and (under
-    /// [`CommitMode::Auto`]) skips the commit; it does not stop the loop.
+    /// the error returned by `process`.
+    ///
+    /// A sink error (and, under [`CommitMode::Auto`], a commit error) is
+    /// TERMINAL: it stops the run loop and propagates. This is the ack barrier
+    /// for the ORDERED/cumulative source commit (Kafka "commit up to offset N"):
+    /// the failed block's tokens are NOT committed, and -- crucially -- no LATER
+    /// block is fetched and committed past them, which would silently skip the
+    /// never-sent records (data loss). On restart the source re-delivers from
+    /// the last committed watermark, preserving at-least-once. The app owns
+    /// restart/retry policy.
     #[cfg(feature = "transport")]
     #[allow(clippy::too_many_arguments)]
     pub async fn run_workbatch<R, P, Sink, SinkFut, Ticker, TickerFut>(
@@ -403,10 +420,21 @@ impl BatchEngine {
         let mut last_recv: Option<std::time::Instant> = None;
 
         loop {
-            // The recv max is the SMALLER of the config chunk size and the
-            // budget's poll-safety record cap -- a tiny-record flood cannot blow
-            // the count even within the byte budget.
-            let recv_max = self.config.max_chunk_size.min(budget.record_cap());
+            // The recv limits bound a single poll by BOTH:
+            //   - the SMALLER of the config chunk size and the budget's
+            //     poll-safety record cap (a tiny-record flood cannot blow the
+            //     count even within the byte budget), AND
+            //   - the CURRENT byte budget (re-read per block), so a single poll
+            //     never RETAINS more than ~one budget's worth of inbound payload
+            //     BEFORE the sub-block split. This is the fix for the
+            //     "byte budget does not bound RECEIVE memory" gap: without the
+            //     byte cap, `recv(max)` could build a WorkBatch (and, for the
+            //     Kafka recv-arena, allocate one arena) far larger than the
+            //     budget before any sub-block lease ran.
+            let recv_limits = crate::transport::RecvLimits {
+                max_records: self.config.max_chunk_size.min(budget.record_cap()),
+                max_bytes: budget.byte_budget(),
+            };
 
             tokio::select! {
                 biased;
@@ -429,7 +457,7 @@ impl BatchEngine {
                     }
                 }
 
-                recv_result = receiver.recv(recv_max) => {
+                recv_result = receiver.recv_limited(recv_limits) => {
                     let now = std::time::Instant::now();
                     let ingest_interval = last_recv
                         .map(|prev| now.saturating_duration_since(prev))
@@ -457,17 +485,23 @@ impl BatchEngine {
                     .await?;
                     let process_time = process_start.elapsed();
 
-                    // Fold this block into the AIMD loop. A memory HARD override
-                    // inside observe() shrinks immediately regardless of rho.
+                    // Fold the OBSERVED actual block bytes into the AIMD loop. A
+                    // memory HARD override inside observe() shrinks immediately
+                    // regardless of rho.
                     budget.observe(block_bytes, process_time, ingest_interval);
 
                     // Observability: surface the current budget + pressure as
-                    // gauges so throttling is visible, not mysterious. The gate
-                    // edges (pause/resume) are logged by the ObservingActuator.
+                    // gauges so throttling is visible, not mysterious, AND the
+                    // ACTUAL received block bytes so the gap between the budget
+                    // (`self_regulation_byte_budget`) and reality (`recv_block_bytes`)
+                    // is measurable -- a persistent overshoot means the recv byte
+                    // cap is not holding. The gate edges (pause/resume) are
+                    // logged by the ObservingActuator.
                     #[cfg(feature = "metrics")]
                     {
                         metrics::gauge!("self_regulation_byte_budget")
                             .set(budget.byte_budget() as f64);
+                        metrics::gauge!("recv_block_bytes").set(block_bytes as f64);
                         metrics::gauge!("pressure_ratio").set(budget.pressure().level());
                     }
                 }
@@ -484,10 +518,11 @@ impl BatchEngine {
     /// [`FieldInterner`](super::FieldInterner)). This keeps
     /// the batch-parse + interner throughput win for apps that opt in.
     ///
-    /// Records that fail to parse are routed to the out-batch's DLQ entries (no
-    /// silent drop) -- see [`ParsedBatch`] for the parse-failure contract.
-    /// `process_parsed` returns the final [`WorkBatch`] and MUST preserve the
-    /// input `commit_tokens`.
+    /// Records that fail to parse are handled per the configured
+    /// [`ParseErrorAction`](super::ParseErrorAction) (Dlq -> dlq_entries, Skip ->
+    /// drop+counted, FailBatch -> terminal no-commit) -- see [`ParsedBatch`] for
+    /// the parse-failure contract. `process_parsed` returns the final
+    /// [`WorkBatch`] and MUST preserve the input `commit_tokens`.
     ///
     /// # Errors
     ///
@@ -552,8 +587,11 @@ impl BatchEngine {
                         continue;
                     };
                     // Wrap the parse-then-process so drive_block stays generic.
+                    // parse_block honours ParseErrorAction: FailBatch surfaces a
+                    // terminal EngineError here (no commit), Dlq carries entries
+                    // forward for the driver to route, Skip drops silently+counted.
                     let parse = |b: WorkBatch<R::Token>| -> Result<WorkBatch<R::Token>, EngineError> {
-                        let parsed = self.parse_block(b);
+                        let parsed = self.parse_block(b)?;
                         process_parsed(parsed)
                     };
                     self.drive_block(receiver, batch, &parse, &mut sink, commit).await?;
@@ -615,20 +653,52 @@ impl BatchEngine {
         let _ingress_lease = self.lease_ingress_batch(&batch);
 
         // process() may fan out / fan in; it preserves the input commit_tokens.
-        let out_batch = process(batch)?;
+        let mut out_batch = process(batch)?;
+
+        // Route any parse/process-generated DLQ entries the out-batch carries,
+        // through the SAME policy + route point as the inbound-filter entries
+        // (apply_workbatch_dlq_policy). This happens AFTER process and BEFORE the
+        // sink/commit, so a parse/process dead-letter can never vanish on the
+        // path to a source commit. It is FALLIBLE: a route failure (Reject, or a
+        // Route sink Err) is a terminal ack-barrier error -- the commit is
+        // skipped and the whole block re-delivered, so no later ordered commit
+        // advances past these undelivered dead-letters. Silent discard is opt-in
+        // only (FilterDlqPolicy::DiscardWithMetric).
+        if !out_batch.dlq_entries.is_empty() {
+            let entries = std::mem::take(&mut out_batch.dlq_entries);
+            if let Err(e) = self.route_dlq_entries(entries) {
+                tracing::error!(error = %e, "DLQ route failed (workbatch) -- terminal, stopping the run loop (ack barrier)");
+                return Err(e);
+            }
+        }
 
         // Sink the WHOLE out-batch. Commit only fires after this returns Ok.
+        //
+        // ACK BARRIER (at-least-once on an ORDERED commit): a sink failure is a
+        // TERMINAL error -- it stops the run loop. The source commit is ordered
+        // and CUMULATIVE (Kafka "commit up to offset N"); if the loop merely
+        // logged and continued, the NEXT block's commit would advance the
+        // committed watermark PAST this block's never-sent offsets, silently
+        // skipping records (data loss). Stopping the loop leaves THIS block's
+        // tokens uncommitted, so the source re-delivers from the last committed
+        // watermark on restart -- no later block can commit ahead of the
+        // failure. The app owns restart/retry policy; the engine never invents
+        // a silent skip.
         if let Err(e) = sink(&out_batch).await {
-            tracing::error!(error = %e, "Sink failed (workbatch), skipping commit");
-            return Ok(());
+            tracing::error!(error = %e, "Sink failed (workbatch) -- terminal, stopping the run loop (ack barrier)");
+            return Err(e);
         }
 
         // Commit EXACTLY the input source acks -- never the (possibly fanned-out)
         // output record count. This is the at-least-once block contract.
         match commit {
             CommitMode::Auto => {
+                // A commit failure is ALSO a terminal ack-barrier failure: a
+                // failed ordered commit must not be followed by a later block's
+                // commit advancing the watermark past these uncommitted offsets.
                 if let Err(e) = receiver.commit(&out_batch.commit_tokens).await {
-                    tracing::error!(error = %e, "Commit failed (workbatch)");
+                    tracing::error!(error = %e, "Commit failed (workbatch) -- terminal, stopping the run loop (ack barrier)");
+                    return Err(EngineError::Transport(e));
                 }
             }
             CommitMode::SinkManaged => {
@@ -650,9 +720,13 @@ impl BatchEngine {
     /// block.
     ///
     /// On ANY sub-block sink error the block stops and the commit is skipped (the
-    /// WHOLE block is re-delivered -- at-least-once). The commit (under
-    /// [`CommitMode::Auto`]) fires EXACTLY ONCE after the final sub-block's sink
-    /// returns `Ok`, with ALL the batch's input source acks.
+    /// WHOLE block is re-delivered -- at-least-once). The error is TERMINAL: it
+    /// propagates out and stops the run loop, so no LATER block's ordered commit
+    /// can advance the cumulative watermark past these never-committed offsets
+    /// (the ack barrier -- see [`drive_block`](Self::drive_block)). The commit
+    /// (under [`CommitMode::Auto`]) fires EXACTLY ONCE after the final
+    /// sub-block's sink returns `Ok`, with ALL the batch's input source acks; a
+    /// commit failure is likewise terminal.
     #[cfg(feature = "transport")]
     async fn drive_block_streaming<R, P, Sink, SinkFut>(
         &self,
@@ -679,10 +753,15 @@ impl BatchEngine {
             ..
         } = batch;
 
-        // Split into consecutive byte-budget-sized sub-blocks (floor 1 record).
-        let sub_blocks = Self::split_into_sub_blocks(records, sub_block_bytes);
+        // Drain into consecutive byte-budget-sized sub-blocks LAZILY (floor 1
+        // record). `SubBlockDrain` yields ONE sub-block at a time as the loop
+        // pulls it -- it never pre-materialises every sub-block vector up front,
+        // so the only sub-block resident is the one currently being leased and
+        // sunk (the streaming peak-memory contract holds for the SPLIT itself,
+        // not just the lease).
+        let mut sub_blocks = SubBlockDrain::new(records, sub_block_bytes);
 
-        for sub_records in sub_blocks {
+        while let Some(sub_records) = sub_blocks.next_sub_block() {
             // Lease ONLY this sub-block's bytes. The lease releases on EVERY exit
             // path of this iteration (sink-error early return, ?-return, or the
             // end of the loop body) via Drop -- BEFORE the next sub-block leases.
@@ -693,13 +772,30 @@ impl BatchEngine {
 
             // process() may fan out / fan in within the sub-block; it preserves
             // the (empty) commit_tokens of the sub-block view.
-            let out_sub = process(sub_block)?;
+            let mut out_sub = process(sub_block)?;
+
+            // Route any parse/process-generated DLQ entries this sub-block
+            // carries BEFORE its sink -- same single policy + route point as the
+            // whole-batch path and the inbound-filter entries. Fallible: a route
+            // failure is terminal (ack barrier) so the commit for the WHOLE block
+            // is skipped and it is re-delivered -- a dead-letter is never lost on
+            // the path to a source commit.
+            if !out_sub.dlq_entries.is_empty() {
+                let entries = std::mem::take(&mut out_sub.dlq_entries);
+                if let Err(e) = self.route_dlq_entries(entries) {
+                    tracing::error!(error = %e, "DLQ route failed (workbatch streaming) -- terminal, stopping the run loop (ack barrier)");
+                    return Err(e);
+                }
+            }
 
             // Sink this sub-block. A sink error stops the block and skips the
-            // commit so the WHOLE block is re-delivered.
+            // commit so the WHOLE block is re-delivered. TERMINAL (ack barrier):
+            // propagate so the run loop stops -- a later block's ordered commit
+            // must never advance the cumulative watermark past this block's
+            // uncommitted offsets.
             if let Err(e) = sink(&out_sub).await {
-                tracing::error!(error = %e, "Sink failed (workbatch streaming), skipping commit");
-                return Ok(());
+                tracing::error!(error = %e, "Sink failed (workbatch streaming) -- terminal, stopping the run loop (ack barrier)");
+                return Err(e);
             }
             // _sub_lease drops here -> bytes released before the next sub-block.
         }
@@ -707,8 +803,11 @@ impl BatchEngine {
         // All sub-blocks sunk Ok. Commit EXACTLY the input source acks ONCE.
         match commit {
             CommitMode::Auto => {
+                // Commit failure is terminal (ack barrier) -- same reasoning as
+                // the sink-error path above.
                 if let Err(e) = receiver.commit(&commit_tokens).await {
-                    tracing::error!(error = %e, "Commit failed (workbatch streaming)");
+                    tracing::error!(error = %e, "Commit failed (workbatch streaming) -- terminal, stopping the run loop (ack barrier)");
+                    return Err(EngineError::Transport(e));
                 }
             }
             CommitMode::SinkManaged => {
@@ -718,49 +817,54 @@ impl BatchEngine {
         Ok(())
     }
 
-    /// Split `records` into consecutive sub-blocks each summing to ~`target_bytes`
-    /// of `payload.len()`, with a FLOOR of one record per sub-block.
+    /// Collect a [`SubBlockDrain`] into a `Vec<Vec<Record>>` (test convenience).
     ///
-    /// Records are kept in order. A record whose payload alone meets or exceeds
-    /// `target_bytes` becomes its own single-record sub-block (the loop never
-    /// stalls). A `target_bytes` of `0` is treated as a floor of one record per
-    /// sub-block. An empty `records` yields no sub-blocks.
-    #[cfg(feature = "transport")]
+    /// The driver itself uses [`SubBlockDrain`] LAZILY and never collects all
+    /// sub-blocks; this wrapper keeps the byte-split unit tests (which assert the
+    /// sub-block shapes) ergonomic. Same splitting contract as
+    /// [`SubBlockDrain::next_sub_block`].
+    #[cfg(all(test, feature = "transport"))]
     fn split_into_sub_blocks(records: Vec<Record>, target_bytes: u64) -> Vec<Vec<Record>> {
-        let mut sub_blocks: Vec<Vec<Record>> = Vec::new();
-        let mut current: Vec<Record> = Vec::new();
-        let mut current_bytes: u64 = 0;
-
-        for record in records {
-            let record_bytes = record.payload.len() as u64;
-            // Close the current sub-block BEFORE pushing if it is non-empty and
-            // adding this record would overshoot the target. Floor 1: a sub-block
-            // always takes at least one record before it can be closed.
-            if !current.is_empty() && current_bytes.saturating_add(record_bytes) > target_bytes {
-                sub_blocks.push(std::mem::take(&mut current));
-                current_bytes = 0;
-            }
-            current_bytes = current_bytes.saturating_add(record_bytes);
-            current.push(record);
+        let mut drain = SubBlockDrain::new(records, target_bytes);
+        let mut out = Vec::new();
+        while let Some(sub) = drain.next_sub_block() {
+            out.push(sub);
         }
-        if !current.is_empty() {
-            sub_blocks.push(current);
-        }
-        sub_blocks
+        out
     }
 
-    /// Pre-parse a whole [`WorkBatch`] into a [`ParsedBatch`] (the hot-path step).
+    /// Pre-parse a whole [`WorkBatch`] into a [`ParsedBatch`] (the hot-path step),
+    /// honouring the configured [`ParseErrorAction`](super::ParseErrorAction).
     ///
     /// Parses each record's payload via [`codec::parse`] on the worker pool
     /// (SIMD JSON / native MsgPack), keeping the surviving records aligned 1:1
-    /// with their [`ParsedPayload`]s. A record that fails to parse is appended to
-    /// the resulting batch's `dlq_entries` (no silent drop) rather than dropped.
+    /// with their [`ParsedPayload`]s. A record that FAILS to parse is handled per
+    /// the engine's `parse_error_action` -- the SAME contract the legacy
+    /// `process_mid_tier` honoured (previously the parsed path hardcoded
+    /// route-to-DLQ, ignoring the config):
+    ///
+    /// - [`Dlq`](super::ParseErrorAction::Dlq) (default): the record's bytes are
+    ///   appended to the batch's `dlq_entries` (no silent drop) and counted in
+    ///   errors + dlq. The driver routes those entries before commit.
+    /// - [`Skip`](super::ParseErrorAction::Skip): the record is dropped, counted
+    ///   in errors ONLY (a deliberate, configured drop -- not a silent vanish).
+    /// - [`FailBatch`](super::ParseErrorAction::FailBatch): the whole block is
+    ///   failed via [`EngineError::ParseBatchFailed`] -- terminal/no-commit,
+    ///   consistent with the P1 ack barrier, so the block is re-delivered rather
+    ///   than partially committed.
+    ///
     /// Input `commit_tokens` and any carried-in `dlq_entries` are preserved.
+    ///
+    /// # Errors
+    ///
+    /// [`EngineError::ParseBatchFailed`] when a parse failure occurs under
+    /// [`ParseErrorAction::FailBatch`](super::ParseErrorAction::FailBatch).
     #[cfg(feature = "transport")]
     fn parse_block<T: crate::transport::CommitToken>(
         &self,
         batch: WorkBatch<T>,
-    ) -> ParsedBatch<'_, T> {
+    ) -> Result<ParsedBatch<'_, T>, EngineError> {
+        use super::ParseErrorAction;
         use crate::transport::PayloadFormat;
 
         let WorkBatch {
@@ -781,6 +885,7 @@ impl BatchEngine {
                 (idx, record, result)
             });
 
+        let action = self.config.parse_error_action;
         let mut keep_records = Vec::new();
         let mut keep_parsed = Vec::new();
         for (_idx, record, result) in parsed_each {
@@ -789,26 +894,38 @@ impl BatchEngine {
                     keep_records.push(record);
                     keep_parsed.push(payload);
                 }
-                Err(reason) => {
-                    // No silent drop: the unparseable record's bytes go to DLQ.
-                    self.stats.incr_errors();
-                    self.stats.incr_dlq();
-                    dlq_entries.push(crate::transport::filter::FilteredDlqEntry {
-                        payload: record.payload.to_vec(),
-                        key: record.key.clone(),
-                        reason,
-                    });
-                }
+                Err(reason) => match action {
+                    ParseErrorAction::Dlq => {
+                        // No silent drop: the unparseable record's bytes go to DLQ.
+                        self.stats.incr_errors();
+                        self.stats.incr_dlq();
+                        dlq_entries.push(crate::transport::filter::FilteredDlqEntry {
+                            payload: record.payload.to_vec(),
+                            key: record.key.clone(),
+                            reason,
+                        });
+                    }
+                    ParseErrorAction::Skip => {
+                        // Deliberate, configured drop -- counted in errors but NOT
+                        // dead-lettered. This is opt-in loss, not a silent vanish.
+                        self.stats.incr_errors();
+                    }
+                    ParseErrorAction::FailBatch => {
+                        // Terminal: the whole block fails its commit (ack barrier).
+                        self.stats.incr_errors();
+                        return Err(EngineError::ParseBatchFailed(reason));
+                    }
+                },
             }
         }
 
-        ParsedBatch {
+        Ok(ParsedBatch {
             records: keep_records,
             parsed: keep_parsed,
             commit_tokens,
             dlq_entries,
             interner: &self.interner,
-        }
+        })
     }
 
     /// Account a [`WorkBatch`]'s payload bytes against the [`MemoryGuard`],
@@ -828,6 +945,69 @@ impl BatchEngine {
         let bytes = batch.total_payload_bytes() as u64;
         guard.add_bytes(bytes);
         Some(super::IngressLease::new(guard, bytes))
+    }
+}
+
+/// A LAZY sub-block drain: yields one consecutive byte-budget-sized sub-block
+/// of [`Record`]s at a time, so the streaming driver never pre-materialises
+/// every sub-block vector up front.
+///
+/// Each call to [`next_sub_block`](Self::next_sub_block) pulls records (in
+/// order) from the source until the accumulated `payload.len()` would overshoot
+/// `target_bytes`, then returns that sub-block; the remaining records stay
+/// un-pulled in the source iterator. Splitting contract:
+///
+/// - records are kept in order;
+/// - FLOOR of one record per sub-block: a record whose payload alone meets or
+///   exceeds `target_bytes` is its own single-record sub-block (never stalls);
+/// - `target_bytes` of `0` is treated as a floor of one record per sub-block;
+/// - an exhausted source yields `None`.
+///
+/// The lazy shape matters: the previous `Vec<Vec<Record>>` allocated every
+/// sub-block vector before the loop processed the first one. Here, at most ONE
+/// sub-block vector is allocated at a time -- the one the loop is about to lease
+/// and sink -- so the SPLIT no longer defeats the streaming peak-memory bound.
+#[cfg(feature = "transport")]
+struct SubBlockDrain {
+    /// Source records, drained in order. `peeked` holds a record we pulled but
+    /// could not fit into the sub-block being built (it starts the next one).
+    iter: std::vec::IntoIter<Record>,
+    peeked: Option<Record>,
+    target_bytes: u64,
+}
+
+#[cfg(feature = "transport")]
+impl SubBlockDrain {
+    fn new(records: Vec<Record>, target_bytes: u64) -> Self {
+        Self {
+            iter: records.into_iter(),
+            peeked: None,
+            target_bytes,
+        }
+    }
+
+    /// Yield the next consecutive sub-block, or `None` when the source is
+    /// exhausted. Allocates exactly ONE sub-block `Vec` per call.
+    fn next_sub_block(&mut self) -> Option<Vec<Record>> {
+        // Start with the record carried over from the previous call (if any),
+        // else pull the first record of this sub-block from the source.
+        let first = self.peeked.take().or_else(|| self.iter.next())?;
+        let mut current_bytes = first.payload.len() as u64;
+        let mut current = vec![first];
+
+        // Pull more records while they fit. Floor 1: we already took one record
+        // above, so an oversized record is still its own sub-block.
+        for record in self.iter.by_ref() {
+            let record_bytes = record.payload.len() as u64;
+            if current_bytes.saturating_add(record_bytes) > self.target_bytes {
+                // Does not fit -- carry it to the next sub-block and stop here.
+                self.peeked = Some(record);
+                break;
+            }
+            current_bytes = current_bytes.saturating_add(record_bytes);
+            current.push(record);
+        }
+        Some(current)
     }
 }
 
@@ -943,7 +1123,8 @@ mod tests {
         );
     }
 
-    /// On a sink error the commit must NOT fire (the block is re-delivered).
+    /// On a sink error the commit must NOT fire (the block is re-delivered) AND
+    /// the run loop stops -- the sink error is a TERMINAL ack-barrier error.
     #[tokio::test]
     async fn sink_error_does_not_commit() {
         let transport = mem_transport(50);
@@ -956,7 +1137,7 @@ mod tests {
         let shutdown = CancellationToken::new();
         cancel_after(shutdown.clone(), 200);
 
-        engine
+        let result = engine
             .run_workbatch(
                 &transport,
                 shutdown,
@@ -968,8 +1149,11 @@ mod tests {
                     fn() -> std::future::Ready<Result<(), EngineError>>,
                 )>,
             )
-            .await
-            .unwrap();
+            .await;
+        assert!(
+            matches!(result, Err(EngineError::Sink(_))),
+            "sink error is terminal: the run returns the sink error, got {result:?}"
+        );
 
         // committed_sequence is a fetch_max seeded at 0 and the only injected
         // message had seq 0; a commit would still leave it at 0, so to PROVE the
@@ -988,7 +1172,7 @@ mod tests {
         let _ = transport.recv(1).await.unwrap();
         let shutdown = CancellationToken::new();
         cancel_after(shutdown.clone(), 200);
-        engine
+        let result = engine
             .run_workbatch(
                 &transport,
                 shutdown,
@@ -1000,8 +1184,8 @@ mod tests {
                     fn() -> std::future::Ready<Result<(), EngineError>>,
                 )>,
             )
-            .await
-            .unwrap();
+            .await;
+        assert!(result.is_err(), "sink error is terminal");
         assert_eq!(
             transport.committed_sequence(),
             0,
@@ -1233,10 +1417,13 @@ mod tests {
         assert_eq!(transport.committed_sequence(), 3, "all 4 acks committed");
     }
 
-    /// Parsed path no-silent-drop: an unparseable record is routed to the
-    /// out-batch DLQ entries, not dropped, while source acks stay intact.
+    /// Parsed path no-silent-drop (default `ParseErrorAction::Dlq`): an
+    /// unparseable record is routed to the out-batch DLQ entries, the process
+    /// closure sees them, AND they reach the DLQ route point (a `Route` policy
+    /// sink) before commit -- not dropped -- while source acks stay intact.
     #[tokio::test]
     async fn parsed_path_routes_parse_failures_to_dlq() {
+        use crate::worker::engine::FilterDlqPolicy;
         let transport = mem_transport(50);
         transport
             .inject(None, br#"{"id":1}"#.to_vec())
@@ -1251,7 +1438,15 @@ mod tests {
             .await
             .unwrap(); // seq 2 ok
 
-        let engine = default_engine();
+        // A Route policy captures the entries that reach the DLQ route point.
+        let routed = Arc::new(AtomicUsize::new(0));
+        let rc = Arc::clone(&routed);
+        let engine = default_engine().with_filter_dlq_policy(FilterDlqPolicy::Route(Arc::new(
+            move |entries: Vec<crate::transport::filter::FilteredDlqEntry>| {
+                rc.fetch_add(entries.len(), Ordering::Relaxed);
+                Ok(())
+            },
+        )));
         let shutdown = CancellationToken::new();
         cancel_after(shutdown.clone(), 200);
 
@@ -1284,7 +1479,12 @@ mod tests {
         assert_eq!(
             dlq_seen.load(Ordering::Relaxed),
             1,
-            "1 parse failure routed to DLQ"
+            "1 parse failure carried to the process closure as a DLQ entry"
+        );
+        assert_eq!(
+            routed.load(Ordering::Relaxed),
+            1,
+            "the parse-failure DLQ entry reached the DLQ route point before commit"
         );
         // All three source acks are still committed -- a parse failure does not
         // lose the source ack (at-least-once on the WHOLE block).
@@ -1338,6 +1538,314 @@ mod tests {
     }
     #[cfg(feature = "memory")]
     impl CommitToken for MemTok {}
+
+    // ---- Remediation Phase 1: ordered-commit ack barrier -----------------
+    //
+    // Kafka (and MemoryTransport) commit is CUMULATIVE: `commit up to offset N`
+    // advances a watermark via fetch_max. So if a block carrying token 0 fails
+    // its sink/commit, a LATER block carrying token 1 must NEVER be committed --
+    // doing so advances the watermark past token 0's never-sent records, which
+    // silently skips them (data loss, at-least-once violated). These tests pin
+    // the ack barrier: the committed watermark never advances past the last
+    // successfully-sunk-and-committed block.
+
+    /// A real ORDERED receiver test double (real `Record`/`WorkBatch`/`MemoryToken`
+    /// types, no internal-code mock). It hands out ONE record per `recv` with
+    /// MONOTONIC tokens (seq 0, 1, 2, ...) and a CUMULATIVE commit -- the
+    /// committed watermark is `fetch_max` of the committed tokens, exactly like
+    /// a Kafka offset commit. This isolates the ordered-commit semantics from
+    /// MemoryTransport's channel batching (which would coalesce all pending
+    /// messages into a single block).
+    struct OrderedReceiver {
+        /// Next seq to deliver; one record per recv until exhausted.
+        next_seq: Arc<AtomicU64>,
+        /// How many records to deliver before recv blocks (pending) forever.
+        total: u64,
+        /// Cumulative committed watermark (highest committed seq + 1, or 0 if
+        /// nothing committed). `u64::MAX` sentinel means "no commit yet".
+        committed_hwm: Arc<AtomicU64>,
+        /// Count of commit calls (to prove a later block's commit did not fire).
+        commit_calls: Arc<AtomicUsize>,
+        /// If set, `commit` returns an error (broker commit failure) for any
+        /// block whose highest token seq equals this value.
+        fail_commit_on_seq: Option<u64>,
+    }
+
+    impl OrderedReceiver {
+        fn new(total: u64) -> Self {
+            Self {
+                next_seq: Arc::new(AtomicU64::new(0)),
+                total,
+                committed_hwm: Arc::new(AtomicU64::new(u64::MAX)),
+                commit_calls: Arc::new(AtomicUsize::new(0)),
+                fail_commit_on_seq: None,
+            }
+        }
+    }
+
+    impl crate::transport::TransportBase for OrderedReceiver {
+        fn close(
+            &self,
+        ) -> impl std::future::Future<Output = crate::transport::TransportResult<()>> + Send
+        {
+            std::future::ready(Ok(()))
+        }
+        fn is_healthy(&self) -> bool {
+            true
+        }
+        fn name(&self) -> &'static str {
+            "ordered-test"
+        }
+    }
+
+    impl TransportReceiver for OrderedReceiver {
+        type Token = crate::transport::memory::MemoryToken;
+
+        fn recv(
+            &self,
+            _max: usize,
+        ) -> impl std::future::Future<
+            Output = crate::transport::TransportResult<WorkBatch<Self::Token>>,
+        > + Send {
+            let next_seq = Arc::clone(&self.next_seq);
+            let total = self.total;
+            async move {
+                let seq = next_seq.fetch_add(1, Ordering::Relaxed);
+                if seq >= total {
+                    // Exhausted: block forever so the loop only exits on shutdown
+                    // (mirrors a quiet broker -- never an error/EOF).
+                    next_seq.fetch_sub(1, Ordering::Relaxed);
+                    std::future::pending::<()>().await;
+                }
+                let record = Record {
+                    payload: Bytes::from(format!(r#"{{"seq":{seq}}}"#)),
+                    key: None,
+                    headers: vec![],
+                    metadata: RecordMeta {
+                        timestamp_ms: None,
+                        format: PayloadFormat::Json,
+                    },
+                };
+                Ok(WorkBatch::new(
+                    vec![record],
+                    vec![crate::transport::memory::MemoryToken { seq }],
+                ))
+            }
+        }
+
+        async fn commit(&self, tokens: &[Self::Token]) -> crate::transport::TransportResult<()> {
+            self.commit_calls.fetch_add(1, Ordering::Relaxed);
+            let Some(max_seq) = tokens.iter().map(|t| t.seq).max() else {
+                return Ok(());
+            };
+            if self.fail_commit_on_seq == Some(max_seq) {
+                return Err(crate::transport::TransportError::Commit(format!(
+                    "broker commit failed for seq {max_seq}"
+                )));
+            }
+            // Cumulative: watermark = max(current, this block's highest seq).
+            self.committed_hwm.fetch_max(max_seq, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    /// THE ack-barrier bug test (sink failure). Token 0's block fails at the
+    /// sink; token 1's block would succeed. With an ORDERED/cumulative commit,
+    /// the engine must NEVER commit token 1 (which would advance the watermark
+    /// past the never-sent token 0). Assert: the committed watermark never
+    /// advances past the last successfully-sunk block -- i.e. NOTHING is
+    /// committed, and the run STOPS (terminal) rather than draining token 1.
+    #[tokio::test]
+    async fn sink_error_blocks_later_ordered_commits() {
+        let receiver = OrderedReceiver::new(3);
+        let committed = Arc::clone(&receiver.committed_hwm);
+        let commit_calls = Arc::clone(&receiver.commit_calls);
+
+        let engine = default_engine();
+        let shutdown = CancellationToken::new();
+        // Safety net: if the loop wrongly continued, shutdown stops it so the
+        // test cannot hang. The assertions still catch the data-loss advance.
+        cancel_after(shutdown.clone(), 500);
+
+        let sink_calls = Arc::new(AtomicUsize::new(0));
+        let sc = Arc::clone(&sink_calls);
+
+        let result = engine
+            .run_workbatch(
+                &receiver,
+                shutdown,
+                |batch| Ok(batch),
+                move |out: &WorkBatch<_>| {
+                    let sc = Arc::clone(&sc);
+                    // Fail the sink for the block carrying token 0.
+                    let carries_zero = out.commit_tokens.iter().any(|t| t.seq == 0);
+                    async move {
+                        sc.fetch_add(1, Ordering::Relaxed);
+                        if carries_zero {
+                            Err(EngineError::Sink("boom on token 0".into()))
+                        } else {
+                            Ok(())
+                        }
+                    }
+                },
+                CommitMode::Auto,
+                None::<(
+                    Duration,
+                    fn() -> std::future::Ready<Result<(), EngineError>>,
+                )>,
+            )
+            .await;
+
+        // The ack barrier: token 0 failed, so the watermark must NOT advance
+        // past it. NOTHING may be committed (token 1 must never commit ahead).
+        assert_eq!(
+            committed.load(Ordering::Relaxed),
+            u64::MAX,
+            "sink error on token 0 must leave the committed watermark unmoved -- \
+             a later token must NOT be committed past the failed offset"
+        );
+        assert_eq!(
+            commit_calls.load(Ordering::Relaxed),
+            0,
+            "no commit may fire while token 0's block is unsent"
+        );
+        // The fix makes the sink error TERMINAL: the run returns Err and the
+        // loop never advances to deliver token 1.
+        assert!(
+            result.is_err(),
+            "sink failure under Auto must be a terminal engine error (ack barrier), \
+             not a logged continue that drains later blocks"
+        );
+        assert_eq!(
+            sink_calls.load(Ordering::Relaxed),
+            1,
+            "loop must stop at the failed block -- token 1 must not be fetched+sunk"
+        );
+    }
+
+    /// Ack-barrier on COMMIT failure. The sink succeeds but the COMMIT for
+    /// token 0's block fails (broker commit error). The engine must treat this
+    /// as a terminal ack-barrier failure and NOT advance to fetch+commit
+    /// token 1 past the failed offset.
+    #[tokio::test]
+    async fn commit_error_blocks_later_ordered_commits() {
+        let mut receiver = OrderedReceiver::new(3);
+        receiver.fail_commit_on_seq = Some(0);
+        let committed = Arc::clone(&receiver.committed_hwm);
+
+        let engine = default_engine();
+        let shutdown = CancellationToken::new();
+        cancel_after(shutdown.clone(), 500);
+
+        let sink_calls = Arc::new(AtomicUsize::new(0));
+        let sc = Arc::clone(&sink_calls);
+
+        let result = engine
+            .run_workbatch(
+                &receiver,
+                shutdown,
+                |batch| Ok(batch),
+                move |_out: &WorkBatch<_>| {
+                    let sc = Arc::clone(&sc);
+                    async move {
+                        sc.fetch_add(1, Ordering::Relaxed);
+                        Ok(())
+                    }
+                },
+                CommitMode::Auto,
+                None::<(
+                    Duration,
+                    fn() -> std::future::Ready<Result<(), EngineError>>,
+                )>,
+            )
+            .await;
+
+        // Commit of token 0 failed -> watermark unmoved, run terminates, token 1
+        // is never fetched/committed past the failed offset.
+        assert_eq!(
+            committed.load(Ordering::Relaxed),
+            u64::MAX,
+            "failed commit must not leave a later commit to advance past it"
+        );
+        assert!(
+            result.is_err(),
+            "commit failure must be a terminal ack-barrier error"
+        );
+        assert_eq!(
+            sink_calls.load(Ordering::Relaxed),
+            1,
+            "loop must stop at the failed commit -- token 1 must not be processed"
+        );
+    }
+
+    /// Streaming variant of the ack barrier: a sink error on token 0's block
+    /// (streamed in sub-blocks) must block any later ordered commit. Mid-block
+    /// sink failure stops the block AND must not let a later block's commit
+    /// advance the watermark past it.
+    #[tokio::test]
+    async fn streaming_sink_error_blocks_later_ordered_commits() {
+        let receiver = OrderedReceiver::new(3);
+        let committed = Arc::clone(&receiver.committed_hwm);
+        let commit_calls = Arc::clone(&receiver.commit_calls);
+
+        let engine = default_engine();
+        let shutdown = CancellationToken::new();
+        cancel_after(shutdown.clone(), 500);
+
+        let sink_calls = Arc::new(AtomicUsize::new(0));
+        let sc = Arc::clone(&sink_calls);
+
+        let result = engine
+            .run_workbatch_streaming(
+                &receiver,
+                shutdown,
+                |batch| Ok(batch),
+                move |out: &WorkBatch<_>| {
+                    let sc = Arc::clone(&sc);
+                    // Streaming sub-block views carry EMPTY commit_tokens, so we
+                    // identify token 0's block by its payload bytes ({"seq":0}).
+                    let carries_zero = out
+                        .records
+                        .iter()
+                        .any(|r| r.payload.as_ref() == br#"{"seq":0}"#);
+                    async move {
+                        sc.fetch_add(1, Ordering::Relaxed);
+                        if carries_zero {
+                            Err(EngineError::Sink("boom on token 0 (streaming)".into()))
+                        } else {
+                            Ok(())
+                        }
+                    }
+                },
+                CommitMode::Auto,
+                64, // one record per sub-block (records are tiny)
+                None::<(
+                    Duration,
+                    fn() -> std::future::Ready<Result<(), EngineError>>,
+                )>,
+            )
+            .await;
+
+        assert_eq!(
+            committed.load(Ordering::Relaxed),
+            u64::MAX,
+            "streaming sink error on token 0 must not let a later token commit ahead"
+        );
+        assert_eq!(
+            commit_calls.load(Ordering::Relaxed),
+            0,
+            "no commit may fire while token 0's block is unsent (streaming)"
+        );
+        assert!(
+            result.is_err(),
+            "streaming sink failure under Auto must be a terminal ack-barrier error"
+        );
+        assert_eq!(
+            sink_calls.load(Ordering::Relaxed),
+            1,
+            "streaming loop must stop at the failed block"
+        );
+    }
 
     // ---- Task G4: per-unit streaming -------------------------------------
 
@@ -1655,7 +2163,7 @@ mod tests {
         // ~3 records per sub-block -> 3 sub-blocks; fail on the 2nd (middle).
         let sub_block_bytes = (RECORD_BYTES * 3) as u64;
 
-        engine
+        let result = engine
             .run_workbatch_streaming(
                 &receiver,
                 shutdown,
@@ -1678,9 +2186,13 @@ mod tests {
                     fn() -> std::future::Ready<Result<(), EngineError>>,
                 )>,
             )
-            .await
-            .unwrap();
+            .await;
 
+        // The sink error is TERMINAL (ack barrier): the run returns the error.
+        assert!(
+            matches!(result, Err(EngineError::Sink(_))),
+            "mid sub-block sink error is terminal, got {result:?}"
+        );
         // The block stopped at the failing sub-block: no commit, and the 3rd
         // sub-block was never sunk.
         assert_eq!(
@@ -2181,5 +2693,711 @@ mod tests {
             0,
             "all ingress leases released after the run -- no leak"
         );
+    }
+
+    // ---- Remediation Phase 2: byte-aware recv bounds RECEIVE memory -------
+    //
+    // The gap (Codex finding): the governed driver bounds memory by the
+    // post-recv SUB-BLOCK lease, but `recv(max)` is RECORD-bounded only -- a
+    // single poll can build a WorkBatch whose total bytes >> byte_budget BEFORE
+    // any sub-block split, so the byte budget did NOT bound RECEIVE memory. The
+    // fix routes the governed recv through `recv_limited(RecvLimits)` so the poll
+    // is bounded by BOTH the record cap AND the byte budget.
+
+    /// A REAL test transport (not a mock of internal code -- a concrete
+    /// `TransportReceiver` over owned `Record`/`WorkBatch`/`MemoryToken`) that
+    /// makes the gap observable:
+    ///
+    /// - `recv(max)` is RECORD-bounded: it hands out up to `max` records in ONE
+    ///   block regardless of their bytes -- exactly the pre-fix behaviour that
+    ///   let a single poll retain bytes >> budget.
+    /// - `recv_limited(limits)` is BYTE-bounded: it accumulates records until the
+    ///   payload bytes reach `limits.max_bytes`, FLOOR one record.
+    ///
+    /// Every handed-out block's total payload bytes are folded into a shared
+    /// high-water so the test can assert the bytes RETAINED at recv time.
+    struct ByteAwareSource {
+        /// Remaining records to hand out (front = next).
+        remaining: std::sync::Mutex<std::collections::VecDeque<Record>>,
+        /// High-water of the bytes handed out in any single recv/recv_limited.
+        recv_high_water: Arc<AtomicU64>,
+        committed: Arc<AtomicU64>,
+    }
+
+    impl ByteAwareSource {
+        fn new(records: Vec<Record>, recv_high_water: Arc<AtomicU64>) -> Self {
+            Self {
+                remaining: std::sync::Mutex::new(records.into_iter().collect()),
+                recv_high_water,
+                committed: Arc::new(AtomicU64::new(0)),
+            }
+        }
+
+        /// Pull a block (front records) bounded by an optional byte cap and a
+        /// record cap, folding its total bytes into the high-water. Returns
+        /// `None` when the source is exhausted (the caller then PENDS forever so
+        /// the run loop parks until shutdown -- never a busy spin).
+        fn pull(&self, max_records: usize, max_bytes: Option<u64>) -> Option<WorkBatch<MemTok2>> {
+            let mut q = self.remaining.lock().unwrap();
+            if q.is_empty() {
+                return None;
+            }
+            let mut records = Vec::new();
+            let mut bytes: u64 = 0;
+            while records.len() < max_records {
+                let Some(front) = q.front() else { break };
+                let rb = front.payload.len() as u64;
+                // Byte cap with floor-1: stop only once we already hold >= 1.
+                if let Some(cap) = max_bytes
+                    && !records.is_empty()
+                    && bytes.saturating_add(rb) > cap
+                {
+                    break;
+                }
+                bytes = bytes.saturating_add(rb);
+                records.push(q.pop_front().expect("front exists"));
+            }
+            self.recv_high_water.fetch_max(bytes, Ordering::Relaxed);
+            let n = records.len() as u64;
+            let base = self.committed.load(Ordering::Relaxed);
+            let tokens: Vec<MemTok2> = (0..n).map(|i| MemTok2 { seq: base + i }).collect();
+            Some(WorkBatch::new(records, tokens))
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct MemTok2 {
+        seq: u64,
+    }
+    impl std::fmt::Display for MemTok2 {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "memtok2:{}", self.seq)
+        }
+    }
+    impl crate::transport::CommitToken for MemTok2 {}
+
+    impl crate::transport::TransportBase for ByteAwareSource {
+        fn close(
+            &self,
+        ) -> impl std::future::Future<Output = crate::transport::TransportResult<()>> + Send
+        {
+            std::future::ready(Ok(()))
+        }
+        fn is_healthy(&self) -> bool {
+            true
+        }
+        fn name(&self) -> &'static str {
+            "byte-aware-source"
+        }
+    }
+
+    impl TransportReceiver for ByteAwareSource {
+        type Token = MemTok2;
+
+        fn recv(
+            &self,
+            max: usize,
+        ) -> impl std::future::Future<
+            Output = crate::transport::TransportResult<WorkBatch<Self::Token>>,
+        > + Send {
+            // RECORD-bounded only -- ignores bytes. This is the pre-fix shape: a
+            // single poll can retain bytes >> any budget.
+            let pulled = self.pull(max, None);
+            async move {
+                match pulled {
+                    Some(batch) => Ok(batch),
+                    // Exhausted: park forever so the loop only exits on shutdown
+                    // (mirrors a quiet source -- never a busy spin).
+                    None => std::future::pending().await,
+                }
+            }
+        }
+
+        fn recv_limited(
+            &self,
+            limits: crate::transport::RecvLimits,
+        ) -> impl std::future::Future<
+            Output = crate::transport::TransportResult<WorkBatch<Self::Token>>,
+        > + Send {
+            // BYTE-bounded (floor one record): the fix path.
+            let pulled = self.pull(limits.max_records, Some(limits.max_bytes));
+            async move {
+                match pulled {
+                    Some(batch) => Ok(batch),
+                    None => std::future::pending().await,
+                }
+            }
+        }
+
+        async fn commit(&self, tokens: &[Self::Token]) -> crate::transport::TransportResult<()> {
+            if let Some(max_seq) = tokens.iter().map(|t| t.seq).max() {
+                self.committed.fetch_max(max_seq, Ordering::Relaxed);
+            }
+            Ok(())
+        }
+    }
+
+    /// THE reproduce/fix test: drive the GOVERNED loop over a source that could
+    /// deliver a block whose total bytes are FAR larger than the byte budget.
+    ///
+    /// PRE-FIX (governed recv == `recv(record_cap)`): the source's record-bounded
+    /// `recv` hands out the whole big block in one poll, so the bytes RETAINED at
+    /// recv time = the whole block >> budget. The high-water assertion below
+    /// FAILS (this is the reproduction).
+    ///
+    /// POST-FIX (governed recv == `recv_limited(record_cap, byte_budget)`): the
+    /// source's byte-bounded `recv_limited` caps each poll at the budget (+ one
+    /// record), so the retained bytes stay ~<= budget + one record.
+    #[cfg(feature = "governor")]
+    #[tokio::test]
+    async fn governed_recv_is_byte_bounded_not_record_bounded() {
+        use crate::memory::{MemoryGuard, MemoryGuardConfig};
+
+        // 64 records of 4 KiB each = 256 KiB total available in the source.
+        const RECORD_BYTES: usize = 4 * 1024;
+        const N: usize = 64;
+        // A SMALL byte budget: 16 KiB (4 records). The record cap is large (2000
+        // default) so the count NEVER bounds the poll -- only the byte cap can.
+        const BUDGET: u64 = 16 * 1024;
+
+        let total: u64 = (RECORD_BYTES * N) as u64; // 256 KiB
+        let payload = vec![b'b'; RECORD_BYTES];
+        let records: Vec<Record> = (0..N)
+            .map(|_| Record {
+                payload: Bytes::from(payload.clone()),
+                key: None,
+                headers: vec![],
+                metadata: RecordMeta {
+                    timestamp_ms: None,
+                    format: PayloadFormat::Json,
+                },
+            })
+            .collect();
+
+        let guard = Arc::new(MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 1024 * 1024,
+            ..Default::default()
+        }));
+        let cfg = crate::governor::ByteBudgetConfig {
+            start_bytes: BUDGET,
+            max_bytes: BUDGET, // pin it so the budget cannot grow past BUDGET
+            floor_records: 1,
+            nominal_record_bytes: RECORD_BYTES as u64,
+            record_cap: 4096, // far above N -- count never bounds the poll
+            ..Default::default()
+        };
+        let pressure = crate::governor::SelfRegulationConfig::default()
+            .build(Arc::clone(&guard))
+            .expect("enabled")
+            .pressure();
+        let budget = Arc::new(crate::governor::ByteBudgetController::new(
+            cfg,
+            Arc::clone(&pressure),
+        ));
+
+        let recv_high_water = Arc::new(AtomicU64::new(0));
+        let source = ByteAwareSource::new(records, Arc::clone(&recv_high_water));
+
+        let mut engine = BatchEngine::new(BatchProcessingConfig {
+            // Big chunk so config never bounds the poll either -- the byte budget
+            // is the ONLY thing that can.
+            max_chunk_size: 4096,
+            ..Default::default()
+        });
+        engine.set_byte_budget(budget);
+
+        let shutdown = CancellationToken::new();
+        cancel_after(shutdown.clone(), 250);
+
+        engine
+            .run_governed(
+                &source,
+                shutdown,
+                |batch| Ok(batch),
+                |_out: &WorkBatch<_>| async { Ok(()) },
+                CommitMode::Auto,
+                None::<(
+                    Duration,
+                    fn() -> std::future::Ready<Result<(), EngineError>>,
+                )>,
+            )
+            .await
+            .unwrap();
+
+        let peak = recv_high_water.load(Ordering::Relaxed);
+        // The fix: a single governed recv retains at most the byte budget plus
+        // one oversized-record floor -- NOT the whole 256 KiB block.
+        assert!(
+            peak <= BUDGET + RECORD_BYTES as u64,
+            "governed recv retained {peak} bytes at recv time -- must be bounded \
+             by the byte budget {BUDGET} (+ one record {RECORD_BYTES}), not the \
+             whole {total}-byte block (record-bounded recv would retain all of it)"
+        );
+        assert!(
+            peak > 0,
+            "the source did hand out records (sanity: the loop ran)"
+        );
+    }
+
+    /// The sub-block drain is LAZY: it yields one sub-block at a time and does
+    /// NOT allocate every sub-block up front. We assert incremental yield -- the
+    /// first `next_sub_block()` returns one budget-sized sub-block while records
+    /// for later sub-blocks remain un-pulled in the drain.
+    #[test]
+    fn sub_block_drain_yields_incrementally() {
+        // 6 records of 10 bytes; target 25 -> sub-blocks {2, 2, 2}.
+        let records: Vec<Record> = (0..6)
+            .map(|_| Record {
+                payload: Bytes::from_static(b"0123456789"),
+                key: None,
+                headers: vec![],
+                metadata: RecordMeta {
+                    timestamp_ms: None,
+                    format: PayloadFormat::Json,
+                },
+            })
+            .collect();
+        let mut drain = SubBlockDrain::new(records, 25);
+
+        // First pull yields ONE sub-block (2 records); the remaining 4 are still
+        // inside the drain, NOT pre-materialised into sub-block vectors.
+        let first = drain.next_sub_block().expect("first sub-block");
+        assert_eq!(first.len(), 2, "first sub-block is one budget's worth");
+        // The drain still has records to give (proves it did not eagerly split).
+        let second = drain.next_sub_block().expect("second sub-block");
+        assert_eq!(second.len(), 2);
+        let third = drain.next_sub_block().expect("third sub-block");
+        assert_eq!(third.len(), 2);
+        // Now exhausted.
+        assert!(drain.next_sub_block().is_none(), "drain exhausted");
+    }
+
+    // ---- Remediation Phase 3: DLQ + parse-error-action semantics ----------
+    //
+    // Two findings the parsed/process paths had:
+    //   1. parse_block hardcoded route-to-DLQ, ignoring ParseErrorAction.
+    //   2. out_batch.dlq_entries from process were never routed before commit
+    //      (silent-drop path) -- only inbound-filter entries were routed.
+    // These tests pin the fixed contract: one route point, one policy, fallible
+    // route, parse_error_action honoured on the parsed path.
+
+    use crate::worker::engine::FilterDlqPolicy;
+    use crate::worker::engine::config::ParseErrorAction;
+
+    /// An engine with a specific `ParseErrorAction` (default config otherwise).
+    fn engine_with_parse_action(action: ParseErrorAction) -> BatchEngine {
+        BatchEngine::new(BatchProcessingConfig {
+            parse_error_action: action,
+            ..Default::default()
+        })
+    }
+
+    /// Finding 1 -- `ParseErrorAction::Skip`: a parse failure on the parsed path
+    /// is DROPPED silently (NO DLQ entry routed) yet the survivors are kept and
+    /// ALL source acks commit (the block's tokens are decoupled from records).
+    #[tokio::test]
+    async fn parsed_parse_error_skip_drops_without_dlq_and_commits_survivors() {
+        let transport = mem_transport(50);
+        transport
+            .inject(None, br#"{"id":1}"#.to_vec())
+            .await
+            .unwrap(); // seq 0 ok
+        transport
+            .inject(None, b"not json {{{".to_vec())
+            .await
+            .unwrap(); // seq 1 bad
+        transport
+            .inject(None, br#"{"id":3}"#.to_vec())
+            .await
+            .unwrap(); // seq 2 ok
+
+        // Route policy so we can PROVE no entry is routed under Skip.
+        let routed = Arc::new(AtomicUsize::new(0));
+        let rc = Arc::clone(&routed);
+        let engine = engine_with_parse_action(ParseErrorAction::Skip).with_filter_dlq_policy(
+            FilterDlqPolicy::Route(Arc::new(
+                move |entries: Vec<crate::transport::filter::FilteredDlqEntry>| {
+                    rc.fetch_add(entries.len(), Ordering::Relaxed);
+                    Ok(())
+                },
+            )),
+        );
+        let shutdown = CancellationToken::new();
+        cancel_after(shutdown.clone(), 200);
+
+        let dlq_seen = Arc::new(AtomicUsize::new(0));
+        let kept = Arc::new(AtomicUsize::new(0));
+        let ds = Arc::clone(&dlq_seen);
+        let kp = Arc::clone(&kept);
+
+        engine
+            .run_workbatch_parsed(
+                &transport,
+                shutdown,
+                move |pb: ParsedBatch<'_, _>| {
+                    ds.fetch_add(pb.dlq_entries.len(), Ordering::Relaxed);
+                    kp.fetch_add(pb.records.len(), Ordering::Relaxed);
+                    Ok(WorkBatch::new(pb.records, pb.commit_tokens)
+                        .with_dlq_entries(pb.dlq_entries))
+                },
+                |_out: &WorkBatch<_>| async { Ok(()) },
+                CommitMode::Auto,
+                None::<(
+                    Duration,
+                    fn() -> std::future::Ready<Result<(), EngineError>>,
+                )>,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(kept.load(Ordering::Relaxed), 2, "2 survivors kept");
+        assert_eq!(
+            dlq_seen.load(Ordering::Relaxed),
+            0,
+            "Skip: parse failure produces NO DLQ entry (dropped, not dead-lettered)"
+        );
+        assert_eq!(
+            routed.load(Ordering::Relaxed),
+            0,
+            "Skip: nothing reaches the DLQ route point"
+        );
+        // All three source acks committed -- survivors and the dropped record's
+        // ack alike (at-least-once on the whole block; Skip is opt-in loss).
+        assert_eq!(transport.committed_sequence(), 2);
+    }
+
+    /// Finding 1 -- `ParseErrorAction::FailBatch`: a parse failure fails the
+    /// WHOLE block terminally (no commit), consistent with the ack barrier. The
+    /// run returns the terminal error and the source watermark does not advance.
+    #[tokio::test]
+    async fn parsed_parse_error_fail_batch_skips_commit() {
+        // OrderedReceiver hands one record per recv with monotonic tokens and a
+        // cumulative watermark, so we can prove the commit never fired.
+        let receiver = OrderedReceiverBad::new();
+        let committed = Arc::clone(&receiver.committed_hwm);
+
+        let engine = engine_with_parse_action(ParseErrorAction::FailBatch);
+        let shutdown = CancellationToken::new();
+        cancel_after(shutdown.clone(), 500);
+
+        let sink_calls = Arc::new(AtomicUsize::new(0));
+        let sc = Arc::clone(&sink_calls);
+
+        let result = engine
+            .run_workbatch_parsed(
+                &receiver,
+                shutdown,
+                |pb: ParsedBatch<'_, _>| {
+                    Ok(WorkBatch::new(pb.records, pb.commit_tokens)
+                        .with_dlq_entries(pb.dlq_entries))
+                },
+                move |_out: &WorkBatch<_>| {
+                    let sc = Arc::clone(&sc);
+                    async move {
+                        sc.fetch_add(1, Ordering::Relaxed);
+                        Ok(())
+                    }
+                },
+                CommitMode::Auto,
+                None::<(
+                    Duration,
+                    fn() -> std::future::Ready<Result<(), EngineError>>,
+                )>,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(EngineError::ParseBatchFailed(_))),
+            "FailBatch: a parse failure is a terminal engine error, got {result:?}"
+        );
+        assert_eq!(
+            committed.load(Ordering::Relaxed),
+            u64::MAX,
+            "FailBatch: the whole block fails its commit -- watermark unmoved"
+        );
+        assert_eq!(
+            sink_calls.load(Ordering::Relaxed),
+            0,
+            "FailBatch: the block never reaches the sink (parse fails first)"
+        );
+    }
+
+    /// Finding 1 -- `ParseErrorAction::Dlq`: a parse failure routes to the DLQ
+    /// route point BEFORE commit, survivors are sunk, all source acks commit.
+    #[tokio::test]
+    async fn parsed_parse_error_dlq_routes_before_commit() {
+        let transport = Arc::new(mem_transport(50));
+        transport
+            .inject(None, br#"{"id":1}"#.to_vec())
+            .await
+            .unwrap(); // seq 0 ok
+        transport
+            .inject(None, b"not json {{{".to_vec())
+            .await
+            .unwrap(); // seq 1 bad
+        transport
+            .inject(None, br#"{"id":3}"#.to_vec())
+            .await
+            .unwrap(); // seq 2 ok
+
+        // Sample committed_sequence at DLQ-route time to prove route precedes
+        // commit: when the route sink fires, the commit must NOT yet have run.
+        let routed = Arc::new(AtomicUsize::new(0));
+        let committed_at_route = Arc::new(AtomicU64::new(u64::MAX));
+        let rc = Arc::clone(&routed);
+        let car = Arc::clone(&committed_at_route);
+        let transport_for_route = Arc::clone(&transport);
+        let engine = engine_with_parse_action(ParseErrorAction::Dlq).with_filter_dlq_policy(
+            FilterDlqPolicy::Route(Arc::new(
+                move |entries: Vec<crate::transport::filter::FilteredDlqEntry>| {
+                    car.store(transport_for_route.committed_sequence(), Ordering::Relaxed);
+                    rc.fetch_add(entries.len(), Ordering::Relaxed);
+                    Ok(())
+                },
+            )),
+        );
+        let shutdown = CancellationToken::new();
+        cancel_after(shutdown.clone(), 200);
+
+        engine
+            .run_workbatch_parsed(
+                &*transport,
+                shutdown,
+                |pb: ParsedBatch<'_, _>| {
+                    Ok(WorkBatch::new(pb.records, pb.commit_tokens)
+                        .with_dlq_entries(pb.dlq_entries))
+                },
+                |_out: &WorkBatch<_>| async { Ok(()) },
+                CommitMode::Auto,
+                None::<(
+                    Duration,
+                    fn() -> std::future::Ready<Result<(), EngineError>>,
+                )>,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            routed.load(Ordering::Relaxed),
+            1,
+            "Dlq: the parse failure reached the DLQ route point"
+        );
+        // The route fired BEFORE the commit: MemoryTransport's committed_sequence
+        // starts at 0; the block's highest seq is 2, so a commit would set it to
+        // 2. At route time it must still be its pre-commit value (0).
+        assert_eq!(
+            committed_at_route.load(Ordering::Relaxed),
+            0,
+            "DLQ route ran BEFORE the source commit advanced the watermark"
+        );
+        assert_eq!(
+            transport.committed_sequence(),
+            2,
+            "all 3 acks committed after"
+        );
+    }
+
+    /// Finding 2 -- the STANDARD (on-demand) `run_workbatch` path must NOT
+    /// silently drop DLQ entries that `process` emits on the out-batch. A
+    /// process closure that attaches a dlq_entry has it ROUTED (reaches the DLQ
+    /// route point) before the sink-success leads to a source commit -- it does
+    /// not depend on the sink closure remembering to carry it.
+    #[tokio::test]
+    async fn standard_send_batch_sink_does_not_silently_drop_dlq_entries() {
+        let transport = mem_transport(50);
+        transport
+            .inject(None, br#"{"id":1}"#.to_vec())
+            .await
+            .unwrap();
+        transport
+            .inject(None, br#"{"id":2}"#.to_vec())
+            .await
+            .unwrap();
+
+        let routed = Arc::new(AtomicUsize::new(0));
+        let rc = Arc::clone(&routed);
+        let engine = default_engine().with_filter_dlq_policy(FilterDlqPolicy::Route(Arc::new(
+            move |entries: Vec<crate::transport::filter::FilteredDlqEntry>| {
+                rc.fetch_add(entries.len(), Ordering::Relaxed);
+                Ok(())
+            },
+        )));
+        let shutdown = CancellationToken::new();
+        cancel_after(shutdown.clone(), 200);
+
+        // The SINK ignores dlq_entries entirely (the realistic app shape). The
+        // PROCESS closure emits a dlq_entry on the out-batch. Pre-fix this entry
+        // would vanish; post-fix the driver routes it before commit.
+        engine
+            .run_workbatch(
+                &transport,
+                shutdown,
+                |batch| {
+                    let dlq = vec![crate::transport::filter::FilteredDlqEntry {
+                        payload: b"process-emitted dead-letter".to_vec(),
+                        key: None,
+                        reason: "process decided this record is bad".to_string(),
+                    }];
+                    let tokens = batch.commit_tokens;
+                    let records = batch.records;
+                    Ok(WorkBatch::new(records, tokens).with_dlq_entries(dlq))
+                },
+                |_out: &WorkBatch<_>| async { Ok(()) },
+                CommitMode::Auto,
+                None::<(
+                    Duration,
+                    fn() -> std::future::Ready<Result<(), EngineError>>,
+                )>,
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            routed.load(Ordering::Relaxed) >= 1,
+            "process-emitted DLQ entry must reach the DLQ route point, not be \
+             silently dropped on the path to commit"
+        );
+        // Source acks still commit -- the dead-letter routing is independent of
+        // the source ack (at-least-once on the whole block).
+        assert_eq!(transport.committed_sequence(), 1);
+    }
+
+    /// Finding 3 -- a DLQ-route FAILURE under `Route` is a terminal ack-barrier
+    /// error: the source commit is skipped (no later ordered commit advances
+    /// past the undelivered dead-letters). Silent discard is opt-in only.
+    #[tokio::test]
+    async fn dlq_route_failure_is_terminal_and_blocks_commit() {
+        let receiver = OrderedReceiverBad::without_parse_fail();
+        let committed = Arc::clone(&receiver.committed_hwm);
+
+        // A Route sink that FAILS, simulating a DLQ transport outage.
+        let engine = default_engine().with_filter_dlq_policy(FilterDlqPolicy::Route(Arc::new(
+            |_e: Vec<crate::transport::filter::FilteredDlqEntry>| {
+                Err(EngineError::Sink("dlq transport down".into()))
+            },
+        )));
+        let shutdown = CancellationToken::new();
+        cancel_after(shutdown.clone(), 500);
+
+        let result = engine
+            .run_workbatch(
+                &receiver,
+                shutdown,
+                |batch| {
+                    // process emits a dlq entry; routing it will fail.
+                    let dlq = vec![crate::transport::filter::FilteredDlqEntry {
+                        payload: b"bad".to_vec(),
+                        key: None,
+                        reason: "process dlq".to_string(),
+                    }];
+                    Ok(WorkBatch::new(batch.records, batch.commit_tokens).with_dlq_entries(dlq))
+                },
+                |_out: &WorkBatch<_>| async { Ok(()) },
+                CommitMode::Auto,
+                None::<(
+                    Duration,
+                    fn() -> std::future::Ready<Result<(), EngineError>>,
+                )>,
+            )
+            .await;
+
+        assert!(
+            result.is_err(),
+            "DLQ route failure must be a terminal ack-barrier error, got {result:?}"
+        );
+        assert_eq!(
+            committed.load(Ordering::Relaxed),
+            u64::MAX,
+            "DLQ route failure must skip the commit -- watermark unmoved"
+        );
+    }
+
+    /// An ordered receiver that delivers ONE bad (unparseable) record then parks.
+    /// Cumulative watermark via fetch_max, so a commit is observable. Used to
+    /// prove FailBatch / DLQ-route-failure leave the watermark unmoved.
+    struct OrderedReceiverBad {
+        next: Arc<AtomicU64>,
+        committed_hwm: Arc<AtomicU64>,
+        good_payload: bool,
+    }
+
+    impl OrderedReceiverBad {
+        fn new() -> Self {
+            Self {
+                next: Arc::new(AtomicU64::new(0)),
+                committed_hwm: Arc::new(AtomicU64::new(u64::MAX)),
+                good_payload: false,
+            }
+        }
+        /// Delivers a PARSEABLE record (for the DLQ-route-failure test, where the
+        /// dead-letter comes from the process closure, not a parse failure).
+        fn without_parse_fail() -> Self {
+            Self {
+                next: Arc::new(AtomicU64::new(0)),
+                committed_hwm: Arc::new(AtomicU64::new(u64::MAX)),
+                good_payload: true,
+            }
+        }
+    }
+
+    impl crate::transport::TransportBase for OrderedReceiverBad {
+        fn close(
+            &self,
+        ) -> impl std::future::Future<Output = crate::transport::TransportResult<()>> + Send
+        {
+            std::future::ready(Ok(()))
+        }
+        fn is_healthy(&self) -> bool {
+            true
+        }
+        fn name(&self) -> &'static str {
+            "ordered-bad-test"
+        }
+    }
+
+    impl TransportReceiver for OrderedReceiverBad {
+        type Token = crate::transport::memory::MemoryToken;
+
+        fn recv(
+            &self,
+            _max: usize,
+        ) -> impl std::future::Future<
+            Output = crate::transport::TransportResult<WorkBatch<Self::Token>>,
+        > + Send {
+            let next = Arc::clone(&self.next);
+            let good = self.good_payload;
+            async move {
+                let seq = next.fetch_add(1, Ordering::Relaxed);
+                if seq >= 1 {
+                    next.fetch_sub(1, Ordering::Relaxed);
+                    std::future::pending::<()>().await;
+                }
+                let payload = if good {
+                    Bytes::from_static(br#"{"ok":1}"#)
+                } else {
+                    Bytes::from_static(b"not json {{{")
+                };
+                let record = Record {
+                    payload,
+                    key: None,
+                    headers: vec![],
+                    metadata: RecordMeta {
+                        timestamp_ms: None,
+                        format: PayloadFormat::Json,
+                    },
+                };
+                Ok(WorkBatch::new(
+                    vec![record],
+                    vec![crate::transport::memory::MemoryToken { seq }],
+                ))
+            }
+        }
+
+        async fn commit(&self, tokens: &[Self::Token]) -> crate::transport::TransportResult<()> {
+            if let Some(max_seq) = tokens.iter().map(|t| t.seq).max() {
+                self.committed_hwm.fetch_max(max_seq, Ordering::Relaxed);
+            }
+            Ok(())
+        }
     }
 }

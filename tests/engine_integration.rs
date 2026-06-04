@@ -143,7 +143,10 @@ async fn run_workbatch_sink_error_skips_commit() {
         token.cancel();
     });
 
-    // Sink always returns an error — committed_sequence should remain 0.
+    // Sink always returns an error. The sink error is now a TERMINAL ack-barrier
+    // error (Remediation Phase 1): the run stops and the commit is skipped, so
+    // the ORDERED/cumulative source commit can never advance past the unsent
+    // block. committed_sequence must remain 0.
     let result = engine
         .run_workbatch(
             &transport,
@@ -156,8 +159,8 @@ async fn run_workbatch_sink_error_skips_commit() {
         .await;
 
     assert!(
-        result.is_ok(),
-        "run_workbatch() should still exit cleanly: {result:?}"
+        matches!(result, Err(EngineError::Sink(_))),
+        "sink error must be a terminal ack-barrier error: {result:?}"
     );
     // Commit was skipped because sink errored.
     assert_eq!(

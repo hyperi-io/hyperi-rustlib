@@ -123,7 +123,6 @@ batch_processing:
       field: _table
       value: poison
   parse_error_action: dlq         # dlq | skip | fail_batch
-  memory_pressure_pause_ms: 50
   known_fields:
     - _table
     - _timestamp
@@ -134,8 +133,10 @@ batch_processing:
 ```
 
 `max_chunk_size = 0` processes the whole batch in a single rayon job.
-`memory_pressure_pause_ms` only fires between chunks, never per
-message.
+
+Inbound braking under memory pressure is the self-regulation governor's
+job (the inbound gate plus the AIMD byte-budget lever), not a per-chunk
+pause inside the engine. See [SELF-REGULATION.md](../SELF-REGULATION.md).
 
 ---
 

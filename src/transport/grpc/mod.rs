@@ -448,6 +448,15 @@ impl TransportSender for GrpcTransport {
     /// SENDER's local concern. Pass the records (e.g. `&workbatch.records`); the
     /// caller fires its commit tokens locally after this returns `Ok`.
     ///
+    /// ## Atomic (all-or-nothing) acceptance
+    ///
+    /// The server handler reserves receiver-channel capacity for the WHOLE
+    /// batch (one `try_reserve_many`) BEFORE enqueuing any record, so the block
+    /// is accepted or rejected as a unit -- there is genuinely no partial-send
+    /// window. A `Backpressured` result means ZERO records were admitted, so the
+    /// caller safely retries the whole block (at-least-once) with no risk of the
+    /// receiver having kept a prefix on the prior attempt (no duplicate prefix).
+    ///
     /// # Errors / result
     ///
     /// Returns a [`SendResult`]. `Backpressured` maps the same transient gRPC
@@ -792,7 +801,42 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
         let records = batch::proto_batch_to_records(proto_batch);
         let accepted = records.len() as u64;
 
-        for record in records {
+        // ATOMICITY (Phase 4): reserve channel capacity for the WHOLE batch up
+        // front via `try_reserve_many`, BEFORE assigning any sequence number or
+        // enqueuing ANY record. If the channel cannot fit the whole block we
+        // reject all-or-nothing -- no record is admitted, so a retry re-sends
+        // the full block with no partial-acceptance / duplicate window. This is
+        // the contract `send_batch`'s doc claims ("the block is accepted or not
+        // as a unit"). The previous per-record `try_send` loop could enqueue
+        // some records then fail mid-batch, stranding a prefix in the channel.
+        //
+        // An empty batch reserves zero permits (a harmless no-op) and the loop
+        // below does not run, matching the prior empty-batch behaviour.
+        let permits = match self.sender.try_reserve_many(records.len()) {
+            Ok(permits) => permits,
+            Err(mpsc::error::TrySendError::Full(())) => {
+                #[cfg(feature = "metrics")]
+                metrics::counter!(
+                    "dfe_transport_backpressured_total",
+                    "transport" => "grpc"
+                )
+                .increment(1);
+                return Err(Status::resource_exhausted("receiver buffer full"));
+            }
+            Err(mpsc::error::TrySendError::Closed(())) => {
+                #[cfg(feature = "metrics")]
+                metrics::counter!(
+                    "dfe_transport_refused_total",
+                    "transport" => "grpc"
+                )
+                .increment(1);
+                return Err(Status::unavailable("receiver closed"));
+            }
+        };
+
+        // Capacity is now held for every record -- enqueuing is infallible. Pair
+        // each reserved permit with a record and send.
+        for (permit, record) in permits.zip(records) {
             let seq = self.sequence.fetch_add(1, Ordering::Relaxed);
             let format = record.metadata.format;
             // A record carrying Auto means the sender did not pin a format
@@ -805,35 +849,13 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
                 format
             };
 
-            let msg = Message {
+            permit.send(Message {
                 key: record.key,
                 payload: record.payload,
                 token: GrpcToken::new(seq),
                 timestamp_ms: record.metadata.timestamp_ms,
                 format,
-            };
-
-            match self.sender.try_send(msg) {
-                Ok(()) => {}
-                Err(mpsc::error::TrySendError::Full(_)) => {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!(
-                        "dfe_transport_backpressured_total",
-                        "transport" => "grpc"
-                    )
-                    .increment(1);
-                    return Err(Status::resource_exhausted("receiver buffer full"));
-                }
-                Err(mpsc::error::TrySendError::Closed(_)) => {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!(
-                        "dfe_transport_refused_total",
-                        "transport" => "grpc"
-                    )
-                    .increment(1);
-                    return Err(Status::unavailable("receiver closed"));
-                }
-            }
+            });
         }
 
         #[cfg(feature = "metrics")]

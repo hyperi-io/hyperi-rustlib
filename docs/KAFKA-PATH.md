@@ -56,6 +56,12 @@ firehose into 1 MiB fetches also serves a trickle of events at low latency,
 because the time bound caps the wait either way. One config, no re-tuning as
 volume grows.
 
+On a small or memory-tight pod the generous `throughput` start budget can
+overshoot in the cold-start window (the first block before the governor's
+AIMD loop / memory-hard override reacts). Set a lower `self_regulation`
+start budget or use the `balanced` / `low_latency` profile -- see the
+small-pod guidance in [SELF-REGULATION.md](SELF-REGULATION.md).
+
 ---
 
 ## Profile + GET/SEND tuning table

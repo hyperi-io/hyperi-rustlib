@@ -344,6 +344,201 @@ async fn test_route_batch_native_transport() {
     let _ = server.close().await;
 }
 
+/// Build a server with an explicit `recv_buffer_size` (channel capacity).
+async fn create_pair_with_capacity(port: u16, capacity: usize) -> (GrpcTransport, GrpcTransport) {
+    let addr = format!("127.0.0.1:{port}");
+
+    let mut server_config = GrpcConfig::server(&addr);
+    server_config.recv_buffer_size = capacity;
+    let server = GrpcTransport::new(&server_config)
+        .await
+        .expect("failed to create server");
+
+    let client_config = GrpcConfig::client(&format!("http://{addr}"));
+    let client = GrpcTransport::new(&client_config)
+        .await
+        .expect("failed to create client");
+
+    (server, client)
+}
+
+/// Phase 4 (atomicity): a `RouteBatch` larger than the free receiver capacity
+/// must be rejected ALL-OR-NOTHING. With a capacity-1 channel and a 2-record
+/// batch, the RPC errors (Backpressured) AND the receiver accepts ZERO records
+/// -- no partial-acceptance window. This is the contract the doc-comment on
+/// `send_batch` claims ("no partial-send window: the block is accepted or not
+/// as a unit"). Before the fix the server enqueued record 0 then errored on
+/// record 1, leaving 1 record stranded in the channel = partial acceptance +
+/// duplicate-on-retry.
+#[tokio::test]
+async fn test_route_batch_is_atomic_under_capacity() {
+    let port = find_available_port().await;
+    let (server, client) = create_pair_with_capacity(port, 1).await;
+
+    let records = vec![
+        Record {
+            payload: bytes::Bytes::from_static(b"{\"r\":0}"),
+            key: Some(Arc::from("events")),
+            headers: Vec::new(),
+            metadata: RecordMeta {
+                timestamp_ms: None,
+                format: PayloadFormat::Json,
+            },
+        },
+        Record {
+            payload: bytes::Bytes::from_static(b"{\"r\":1}"),
+            key: Some(Arc::from("events")),
+            headers: Vec::new(),
+            metadata: RecordMeta {
+                timestamp_ms: None,
+                format: PayloadFormat::Json,
+            },
+        },
+    ];
+
+    // Batch of 2 into a capacity-1 channel: cannot fit, must reject atomically.
+    let result = client.send_batch(&records).await;
+    assert!(
+        matches!(result, SendResult::Backpressured),
+        "over-capacity batch must surface as backpressure, got {result:?}"
+    );
+
+    // The receiver must have accepted ZERO records -- not 1 (partial). Drain
+    // non-blocking; any record present proves a partial-acceptance window.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let received = server.recv(10).await.expect("recv should succeed").records;
+    assert_eq!(
+        received.len(),
+        0,
+        "atomic batch must accept 0 records on rejection, got {} (partial acceptance)",
+        received.len()
+    );
+
+    let _ = client.close().await;
+    let _ = server.close().await;
+}
+
+/// Phase 4 (atomicity): a `RouteBatch` that FITS the free capacity succeeds and
+/// the receiver accepts the whole batch. Capacity 2, batch 2 -> Ok + 2 records.
+#[tokio::test]
+async fn test_route_batch_fits_capacity_accepts_all() {
+    let port = find_available_port().await;
+    let (server, client) = create_pair_with_capacity(port, 2).await;
+
+    let records = vec![
+        Record {
+            payload: bytes::Bytes::from_static(b"{\"r\":0}"),
+            key: Some(Arc::from("events")),
+            headers: Vec::new(),
+            metadata: RecordMeta {
+                timestamp_ms: None,
+                format: PayloadFormat::Json,
+            },
+        },
+        Record {
+            payload: bytes::Bytes::from_static(b"{\"r\":1}"),
+            key: Some(Arc::from("events")),
+            headers: Vec::new(),
+            metadata: RecordMeta {
+                timestamp_ms: None,
+                format: PayloadFormat::Json,
+            },
+        },
+    ];
+
+    let result = client.send_batch(&records).await;
+    assert!(
+        matches!(result, SendResult::Ok),
+        "in-capacity batch should succeed: {result:?}"
+    );
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let received = server.recv(10).await.expect("recv should succeed").records;
+    assert_eq!(received.len(), 2, "should receive both records");
+
+    let _ = client.close().await;
+    let _ = server.close().await;
+}
+
+/// Phase 4 (atomicity): a pressure-holding governor must reject the WHOLE
+/// `RouteBatch` with `unavailable` BEFORE accepting ANY record -- consistent
+/// with all-or-nothing. With the governor pinned high, a batch of 2 surfaces as
+/// Backpressured and the receiver accepts ZERO records.
+#[cfg(feature = "governor")]
+#[tokio::test]
+async fn test_route_batch_pressure_hold_accepts_nothing() {
+    use hyperi_rustlib::governor::{
+        Hysteresis, MemoryPressureSource, PressureSource, UnifiedPressure,
+    };
+    use hyperi_rustlib::memory::{MemoryGuard, MemoryGuardConfig};
+
+    let port = find_available_port().await;
+    let addr = format!("127.0.0.1:{port}");
+
+    let guard = Arc::new(MemoryGuard::new(MemoryGuardConfig {
+        limit_bytes: 1000,
+        pressure_threshold: 0.80,
+        ..Default::default()
+    }));
+    guard.add_bytes(950); // 95% -> hold
+    let pressure = Arc::new(UnifiedPressure::new(
+        vec![Arc::new(MemoryPressureSource::new(Arc::clone(&guard))) as Arc<dyn PressureSource>],
+        Hysteresis::new(0.80, 0.65).expect("valid band"),
+    ));
+    assert!(pressure.should_hold(), "pinned-high governor must hold");
+
+    // Server bound to the governor, ample channel capacity (so the rejection is
+    // purely pressure-driven, NOT capacity-driven).
+    let mut server_config = GrpcConfig::server(&addr);
+    server_config.recv_buffer_size = 100;
+    let server = GrpcTransport::with_pressure(&server_config, Some(Arc::clone(&pressure)))
+        .await
+        .expect("failed to create server");
+
+    let client = GrpcTransport::new(&GrpcConfig::client(&format!("http://{addr}")))
+        .await
+        .expect("failed to create client");
+
+    let records = vec![
+        Record {
+            payload: bytes::Bytes::from_static(b"{\"r\":0}"),
+            key: Some(Arc::from("events")),
+            headers: Vec::new(),
+            metadata: RecordMeta {
+                timestamp_ms: None,
+                format: PayloadFormat::Json,
+            },
+        },
+        Record {
+            payload: bytes::Bytes::from_static(b"{\"r\":1}"),
+            key: Some(Arc::from("events")),
+            headers: Vec::new(),
+            metadata: RecordMeta {
+                timestamp_ms: None,
+                format: PayloadFormat::Json,
+            },
+        },
+    ];
+
+    let result = client.send_batch(&records).await;
+    assert!(
+        matches!(result, SendResult::Backpressured),
+        "batch under pressure must surface as backpressure, got {result:?}"
+    );
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let received = server.recv(10).await.expect("recv should succeed").records;
+    assert_eq!(
+        received.len(),
+        0,
+        "pressure-held batch must accept 0 records, got {}",
+        received.len()
+    );
+
+    let _ = client.close().await;
+    let _ = server.close().await;
+}
+
 #[tokio::test]
 async fn test_route_batch_empty() {
     // An empty batch is a valid, harmless no-op over the wire.

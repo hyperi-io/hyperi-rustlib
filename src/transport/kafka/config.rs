@@ -62,7 +62,7 @@ use std::str::FromStr;
 /// | `balanced` | Mixed OLTP + analytics, moderate batch size |
 /// | `low_latency` | Near-real-time, event-driven, small messages |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum SelfRegulationProfile {
     /// Maximum throughput: generous byte budgets, tolerates batching delay.
     ///
@@ -1842,5 +1842,19 @@ mod tests {
         // Raw maps are empty.
         assert!(cfg.sizing.consumer_librdkafka.is_empty());
         assert!(cfg.sizing.producer_librdkafka.is_empty());
+    }
+
+    /// The Kafka sizing profile must serialise as snake_case so the
+    /// `self_regulation.profile` cascade key reads identically to the governor
+    /// profile (rustlib<->pylib config-consistency rule). The doc table at the
+    /// enum definition uses `low_latency`; this asserts the wire form matches.
+    #[test]
+    fn sizing_profile_serialises_snake_case() {
+        let j = serde_json::to_string(&SelfRegulationProfile::LowLatency).unwrap();
+        assert_eq!(j, "\"low_latency\"");
+        let j = serde_json::to_string(&SelfRegulationProfile::Throughput).unwrap();
+        assert_eq!(j, "\"throughput\"");
+        let j = serde_json::to_string(&SelfRegulationProfile::Balanced).unwrap();
+        assert_eq!(j, "\"balanced\"");
     }
 }

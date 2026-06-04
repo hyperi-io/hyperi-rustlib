@@ -15,19 +15,16 @@
 //!
 //! ## Native, no JSON bridge
 //!
-//! Today's scattered serde (engine `parse.rs`, transport `payload.rs`) decodes
-//! MsgPack via a BRIDGE: `rmp_serde -> serde_json::Value -> serde_json::to_vec
-//! -> sonic_rs`. That is two parses and a re-serialise per MsgPack record, and
-//! it defeats the SIMD JSON fast path entirely. This module does NOT do that:
+//! There is no `rmp_serde -> serde_json::Value -> serde_json::to_vec ->
+//! sonic_rs` bridge anywhere on the parse path -- that double-parse-and-
+//! re-serialise was killed in Phase 0.7c (the engine `parse.rs` MsgPack path
+//! now walks `rmpv` straight into a `sonic_rs::Value`). Both this codec and
+//! the engine decode natively:
 //!
 //! - **JSON** is parsed once with [`sonic_rs`] (SIMD, AVX2/NEON).
 //! - **MsgPack** is parsed once with [`rmpv`] -- the schema-less `Value` decoder
 //!   from the same `3Hren/msgpack-rust` workspace as `rmp-serde`. No
 //!   intermediate `serde_json::Value`, no JSON re-serialise.
-//!
-//! The two scattered call sites are NOT removed here -- this is additive. The
-//! rip-out / consolidation lands in Phase 0.7 when the engine migrates onto the
-//! WorkBatch spine.
 //!
 //! ## Unified routing-field accessor
 //!
@@ -47,7 +44,7 @@
 //! See `docs/MIGRATIONS.md` (codec consolidation: native rmpv, JSON bridge
 //! removed) and `docs/SELF-REGULATION.md` for where this codec sits in the
 //! `WorkBatch` data-plane spine. The block contract is in
-//! [`work_batch`](super::work_batch).
+//! [`WorkBatch`](crate::transport::WorkBatch).
 
 use super::types::PayloadFormat;
 use bytes::Bytes;
@@ -74,6 +71,17 @@ pub enum CodecError {
     /// (`sonic_rs::Error` already covers both parse and serialise).
     #[error("msgpack encode error: {0}")]
     Encode(#[from] rmpv::encode::Error),
+
+    /// Trailing bytes remain after a complete MsgPack value was decoded.
+    ///
+    /// A single-record payload must encode exactly ONE value with no leftover
+    /// bytes. Trailing bytes indicate corruption, a framing error, or two
+    /// values concatenated (MsgPack stream framing is a separate, deferred
+    /// feature -- it is NOT supported here).
+    ///
+    /// The `usize` is the number of bytes that remained unconsumed.
+    #[error("msgpack trailing bytes: {0} byte(s) remain after value")]
+    TrailingBytes(usize),
 }
 
 /// A parsed payload, retaining its native value representation.
@@ -146,6 +154,15 @@ pub fn parse(payload: &Bytes, format: PayloadFormat) -> Result<ParsedPayload, Co
             // SINGLE native decode -- no rmp_serde, no serde_json, no re-encode.
             let mut cursor: &[u8] = payload.as_ref();
             let value = rmpv::decode::read_value(&mut cursor)?;
+            // A single-record payload encodes exactly ONE value. Any bytes still
+            // in `cursor` after the value was decoded indicate corruption,
+            // framing misalignment, or concatenated values. Reject them.
+            // MsgPack-stream framing (multiple values per payload) is a separate
+            // deferred feature -- do NOT silently accept trailing bytes here.
+            let remaining = cursor.len();
+            if remaining > 0 {
+                return Err(CodecError::TrailingBytes(remaining));
+            }
             Ok(ParsedPayload::MsgPack(value))
         }
     }
@@ -719,18 +736,89 @@ mod tests {
         assert_eq!(b1, b2, "re-serialising a re-parsed value must be stable");
     }
 
+    // ---- Phase 5: trailing-bytes hardening ------------------------------------
+
+    #[test]
+    fn msgpack_rejects_trailing_bytes() {
+        // A valid fixmap {"k": "v"} followed by a stray nil byte (0xc0).
+        // Before the fix this returns Ok (silently ignoring 0xc0).
+        // After the fix it must return CodecError::TrailingBytes(1).
+        let mut buf = vec![fixmap_header(1)];
+        buf.extend(fixstr("k"));
+        buf.extend(fixstr("v"));
+        buf.push(0xc0); // stray nil -- trailing garbage
+        let err = parse(&Bytes::from(buf), PayloadFormat::MsgPack)
+            .expect_err("trailing byte must be rejected");
+        match err {
+            CodecError::TrailingBytes(n) => assert_eq!(n, 1, "expected 1 trailing byte"),
+            other => panic!("expected TrailingBytes(1), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn msgpack_rejects_concatenated_values() {
+        // Two valid MsgPack values back-to-back: fixint 1 then fixint 2.
+        // parse() decodes ONE value; the second byte is trailing and must error.
+        let buf = vec![0x01u8, 0x02u8]; // positive fixint 1, positive fixint 2
+        let err = parse(&Bytes::from(buf), PayloadFormat::MsgPack)
+            .expect_err("concatenated values must be rejected");
+        match err {
+            CodecError::TrailingBytes(n) => assert_eq!(n, 1, "expected 1 trailing byte"),
+            other => panic!("expected TrailingBytes(1), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn msgpack_clean_single_value_still_parses_ok() {
+        // A single valid fixmap with no trailing bytes -- must still parse Ok.
+        // Regression guard: the fix must not break the happy path.
+        let mut buf = vec![fixmap_header(1)];
+        buf.extend(fixstr("k"));
+        buf.extend(fixstr("v"));
+        let parsed = parse(&Bytes::from(buf), PayloadFormat::MsgPack).unwrap();
+        assert_eq!(parsed.field_str("k"), Some("v"));
+    }
+
+    #[test]
+    fn json_rejects_trailing_garbage() {
+        // The MsgPack path rejects trailing bytes (CodecError::TrailingBytes).
+        // The JSON path delegates to sonic_rs, which rejects trailing
+        // NON-whitespace content after a complete value (serde_json semantics).
+        // A valid object followed by stray garbage must error.
+        let mut buf = br#"{"_table":"events"}"#.to_vec();
+        buf.extend_from_slice(b"garbage");
+        let err = parse(&Bytes::from(buf), PayloadFormat::Json)
+            .expect_err("trailing non-whitespace garbage must be rejected");
+        assert!(
+            matches!(err, CodecError::Json(_)),
+            "expected CodecError::Json for trailing garbage, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn json_accepts_trailing_whitespace() {
+        // sonic_rs (like serde_json) tolerates trailing whitespace after a
+        // complete value -- a pretty-printer's trailing newline must not be a
+        // parse error. Asserted alongside the trailing-garbage rejection so the
+        // JSON trailing-byte contract is pinned both ways.
+        let mut buf = br#"{"_table":"events"}"#.to_vec();
+        buf.extend_from_slice(b" \t\r\n");
+        let parsed = parse(&Bytes::from(buf), PayloadFormat::Json)
+            .expect("trailing whitespace must be accepted");
+        assert_eq!(parsed.field_str("_table"), Some("events"));
+    }
+
     #[test]
     fn json_parsed_as_msgpack_errors() {
         // Force the wrong decoder: JSON bytes through the MsgPack path. '{' is
-        // 0x7b, which rmpv reads as a positive fixint -- a single value, not a
-        // map -- so field lookups miss but parse itself may succeed. The robust
-        // assertion is that it does NOT yield a usable _table field.
-        let parsed = parse(&sample_json(), PayloadFormat::MsgPack);
-        // Either it errors, or it decodes to a non-map with no _table field.
-        match parsed {
-            Err(CodecError::MsgPack(_)) => {}
-            Ok(p) => assert_eq!(p.field_str("_table"), None),
-            Err(other) => panic!("unexpected error: {other:?}"),
-        }
+        // 0x7b, which rmpv reads as a positive fixint -- a single-byte value
+        // -- leaving the remaining 69 bytes of the JSON payload as trailing
+        // bytes. After Phase 5 hardening this MUST error with TrailingBytes.
+        let err = parse(&sample_json(), PayloadFormat::MsgPack)
+            .expect_err("JSON fed to MsgPack path must error after trailing-bytes hardening");
+        assert!(
+            matches!(err, CodecError::TrailingBytes(_)),
+            "expected TrailingBytes, got {err:?}"
+        );
     }
 }

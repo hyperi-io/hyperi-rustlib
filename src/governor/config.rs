@@ -42,7 +42,7 @@ use super::{ByteBudgetConfig, Hysteresis};
 /// transport. It tunes the AIMD byte-budget envelope (start / ceiling /
 /// step), not the Kafka client knobs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum SelfRegulationProfile {
     /// Maximum throughput: large start budget + high ceiling, coarse steps.
     #[default]
@@ -250,11 +250,25 @@ mod tests {
     #[cfg(feature = "config")]
     #[test]
     fn serde_roundtrip_and_disabled_parse() {
-        let yaml = "enabled: false\nprofile: lowlatency\n";
+        let yaml = "enabled: false\nprofile: low_latency\n";
         let cfg: SelfRegulationConfig = serde_yaml_ng::from_str(yaml).unwrap();
         assert!(!cfg.enabled);
         assert_eq!(cfg.profile, SelfRegulationProfile::LowLatency);
         // Defaults fill the rest.
         assert!((cfg.pause_above - 0.80).abs() < 1e-9);
+    }
+
+    /// The governor profile must serialise as snake_case so the
+    /// `self_regulation.profile` cascade key reads identically to the Kafka
+    /// sizing profile (rustlib<->pylib config-consistency rule).
+    #[cfg(feature = "config")]
+    #[test]
+    fn profile_serialises_snake_case() {
+        let j = serde_json::to_string(&SelfRegulationProfile::LowLatency).unwrap();
+        assert_eq!(j, "\"low_latency\"");
+        let j = serde_json::to_string(&SelfRegulationProfile::Throughput).unwrap();
+        assert_eq!(j, "\"throughput\"");
+        let j = serde_json::to_string(&SelfRegulationProfile::Balanced).unwrap();
+        assert_eq!(j, "\"balanced\"");
     }
 }

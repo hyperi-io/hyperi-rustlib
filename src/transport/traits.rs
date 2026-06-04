@@ -144,6 +144,32 @@ pub trait TransportSender: TransportBase {
     }
 }
 
+/// Limits for a single byte-aware [`TransportReceiver::recv_limited`] poll.
+///
+/// A bare [`recv`](TransportReceiver::recv) takes only a RECORD cap, so a single
+/// poll can build a [`WorkBatch`] whose total bytes are arbitrarily larger than
+/// any memory budget (and, for the Kafka recv-arena, allocate one arena for the
+/// whole poll). `RecvLimits` adds the missing BYTE bound: the governed driver
+/// passes the self-regulation byte budget here so a single governed recv never
+/// retains more than `max_bytes` (plus the one-oversized-record floor) of
+/// inbound payload before the sub-block split runs.
+///
+/// `max_records` is the existing poll-safety record cap (a tiny-record flood
+/// cannot blow the count even within the byte budget). `max_bytes` is the new
+/// payload-bytes ceiling for the poll.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecvLimits {
+    /// Hard cap on the number of records returned by one poll (`>= 1`).
+    pub max_records: usize,
+    /// Soft cap on the SUM of `payload.len()` returned by one poll. A transport
+    /// that has accumulated at least one record stops draining once the
+    /// accumulated payload bytes reach this value, so the poll never retains
+    /// more than `max_bytes + one oversized record`. A transport with no
+    /// byte-aware drain (the default impl) ignores this and bounds by
+    /// `max_records` only.
+    pub max_bytes: u64,
+}
+
 /// Receive-side transport -- generic over commit token type.
 ///
 /// Extends `TransportBase` with receive and commit capability.
@@ -179,6 +205,33 @@ pub trait TransportReceiver: TransportBase {
         &self,
         max: usize,
     ) -> impl Future<Output = TransportResult<WorkBatch<Self::Token>>> + Send;
+
+    /// Byte-aware receive: bound a single poll by BOTH a record cap and a
+    /// payload-byte cap (see [`RecvLimits`]).
+    ///
+    /// This is the receive limit the governed driver uses so the
+    /// self-regulation byte budget actually constrains RECEIVE memory -- not
+    /// just the post-recv sub-block lease. A single poll retains at most
+    /// `limits.max_bytes` of payload (plus one oversized record under the
+    /// floor), so the in-flight inbound footprint is bounded BEFORE the
+    /// sub-block split, never after.
+    ///
+    /// **Default impl:** falls back to [`recv`](Self::recv)`(limits.max_records)`
+    /// -- record-bounded only, byte cap ignored. This keeps every transport
+    /// green with no churn; only transports that buffer a whole poll's bytes in
+    /// one allocation (Kafka's recv-arena) override it to honour `max_bytes`.
+    /// Channel/stream transports (Memory, gRPC, ...) already retain only one
+    /// record's bytes at a time, so the record-bounded fallback is correct for
+    /// them.
+    ///
+    /// Filter behaviour and the `commit_tokens` contract are identical to
+    /// [`recv`](Self::recv).
+    fn recv_limited(
+        &self,
+        limits: RecvLimits,
+    ) -> impl Future<Output = TransportResult<WorkBatch<Self::Token>>> + Send {
+        self.recv(limits.max_records)
+    }
 
     /// Commit/acknowledge processed messages.
     ///

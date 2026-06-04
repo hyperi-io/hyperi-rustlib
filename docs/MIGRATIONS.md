@@ -148,6 +148,42 @@ with the at-least-once commit token (offset / responder / cursor) so a paused
 intake never advances the source position. `SelfRegulationGovernor::attach_kafka_gate`
 is the one-call form of the gate dance. See [BACKPRESSURE.md](BACKPRESSURE.md).
 
+**App adoption is TWO steps, not one (Phase 6).** The default-on governor only
+engages end-to-end if the app adopts BOTH the driver method AND the
+governed-receiver constructor. `run_governed` alone wires the byte-budget lever
+(streaming sub-blocks) but does NOT brake intake; the inbound brake lives on the
+receive transport, which the plain factory constructors
+(`AnyReceiver::from_config` / `from_transport_config`) do NOT wire. Each of the
+six core apps MUST:
+
+1. Drive the engine with `run_governed` (not the legacy run loops); AND
+2. Build the receive transport through a governor-aware constructor so the
+   inbound brake is actually attached.
+
+The one-call path inside a `ServiceRuntime` app (the governor already exists,
+built before transports in `ServiceRuntime::build`):
+
+```rust
+// run_service(): governor + pressure already constructed by the runtime.
+let receiver = runtime.governed_receiver("transport.input").await?;
+// Kafka -> pause-partitions gate attached; HTTP/gRPC -> 503/UNAVAILABLE shed;
+// brakeless backends (memory/pipe/file/redis) construct as before.
+// Falls back to the plain receiver when self_regulation.enabled = false.
+```
+
+Outside `ServiceRuntime` (holding a `SelfRegulationGovernor` directly):
+
+```rust
+let receiver = AnyReceiver::from_config_with_governor("transport.input", &governor).await?;
+// or from_transport_config_with_governor(&cfg, &governor) for an explicit config.
+```
+
+Using `from_config` / `from_transport_config` (no governor) is still valid and
+byte-identical to before -- but a factory-built receiver wired that way gets NO
+inbound brake even when the governor is on. Adopt the `*_with_governor` /
+`governed_receiver` path so the default-on governor is not a silent no-op on the
+receive side.
+
 ### KEPT but deferred
 
 - `Message` / `RecvBatch` remain as internal build-helpers (with
@@ -214,10 +250,14 @@ unaffected (the policy never triggers).
 ```rust
 use hyperi_rustlib::worker::engine::FilterDlqPolicy;
 
-// Route dead-letters onward (recommended):
+// Route dead-letters onward (recommended). The sink is FALLIBLE: return Ok on
+// success; an Err is a terminal ack-barrier failure (commit skipped, block
+// re-delivered) so dead-letters are never silently lost. The SAME route point
+// handles inbound-filter entries AND parse/process-generated entries.
 let engine = BatchEngine::new(cfg).with_filter_dlq_policy(
     FilterDlqPolicy::Route(std::sync::Arc::new(move |entries| {
         // enqueue / tokio::spawn a DLQ send -- keep it cheap
+        Ok(())
     })),
 );
 

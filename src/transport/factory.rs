@@ -345,7 +345,12 @@ impl AnySender {
 /// messages, so the active variant and active receiver variant will always
 /// agree.  `commit` skips tokens whose variant does not match the active
 /// backend (defensive; should not occur in practice).
+///
+/// `#[non_exhaustive]`: adding a new backend variant later is not a breaking
+/// change. Downstream crates that match on `AnyToken` must include a wildcard
+/// arm.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum AnyToken {
     #[cfg(feature = "transport-kafka")]
     /// Kafka consumer offset token.
@@ -590,6 +595,70 @@ impl TransportReceiver for AnyReceiver {
         }
     }
 
+    /// Forward the byte-aware recv to each inner transport so the governed
+    /// driver's byte budget reaches the transport that can honour it (Kafka's
+    /// recv-arena). Transports without a byte-aware override fall back to the
+    /// trait default (record-bounded `recv`), which is correct for the
+    /// one-record-at-a-time channel/stream transports.
+    #[cfg_attr(
+        not(any(
+            feature = "transport-kafka",
+            feature = "transport-grpc",
+            feature = "transport-memory",
+            feature = "transport-pipe",
+            feature = "transport-file",
+            feature = "transport-http",
+            feature = "transport-redis"
+        )),
+        allow(unused_variables)
+    )]
+    async fn recv_limited(
+        &self,
+        limits: super::traits::RecvLimits,
+    ) -> TransportResult<WorkBatch<AnyToken>> {
+        match self {
+            #[cfg(feature = "transport-kafka")]
+            Self::Kafka(t) => {
+                let batch = t.recv_limited(limits).await?;
+                Ok(wrap_batch(batch, AnyToken::Kafka))
+            }
+            #[cfg(feature = "transport-grpc")]
+            Self::Grpc(t) => {
+                let batch = t.recv_limited(limits).await?;
+                Ok(wrap_batch(batch, AnyToken::Grpc))
+            }
+            #[cfg(feature = "transport-memory")]
+            Self::Memory(t) => {
+                let batch = t.recv_limited(limits).await?;
+                Ok(wrap_batch(batch, AnyToken::Memory))
+            }
+            #[cfg(feature = "transport-pipe")]
+            Self::Pipe(t) => {
+                let batch = t.recv_limited(limits).await?;
+                Ok(wrap_batch(batch, AnyToken::Pipe))
+            }
+            #[cfg(feature = "transport-file")]
+            Self::File(t) => {
+                let batch = t.recv_limited(limits).await?;
+                Ok(wrap_batch(batch, AnyToken::File))
+            }
+            #[cfg(feature = "transport-http")]
+            Self::Http(t) => {
+                let batch = t.recv_limited(limits).await?;
+                Ok(wrap_batch(batch, AnyToken::Http))
+            }
+            #[cfg(feature = "transport-redis")]
+            Self::Redis(t) => {
+                let batch = t.recv_limited(limits).await?;
+                Ok(wrap_batch(batch, AnyToken::Redis))
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(TransportError::Config(
+                "no transport variant enabled".into(),
+            )),
+        }
+    }
+
     #[cfg_attr(
         not(any(
             feature = "transport-kafka",
@@ -815,6 +884,139 @@ impl AnyReceiver {
             ))),
         }
     }
+
+    /// Create a governed receiver from the config cascade (`governor` feature).
+    ///
+    /// Identical to [`from_config`](Self::from_config) but threads the supplied
+    /// [`SelfRegulationGovernor`](crate::SelfRegulationGovernor)'s pressure into
+    /// the inbound brake of every backend that can honour it -- the Kafka
+    /// pause-partitions gate and the HTTP/gRPC 503/`unavailable` shed -- so a
+    /// factory-built receiver actually engages the default-on governor instead
+    /// of silently dropping the inbound brake.
+    ///
+    /// Construction order: the `governor` (and its pressure) is built by the
+    /// runtime BEFORE this call, so the pressure latch already exists and is
+    /// merely cloned (cheap `Arc` bump) into each transport here.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`from_config`](Self::from_config).
+    #[cfg(feature = "governor")]
+    pub async fn from_config_with_governor(
+        key: &str,
+        governor: &crate::SelfRegulationGovernor,
+    ) -> TransportResult<Self> {
+        #[cfg(feature = "config")]
+        let config = {
+            let cfg = crate::config::try_get()
+                .ok_or_else(|| TransportError::Config("config not initialised".into()))?;
+            cfg.unmarshal_key::<super::TransportConfig>(key)
+                .map_err(|e| TransportError::Config(format!("failed to read {key}: {e}")))?
+        };
+
+        #[cfg(not(feature = "config"))]
+        let config = {
+            let _ = key;
+            super::TransportConfig::default()
+        };
+
+        Self::from_transport_config_with_governor(&config, governor).await
+    }
+
+    /// Create a governed receiver from an explicit `TransportConfig`
+    /// (`governor` feature).
+    ///
+    /// The governor-aware sibling of [`from_transport_config`](Self::from_transport_config).
+    /// Backends that own an inbound brake are wired to the governor's shared
+    /// pressure:
+    ///
+    /// - **Kafka**: the consumer's assigned partitions are paused/resumed via
+    ///   [`SelfRegulationGovernor::attach_kafka_gate`](crate::SelfRegulationGovernor::attach_kafka_gate)
+    ///   (the full `gate_actuator -> InboundGate -> with_inbound_gate` dance).
+    /// - **HTTP / gRPC**: the embedded receive server is built with
+    ///   `with_pressure(Some(governor.pressure()))`, so it sheds with 503 /
+    ///   `Status::unavailable` while the pressure latch holds.
+    ///
+    /// Backends with no inbound brake (memory, pipe, file, redis) construct
+    /// exactly as in [`from_transport_config`](Self::from_transport_config) --
+    /// the byte-budget lever already reaches them through the governed driver.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`from_transport_config`](Self::from_transport_config).
+    #[cfg(feature = "governor")]
+    pub async fn from_transport_config_with_governor(
+        config: &super::TransportConfig,
+        #[cfg_attr(
+            not(any(
+                feature = "transport-kafka",
+                feature = "transport-grpc",
+                feature = "transport-http"
+            )),
+            allow(unused_variables)
+        )]
+        governor: &crate::SelfRegulationGovernor,
+    ) -> TransportResult<Self> {
+        match config.transport_type {
+            #[cfg(feature = "transport-kafka")]
+            TransportType::Kafka => {
+                let kafka_config = config
+                    .kafka
+                    .as_ref()
+                    .ok_or_else(|| TransportError::Config("kafka config missing".into()))?;
+                let transport = super::kafka::KafkaTransport::new(kafka_config).await?;
+                // Attach the inbound gate over the governor's shared pressure:
+                // pauses assigned partitions while the latch holds (member stays
+                // in the group -- no rebalance).
+                let transport = governor.attach_kafka_gate(transport);
+                Ok(Self::Kafka(transport))
+            }
+
+            #[cfg(feature = "transport-grpc")]
+            TransportType::Grpc => {
+                let grpc_config = config
+                    .grpc
+                    .as_ref()
+                    .ok_or_else(|| TransportError::Config("grpc config missing".into()))?;
+                let transport = super::grpc::GrpcTransport::with_pressure(
+                    grpc_config,
+                    Some(governor.pressure()),
+                )
+                .await?;
+                Ok(Self::Grpc(transport))
+            }
+
+            #[cfg(feature = "transport-http")]
+            TransportType::Http => {
+                let http_config = config
+                    .http
+                    .as_ref()
+                    .ok_or_else(|| TransportError::Config("http config missing".into()))?;
+                let transport = super::http::HttpTransport::with_pressure(
+                    http_config,
+                    Some(governor.pressure()),
+                )
+                .await?;
+                Ok(Self::Http(transport))
+            }
+
+            // Backends with no inbound brake: construct identically to the
+            // non-governor path. The byte-budget lever reaches these via the
+            // governed driver, not an inbound gate.
+            #[cfg(any(
+                feature = "transport-memory",
+                feature = "transport-pipe",
+                feature = "transport-file",
+                feature = "transport-redis"
+            ))]
+            _ => Self::from_transport_config(config).await,
+
+            // No brakeable backend enabled at all: defer entirely to the
+            // non-governor path (handles the "feature not enabled" error too).
+            #[allow(unreachable_patterns)]
+            _ => Self::from_transport_config(config).await,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -915,5 +1117,210 @@ mod tests {
             .commit(&[])
             .await
             .expect("commit with empty slice must succeed");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Governor-aware factory tests (Remediation Phase 6).
+//
+// Prove `*_with_governor` actually threads the governor's inbound brake into
+// the backends that own one, and that the non-governor path is unchanged.
+// ---------------------------------------------------------------------------
+
+#[cfg(all(test, feature = "governor"))]
+mod governor_tests {
+    #[cfg(any(
+        feature = "transport-kafka",
+        feature = "transport-grpc",
+        feature = "transport-http",
+        feature = "transport-memory"
+    ))]
+    use super::*;
+
+    /// Build a [`SelfRegulationGovernor`] whose single HARD memory source is
+    /// pinned ABOVE / BELOW `pause_above` (default 0.80) by sizing the guard.
+    #[cfg(any(
+        feature = "transport-kafka",
+        feature = "transport-grpc",
+        feature = "transport-http",
+        feature = "transport-memory"
+    ))]
+    fn governor(pinned_high: bool) -> crate::SelfRegulationGovernor {
+        use crate::memory::{MemoryGuard, MemoryGuardConfig};
+        let guard = std::sync::Arc::new(MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 1000,
+            pressure_threshold: 0.80,
+            ..Default::default()
+        }));
+        if pinned_high {
+            guard.add_bytes(950); // 95% -> well above pause_above
+        } else {
+            guard.add_bytes(10); // 1% -> well below resume_below
+        }
+        crate::SelfRegulationConfig::default()
+            .build(guard)
+            .expect("governor enabled by default")
+    }
+
+    /// A factory-built Kafka receiver MUST carry an inbound gate when a governor
+    /// is supplied. Broker-free: `KafkaTransport::new` lazily connects and an
+    /// empty topic list means no subscribe/poll happens at construction.
+    #[cfg(feature = "transport-kafka")]
+    #[tokio::test]
+    async fn kafka_governed_receiver_has_inbound_gate() {
+        let kafka = crate::transport::kafka::KafkaConfig::for_testing(
+            "localhost:9092",
+            "phase6-test",
+            Vec::new(), // no topics -> no subscribe -> broker-free build
+        );
+        let cfg = crate::transport::TransportConfig {
+            transport_type: crate::transport::types::TransportType::Kafka,
+            kafka: Some(kafka),
+            ..Default::default()
+        };
+
+        let gov = governor(false);
+        let receiver = AnyReceiver::from_transport_config_with_governor(&cfg, &gov)
+            .await
+            .expect("governed kafka receiver must construct broker-free");
+
+        match receiver {
+            AnyReceiver::Kafka(ref t) => assert!(
+                t.has_inbound_gate(),
+                "factory-built Kafka receiver must have the governor's inbound gate attached"
+            ),
+            _ => panic!("expected Kafka variant"),
+        }
+
+        // The non-governor constructor must NOT attach a gate (byte-identical
+        // to pre-Phase-6 behaviour).
+        let plain = AnyReceiver::from_transport_config(&cfg)
+            .await
+            .expect("plain kafka receiver must construct broker-free");
+        match plain {
+            AnyReceiver::Kafka(ref t) => assert!(
+                !t.has_inbound_gate(),
+                "non-governor constructor must leave the inbound gate unattached"
+            ),
+            _ => panic!("expected Kafka variant"),
+        }
+    }
+
+    /// A factory-built gRPC receiver MUST reject under pressure (governor pinned
+    /// HIGH) with `Status::unavailable`, surfaced to the client as backpressure.
+    #[cfg(feature = "transport-grpc")]
+    #[tokio::test]
+    async fn grpc_governed_receiver_sheds_under_pressure() {
+        use crate::transport::traits::{TransportBase, TransportSender};
+        use crate::transport::types::SendResult;
+
+        let server_cfg = crate::transport::grpc::GrpcConfig::server("127.0.0.1:16188");
+        let cfg = crate::transport::TransportConfig {
+            transport_type: crate::transport::types::TransportType::Grpc,
+            grpc: Some(server_cfg),
+            ..Default::default()
+        };
+
+        let gov = governor(true);
+        assert!(
+            gov.pressure().should_hold(),
+            "pinned-high governor must hold"
+        );
+
+        let server = AnyReceiver::from_transport_config_with_governor(&cfg, &gov)
+            .await
+            .expect("governed grpc receiver must construct");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let client = crate::transport::grpc::GrpcTransport::new(
+            &crate::transport::grpc::GrpcConfig::client("http://127.0.0.1:16188"),
+        )
+        .await
+        .expect("grpc client");
+        let result = client
+            .send("events", bytes::Bytes::from_static(b"{\"x\":1}"))
+            .await;
+        assert!(
+            matches!(result, SendResult::Backpressured),
+            "push under pressure must surface as backpressure, got {result:?}"
+        );
+
+        client.close().await.unwrap();
+        server.close().await.unwrap();
+    }
+
+    /// A factory-built HTTP receiver MUST shed with 503 under pressure (governor
+    /// pinned HIGH); the shed request never reaches the queue.
+    #[cfg(feature = "transport-http")]
+    #[tokio::test]
+    async fn http_governed_receiver_sheds_under_pressure() {
+        use crate::transport::traits::{TransportBase, TransportReceiver};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+
+        let http_cfg = crate::transport::http::HttpTransportConfig {
+            listen: Some(addr.to_string()),
+            recv_timeout_ms: 200,
+            ..Default::default()
+        };
+        let cfg = crate::transport::TransportConfig {
+            transport_type: crate::transport::types::TransportType::Http,
+            http: Some(http_cfg),
+            ..Default::default()
+        };
+
+        let gov = governor(true);
+        assert!(
+            gov.pressure().should_hold(),
+            "pinned-high governor must hold"
+        );
+
+        let receiver = AnyReceiver::from_transport_config_with_governor(&cfg, &gov)
+            .await
+            .expect("governed http receiver must construct");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("http://127.0.0.1:{}/ingest", addr.port()))
+            .body(b"{\"msg\":\"shed\"}".to_vec())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            reqwest::StatusCode::SERVICE_UNAVAILABLE,
+            "factory-built HTTP receiver under pressure must shed with 503"
+        );
+
+        let records = receiver.recv(10).await.unwrap().records;
+        assert!(records.is_empty(), "shed request must not be queued");
+        receiver.close().await.unwrap();
+    }
+
+    /// Backends with no inbound brake (memory) construct identically through the
+    /// governor-aware path -- the receiver still works as a plain receiver.
+    #[cfg(feature = "transport-memory")]
+    #[tokio::test]
+    async fn memory_governed_receiver_is_plain() {
+        use crate::transport::traits::TransportReceiver;
+
+        let cfg = crate::transport::TransportConfig {
+            transport_type: crate::transport::types::TransportType::Memory,
+            memory: Some(crate::transport::memory::MemoryConfig::default()),
+            ..Default::default()
+        };
+
+        let gov = governor(false);
+        let receiver = AnyReceiver::from_transport_config_with_governor(&cfg, &gov)
+            .await
+            .expect("governed memory receiver must construct");
+
+        assert_eq!(receiver.name(), "memory");
+        // No gate concept for memory -- recv just returns an empty batch.
+        let batch = receiver.recv(1).await.expect("recv must succeed");
+        assert!(batch.records.is_empty(), "no records injected");
     }
 }

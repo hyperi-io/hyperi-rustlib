@@ -47,6 +47,18 @@ pub enum EngineError {
          (Route to forward, or DiscardWithMetric to deliberately drop)"
     )]
     FilterDlqUnrouted(usize),
+    /// A [`FilterDlqPolicy::Route`] sink failed to deliver DLQ entries. This is
+    /// a TERMINAL ack-barrier failure: the source commit is skipped so the whole
+    /// block is re-delivered -- a DLQ-route failure must NOT let a later ordered
+    /// commit advance past these undelivered dead-letters. Silent discard is
+    /// OPT-IN only, via [`FilterDlqPolicy::DiscardWithMetric`].
+    #[error("DLQ route failed: {0}")]
+    DlqRouteFailed(String),
+    /// A parse failure occurred under [`ParseErrorAction::FailBatch`]. TERMINAL:
+    /// the whole block fails its commit (consistent with the ack barrier) so it
+    /// is re-delivered rather than partially committed.
+    #[error("parse failed (fail_batch): {0}")]
+    ParseBatchFailed(String),
 }
 
 /// What a [`BatchEngine`] run loop does with inbound-filter DLQ entries
@@ -68,7 +80,20 @@ pub enum FilterDlqPolicy {
     /// Hand each batch's DLQ entries to a sink (e.g. enqueue onto a DLQ
     /// transport, or `tokio::spawn` an async send). Called on the run loop, so
     /// keep it cheap -- offload slow work.
-    Route(Arc<dyn Fn(Vec<crate::transport::filter::FilteredDlqEntry>) + Send + Sync>),
+    ///
+    /// The sink is FALLIBLE: returning `Err` raises
+    /// [`EngineError::DlqRouteFailed`], which is a terminal ack-barrier failure
+    /// (the source commit is skipped, the whole block re-delivered). A sink that
+    /// deliberately tolerates loss should return `Ok` after counting the drop;
+    /// to discard ALL entries by policy use
+    /// [`DiscardWithMetric`](Self::DiscardWithMetric) instead.
+    Route(
+        Arc<
+            dyn Fn(Vec<crate::transport::filter::FilteredDlqEntry>) -> Result<(), EngineError>
+                + Send
+                + Sync,
+        >,
+    ),
 }
 
 #[cfg(feature = "transport")]
@@ -516,19 +541,47 @@ impl BatchEngine {
     ) -> Result<crate::transport::WorkBatch<T>, EngineError> {
         if !batch.dlq_entries.is_empty() {
             let entries = std::mem::take(&mut batch.dlq_entries);
-            match &self.filter_dlq_policy {
-                FilterDlqPolicy::Reject => {
-                    return Err(EngineError::FilterDlqUnrouted(entries.len()));
-                }
-                FilterDlqPolicy::DiscardWithMetric => {
-                    #[cfg(feature = "metrics")]
-                    ::metrics::counter!("dfe_engine_filter_dlq_discarded_total")
-                        .increment(entries.len() as u64);
-                }
-                FilterDlqPolicy::Route(sink) => sink(entries),
-            }
+            self.route_dlq_entries(entries)?;
         }
         Ok(batch)
+    }
+
+    /// Route a set of DLQ entries through the configured [`FilterDlqPolicy`].
+    ///
+    /// THE single DLQ route point: both the inbound-filter entries (routed
+    /// before `process` by
+    /// [`apply_workbatch_dlq_policy`](Self::apply_workbatch_dlq_policy)) AND the
+    /// parse/process-generated entries (routed after `process`, before commit,
+    /// inline in the driver's `drive_block` / `drive_block_streaming`) flow
+    /// through here, so the two paths share ONE policy and ONE behaviour. There
+    /// is no
+    /// silent-drop default: `Reject` fails fast, `DiscardWithMetric` is the only
+    /// deliberate opt-in to drop, and `Route` is fallible (a delivery failure is
+    /// a terminal ack-barrier error, never a silent loss).
+    ///
+    /// # Errors
+    ///
+    /// - [`EngineError::FilterDlqUnrouted`] under [`FilterDlqPolicy::Reject`].
+    /// - [`EngineError::DlqRouteFailed`] when a [`FilterDlqPolicy::Route`] sink
+    ///   returns `Err`.
+    #[cfg(feature = "transport")]
+    pub(crate) fn route_dlq_entries(
+        &self,
+        entries: Vec<crate::transport::filter::FilteredDlqEntry>,
+    ) -> Result<(), EngineError> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        match &self.filter_dlq_policy {
+            FilterDlqPolicy::Reject => Err(EngineError::FilterDlqUnrouted(entries.len())),
+            FilterDlqPolicy::DiscardWithMetric => {
+                #[cfg(feature = "metrics")]
+                ::metrics::counter!("dfe_engine_filter_dlq_discarded_total")
+                    .increment(entries.len() as u64);
+                Ok(())
+            }
+            FilterDlqPolicy::Route(sink) => sink(entries),
+        }
     }
 }
 
@@ -660,6 +713,7 @@ mod engine_tests {
         let eng = default_engine().with_filter_dlq_policy(FilterDlqPolicy::Route(StdArc::new(
             move |e: Vec<FilteredDlqEntry>| {
                 s.fetch_add(e.len(), Ordering::Relaxed);
+                Ok(())
             },
         )));
         let passed = eng
@@ -1197,7 +1251,9 @@ mod engine_tests {
             let shutdown = tokio_util::sync::CancellationToken::new();
             cancel_after(shutdown.clone(), 200);
 
-            // Sink always errors -- the driver logs and continues (no crash).
+            // Sink always errors -- the driver returns the error cleanly (no
+            // crash/panic). Post Remediation Phase 1 the sink error is a
+            // TERMINAL ack-barrier error rather than a logged continue.
             let result = engine
                 .run_workbatch(
                     &transport,
@@ -1211,7 +1267,10 @@ mod engine_tests {
                 )
                 .await;
 
-            assert!(result.is_ok());
+            assert!(
+                matches!(result, Err(EngineError::Sink(_))),
+                "sink error returns terminally without crashing: {result:?}"
+            );
         }
     }
 }

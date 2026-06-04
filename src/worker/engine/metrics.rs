@@ -31,10 +31,6 @@ pub fn register(manager: &MetricsManager, config: &BatchProcessingConfig) {
     );
     let _ = manager.counter("batch_engine_messages_dlq_total", "Messages routed to DLQ");
     let _ = manager.counter("batch_engine_parse_errors_total", "Parse failures");
-    let _ = manager.counter(
-        "batch_engine_memory_pressure_pauses_total",
-        "MemoryGuard pause events between chunks",
-    );
 
     // Histograms
     let _ = manager.histogram(
@@ -90,8 +86,6 @@ pub fn register(manager: &MetricsManager, config: &BatchProcessingConfig) {
 /// Grafana dashboards can overlay config changes on operational graphs.
 pub fn emit_thresholds(config: &BatchProcessingConfig) {
     metrics::gauge!("batch_engine_max_chunk_size").set(config.max_chunk_size as f64);
-    metrics::gauge!("batch_engine_memory_pressure_pause_ms")
-        .set(config.memory_pressure_pause_ms as f64);
 }
 
 #[cfg(test)]
