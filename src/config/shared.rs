@@ -48,32 +48,11 @@
 //! assert_eq!(*rx.borrow(), 1);
 //! ```
 //!
-//! ## Migration from Component-Specific Implementations
-//!
-//! All DFE components previously had their own `SharedConfig` hard-coded to
-//! their specific `Config` struct. This generic version is a drop-in
-//! replacement:
-//!
-//! ```text
-//! // Before (component-specific):
-//! use crate::config::SharedConfig;           // hard-coded to crate::Config
-//!
-//! // After (generic from rustlib):
-//! use hyperi_rustlib::config::SharedConfig;   // SharedConfig<Config>
-//! let shared = SharedConfig::new(config);     // type inferred from argument
-//! ```
-//!
-//! ### API Compatibility
-//!
-//! | Component Method | rustlib Equivalent | Notes |
-//! |------------------|--------------------|-------|
-//! | `read()` | `read()` | Returns `RwLockReadGuard` |
-//! | `get()` | `get()` | Clones current config |
-//! | `with(f)` | `with(f)` | Closure-based read |
-//! | `update(cfg)` | `update(cfg)` | Write + version bump + notify |
-//! | `version()` | `version()` | Atomic version counter |
-//! | `subscribe()` | `subscribe()` | `watch::Receiver<u64>` |
-//! | `clone_inner()` | Removed | Use `Clone` on `SharedConfig` instead |
+//! Drop-in replacement for the per-component `SharedConfig` structs DFE
+//! components used to hard-code to their own `Config`. Same method names
+//! (`read`/`get`/`with`/`update`/`version`/`subscribe`); type is inferred
+//! from the argument. The old `clone_inner()` is gone -- clone the
+//! `SharedConfig` itself.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

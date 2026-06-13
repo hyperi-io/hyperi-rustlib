@@ -133,7 +133,7 @@ enum DrainResult {
     /// `guard.commit()` failed after the sink/codec returned a result
     /// that would normally consume the entry. The entry is STILL on
     /// disk; counters were NOT decremented. StrictFifo must stay
-    /// gated until the next drain iteration retries (Codex F5).
+    /// gated until the next drain iteration retries.
     CommitFailed(String),
 }
 

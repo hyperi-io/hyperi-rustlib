@@ -42,10 +42,10 @@
 //! ```rust,ignore
 //! let sender = RoutedSender::from_config("transport.output").await?;
 //! // Routes to different backends based on key
-//! sender.send("events.land", payload).await;  // → gRPC to loader-land
-//! sender.send("events.load", payload).await;  // → Kafka topic
-//! sender.send("audit.land", payload).await;   // → gRPC to archiver
-//! sender.send("unknown", payload).await;      // → default (Kafka)
+//! sender.send("events.land", payload).await;  // -> gRPC to loader-land
+//! sender.send("events.load", payload).await;  // -> Kafka topic
+//! sender.send("audit.land", payload).await;   // -> gRPC to archiver
+//! sender.send("unknown", payload).await;      // -> default (Kafka)
 //! ```
 
 use std::collections::HashMap;
@@ -79,7 +79,7 @@ impl RoutedSender {
         }
     }
 
-    /// Create from a map of key → `TransportConfig` plus a default config.
+    /// Create from a map of key -> `TransportConfig` plus a default config.
     ///
     /// Each route gets its own `AnySender` created from the corresponding config.
     pub async fn from_route_configs(
@@ -272,7 +272,7 @@ mod tests {
         assert!(result.is_fatal());
     }
 
-    /// Codex F7 regression: `resolve` returns the configured route
+    /// Regression: `resolve` returns the configured route
     /// name (or `"default"`), not the per-message key. Metric labels
     /// stay bounded by the routing table size, not by message count.
     #[test]
@@ -286,7 +286,7 @@ mod tests {
         let (name, _) = sender.resolve("events.land").unwrap();
         assert_eq!(name, "events.land");
 
-        // Miss: falls through to "default" — bounded label, not the
+        // Miss: falls through to "default" -- bounded label, not the
         // arbitrary inbound key.
         let (name, _) = sender.resolve("arbitrary-user-key-12345").unwrap();
         assert_eq!(name, "default");

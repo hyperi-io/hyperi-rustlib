@@ -132,24 +132,49 @@ fn mixed_valid_invalid() {
     assert_eq!(err_count, 50);
 }
 
+/// Deeply-nested JSON must be handled GRACEFULLY, not crash the worker.
+///
+/// The parse path recurses once per nesting level (sonic_rs), so an unbounded
+/// hostile payload can exhaust the worker stack and abort the process -- a DoS.
+/// The engine now rejects nesting beyond a fixed bound with a per-record error
+/// (via a cheap iterative pre-scan, so the recursive parser never sees it).
+/// Modest nesting still parses fine.
 #[test]
 fn deeply_nested_json() {
-    // Build 50 levels of nesting: {"a":{"a":{"a":...{}}}}
-    let mut payload = String::new();
-    for _ in 0..50 {
-        payload.push_str(r#"{"a":"#);
-    }
-    payload.push_str(r#""leaf""#);
-    for _ in 0..50 {
-        payload.push('}');
+    fn nested(levels: usize) -> Vec<u8> {
+        let mut p = String::new();
+        for _ in 0..levels {
+            p.push_str(r#"{"a":"#);
+        }
+        p.push_str(r#""leaf""#);
+        for _ in 0..levels {
+            p.push('}');
+        }
+        p.into_bytes()
     }
 
     let engine = default_engine();
-    let msgs = vec![make_raw(payload.as_bytes())];
-    let results: Vec<Result<usize, String>> =
-        engine.process_mid_tier(&msgs, |pm| Ok(pm.raw_payload().len()));
-    assert_eq!(results.len(), 1);
-    assert!(results[0].is_ok());
+
+    // Modest nesting (well within the bound) parses successfully.
+    let shallow = vec![make_raw(&nested(10))];
+    let ok: Vec<Result<usize, String>> =
+        engine.process_mid_tier(&shallow, |pm| Ok(pm.raw_payload().len()));
+    assert_eq!(ok.len(), 1);
+    assert!(ok[0].is_ok(), "10-level nesting should parse");
+
+    // Pathological nesting is REJECTED gracefully, never a stack overflow /
+    // process abort. The iterative pre-scan rejects it before the recursive
+    // parser runs, so this is stack-safe at any depth. Reaching this assertion
+    // at all proves there was no crash; the payload must not parse successfully
+    // (asserted action-agnostically: Skip yields no result, Dlq/FailBatch an
+    // Err -- in neither case an Ok).
+    let bomb = vec![make_raw(&nested(5000))];
+    let rejected: Vec<Result<usize, String>> =
+        engine.process_mid_tier(&bomb, |pm| Ok(pm.raw_payload().len()));
+    assert!(
+        !rejected.iter().any(Result::is_ok),
+        "5000-level nesting must be rejected, not parsed (and must not crash)"
+    );
 }
 
 #[test]

@@ -252,7 +252,7 @@ impl OpenBaoProvider {
     pub fn new(config: &OpenBaoConfig) -> SecretsResult<Self> {
         // Enforce the production guardrail at the construction boundary -- a
         // shared library cannot rely on every app remembering to call
-        // validate() at startup (Codex review 2026-06-03).
+        // validate() at startup.
         config
             .validate(crate::env::is_production())
             .map_err(SecretsError::ConfigError)?;

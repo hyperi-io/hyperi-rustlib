@@ -2,7 +2,7 @@
 
 Three async primitives the rest of the crate is built on:
 `BackgroundSink`, `PeriodicWorker`, `ActorHandle`. None of them are
-novel — they're the conventional answers to fire-and-forget durable
+novel -- they're the conventional answers to fire-and-forget durable
 writes, timer-driven loops, and command-queue actors. Centralising
 them here keeps the implementations consistent across subsystems and
 keeps modules from rolling their own variants.
@@ -34,7 +34,7 @@ to "build it yourself". Use them.
 
 Fire-and-forget durable write. Caller `try_push`es items; an actor task
 drains them through a `SinkDrain` impl that writes durably (disk file,
-DLQ queue, Kafka topic). Caller returns immediately — the actor does
+DLQ queue, Kafka topic). Caller returns immediately -- the actor does
 the I/O.
 
 Used by [DLQ](../pipeline/DLQ.md) for queued DLQ entries; by any
@@ -52,17 +52,20 @@ impl SinkDrain<Event> for NdjsonDrain {
     }
 }
 
-let sink = BackgroundSink::spawn(
+// spawn returns a cloneable sink plus a single-owner join handle.
+let (sink, handle) = BackgroundSink::spawn(
+    NdjsonDrain { path: "/var/log/events.ndjson".into() },
     BackgroundSinkConfig {
-        capacity: 10_000,
-        overflow: Overflow::DropOldest,
+        queue_capacity: 10_000,
+        overflow: Overflow::Drop,
         batch_size: 256,
         flush_interval: Duration::from_millis(500),
+        ..Default::default()
     },
-    NdjsonDrain { path: "/var/log/events.ndjson".into() },
+    shutdown_token.clone(),
 );
 
-// Hot path — non-blocking:
+// Hot path -- non-blocking:
 sink.try_push(event)?;
 
 // Periodic stats:
@@ -71,15 +74,18 @@ let pending = sink.pending();
 
 // On shutdown:
 sink.flush().await?;
-sink.handle().join().await?;
+handle.join().await?;
 ```
 
-Overflow modes: `DropOldest` (ring-buffer behaviour), `DropNewest`
-(reject new pushes), `Block` (await capacity). Pick `DropOldest` for
-telemetry; `DropNewest` for billing.
+Overflow modes: `Drop` (the default -- `try_push` returns
+`Err(Overflow)` immediately and bumps the dropped counter; pick this
+for telemetry) and `Block` (`try_push` is rejected unconditionally,
+forcing callers to use `push_blocking`/`flush`; pick this when the
+sink must never silently drop, e.g. billing).
 
 `push_blocking()` waits for capacity (use sparingly; the point of this
-primitive is `try_push` returning immediately).
+primitive is `try_push` returning immediately). In `Block` mode it is
+the only push path -- `try_push` always returns `Err(Overflow)`.
 
 ---
 
@@ -115,7 +121,7 @@ let worker = PeriodicWorker::spawn(
 worker.join().await?;
 ```
 
-The shutdown token argument is mandatory — periodic workers always
+The shutdown token argument is mandatory -- periodic workers always
 take the global cancellation token so they drain cleanly on SIGTERM.
 
 ---
@@ -153,9 +159,11 @@ impl Actor for RulesActor {
     }
 }
 
-let handle = ActorHandle::<Cmd>::spawn(
+// spawn returns a cloneable handle plus a single-owner join handle.
+let (handle, join) = ActorHandle::<Cmd>::spawn(
     RulesActor { state: RuleSet::new() },
-    ActorConfig { capacity: 256, ..Default::default() },
+    ActorConfig { queue_capacity: 256, ..Default::default() },
+    shutdown_token.clone(),
 );
 
 handle.send(Cmd::AddRule(rule)).await?;
@@ -164,7 +172,7 @@ handle.send(Cmd::Snapshot(tx)).await?;
 let snapshot = rx.await?;
 
 // On shutdown:
-handle.join().await?;
+join.join().await?;
 ```
 
 `try_send` for non-blocking pushes; `send` for back-pressure. The
@@ -176,29 +184,29 @@ handle.join().await?;
 
 | Item | Purpose |
 |------|---------|
-| `BackgroundSink::spawn(config, drain)` | Spawn the actor task |
+| `BackgroundSink::spawn(drain, config, shutdown)` | Spawn the actor task; returns `(BackgroundSink, BackgroundSinkHandle)` |
 | `.try_push(msg)` | Hot-path push, returns immediately |
 | `.push_blocking(msg)` | Await capacity |
 | `.flush()` | Wait for the queue to drain |
 | `.dropped() -> u64` | Count of dropped messages (overflow) |
 | `.pending() -> usize` | Current queue depth |
-| `.handle() -> BackgroundSinkHandle` | Join the task on shutdown |
+| `BackgroundSinkHandle::join()` | Await the actor task exit (single-owner) |
 | `PeriodicTask` trait | Implement `tick()` |
-| `PeriodicWorker::spawn(task, interval, shutdown)` | Drive the schedule |
-| `.join()` | Await actor exit |
+| `PeriodicWorker::spawn(task, interval, shutdown)` | Drive the schedule; returns `PeriodicWorker` |
+| `PeriodicWorker::join()` | Await worker exit |
 | `Actor` trait | Implement `handle(&mut self, Command)` |
-| `ActorHandle::spawn(actor, config)` | Spawn an actor |
+| `ActorHandle::spawn(actor, config, shutdown)` | Spawn an actor; returns `(ActorHandle, ActorJoinHandle)` |
 | `.send(cmd)` | Await capacity, deliver command |
 | `.try_send(cmd)` | Non-blocking variant |
-| `.join()` | Await actor exit |
+| `ActorJoinHandle::join()` | Await the actor task exit (single-owner) |
 
 ---
 
 ## Related
 
-- [../pipeline/DLQ.md](../pipeline/DLQ.md) — `BackgroundSink` consumer
-- [../pipeline/SCALING.md](../pipeline/SCALING.md) — `PeriodicWorker` consumer
-- [../pipeline/BATCH-ENGINE.md](../pipeline/BATCH-ENGINE.md) — `ActorHandle` consumer
-- [../core-pillars/SHUTDOWN.md](../core-pillars/SHUTDOWN.md) — `CancellationToken` discipline
-- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) — `concurrency`
+- [../pipeline/DLQ.md](../pipeline/DLQ.md) -- `BackgroundSink` consumer
+- [../pipeline/SCALING.md](../pipeline/SCALING.md) -- `PeriodicWorker` consumer
+- [../pipeline/BATCH-ENGINE.md](../pipeline/BATCH-ENGINE.md) -- `ActorHandle` consumer
+- [../core-pillars/SHUTDOWN.md](../core-pillars/SHUTDOWN.md) -- `CancellationToken` discipline
+- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) -- `concurrency`
 - Source: [../../src/concurrency/](../../src/concurrency/)

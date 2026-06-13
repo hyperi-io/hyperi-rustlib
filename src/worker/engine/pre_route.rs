@@ -54,10 +54,10 @@ pub enum PreRouteFilter {
 /// validity check and is intentionally cold.
 ///
 /// # Behaviour
-/// - `Ok(lazy_value)` and value is a string → `Found(string)`
-/// - `Ok(lazy_value)` and value is not a string → `Found(raw_str)` (raw JSON)
-/// - `Err` with `is_not_found()` → `Missing`
-/// - `Err` other → `ParseError`
+/// - `Ok` string value -> `Found(string)`
+/// - `Ok` non-string value -> `Found(raw_str)` (raw JSON)
+/// - `Err` with `is_not_found()` -> `Missing`
+/// - `Err` other -> `ParseError`
 #[inline]
 pub fn extract_routing_field(payload: &[u8], field_name: &str) -> PreRouteExtraction {
     match sonic_rs::get_from_slice(payload, &[field_name]) {

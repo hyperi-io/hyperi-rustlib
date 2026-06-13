@@ -89,6 +89,11 @@ pub mod env;
 pub mod kafka_config;
 pub mod sensitive;
 
+// Parse-path depth guard, shared by the transport codec (JSON/MsgPack) and the
+// worker engine parse stage. Compiled whenever either consumer is enabled.
+#[cfg(any(feature = "transport", feature = "worker-batch"))]
+pub(crate) mod parse_guard;
+
 #[cfg(feature = "runtime")]
 #[cfg_attr(docsrs, doc(cfg(feature = "runtime")))]
 pub mod runtime;

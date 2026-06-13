@@ -1,24 +1,22 @@
 # Kafka path
 
-The Kafka data path is sized around ONE idea: a byte-budget envelope with a
-time bound, so a single config takes a stage from "SME on a laptop" to
-hyperscale without re-tuning. This doc covers the three batch sizes, the
-sizing profile, the librdkafka property names the code actually uses (several
-differ from the Java client), the AIMD loop, wire compression, the raw escape
-hatch, and the partition-limited diagnostic.
+One idea: a byte-budget envelope with a time bound, so a single config takes a
+stage from "SME on a laptop" to hyperscale without re-tuning. Covered here: the
+three batch sizes, the sizing profile, the librdkafka property names the code
+uses (several differ from the Java client), the AIMD loop, wire compression,
+static membership, the raw escape hatch, the partition-limited diagnostic.
 
-Code: `src/transport/kafka/config.rs` (sizing surface) and
+Code: `src/transport/kafka/config.rs` (sizing surface),
 `src/transport/kafka/mod.rs` (transport + diagnostic). See
-[SELF-REGULATION.md](SELF-REGULATION.md) and
-[BACKPRESSURE.md](BACKPRESSURE.md) for the governor and brake that sit over
-this path.
+[SELF-REGULATION.md](SELF-REGULATION.md) and [BACKPRESSURE.md](BACKPRESSURE.md)
+for the governor and brake over this path.
 
 ---
 
 ## The three batch sizes
 
-There are THREE distinct batch sizes on the Kafka path, and conflating them
-is the usual tuning mistake. Each governs a different hop.
+THREE distinct batch sizes on the Kafka path; conflating them is the usual
+tuning mistake. Each governs a different hop.
 
 | # | Batch | Governs | Sized by |
 |---|---|---|---|
@@ -47,14 +45,13 @@ a tiny-record flood cannot blow the count even within the byte budget.
 
 ## Byte budget + time bound = one config, SME to hyperscale
 
-The sizing knobs default to GENEROUS ceilings with a TIME bound. The
-generous ceiling means a busy topic fills large, efficient batches; the time
-bound (`fetch.wait.max.ms` on GET, `linger.ms` on SEND) means a quiet topic
-does NOT stall waiting to fill that ceiling -- it returns whatever it has when
-the timer fires. The same `profile: throughput` config that batches a PB/day
-firehose into 1 MiB fetches also serves a trickle of events at low latency,
-because the time bound caps the wait either way. One config, no re-tuning as
-volume grows.
+The sizing knobs default to GENEROUS ceilings with a TIME bound. The ceiling
+lets a busy topic fill large, efficient batches; the time bound
+(`fetch.wait.max.ms` on GET, `linger.ms` on SEND) stops a quiet topic stalling
+to fill it -- it returns whatever it has when the timer fires. The same
+`profile: throughput` config that batches a PB/day firehose into 1 MiB fetches
+also serves a trickle at low latency, because the time bound caps the wait
+either way. One config, no re-tuning as volume grows.
 
 On a small or memory-tight pod the generous `throughput` start budget can
 overshoot in the cold-start window (the first block before the governor's
@@ -68,8 +65,9 @@ small-pod guidance in [SELF-REGULATION.md](SELF-REGULATION.md).
 
 `SelfRegulationProfile` (in `src/transport/kafka/config.rs`) sets opinionated
 defaults for the byte envelope and latency. An explicit per-knob value wins
-over the profile default; the raw librdkafka escape hatch wins over
-everything.
+over the profile default; the raw sizing maps win over the named knobs; the
+transport-level `kafka.librdkafka_overrides` wins over all of it (see the full
+precedence below).
 
 ```yaml
 kafka:
@@ -142,11 +140,11 @@ Target `0.7` keeps the consumer ~70% busy with 30% headroom for a fetch burst.
 All profiles default the producer to `lz4` -- the best throughput/ratio
 tradeoff for the hot path. Match the codec to the topic:
 
-- **`lz4`** (default) -- fast, good ratio. The right choice for most
-  transform / forwarding topics.
-- **`zstd`** -- better ratio at higher CPU cost. Opt in for storage-bound
-  topics (archiver, long-retention land/load topics) that can absorb the CPU
-  to save disk and network.
+- **`lz4`** (default) -- fast, good ratio. Right for most transform /
+  forwarding topics.
+- **`zstd`** -- better ratio, higher CPU. Opt in for storage-bound topics
+  (archiver, long-retention land/load) that can absorb the CPU to save disk
+  and network.
 
 Set per stage via `kafka.sizing.producer.compression_type`. The consumer
 decompresses transparently regardless of producer codec.
@@ -171,6 +169,20 @@ decompresses transparently regardless of producer codec.
 
 ---
 
+## Static membership (KIP-345) -- opt-in
+
+`kafka.group_instance_id` (env `<PREFIX>_GROUP_INSTANCE_ID`) sets
+`group.instance.id`. Default `None` -- dynamic membership. Set it to a STABLE,
+UNIQUE-per-replica value (the K8s pod name from the downward API is the
+canonical choice) and a member that restarts rejoins with its PRIOR partitions
+WITHOUT a group-wide rebalance. That turns a rolling restart of a large
+consumer fleet from dozens of stop-the-world rebalances into zero.
+
+The value MUST be unique per replica -- two replicas sharing one
+`group.instance.id` get fenced. An empty value is treated as unset.
+
+---
+
 ## The raw escape hatch
 
 The sizing surface is opinionated but never a cage. Two raw maps let an
@@ -185,22 +197,27 @@ kafka:
       linger.ms: "50"
 ```
 
-These are applied LAST and WIN over both the profile defaults and the named
-knobs. Resolution precedence (lowest to highest):
+The sizing raw maps win over the profile defaults and the named knobs.
+Full resolution precedence (lowest to highest):
 
 1. `SelfRegulationProfile` defaults
 2. Named knobs (`consumer.*` / `producer.*`)
-3. Raw maps (`consumer_librdkafka` / `producer_librdkafka`)
+3. Sizing raw maps (`consumer_librdkafka` / `producer_librdkafka`)
+4. Transport-level `kafka.librdkafka_overrides` -- re-applied LAST, wins over
+   the sizing surface too (it is the broad client-config override, not part of
+   the sizing surface)
 
 When a raw override touches a property the sizing governor depends on (the
 fetch byte sizes, `enable.auto.commit`, the producer batch/linger/compression
-keys), the code logs ONE warning line per key so the operator knows the
-governor's assumptions have changed. An invalid key silently no-ops in
-librdkafka, so double-check spelling.
+keys), the code logs ONE warning per key so the operator knows the governor's
+assumptions changed. An invalid key silently no-ops in librdkafka -- check
+spelling.
 
-There is also a transport-level `kafka.librdkafka_overrides` map (separate
-from the sizing surface) that overrides the profile baseline for the broader
-client config.
+The producer is built from a SEPARATE `ClientConfig`, not the consumer's:
+consumer-only keys (`group.id`, `session.timeout.ms`, fetch sizes) would make
+librdkafka ignore the producer sizing surface otherwise. The producer config
+carries security + the producer sizing map; `kafka.librdkafka_overrides`
+applies last to both halves.
 
 ---
 
@@ -213,9 +230,17 @@ half the pods do nothing.
 
 rustlib DETECTS this and tells you. It does NOT fix it by mutating topology.
 `KafkaTransport::check_partition_limited` (governor feature,
-`src/transport/kafka/mod.rs`) reads the group member count, the assigned
-partition count, and the current lag, then evaluates the pure
-`partition_limited(members, partitions, lag)` decision. When limited it:
+`src/transport/kafka/mod.rs`) reads:
+
+- the member count scoped to THIS group (`fetch_group_list(Some(group_id))` --
+  not every group on a shared cluster), defaulting to 1 on a transient read,
+- the TOPIC's TOTAL partition count summed over subscribed topics (broker
+  metadata -- NOT this member's assigned slice; the assignment count made the
+  check fire whenever m^2 >= P, a false positive with headroom to spare),
+- the current total lag,
+
+then evaluates the pure `partition_limited(members, partitions, lag)` decision.
+When limited it:
 
 - sets the `kafka_partition_limited` gauge to `1.0` (else `0.0`),
 - registers a `Degraded` entry on the health registry, and

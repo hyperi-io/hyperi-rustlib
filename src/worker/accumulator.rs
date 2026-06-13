@@ -119,7 +119,11 @@ impl<T: Send + 'static> BatchAccumulator<T> {
         self.tx
             .try_send((item, byte_size))
             .map_err(|_| AccumulatorFull {
-                capacity: self.tx.capacity(),
+                // `max_capacity()` is the configured channel size. `capacity()`
+                // is *remaining* permits (~0 here, since we only build this
+                // error when the channel is full), which rendered a misleading
+                // "(0 items buffered)" diagnostic.
+                capacity: self.tx.max_capacity(),
             })
     }
 
@@ -133,16 +137,10 @@ impl<T: Send + 'static> BatchAccumulator<T> {
 /// Drain accumulated [`Record`]s into a [`WorkBatch`] for push-ingest sources.
 ///
 /// Push-ingest transports (HTTP, gRPC) accumulate [`Record`]s via a
-/// `BatchAccumulator<Record>` and, on drain, must turn the drained block into
-/// the canonical [`WorkBatch`] currency to feed the engine driver. This helper
-/// is that bridge: it pairs the drained records with the caller-supplied source
-/// commit tokens (the per-request responders / acks) into one block.
-///
-/// Additive -- the generic [`BatchAccumulator`] / [`BatchDrainer`] core is
-/// untouched; this is a free function over the `Record` element type. The
-/// `commit_tokens` are supplied by the caller because the push source owns the
-/// ack (an HTTP responder, a gRPC stream slot) -- the accumulator only carries
-/// the payload records.
+/// `BatchAccumulator<Record>`, then bridge the drained block to the engine's
+/// canonical [`WorkBatch`] currency. The `commit_tokens` are supplied by the
+/// caller because the push source owns the ack (an HTTP responder, a gRPC
+/// stream slot) -- the accumulator carries only the payload records.
 ///
 /// [`Record`]: crate::transport::Record
 /// [`WorkBatch`]: crate::transport::WorkBatch
@@ -166,17 +164,28 @@ impl<T> BatchDrainer<T> {
             return self.take_buffer();
         }
 
-        // Wait for items with a timeout
-        loop {
-            let timeout = tokio::time::sleep(self.config.max_wait);
+        // Wait for items against a FIXED deadline. The deadline is set once per
+        // accumulation window (not recreated per arriving item), so trickle
+        // traffic -- items arriving every < max_wait -- cannot defer the flush
+        // indefinitely. The prior code created a fresh `sleep(max_wait)` on every
+        // loop iteration, so each arrival reset the timer and the first buffered
+        // item's latency was unbounded, breaking the documented "time since last
+        // drain reaches max_wait" guarantee.
+        let sleep = tokio::time::sleep(self.config.max_wait);
+        tokio::pin!(sleep);
 
+        loop {
             tokio::select! {
                 biased;
 
                 // Time threshold -- flush whatever we have
-                () = timeout => {
+                () = &mut sleep => {
                     if self.buffer.is_empty() {
-                        // No items at all -- keep waiting (don't return empty batch)
+                        // No items at all -- re-arm a fresh window and keep
+                        // waiting (don't return an empty batch).
+                        sleep
+                            .as_mut()
+                            .reset(tokio::time::Instant::now() + self.config.max_wait);
                         continue;
                     }
                     return self.take_buffer();
@@ -302,6 +311,65 @@ mod tests {
         // Next push should fail (backpressure)
         let result = acc.push(4, 1).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_backpressure_error_reports_configured_capacity() {
+        let config = AccumulatorConfig {
+            channel_capacity: 3,
+            max_items: 100,
+            max_bytes: usize::MAX,
+            max_wait: Duration::from_mins(1),
+        };
+        let (acc, _drainer) = BatchAccumulator::<i32>::new(config);
+
+        acc.push(1, 1).await.unwrap();
+        acc.push(2, 1).await.unwrap();
+        acc.push(3, 1).await.unwrap();
+
+        let err = acc.push(4, 1).await.expect_err("channel full -> error");
+        // Reports the CONFIGURED capacity (3), not the remaining permits (0).
+        assert_eq!(err.capacity, 3);
+    }
+
+    /// Items arriving steadily faster than `max_wait` must NOT defer the flush:
+    /// the accumulation-window deadline is fixed per batch, so it fires even
+    /// while items keep coming. Regression for the prior per-iteration
+    /// `sleep(max_wait)` that was recreated on every arrival, resetting the
+    /// timer indefinitely under trickle traffic. `start_paused` makes the clock
+    /// deterministic.
+    #[tokio::test(start_paused = true)]
+    async fn test_trickle_traffic_flushes_on_fixed_deadline() {
+        let config = AccumulatorConfig {
+            channel_capacity: 100,
+            max_items: 1000,       // never trips on count
+            max_bytes: usize::MAX, // never trips on bytes
+            max_wait: Duration::from_millis(100),
+        };
+        let (acc, mut drainer) = BatchAccumulator::<i32>::new(config);
+
+        // One item every 40ms -- well under the 100ms window.
+        tokio::spawn(async move {
+            for i in 0..6 {
+                acc.push(i, 1).await.unwrap();
+                tokio::time::sleep(Duration::from_millis(40)).await;
+            }
+        });
+
+        let batch = drainer.next_batch().await;
+        // The fixed 100ms deadline flushes the items buffered within the window
+        // (those landing at 0/40/80ms), NOT all 6. Old reset-per-arrival
+        // behaviour would only flush after the producer stopped.
+        assert!(
+            !batch.is_empty(),
+            "should flush items buffered within the window"
+        );
+        assert!(
+            batch.len() < 6,
+            "expected a partial flush at the fixed deadline, got all {} items \
+             (timer reset on each arrival?)",
+            batch.len()
+        );
     }
 
     #[tokio::test]

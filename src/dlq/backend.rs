@@ -81,16 +81,14 @@ impl DlqBackend {
     /// invokes [`super::orchestrator::Dlq::flush`]. Each backend honours
     /// the strongest durability it can express:
     ///
-    /// - **File**: `flush()` on the rotating writer. The underlying
-    ///   `file-rotate` crate doesn't expose the inner `File` handle, so
-    ///   we can't `fsync()` from here -- `flush()` only guarantees that
-    ///   buffered bytes have been handed to the kernel page cache. A
-    ///   power-loss event between page-cache and disk can still lose
-    ///   data. Documented limitation; tracked separately if/when
+    /// - **File**: `flush()` on the rotating writer. `file-rotate`
+    ///   doesn't expose the inner `File`, so we can't `fsync()` -- this
+    ///   only flushes to the kernel page cache, so power loss before
+    ///   write-back can still lose data. Limitation, tracked until
     ///   `file-rotate` exposes a sync hook.
     /// - **Kafka**: `producer.flush()` -- blocks until every queued
-    ///   message has been acked by the broker (per the producer's
-    ///   acks config). This is the real durability semantic.
+    ///   message is acked by the broker (per the producer's acks
+    ///   config). The real durability semantic.
     /// - **HTTP**: no-op. `send_batch` already awaits the response.
     /// - **Redis**: no-op. `send_batch` already awaits the XADD pipeline.
     ///

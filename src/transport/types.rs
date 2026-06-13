@@ -61,15 +61,14 @@ pub enum PayloadFormat {
 }
 
 impl PayloadFormat {
-    /// Detect format from payload bytes.
+    /// Detect format from the first payload byte.
     ///
-    /// MsgPack maps start with 0x80-0x8f (fixmap) or 0xde/0xdf (map16/map32).
-    /// JSON objects start with '{' (0x7b).
-    /// JSON arrays start with '[' (0x5b).
+    /// MsgPack map/array lead bytes (0x80-0x9f, 0xdc-0xdf) -> MsgPack;
+    /// everything else (incl. empty) -> JSON.
     #[must_use]
     pub fn detect(payload: &[u8]) -> Self {
         if payload.is_empty() {
-            return Self::Json; // Default to JSON for empty
+            return Self::Json;
         }
 
         // MsgPack: fixmap (0x80-0x8f), map16/32 (0xde/0xdf), fixarray (0x90-0x9f), array16/32 (0xdc/0xdd)

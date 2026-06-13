@@ -6,20 +6,17 @@
 // License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! High-performance HTTP server built on axum.
-//!
-//! This module provides a configurable HTTP server suitable for building
-//! APIs, health endpoints, and metrics servers. It uses axum for ergonomics
-//! and is compatible with Tonic for gRPC.
+//! HTTP server built on axum. Compatible with Tonic for gRPC.
 //!
 //! ## Features
 //!
-//! - Graceful shutdown support
-//! - Configurable timeouts (request, keep-alive)
-//! - Optional TLS support
-//! - Health check endpoints (`/health/live`, `/health/ready`)
-//! - Metrics endpoint (`/metrics`)
-//! - Tower middleware integration
+//! - Graceful shutdown
+//! - Configurable request timeout, in-flight cap, Tower middleware
+//! - Health endpoints (`/healthz`, `/readyz`, plus `/health/*` aliases)
+//!
+//! In-process TLS and a `/metrics` endpoint are NOT wired here -- see
+//! [`HttpServerConfig`]. Terminate TLS at the ingress / mesh; metrics are
+//! served by `MetricsManager` on its own listener.
 //!
 //! ## Example
 //!

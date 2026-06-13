@@ -380,15 +380,10 @@ fn format_age(published_at: &str) -> Option<String> {
     }
 }
 
-// Persistent-instance-id helpers removed in 2.7.5.
-//
-// Previously this file maintained a UUID at
-// `~/.cache/hyperi/instance_id` and included it in every telemetry
-// payload. The persistent identifier survived restarts, IP changes,
-// and process recycles -- functionally indistinguishable from a
-// long-lived tracking cookie. For an open-source library the friction
-// it created for SOC2 / regulated consumers far exceeded the fleet-
-// uniqueness signal value. Removed in the pre-GA hardening pass.
+// Persistent-instance-id helpers removed in 2.7.5 -- the disk-stored
+// UUID was a tracking cookie in all but name (see CheckPayload above).
+// Friction for SOC2 / regulated consumers outweighed the fleet-
+// uniqueness signal.
 
 /// Errors during version check (internal, never exposed to caller).
 #[derive(Debug)]

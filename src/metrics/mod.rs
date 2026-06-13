@@ -8,23 +8,14 @@
 
 //! Metrics with Prometheus and/or OpenTelemetry backends.
 //!
-//! Provides production-ready metrics collection with support for:
+//! - **`metrics` only:** Prometheus scrape endpoint via `/metrics`
+//! - **`otel-metrics` only:** OTLP push to OTel-compatible backends
+//! - **Both:** Fanout recorder sends to both Prometheus AND OTel
 //!
-//! - **`metrics` feature only:** Prometheus scrape endpoint via `/metrics`
-//! - **`otel-metrics` feature only:** OTLP push to OTel-compatible backends
-//! - **Both features:** Fanout recorder sends to both Prometheus AND OTel
-//!
-//! ## Features
-//!
-//! - Counter, Gauge, Histogram metric types
-//! - Automatic process metrics (CPU, memory, file descriptors)
-//! - Container metrics from cgroups (memory limit, CPU limit)
-//! - Built-in HTTP server for `/metrics` endpoint (Prometheus)
-//! - OTLP push to HyperDX, Jaeger, Grafana, etc. (OTel)
-//! - Readiness callback for `/health/ready` endpoints
-//! - Optional scaling pressure endpoint (`/scaling/pressure`)
-//! - Optional memory guard endpoint (`/memory/pressure`)
-//! - Custom route support via [`start_server_with_routes`](MetricsManager::start_server_with_routes)
+//! Counter/Gauge/Histogram types, automatic process + cgroup container metrics,
+//! built-in HTTP server, readiness/startup probes, optional scaling-pressure and
+//! memory-guard endpoints, custom routes via
+//! [`start_server_with_routes`](MetricsManager::start_server_with_routes).
 //!
 //! ## Basic Example
 //!
@@ -194,11 +185,9 @@ struct RecorderSetup {
     otel_provider: Option<opentelemetry_sdk::metrics::SdkMeterProvider>,
 }
 
-/// Install the metrics recorder(s) based on enabled features.
-///
-/// Returns setup results containing handles/providers. When both
-/// `metrics` and `otel-metrics` features are enabled, uses `metrics-util`
-/// `FanoutBuilder` to compose both recorders into a single global recorder.
+/// Install the metrics recorder(s) for the enabled features. When both
+/// `metrics` and `otel-metrics` are on, composes both into one global
+/// recorder via `metrics-util` `FanoutBuilder`.
 #[allow(unused_variables)]
 fn install_recorders(config: &MetricsConfig) -> RecorderSetup {
     // --- Prometheus only (no OTel) ---
@@ -307,16 +296,13 @@ impl MetricsManager {
         })
     }
 
-    /// Create a metrics manager for tests without installing a global recorder.
+    /// Test constructor that skips the global recorder install.
     ///
-    /// The global Prometheus recorder can only be installed once per process.
-    /// Tests that call `MetricsManager::new()` in parallel all race to install
-    /// it and all but the first panic with `SetRecorderError`.
-    ///
-    /// This constructor skips recorder installation entirely. `metrics!` macros
-    /// become no-ops (the crate's documented behaviour when no recorder is set),
-    /// but manifest registry tracking, descriptor push, and namespace logic all
-    /// work normally -- which is what the tests actually verify.
+    /// The global recorder installs once per process; parallel `new()` calls
+    /// race and all but the first panic with `SetRecorderError`. Skipping it
+    /// makes `metrics!` macros no-ops (documented behaviour with no recorder)
+    /// while registry tracking, descriptor push, and namespace logic -- what
+    /// tests actually verify -- still work.
     #[cfg(test)]
     pub(crate) fn new_for_test(namespace: &str) -> Self {
         let config = MetricsConfig {
@@ -583,11 +569,8 @@ impl MetricsManager {
             .map_or_else(String::new, PrometheusHandle::render)
     }
 
-    /// Get a cloneable render handle for use in route handlers.
-    ///
-    /// Returns a closure that renders the current Prometheus metrics text.
-    /// The closure is `Send + Sync + Clone`, making it safe to move into
-    /// `axum` route handlers or share across tasks via `Arc`.
+    /// Cloneable render handle for route handlers. `Send + Sync + Clone` --
+    /// safe to move into `axum` handlers or share across tasks.
     ///
     /// Returns `None` if no Prometheus recorder is installed.
     ///

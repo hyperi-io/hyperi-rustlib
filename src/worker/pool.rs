@@ -138,8 +138,7 @@ impl Drop for SemaphoreGuard<'_> {
 /// The plain [`fan_out_async`](AdaptiveWorkerPool::fan_out_async) helper has no
 /// timeout or cancellation, and a single hung future stalls its whole chunk. At
 /// fleet scale, user code eventually passes a future that ignores deadlines, so
-/// reusable external-I/O fan-out needs a deadline + cancellation contract
-/// (Codex review 2026-06-03).
+/// reusable external-I/O fan-out needs a deadline + cancellation contract.
 #[derive(Debug, Clone, Default)]
 pub struct FanOutPolicy {
     /// Per-item timeout. `None` = no timeout (caller must bound the future).
@@ -171,7 +170,7 @@ impl AdaptiveWorkerPool {
     /// resolved config (rejects `min_threads > max_threads`, bad watermark
     /// ordering, zero `async_concurrency`, etc.) before building. This prevents
     /// invalid runtime state that would otherwise panic later in the scaler's
-    /// `clamp(min, max)` (Codex review 2026-06-03).
+    /// `clamp(min, max)`.
     ///
     /// # Errors
     ///

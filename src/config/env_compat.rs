@@ -8,18 +8,11 @@
 
 //! Environment variable compatibility layer.
 //!
-//! Provides utilities for reading environment variables with support for:
-//! - Legacy variable name aliases with deprecation warnings
-//! - Standard naming conventions (PG*, KAFKA_*, VAULT_*, AWS_*)
-//! - Graceful migration from old to new variable names
+//! Reads env vars supporting legacy name aliases (PG*, KAFKA_*, VAULT_*,
+//! AWS_*) with deprecation warnings for graceful migration.
 //!
-//! ## How it works
-//!
-//! When reading an environment variable:
-//! 1. First try the **standard** (preferred) name
-//! 2. If not set, try **legacy** (deprecated) names
-//! 3. If a legacy name is used, log a deprecation warning
-//! 4. Standard name always takes precedence if both are set
+//! Resolution: standard name first, then legacy names; a legacy hit logs a
+//! deprecation warning. Standard always wins if both are set.
 //!
 //! ## Example
 //!
@@ -48,8 +41,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tracing::warn;
 
-/// Global flag to track if deprecation warnings have been shown.
-/// This prevents spamming logs with repeated warnings.
+/// Warn-once flag -- prevents log spam from repeated deprecation warnings.
 static DEPRECATION_WARNED: AtomicBool = AtomicBool::new(false);
 
 /// Environment variable with optional legacy aliases.
@@ -162,19 +154,16 @@ impl EnvVar {
 
 /// Log a deprecation warning for a legacy environment variable.
 fn log_deprecation_warning(legacy_name: &str, standard_name: &str) {
-    // Only warn once per session to avoid log spam
-    // Use swap to atomically check and set - returns the previous value
+    // Warn once per session, then drop to debug -- avoids log spam.
     let already_warned = DEPRECATION_WARNED.swap(true, Ordering::Relaxed);
 
     if already_warned {
-        // Subsequent warnings at debug level
         tracing::debug!(
             legacy = %legacy_name,
             standard = %standard_name,
             "Deprecated environment variable used"
         );
     } else {
-        // First warning at warn level
         warn!(
             legacy = %legacy_name,
             standard = %standard_name,
@@ -488,9 +477,8 @@ pub mod clickhouse {
     }
 }
 
-/// Load all standard environment variables into a HashMap.
-///
-/// This is useful for debugging or logging which variables are set.
+/// Load all standard environment variables into a HashMap, for debugging
+/// which variables are set.
 #[must_use]
 pub fn load_all_standard() -> HashMap<String, Option<String>> {
     let mut vars = HashMap::new();

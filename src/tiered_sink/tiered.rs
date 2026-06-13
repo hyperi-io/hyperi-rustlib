@@ -66,7 +66,7 @@ impl<S: Sink> TieredSink<S> {
         let spool_sender = Arc::new(Mutex::new(sender));
         let spool_receiver = Arc::new(Mutex::new(receiver));
 
-        // Codex F16: recover counters in spawn_blocking -- segment
+        // Recover counters in spawn_blocking -- segment
         // files can be GB-sized after a crash; walking them on the
         // async runtime pins a tokio worker.
         let spool_path_for_scan = config.spool_path.clone();
@@ -495,11 +495,12 @@ fn check_disk_space(path: &std::path::Path) -> Option<(u64, u64)> {
     };
 
     // Portability: libc::statvfs field widths differ across platforms.
-    // Linux: f_blocks/f_bavail/f_frsize are u64. aarch64-apple-darwin: u32.
-    // Cast on macOS to bridge the type difference; no-op on Linux. Fixes #39.
+    // Linux: f_blocks/f_bavail/f_frsize are all u64. macOS (aarch64): f_frsize
+    // is c_ulong (u64) but f_blocks/f_bavail are fsblkcnt_t (u32), so only those
+    // two need the widening cast here; f_frsize is already u64. Fixes #39.
     #[cfg(target_os = "macos")]
     {
-        let block_size: u64 = u64::from(stat.f_frsize);
+        let block_size: u64 = stat.f_frsize;
         let total: u64 = u64::from(stat.f_blocks) * block_size;
         let available: u64 = u64::from(stat.f_bavail) * block_size;
         Some((total, available))
@@ -562,7 +563,7 @@ async fn disk_capacity_poller(
 
 impl<S: Sink> Drop for TieredSink<S> {
     fn drop(&mut self) {
-        // Codex F17: durability requires explicit `shutdown().await`.
+        // Durability requires explicit `shutdown().await`.
         // Drop can only notify the background drainer -- it can't
         // await it. If anything's still spooled at drop time, the
         // caller has skipped the explicit shutdown and risks losing

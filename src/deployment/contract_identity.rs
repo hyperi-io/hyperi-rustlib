@@ -17,28 +17,22 @@
 //! | `io.hyperi.contract.source-commit` | Git SHA of the consumer app's HEAD   | 40-char lowercase hex             |
 //! | `io.hyperi.contract.image-ref`     | Intended pull reference for the image | `<reg>/<repo>:<tag>` or `@<digest>` |
 //!
-//! Same key string on every surface (image label, Chart.yaml annotation,
-//! Application annotation). The grep payoff: `grep -r 'io.hyperi.contract' .`
-//! finds every contract-emitted artefact regardless of format.
+//! Same key string on every surface. The grep payoff:
+//! `grep -r 'io.hyperi.contract' .` finds every contract-emitted artefact.
 //!
 //! # Pre-push vs post-push image_ref
 //!
-//! At Dockerfile-emit time the image isn't built yet, let alone pushed, so
-//! its content digest is unknown. The image label therefore carries the
-//! TAG form (`<reg>/<repo>:<tag>`). The push step is responsible for
-//! re-rendering `Chart.yaml` and the ArgoCD `Application` with the DIGEST
-//! form (`<reg>/<repo>@sha256:<hex>`) returned by the registry, because
-//! those manifests are written after the push completes and benefit from
-//! digest-pinning for reproducibility.
+//! At Dockerfile-emit time the image isn't built, so its digest is unknown:
+//! the image label carries the TAG form (`<reg>/<repo>:<tag>`). The push step
+//! re-renders `Chart.yaml` and the ArgoCD `Application` with the DIGEST form
+//! returned by the registry, for digest-pinned reproducibility.
 //!
 //! # Rollout phase
 //!
-//! Phase 1 (this commit): generators accept `Option<&ContractIdentity>`.
-//! When `Some(id)`, the three annotations are emitted; when `None`, the
-//! generator is silent (backwards-compat for consumers that haven't
-//! adopted yet). Phase 2 flips the parameter to required once all six
-//! DFE consumers pass identity at every call site. Phase 3 removes the
-//! Option<> wrapper and the silent-on-None branch.
+//! Phase 1 (this commit): generators accept `Option<&ContractIdentity>` --
+//! `Some` emits the annotations, `None` is silent (backwards-compat for
+//! consumers not yet migrated). Phase 2 makes it required once all six DFE
+//! consumers pass identity. Phase 3 drops the `Option` wrapper.
 
 use std::env;
 use std::process::Command;

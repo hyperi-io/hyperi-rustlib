@@ -50,6 +50,7 @@ use thiserror::Error;
 /// or string, structural imbalance, empty elements (leading/trailing/double
 /// commas), and trailing garbage after the closing `]`.
 #[derive(Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FramingError {
     /// The blob did not start (after optional whitespace) with `[`.
     #[error("json-array framing: expected opening '[', found {0}")]
@@ -188,9 +189,9 @@ impl<T: CommitToken> WorkBatch<T> {
 
     /// Total payload bytes across all records.
     ///
-    /// Needed by the byte-budget governor to size a block against a memory
-    /// budget. -- Sums with saturating addition, so a pathological block can
-    /// never overflow `usize`; it clamps at `usize::MAX` instead of wrapping.
+    /// Used by the byte-budget governor to size a block against a memory budget.
+    /// Saturating sum: a pathological block clamps at `usize::MAX` rather than
+    /// wrapping.
     #[must_use]
     pub fn total_payload_bytes(&self) -> usize {
         self.records
@@ -513,10 +514,14 @@ impl<T: CommitToken> From<crate::transport::traits::RecvBatch<T>> for WorkBatch<
     ///
     /// Each `Message<T>` becomes a [`Record`]; its `token` is collected into
     /// `commit_tokens` (preserving order); `dlq_entries` carry straight across.
-    /// Payloads are already [`Bytes`] -- each is a move, not a copy.
+    /// `filtered_tokens` (acks of records removed by inbound drop/dlq filters)
+    /// are appended to `commit_tokens` so the block commit advances the source
+    /// past them -- the commit-token count is deliberately NOT tied to
+    /// `records.len()`. Payloads are already [`Bytes`] -- each is a move.
     fn from(batch: crate::transport::traits::RecvBatch<T>) -> Self {
+        let token_capacity = batch.messages.len() + batch.filtered_tokens.len();
         let mut records = Vec::with_capacity(batch.messages.len());
-        let mut commit_tokens = Vec::with_capacity(batch.messages.len());
+        let mut commit_tokens = Vec::with_capacity(token_capacity);
         for msg in batch.messages {
             commit_tokens.push(msg.token);
             records.push(Record {
@@ -529,6 +534,9 @@ impl<T: CommitToken> From<crate::transport::traits::RecvBatch<T>> for WorkBatch<
                 },
             });
         }
+        // Acks of filtered-out records: no Record, but the source still needs
+        // committing once the block (incl. DLQ routing) is handled.
+        commit_tokens.extend(batch.filtered_tokens);
         Self {
             records,
             commit_tokens,
@@ -698,6 +706,7 @@ mod tests {
                 Message::new(None, b"{}".to_vec(), TestToken(3), None),
             ],
             dlq_entries: vec![entry],
+            filtered_tokens: Vec::new(),
         };
 
         let b: WorkBatch<TestToken> = recv.into();
@@ -714,6 +723,43 @@ mod tests {
         // record payloads + keys preserved
         assert_eq!(b.records[0].key.as_deref(), Some("a"));
         assert_eq!(b.records[2].key, None);
+    }
+
+    #[test]
+    fn from_recv_batch_appends_filtered_tokens_to_commit_tokens() {
+        // Acks of filtered-out records (no passing Record) must still reach
+        // commit_tokens so the block commit advances the source past them.
+        let recv = RecvBatch {
+            messages: vec![Message::new(
+                Some(Arc::from("a")),
+                b"{}".to_vec(),
+                TestToken(1),
+                None,
+            )],
+            dlq_entries: Vec::new(),
+            filtered_tokens: vec![TestToken(7), TestToken(8)],
+        };
+        let b: WorkBatch<TestToken> = recv.into();
+        // One passing record, but THREE acks to commit (1 passing + 2 filtered).
+        assert_eq!(b.record_count(), 1);
+        assert_eq!(
+            b.commit_tokens,
+            vec![TestToken(1), TestToken(7), TestToken(8)]
+        );
+    }
+
+    #[test]
+    fn from_recv_batch_all_filtered_is_records_empty_tokens_present() {
+        // Every record filtered: no Records, but the acks survive so the source
+        // is not stalled behind an all-filtered stretch.
+        let recv: RecvBatch<TestToken> = RecvBatch {
+            messages: Vec::new(),
+            dlq_entries: Vec::new(),
+            filtered_tokens: vec![TestToken(5), TestToken(6)],
+        };
+        let b: WorkBatch<TestToken> = recv.into();
+        assert_eq!(b.record_count(), 0);
+        assert_eq!(b.commit_tokens, vec![TestToken(5), TestToken(6)]);
     }
 
     #[test]
@@ -783,6 +829,7 @@ mod tests {
                 Message::new(Some(Arc::from("b")), p1, TestToken(2), None),
             ],
             dlq_entries: Vec::new(),
+            filtered_tokens: Vec::new(),
         };
 
         let wb: WorkBatch<TestToken> = recv.into();

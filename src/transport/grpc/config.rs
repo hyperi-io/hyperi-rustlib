@@ -42,9 +42,8 @@ pub struct GrpcConfig {
 
     /// Per-RPC send deadline in milliseconds (0 = no deadline).
     ///
-    /// Bounds a single `push` call so a hung or black-holing server cannot
-    /// block a sender task forever. Applied as the gRPC request deadline
-    /// (`grpc-timeout` header) on every outbound RPC. Default 30s.
+    /// Bounds a single `push` so a hung/black-holing server cannot block a
+    /// sender task forever. Applied as the `grpc-timeout` header. Default 30s.
     pub send_timeout_ms: u64,
 
     /// Maximum message size in bytes (both send and receive).
@@ -53,11 +52,10 @@ pub struct GrpcConfig {
     /// Enable gzip compression for gRPC messages.
     pub compression: bool,
 
-    // --- Client TLS (tonic owns its TLS stack -- like Kafka/librdkafka -- so
-    // these map the unified TlsTrust vocabulary onto tonic's ClientTlsConfig
-    // rather than consuming crate::tls's rustls ClientConfig directly. Note:
-    // in-cluster DFE gRPC is usually mesh-mTLS (Istio/Linkerd); set these only
-    // for DIRECT TLS to a remote endpoint.) ---
+    // --- Client TLS. tonic owns its TLS stack (like librdkafka), so these map
+    // TlsTrust onto tonic's ClientTlsConfig rather than crate::tls's rustls
+    // ClientConfig. In-cluster DFE gRPC is usually mesh-mTLS (Istio/Linkerd);
+    // set these only for DIRECT TLS to a remote endpoint. ---
     /// Enable client TLS for the `endpoint` connection.
     #[serde(default)]
     pub tls_enabled: bool,

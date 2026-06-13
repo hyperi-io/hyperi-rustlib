@@ -17,14 +17,13 @@
 //! calls return [`Admit::Hold`] but do NOT re-call `pause()`; likewise a
 //! released latch returns [`Admit::Yes`] without re-calling `resume()`.
 //!
-//! This is deliberately the INBOUND side only: the actuator pauses the
-//! recv/ingest of a source (stops pulling new work) so the in-flight
-//! buffer drains under pressure. It is never wired to the outbound drain
-//! (sink) -- gating the drain would deadlock the pipeline. `send` is
-//! never involved here.
+//! INBOUND side only: the actuator pauses a source's recv/ingest (stops
+//! pulling new work) so the in-flight buffer drains under pressure. NEVER
+//! wired to the outbound drain (sink) -- gating the drain would deadlock the
+//! pipeline. `send` is never involved here.
 //!
-//! Additive and default-off (the `governor` feature). NOT wired into any
-//! transport, driver, or runtime here; that lands in a later phase.
+//! Gated behind the `governor` feature; wired into the receive transport by
+//! [`SelfRegulationGovernor`](super::SelfRegulationGovernor) (default-on).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -47,15 +46,12 @@ pub trait GateActuator: Send + Sync {
 
 /// An observability decorator over a [`GateActuator`].
 ///
-/// Wrap the real actuator (the Kafka pause/resume actuator, a [`NoopActuator`],
-/// etc.) so each pause/resume EDGE emits a metric and a brake-reason log line,
-/// then forwards to the inner actuator. Because the [`InboundGate`] fires each
-/// edge EXACTLY ONCE, the `inbound_paused` gauge and the
-/// `self_regulation_inbound_pauses_total` counter track real transitions, not
-/// per-evaluate noise.
-///
-/// This makes inbound throttling VISIBLE: a `paused` log on the rising edge and
-/// a `resumed` log on the falling edge, plus a gauge dashboards can graph.
+/// Wrap the real actuator (Kafka pause/resume, a [`NoopActuator`], etc.) so
+/// each pause/resume EDGE emits a metric + brake-reason log, then forwards to
+/// the inner actuator. Because the [`InboundGate`] fires each edge EXACTLY
+/// ONCE, the `inbound_paused` gauge and `self_regulation_inbound_pauses_total`
+/// counter track real transitions, not per-evaluate noise -- a `paused`/
+/// `resumed` log pair and a gauge dashboards can graph.
 pub struct ObservingActuator {
     inner: Box<dyn GateActuator>,
     /// Stable source label for the log line (e.g. `"kafka"`, `"http"`).
@@ -72,10 +68,16 @@ impl ObservingActuator {
 
 impl GateActuator for ObservingActuator {
     fn pause(&self) {
+        // `self_regulation_` domain prefix + a `source` label: a bare
+        // `inbound_paused` collides with nothing today but reads ambiguously
+        // next to `MemoryGuard`/`ScalingPressure` gauges, and the label lets two
+        // governed receivers (e.g. Kafka + HTTP) be told apart -- without it the
+        // single global series shows "unpaused" while one source is still held.
         #[cfg(feature = "metrics")]
         {
-            ::metrics::gauge!("inbound_paused").set(1.0);
-            ::metrics::counter!("self_regulation_inbound_pauses_total").increment(1);
+            ::metrics::gauge!("self_regulation_inbound_paused", "source" => self.source).set(1.0);
+            ::metrics::counter!("self_regulation_inbound_pauses_total", "source" => self.source)
+                .increment(1);
         }
         tracing::warn!(
             source = self.source,
@@ -86,7 +88,7 @@ impl GateActuator for ObservingActuator {
 
     fn resume(&self) {
         #[cfg(feature = "metrics")]
-        ::metrics::gauge!("inbound_paused").set(0.0);
+        ::metrics::gauge!("self_regulation_inbound_paused", "source" => self.source).set(0.0);
         tracing::info!(
             source = self.source,
             "self-regulation: inbound RESUMED, pressure cleared"
@@ -161,6 +163,17 @@ impl InboundGate {
     ///
     /// Returns [`Admit::Hold`] when held, [`Admit::Yes`] otherwise. Never
     /// touches the outbound side.
+    ///
+    /// # Single-evaluator contract
+    ///
+    /// `evaluate()` MUST be called from a SINGLE task (the one recv loop that
+    /// owns this source). The edge `compare_exchange` and the actuator call are
+    /// not one atomic step: two tasks racing across a pressure transition could
+    /// interleave so the actuator (an async pause/resume on the consumer) runs
+    /// out of order, stranding the source paused while the flag reads open. The
+    /// in-tree wiring satisfies this -- each transport's recv loop calls
+    /// `evaluate()` once per `recv`. Do NOT share one `InboundGate` across
+    /// concurrent evaluators; give each source its own gate.
     pub fn evaluate(&self) -> Admit {
         let hold = self.pressure.should_hold();
         if hold {

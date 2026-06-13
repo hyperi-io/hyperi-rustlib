@@ -787,6 +787,19 @@ pub struct KafkaConfig {
     #[serde(default = "default_client_id")]
     pub client_id: String,
 
+    /// Static group membership id (`group.instance.id`). Opt-in: `None` (the
+    /// default) uses dynamic membership.
+    ///
+    /// Set this to a STABLE, UNIQUE-per-replica value (the K8s pod name is the
+    /// canonical choice -- e.g. from `$HOSTNAME` / the downward API) to take
+    /// static membership (KIP-345). A static member that restarts rejoins with
+    /// its prior partitions WITHOUT triggering a group-wide rebalance, which
+    /// turns a rolling restart of a large consumer fleet from dozens of
+    /// stop-the-world rebalances into zero. Two replicas sharing one value get
+    /// fenced -- the value MUST be unique per replica.
+    #[serde(default)]
+    pub group_instance_id: Option<String>,
+
     /// Topics to subscribe to.
     #[serde(default)]
     pub topics: Vec<String>,
@@ -1036,6 +1049,7 @@ impl Default for KafkaConfig {
             brokers: default_brokers(),
             group: default_group(),
             client_id: default_client_id(),
+            group_instance_id: None,
             topics: Vec::new(),
             auto_discover: false,
             topic_include: Vec::new(),
@@ -1136,22 +1150,19 @@ impl KafkaConfig {
     pub fn build_librdkafka_config(&self) -> HashMap<String, String> {
         let mut config = HashMap::new();
 
-        // 1. Apply profile defaults
+        // 1. Profile defaults.
         for (key, value) in self.profile_defaults() {
             config.insert((*key).to_string(), (*value).to_string());
         }
 
-        // 2. Explicit config fields override profile
-        // (These are only applied if they differ from the "default" to avoid
-        // overriding profile settings unintentionally)
-        // Note: In practice, the transport layer applies these directly
+        // 2. Explicit config fields are applied directly by the transport layer.
 
-        // 3. Legacy extra_config
+        // 3. Legacy extra_config.
         for (key, value) in &self.extra_config {
             config.insert(key.clone(), value.clone());
         }
 
-        // 4. librdkafka_overrides (highest priority)
+        // 4. librdkafka_overrides (highest priority).
         for (key, value) in &self.librdkafka_overrides {
             config.insert(key.clone(), value.clone());
         }
@@ -1382,18 +1393,16 @@ impl KafkaConfig {
 
         let mut config = Self::default();
 
-        // Helper to create prefixed env var with legacy support
+        // Prefixed lookup with legacy aliases, plus KAFKA_* as a final fallback.
         let prefixed = |name: &str, legacy: &[&str]| {
             let mut var = EnvVar::new(&format!("{prefix}_{name}"));
             for l in legacy {
                 var = var.with_legacy(&format!("{prefix}_{l}"));
             }
-            // Also check KAFKA_* as fallback
             var = var.with_legacy(&format!("KAFKA_{name}"));
             var
         };
 
-        // Profile
         if let Some(val) = prefixed("PROFILE", &[]).get()
             && let Ok(profile) = val.parse()
         {
@@ -1403,52 +1412,51 @@ impl KafkaConfig {
             }
         }
 
-        // Bootstrap servers (with BROKERS as legacy)
         if let Some(brokers) = prefixed("BOOTSTRAP_SERVERS", &["BROKERS"]).get_list() {
             config.brokers = brokers;
         }
 
-        // Group ID
         if let Some(val) = prefixed("GROUP_ID", &["GROUP", "CONSUMER_GROUP"]).get() {
             config.group = val;
         }
 
-        // Client ID
         if let Some(val) = prefixed("CLIENT_ID", &[]).get() {
             config.client_id = val;
         }
 
-        // Security protocol
+        // Static group membership id (KIP-345). Opt-in; canonically wired from
+        // the pod name (e.g. `<PREFIX>_GROUP_INSTANCE_ID` set to the downward
+        // API pod name). An empty value is treated as unset.
+        if let Some(val) = prefixed("GROUP_INSTANCE_ID", &[]).get()
+            && !val.is_empty()
+        {
+            config.group_instance_id = Some(val);
+        }
+
         if let Some(val) = prefixed("SECURITY_PROTOCOL", &[]).get() {
             config.security_protocol = val;
         }
 
-        // SASL mechanism
         if let Some(val) = prefixed("SASL_MECHANISM", &[]).get() {
             config.sasl_mechanism = Some(val);
         }
 
-        // SASL username (with SASL_USER as legacy)
         if let Some(val) = prefixed("SASL_USERNAME", &["SASL_USER"]).get() {
             config.sasl_username = Some(val);
         }
 
-        // SASL password
         if let Some(val) = prefixed("SASL_PASSWORD", &[]).get() {
             config.sasl_password = Some(crate::SensitiveString::from(val));
         }
 
-        // SSL CA location
         if let Some(val) = prefixed("SSL_CA_LOCATION", &["CA_CERT", "SSL_CA"]).get() {
             config.ssl_ca_location = Some(val);
         }
 
-        // SSL skip verify
         if let Some(val) = prefixed("SSL_SKIP_VERIFY", &["SSL_INSECURE", "INSECURE"]).get_bool() {
             config.ssl_skip_verify = val;
         }
 
-        // Topics
         if let Some(topics) = prefixed("TOPICS", &["TOPIC"]).get_list() {
             config.topics = topics;
         }

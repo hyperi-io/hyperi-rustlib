@@ -114,16 +114,29 @@ pub struct Hysteresis {
 }
 
 impl Hysteresis {
-    /// Construct a band, validating `pause_above > resume_below`.
+    /// Construct a band, validating `pause_above > resume_below` and that
+    /// both bounds sit inside `[0.0, 1.0]`.
+    ///
+    /// The range check matters because [`Pressure`] samples are clamped to
+    /// `[0.0, 1.0]`: a `resume_below < 0.0` could never release the latch
+    /// (permanent stuck-pause) and a `pause_above > 1.0` could never arm it
+    /// (brake silently disabled).
     ///
     /// # Errors
     ///
-    /// Returns `Err` if the bounds are non-finite or `pause_above` is not
-    /// strictly greater than `resume_below`.
+    /// Returns `Err` if the bounds are non-finite, outside `[0.0, 1.0]`, or
+    /// `pause_above` is not strictly greater than `resume_below`.
     pub fn new(pause_above: f64, resume_below: f64) -> Result<Self, String> {
         if !pause_above.is_finite() || !resume_below.is_finite() {
             return Err(format!(
                 "hysteresis bounds must be finite, got pause_above={pause_above}, \
+                 resume_below={resume_below}"
+            ));
+        }
+        if !(0.0..=1.0).contains(&pause_above) || !(0.0..=1.0).contains(&resume_below) {
+            return Err(format!(
+                "hysteresis bounds must be within [0.0, 1.0] (pressure levels are \
+                 clamped to that range), got pause_above={pause_above}, \
                  resume_below={resume_below}"
             ));
         }
@@ -208,6 +221,13 @@ impl UnifiedPressure {
     /// `hard_max` = max raw reading over HARD sources (never weighted,
     /// never masked). `soft_max` = max of `sample * weight` over SOFT
     /// sources. `level = hard_max.max(soft_max)`.
+    ///
+    /// Soft `weight()` is clamped to `[0.0, 1.0]` (non-finite -> `1.0`) at the
+    /// combine: `add_source` is the advertised extension seam, so a future
+    /// soft source returning a stray weight cannot push `level()` outside its
+    /// documented range or silently neutralise itself with a negative/NaN
+    /// weight. One branch per soft source per `evaluate()` (not per record);
+    /// with no soft source wired today the cost is nil.
     #[must_use]
     pub fn level(&self) -> f64 {
         let mut hard_max = 0.0_f64;
@@ -217,7 +237,13 @@ impl UnifiedPressure {
             if src.is_hard() {
                 hard_max = hard_max.max(raw);
             } else {
-                soft_max = soft_max.max(raw * src.weight());
+                let w = src.weight();
+                let w = if w.is_finite() {
+                    w.clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                soft_max = soft_max.max(raw * w);
             }
         }
         hard_max.max(soft_max)
@@ -350,6 +376,65 @@ mod tests {
         assert!(Hysteresis::new(0.65, 0.80).is_err());
         assert!(Hysteresis::new(0.80, 0.80).is_err());
         assert!(Hysteresis::new(f64::NAN, 0.5).is_err());
+    }
+
+    /// Out-of-`[0,1]` bands must be rejected: `Pressure` clamps every sample to
+    /// `[0,1]`, so a band outside that range is unreachable in one direction --
+    /// `resume_below < 0.0` can never release (permanent stuck-pause) and
+    /// `pause_above > 1.0` can never arm (brake silently disabled). Both are
+    /// the failure modes the never-OOM/no-flap contract forbids.
+    #[test]
+    fn hysteresis_rejects_out_of_range_band() {
+        // resume_below below the clamp floor -> latch could never release.
+        assert!(Hysteresis::new(0.5, -0.1).is_err());
+        // pause_above above the clamp ceiling -> latch could never arm.
+        assert!(Hysteresis::new(1.5, 0.65).is_err());
+        // Both ends in range, valid ordering -> still ok (no regression).
+        assert!(Hysteresis::new(1.0, 0.0).is_ok());
+        assert!(Hysteresis::new(0.80, 0.65).is_ok());
+    }
+
+    /// A future SOFT source returning a stray weight must not push `level()`
+    /// outside `[0,1]` or silently neutralise itself. `add_source` is the
+    /// advertised extension seam, so the combine clamps each soft weight to
+    /// `[0,1]` (non-finite -> `1.0`).
+    #[test]
+    fn soft_weight_is_clamped_at_combine() {
+        // weight > 1 at full pressure -> clamped to 1.0, level == 1.0 (not 5.0).
+        let over = Arc::new(MockSource::new("over", 1.0, 5.0, false));
+        let p = UnifiedPressure::new(
+            vec![Arc::clone(&over) as Arc<dyn PressureSource>],
+            Hysteresis::new(0.80, 0.65).expect("band"),
+        );
+        assert!(
+            approx(p.level(), 1.0),
+            "level must stay <= 1.0, got {}",
+            p.level()
+        );
+
+        // NaN weight -> 1.0 multiplier (not dropped by f64::max(NaN)).
+        let nan_w = Arc::new(MockSource::new("nan", 0.5, f64::NAN, false));
+        let p2 = UnifiedPressure::new(
+            vec![Arc::clone(&nan_w) as Arc<dyn PressureSource>],
+            Hysteresis::new(0.80, 0.65).expect("band"),
+        );
+        assert!(
+            approx(p2.level(), 0.5),
+            "NaN weight -> 1.0, got {}",
+            p2.level()
+        );
+
+        // Negative weight -> clamped to 0.0, contributes nothing.
+        let neg = Arc::new(MockSource::new("neg", 1.0, -2.0, false));
+        let p3 = UnifiedPressure::new(
+            vec![Arc::clone(&neg) as Arc<dyn PressureSource>],
+            Hysteresis::new(0.80, 0.65).expect("band"),
+        );
+        assert!(
+            approx(p3.level(), 0.0),
+            "negative weight -> 0, got {}",
+            p3.level()
+        );
     }
 
     /// The adversarial proving test.

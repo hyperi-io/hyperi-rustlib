@@ -135,6 +135,12 @@ pub struct KafkaTransport {
     /// Topics we're subscribed to (for cache warming and Debug).
     /// Behind RwLock so recv() can update after topic refresh re-subscribe.
     subscribed_topics: parking_lot::RwLock<Vec<String>>,
+    /// Consumer group id, retained so the partition-limited diagnostic can scope
+    /// `fetch_group_list` to THIS group rather than reading every group on the
+    /// (possibly shared, PB-scale) cluster. Only the governor-gated diagnostic
+    /// reads it.
+    #[cfg(feature = "governor")]
+    group_id: String,
     /// Shutdown token -- cancelled on close() to stop background tasks.
     shutdown_token: tokio_util::sync::CancellationToken,
     /// Periodic topic refresh handle (auto-discovery mode only).
@@ -160,6 +166,16 @@ pub struct KafkaTransport {
     /// never invoked.
     #[cfg(feature = "governor")]
     partition_limited_warn: PartitionLimitedDiagnostic,
+    /// Live partition-limited flag, read by a health check registered ONCE at
+    /// construction. `check_partition_limited` stores into this flag instead of
+    /// re-registering a health entry per tick: the registry does not dedupe, so
+    /// the old per-tick `register` both grew the components Vec unboundedly and
+    /// pinned health to `Degraded` forever after the first limited tick (one
+    /// transient lag spike during scale-out would permanently fail `/readyz`).
+    /// Reading the flag lets the status track the live condition in both
+    /// directions.
+    #[cfg(all(feature = "governor", feature = "health"))]
+    partition_limited_flag: Arc<AtomicBool>,
 }
 
 impl KafkaTransport {
@@ -177,8 +193,7 @@ impl KafkaTransport {
     // the additive governor fields nudged it over the 150-line soft cap.
     #[allow(clippy::too_many_lines)]
     pub async fn new(config: &KafkaConfig) -> TransportResult<Self> {
-        // Enforce the production guardrail at construction (Codex review
-        // 2026-06-03): reject ssl_skip_verify (and insecure transport without
+        // Enforce the production guardrail at construction: reject ssl_skip_verify (and insecure transport without
         // an explicit override) in prod here, not only when an app remembers
         // to call validate() at startup.
         config
@@ -187,9 +202,12 @@ impl KafkaTransport {
 
         let mut client_config = ClientConfig::new();
 
-        // Required settings
         client_config.set("bootstrap.servers", config.brokers.join(","));
         client_config.set("group.id", &config.group);
+        // Static membership (KIP-345): opt-in, must be unique per replica.
+        if let Some(ref id) = config.group_instance_id {
+            client_config.set("group.instance.id", id);
+        }
         client_config.set("enable.auto.commit", config.enable_auto_commit.to_string());
         client_config.set(
             "auto.commit.interval.ms",
@@ -216,22 +234,28 @@ impl KafkaTransport {
             config.enable_partition_eof.to_string(),
         );
 
-        // Apply profile defaults (these can be overridden by librdkafka_overrides)
+        // Profile defaults (overridable by librdkafka_overrides).
         let rdkafka_config = config.build_librdkafka_config();
         for (key, value) in &rdkafka_config {
             client_config.set(key, value);
         }
 
-        // Apply the Task 0.5 sizing surface:
+        // Sizing surface:
         //   profile defaults < named consumer knobs < sizing.consumer_librdkafka
-        // This is applied AFTER the legacy profile/librdkafka_overrides block so
-        // the sizing config takes precedence. The raw sizing.consumer_librdkafka
-        // map wins over everything (applied last inside resolved_consumer_map()).
         for (key, value) in config.sizing.resolved_consumer_map() {
             client_config.set(key, value);
         }
 
-        // Security settings
+        // Re-apply librdkafka_overrides LAST so they remain the highest-priority
+        // layer the docs promise (config.rs precedence list). build_librdkafka_config
+        // above also applied them, but the sizing surface in between would
+        // otherwise clobber any fetch.* key an operator set via an override --
+        // silently reverting a deployment's tuning on upgrade.
+        for (key, value) in &config.librdkafka_overrides {
+            client_config.set(key, value);
+        }
+
+        // Security.
         client_config.set("security.protocol", &config.security_protocol);
         if let Some(ref mechanism) = config.sasl_mechanism {
             client_config.set("sasl.mechanism", mechanism);
@@ -243,7 +267,7 @@ impl KafkaTransport {
             client_config.set("sasl.password", password.expose());
         }
 
-        // TLS settings
+        // TLS.
         if let Some(ref ca) = config.ssl_ca_location {
             client_config.set("ssl.ca.location", ca);
         }
@@ -257,7 +281,6 @@ impl KafkaTransport {
             client_config.set("enable.ssl.certificate.verification", "false");
         }
 
-        // Client ID
         client_config.set("client.id", &config.client_id);
 
         // Ensure statistics callbacks fire (all profiles already set this, but
@@ -279,9 +302,9 @@ impl KafkaTransport {
         let consumer = Arc::new(consumer);
 
         // Resolve effective topics:
-        // - Explicit list → subscribe to those
-        // - Empty + auto_discover → auto-discover from broker
-        // - Empty + !auto_discover → no subscription (producer-only)
+        // - Explicit list -> subscribe to those
+        // - Empty + auto_discover -> auto-discover from broker
+        // - Empty + !auto_discover -> no subscription (producer-only)
         let (effective_topics, topic_refresh, shutdown_token) =
             if config.topics.is_empty() && config.auto_discover {
                 tracing::info!("Topics empty -- auto-discovering from broker");
@@ -318,7 +341,6 @@ impl KafkaTransport {
                 )
             };
 
-        // Subscribe to topics
         let subscribed_topics = effective_topics;
         if !subscribed_topics.is_empty() {
             let topics: Vec<&str> = subscribed_topics.iter().map(String::as_str).collect();
@@ -327,14 +349,60 @@ impl KafkaTransport {
                 .map_err(|e| TransportError::Connection(format!("Failed to subscribe: {e}")))?;
         }
 
-        // Pre-populate topic cache - eliminates locks in hot path
+        // Pre-populate topic cache -- eliminates locks in the hot path.
         let mut topic_cache = HashMap::with_capacity(subscribed_topics.len());
         for topic in &subscribed_topics {
             topic_cache.insert(topic.clone(), Arc::from(topic.as_str()));
         }
 
-        // Create producer with StatsContext for metrics collection
-        let producer: FutureProducer<StatsContext> = client_config
+        // Build a SEPARATE producer ClientConfig. Creating the producer from the
+        // CONSUMER client_config (which carries group.id, fetch.*,
+        // session.timeout, ...) made it ignore the documented producer sizing --
+        // it ran librdkafka producer DEFAULTS (no compression vs lz4, linger 5ms
+        // vs 20ms, batch 1 MiB vs 128 KiB, queue 1 GiB vs 64 MiB; an unbounded
+        // 1 GiB producer queue defeats container memory budgeting) and logged
+        // "X is a consumer property" warnings. Apply the connection settings +
+        // the producer sizing surface to a fresh config instead.
+        let mut producer_config = ClientConfig::new();
+        producer_config.set("bootstrap.servers", config.brokers.join(","));
+        producer_config.set("security.protocol", &config.security_protocol);
+        if let Some(ref mechanism) = config.sasl_mechanism {
+            producer_config.set("sasl.mechanism", mechanism);
+        }
+        if let Some(ref username) = config.sasl_username {
+            producer_config.set("sasl.username", username);
+        }
+        if let Some(ref password) = config.sasl_password {
+            producer_config.set("sasl.password", password.expose());
+        }
+        if let Some(ref ca) = config.ssl_ca_location {
+            producer_config.set("ssl.ca.location", ca);
+        }
+        if let Some(ref cert) = config.ssl_certificate_location {
+            producer_config.set("ssl.certificate.location", cert);
+        }
+        if let Some(ref key) = config.ssl_key_location {
+            producer_config.set("ssl.key.location", key);
+        }
+        if config.ssl_skip_verify {
+            producer_config.set("enable.ssl.certificate.verification", "false");
+        }
+        producer_config.set("client.id", &config.client_id);
+        // Producer sizing surface (compression, batch.size, linger.ms,
+        // queue.buffering.max.kbytes, sticky.partitioning.linger.ms).
+        for (key, value) in config.sizing.resolved_producer_map() {
+            producer_config.set(key, value);
+        }
+        // librdkafka_overrides remain the highest-priority layer.
+        for (key, value) in &config.librdkafka_overrides {
+            producer_config.set(key, value);
+        }
+        if producer_config.get("statistics.interval.ms").is_none() {
+            producer_config.set("statistics.interval.ms", "5000");
+        }
+
+        // Create producer with StatsContext for metrics collection.
+        let producer: FutureProducer<StatsContext> = producer_config
             .create_with_context(StatsContext::new())
             .map_err(|e| TransportError::Connection(format!("Failed to create producer: {e}")))?;
 
@@ -358,6 +426,24 @@ impl KafkaTransport {
             });
         }
 
+        #[cfg(all(feature = "governor", feature = "health"))]
+        let partition_limited_flag = Arc::new(AtomicBool::new(false));
+
+        // Register the partition-limited health check ONCE, reading the live
+        // flag, so it tracks the condition in both directions and never grows
+        // the registry per tick.
+        #[cfg(all(feature = "governor", feature = "health"))]
+        {
+            let f = Arc::clone(&partition_limited_flag);
+            crate::health::HealthRegistry::register("kafka:partition_limited", move || {
+                if f.load(Ordering::Relaxed) {
+                    crate::health::HealthStatus::Degraded
+                } else {
+                    crate::health::HealthStatus::Healthy
+                }
+            });
+        }
+
         Ok(Self {
             consumer,
             producer,
@@ -365,6 +451,8 @@ impl KafkaTransport {
             closed: AtomicBool::new(false),
             healthy,
             subscribed_topics: parking_lot::RwLock::new(subscribed_topics),
+            #[cfg(feature = "governor")]
+            group_id: config.group.clone(),
             shutdown_token,
             topic_refresh,
             filter_engine,
@@ -372,6 +460,8 @@ impl KafkaTransport {
             inbound_gate: None,
             #[cfg(feature = "governor")]
             partition_limited_warn: PartitionLimitedDiagnostic::default(),
+            #[cfg(all(feature = "governor", feature = "health"))]
+            partition_limited_flag,
         })
     }
 
@@ -387,6 +477,12 @@ impl KafkaTransport {
     ///
     /// CRUCIAL: even while held, `recv()` still issues the poll -- the
     /// actuator pauses partitions, not the poll, so the heartbeat is preserved.
+    /// The CALLER must therefore keep calling `recv()` while the gate is held:
+    /// `recv()` is what services the poll (and re-applies pause across any
+    /// cooperative rebalance that lands during the hold). A driver that backs
+    /// OFF `recv()` under pressure for longer than `max.poll.interval.ms`
+    /// (default 300 s) is evicted from the group mid-hold -- so gate the SOURCE
+    /// via this pause, never by pausing the recv loop itself.
     #[cfg(feature = "governor")]
     #[must_use]
     pub fn with_inbound_gate(mut self, gate: crate::governor::InboundGate) -> Self {
@@ -462,18 +558,34 @@ impl KafkaTransport {
         let metrics = self.consumer.context().get_metrics();
         let lag = u64::try_from(total_consumer_lag(&metrics).max(0)).unwrap_or(0);
 
-        // Partition count: sum the assigned partitions from the live assignment.
-        // (Cheap, local; avoids a per-topic metadata fetch on the common path.)
-        let partitions = self.consumer.assignment().map_or(0, |tpl| tpl.count());
+        // Partition count: the TOPIC's TOTAL partitions, summed over the
+        // subscribed topics -- NOT this member's assigned slice. (Using the
+        // assignment count made `members >= partitions` fire whenever m^2 >= P,
+        // a false positive with headroom for many more consumers.) Read from
+        // broker metadata; a failed/empty fetch yields 0, which makes the
+        // decision below false (never a false-positive "limited").
+        let topics = self.subscribed_topics.read().clone();
+        let mut partitions = 0usize;
+        for topic in &topics {
+            if let Ok(md) = self
+                .consumer
+                .fetch_metadata(Some(topic), Duration::from_secs(3))
+            {
+                partitions += md
+                    .topics()
+                    .iter()
+                    .map(|t| t.partitions().len())
+                    .sum::<usize>();
+            }
+        }
 
-        // Member count: fetch the group metadata. `fetch_group_list(None, ..)`
-        // returns all groups the broker knows; we take the largest member count
-        // as the worst-case reading. If the broker returns nothing (transient,
-        // or older broker) we treat it as a single member -- never a
-        // false-positive "limited" reading.
+        // Member count: scope to THIS group, not every group on the cluster
+        // (the old `None` read some other team's group on a shared cluster).
+        // A transient/empty read is treated as a single member -- never a
+        // false-positive "limited".
         let members = self
             .consumer
-            .fetch_group_list(None, Duration::from_secs(5))
+            .fetch_group_list(Some(&self.group_id), Duration::from_secs(3))
             .ok()
             .and_then(|list| list.groups().iter().map(|g| g.members().len()).max())
             .unwrap_or(1);
@@ -483,12 +595,13 @@ impl KafkaTransport {
         #[cfg(feature = "metrics")]
         ::metrics::gauge!("kafka_partition_limited").set(if limited { 1.0 } else { 0.0 });
 
+        // Store into the flag the health check (registered once in `new`) reads,
+        // so the status tracks the live condition in BOTH directions. The old
+        // per-tick `register` leaked a Vec entry every tick and never cleared
+        // Degraded once set.
         #[cfg(feature = "health")]
-        if limited {
-            crate::health::HealthRegistry::register("kafka:partition_limited", || {
-                crate::health::HealthStatus::Degraded
-            });
-        }
+        self.partition_limited_flag
+            .store(limited, Ordering::Relaxed);
 
         if limited
             && self
@@ -534,8 +647,14 @@ impl KafkaTransport {
                 tokio::select! {
                     () = shutdown.cancelled() => break,
                     _ = tick.tick() => {
-                        if let Err(e) = self.check_partition_limited() {
-                            tracing::debug!(error = %e, "partition-limited diagnostic tick failed");
+                        // The diagnostic does synchronous broker round-trips
+                        // (fetch_metadata + fetch_group_list). Run them OFF the
+                        // async runtime worker so a slow broker cannot pin it.
+                        let this = Arc::clone(&self);
+                        match tokio::task::spawn_blocking(move || this.check_partition_limited()).await {
+                            Ok(Err(e)) => tracing::debug!(error = %e, "partition-limited diagnostic tick failed"),
+                            Err(e) => tracing::debug!(error = %e, "partition-limited diagnostic task join failed"),
+                            Ok(Ok(_)) => {}
                         }
                     }
                 }
@@ -568,7 +687,6 @@ impl TransportSender for KafkaTransport {
             return SendResult::Fatal(TransportError::Closed);
         }
 
-        // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
             match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
@@ -579,7 +697,7 @@ impl TransportSender for KafkaTransport {
 
         let record: FutureRecord<'_, str, [u8]> = FutureRecord::to(key).payload(payload.as_ref());
 
-        // Inject W3C traceparent into Kafka message headers for distributed tracing
+        // Inject W3C traceparent into Kafka headers for distributed tracing.
         #[cfg(feature = "transport-trace")]
         let record = if let Some(tp) = super::propagation::current_traceparent() {
             let headers = rdkafka::message::OwnedHeaders::new().insert(rdkafka::message::Header {
@@ -745,6 +863,23 @@ impl KafkaTransport {
         #[cfg(feature = "governor")]
         if let Some(ref gate) = self.inbound_gate {
             let _ = gate.evaluate();
+            // Level-triggered re-pause while held. The edge actuator pauses the
+            // assignment captured at the rising edge and never re-pauses while
+            // latched; a cooperative rebalance during the hold (routine under
+            // KEDA churn) then assigns NEW partitions UNPAUSED and ingest
+            // silently reopens at full rate while pressure is still high,
+            // defeating the brake. Re-applying pause to the CURRENT assignment
+            // each recv while held is idempotent for already-paused partitions
+            // and catches the newly assigned ones; the falling-edge resume()
+            // resumes the current assignment, so nothing is stranded paused.
+            // Off the per-record path -- once per recv, only while held.
+            if gate.is_held()
+                && let Ok(tpl) = self.consumer.assignment()
+                && tpl.count() > 0
+                && let Err(e) = self.consumer.pause(&tpl)
+            {
+                tracing::debug!(error = %e, "kafka gate: re-pause under hold failed");
+            }
         }
 
         // Check for topic changes from the background refresh loop
@@ -870,9 +1005,8 @@ impl KafkaTransport {
             .into());
         }
 
-        // Phase 2: Drain queue with zero-timeout polls
-        // This is where the batch magic happens - librdkafka has already
-        // fetched a batch from the network, we just drain it fast.
+        // Phase 2: drain the queue with zero-timeout polls. librdkafka has
+        // already fetched a batch from the network; we just drain it fast.
         //
         // BYTE-AWARE STOP (Phase 2 remediation): when `max_bytes` is set, stop
         // draining once the arena has reached the cap. Phase 1 already took one
@@ -931,15 +1065,20 @@ impl KafkaTransport {
 
         // Apply inbound filters via the shared partition helper; DLQ entries
         // are returned in the RecvBatch for the caller to route onward.
-        let batch =
-            self.filter_engine
-                .partition_batch(messages, |m| m.payload.as_ref(), |m| m.key.clone());
+        let batch = self.filter_engine.partition_batch(
+            messages,
+            |m| m.payload.as_ref(),
+            |m| m.key.clone(),
+            |m| m.token.clone(),
+        );
         let messages = batch.messages;
         let dlq_entries = batch.dlq_entries;
+        let filtered_tokens = batch.filtered_tokens;
 
         Ok(RecvBatch {
             messages,
             dlq_entries,
+            filtered_tokens,
         }
         .into())
     }
@@ -1120,10 +1259,12 @@ impl crate::governor::GateActuator for KafkaGateActuator {
             Ok(tpl) => {
                 if let Err(e) = self.consumer.pause(&tpl) {
                     tracing::warn!(error = %e, "kafka gate: pause(assignment) failed");
+                    gate_actuator_error("pause");
                 }
             }
             Err(e) => {
                 tracing::warn!(error = %e, "kafka gate: assignment() failed on pause");
+                gate_actuator_error("pause");
             }
         }
     }
@@ -1133,13 +1274,26 @@ impl crate::governor::GateActuator for KafkaGateActuator {
             Ok(tpl) => {
                 if let Err(e) = self.consumer.resume(&tpl) {
                     tracing::warn!(error = %e, "kafka gate: resume(assignment) failed");
+                    gate_actuator_error("resume");
                 }
             }
             Err(e) => {
                 tracing::warn!(error = %e, "kafka gate: assignment() failed on resume");
+                gate_actuator_error("resume");
             }
         }
     }
+}
+
+/// Count a kafka gate pause/resume failure. A sustained failure silently
+/// disables the governor's brake for the Kafka source, so it must be visible
+/// (not just a log line) -- alert on a non-zero rate.
+#[cfg(feature = "governor")]
+fn gate_actuator_error(op: &'static str) {
+    #[cfg(feature = "metrics")]
+    ::metrics::counter!("self_regulation_kafka_gate_errors_total", "op" => op).increment(1);
+    #[cfg(not(feature = "metrics"))]
+    let _ = op;
 }
 
 // --- G3: kafka_partition_limited diagnostic ---------------------------------
@@ -1275,18 +1429,17 @@ mod tests {
         // Initially no change (first check sees initial value as "no change")
         assert!(handle.check_changed().is_none());
 
-        // Send new topics
         tx.send(vec!["events_load".to_string(), "logs_load".to_string()])
             .unwrap();
 
-        // Now check_changed should return the new list
+        // A pending update yields the new list.
         let changed = handle.check_changed();
         assert!(changed.is_some());
         let topics = changed.unwrap();
         assert_eq!(topics.len(), 2);
         assert!(topics.contains(&"logs_load".to_string()));
 
-        // Second check with no new changes should return None
+        // No further change -> None.
         assert!(handle.check_changed().is_none());
     }
 

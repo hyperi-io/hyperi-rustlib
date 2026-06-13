@@ -25,6 +25,53 @@ batch sizes feed the loop). The code lives in `src/governor/`.
 
 ---
 
+## Self-regulation: the default vertical-scaling principle
+
+Self-regulation is how a rustlib app scales VERTICALLY -- a single pod
+adapting its OWN intake to its OWN resources. It is the DEFAULT and the
+FIRST response to pressure, and it is distinct from (and complementary to)
+HORIZONTAL scaling, where KEDA adds pods.
+
+The doctrine, in one line: a pod sized for steady state regulates its own
+intake FIRST -- it slows down or speeds up WITHIN the pod -- and only
+escalates to horizontal scale (more pods) once its vertical headroom is
+exhausted. Vertical is the fast, local, free response; horizontal is the
+slow, global, capacity response. They are not alternatives. Vertical buys
+time; horizontal adds capacity when the time runs out.
+
+Memory is the hard, never-OOM authority on the vertical side. CPU is left to
+CFS: under a CPU quota the Linux scheduler throttles the process, each batch
+takes longer, and the AIMD byte-budget loop sees the longer process time and
+shrinks the budget on its own. There is no separate CPU brake -- adding one
+would double-count a signal CFS already handles (see "Why memory is HARD and
+CPU is deliberately dropped" below).
+
+Self-regulation is ON by default. Opt out with `self_regulation.enabled =
+false`, which builds nothing on the vertical side; horizontal scaling via
+`ScalingPressure` is unaffected.
+
+### Vertical vs horizontal
+
+| | Vertical (self-regulation) | Horizontal (KEDA) |
+|---|---|---|
+| Question | "Should this pod pull more work right now?" | "Do we need more pods?" |
+| Mechanism | MemoryGuard + UnifiedPressure inbound gate + AIMD byte budget | ScalingPressure -> external-scaler signal -> KEDA |
+| Lives in | This library, in-pod | This library's signal; KEDA acts on it |
+| Scope | One pod, its own intake | The whole deployment, replica count |
+| Timescale | Milliseconds | Seconds to minutes (pod start) |
+| Cost | Free -- no new capacity | A new pod |
+| Default | ON | Driven by the same pressure / lag signal |
+
+The two compose rather than compete. The SAME pressure that brakes a pod's
+intake also surfaces as consumer lag (Kafka) or queue depth, which is the
+signal `ScalingPressure` feeds to KEDA. Braking intake on one pod buys time
+for the in-flight buffer to drain; sustained pressure that the brake cannot
+clear is exactly the condition that should add a replica. See the
+`Pressure -> lag -> KEDA` section in [BACKPRESSURE.md](BACKPRESSURE.md) and
+[pipeline/SCALING.md](pipeline/SCALING.md) for the KEDA signal.
+
+---
+
 ## The three brains
 
 Self-regulation is three distinct controllers with three distinct jobs.
@@ -127,14 +174,17 @@ see it.
 
 | Signal | Kind | Meaning |
 |---|---|---|
-| `inbound_paused` | gauge (0/1) | The inbound gate is currently holding (1) or open (0) |
-| `self_regulation_inbound_pauses_total` | counter | Number of pause EDGES (rising transitions), not per-evaluate noise |
-| `self_regulation_byte_budget` | gauge | Current AIMD byte budget, per block |
-| `pressure_ratio` | gauge | Combined `UnifiedPressure.level()` in `[0, 1]` |
+| `self_regulation_inbound_paused` | gauge (0/1) | The inbound gate is currently holding (1) or open (0). Carries a `source` label (e.g. `kafka`, `http`) so two governed receivers on one pod are told apart |
+| `self_regulation_inbound_pauses_total` | counter | Number of pause EDGES (rising transitions), not per-evaluate noise. Carries the same `source` label |
+| `self_regulation_byte_budget` | gauge | Current AIMD byte budget (the inbound block-size lever) |
+| `self_regulation_recv_block_bytes` | gauge | Actual bytes of the most recent received block (reality, against which the budget is the intent) |
+| `self_regulation_pressure_ratio` | gauge | Combined `UnifiedPressure.level()` in `[0, 1]` |
+| `self_regulation_kafka_gate_errors_total` | counter | Kafka pause/resume actuator failures, `op` label = `pause` or `resume`. A sustained non-zero rate means the brake is silently disabled for the Kafka source -- alert on it |
 
 Because the gate fires each edge EXACTLY ONCE (`ObservingActuator` in
-`src/governor/gate.rs`), the gauge and counter track real transitions. The
-gate also logs a brake-reason line on each edge:
+`src/governor/gate.rs`), the `self_regulation_inbound_paused` gauge and the
+`self_regulation_inbound_pauses_total` counter track real transitions, not
+per-evaluate noise. The gate also logs a brake-reason line on each edge:
 
 ```text
 WARN  self-regulation: inbound PAUSED under pressure (memory/back-pressure brake)  source=kafka

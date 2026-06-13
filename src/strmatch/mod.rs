@@ -293,13 +293,10 @@ impl StrMatcher {
 
     /// Collect every non-overlapping match in iteration order.
     ///
-    /// Returns an owned iterator over `Match`. The implementation
-    /// eagerly populates a `Vec` and returns its `IntoIter`; this
-    /// costs one allocation per call but amortises well over typical
-    /// scrubber workloads where each haystack yields 0-3 matches.
-    ///
-    /// For the anchored shapes (`StartsWith`, `EndsWith`,
-    /// `ExactMatch`) the iterator yields at most one match.
+    /// Eager: one allocation per call (lifetime/vtable reasons). Amortises
+    /// well over scrubber workloads (0-3 matches per haystack). Anchored
+    /// shapes (`StartsWith`/`EndsWith`/`ExactMatch`) yield at most one
+    /// match.
     #[must_use]
     pub fn find_iter(&self, hay: &[u8]) -> std::vec::IntoIter<Match> {
         let mut out = Vec::new();
@@ -321,10 +318,11 @@ impl StrMatcher {
         &self.pattern
     }
 
-    /// Short machine-readable reason for the tier choice. For Shape /
-    /// Literal this is a "success" reason (e.g. `"shape:starts-with"`).
-    /// For Meta this names the disqualifying feature
-    /// (`"unbounded-quantifier"`, `"word-boundary"`, …).
+    /// Short machine-readable reason for the tier choice. For the
+    /// fast-path tiers this is a "success" reason (e.g.
+    /// `"shape:starts-with"`). For Regex fall-through it names the
+    /// disqualifying feature (`"unbounded-quantifier"`,
+    /// `"word-boundary"`, ...).
     #[must_use]
     pub fn reason(&self) -> &'static str {
         self.reason
@@ -354,9 +352,9 @@ impl StrMatcherBuilder {
 
     /// Reject (or warn about) patterns that classify below this tier.
     ///
-    /// Tier ordering (highest → lowest): `Shape > Literal > Meta`.
-    /// Setting `min_tier(Literal)` allows Shape and Literal but
-    /// triggers `on_below_min` for Meta.
+    /// Tier ordering (highest -> lowest): `Byte > Literal > LiteralSet >
+    /// Regex`. Setting `min_tier(LiteralSet)` allows Byte/Literal/
+    /// LiteralSet but triggers `on_below_min` for Regex.
     #[must_use]
     pub fn min_tier(mut self, tier: MatcherTier) -> Self {
         self.min_tier = Some(tier);

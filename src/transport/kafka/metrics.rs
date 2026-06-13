@@ -38,10 +38,7 @@ use rdkafka::statistics::Statistics;
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-/// Kafka metrics snapshot.
-///
-/// Contains aggregated statistics from librdkafka, matching the Python
-/// `KafkaMetrics` dataclass structure.
+/// Kafka metrics snapshot. Mirrors the Python `KafkaMetrics` dataclass.
 #[derive(Debug, Clone, Default)]
 pub struct KafkaMetrics {
     // --- Client-level metrics ---
@@ -109,9 +106,7 @@ pub struct BrokerMetrics {
 /// Statistics-collecting client context.
 ///
 /// Implements `ClientContext` to receive librdkafka statistics callbacks.
-/// Use with consumers or producers that need metrics collection.
-///
-/// Thread-safe: can be shared across multiple Kafka clients.
+/// Thread-safe: shareable across multiple Kafka clients.
 #[derive(Debug)]
 pub struct StatsContext {
     stats: RwLock<Option<Statistics>>,
@@ -134,9 +129,7 @@ impl StatsContext {
         }
     }
 
-    /// Get the latest metrics snapshot.
-    ///
-    /// Returns a clone of the most recently collected metrics.
+    /// Get the latest metrics snapshot (clone).
     #[must_use]
     pub fn get_metrics(&self) -> KafkaMetrics {
         self.latest_metrics
@@ -229,25 +222,23 @@ impl StatsContext {
 
 impl ClientContext for StatsContext {
     fn stats(&self, statistics: Statistics) {
-        // Convert and store metrics
         let metrics = Self::convert_stats(&statistics);
 
         if let Ok(mut lock) = self.latest_metrics.write() {
             *lock = metrics;
         }
 
-        // Also store raw stats
+        // Keep the raw stats too.
         if let Ok(mut lock) = self.stats.write() {
             *lock = Some(statistics);
         }
 
-        // Auto-emit as Prometheus metrics if a recorder is installed
+        // Auto-emit as Prometheus metrics if a recorder is installed.
         #[cfg(feature = "metrics")]
         self.emit_prometheus_metrics();
     }
 
     fn log(&self, level: RDKafkaLogLevel, fac: &str, log_message: &str) {
-        // Forward to tracing if available
         match level {
             RDKafkaLogLevel::Emerg
             | RDKafkaLogLevel::Alert

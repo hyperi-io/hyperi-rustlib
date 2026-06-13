@@ -154,7 +154,7 @@ impl WorkerPoolConfig {
                 reason: "must be >= 1 (fan_out_async iterates via step_by)".into(),
             });
         }
-        // Codex F11: zero CPU workers leaves the rayon semaphore
+        // Zero CPU workers leaves the rayon semaphore
         // spinning in `yield_now()` forever. Reject upfront; the
         // scaler's clamp uses min_threads as the floor, so this
         // also guarantees the scaler never drives permits below 1.
@@ -169,8 +169,8 @@ impl WorkerPoolConfig {
 
     /// Resolve `max_threads` to the effective CPU count.
     ///
-    /// - `max_threads = 0` → auto-detect from `available_parallelism` (cgroup-aware)
-    /// - `max_threads > 0` → cap at `min(configured, available_parallelism)`
+    /// - `max_threads = 0` -> auto-detect from `available_parallelism` (cgroup-aware)
+    /// - `max_threads > 0` -> cap at `min(configured, available_parallelism)`
     ///   to avoid creating more threads than physical cores
     pub fn resolve_max_threads(&mut self) {
         let available = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
@@ -187,7 +187,7 @@ impl WorkerPoolConfig {
 mod tests {
     use super::*;
 
-    /// Codex F9 regression: `async_concurrency: 0` previously
+    /// Regression: `async_concurrency: 0` previously
     /// passed validation and panicked at `step_by(0)` in
     /// `fan_out_async`.
     #[test]
@@ -212,7 +212,7 @@ mod tests {
         assert!(cfg.validate().is_ok());
     }
 
-    /// Codex F11 regression: `min_threads: 0` previously passed
+    /// Regression: `min_threads: 0` previously passed
     /// validation and pinned the rayon semaphore in a yield loop.
     #[test]
     fn validate_rejects_zero_min_threads() {

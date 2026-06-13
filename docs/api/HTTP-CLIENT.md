@@ -5,7 +5,7 @@ outbound HTTP call from a service. It pre-wires `reqwest-middleware` +
 `reqwest-retry` with exponential backoff and jitter, owns a connection
 pool, and reads its config from the cascade.
 
-Use this rather than rolling a `reqwest::Client` per call site —
+Use this rather than rolling a `reqwest::Client` per call site --
 the extra middleware (retry, optional auth header, tracing span)
 matters at production scale.
 
@@ -34,17 +34,17 @@ different auth).
 
 ## What the middleware stack gives you
 
-- **Retry** with exponential backoff and jitter — only retries on
+- **Retry** with exponential backoff and jitter -- only retries on
   network errors and 5xx responses (4xx never retries).
 - **Configurable timeout** at the request level (default 30s).
-- **Connection pooling** — one pool per `HttpClient` instance. Don't
+- **Connection pooling** -- one pool per `HttpClient` instance. Don't
   rebuild the client per call.
 - **`User-Agent` header** identifying the service + version
   automatically.
-- **Tracing span** per request — propagates the current `traceparent`
+- **Tracing span** per request -- propagates the current `traceparent`
   if `transport-trace` is on.
 
-Per-host concurrency cap (bulkhead) — set via config so one slow
+Per-host concurrency cap (bulkhead) -- set via config so one slow
 downstream can't saturate the connection pool.
 
 ---
@@ -67,7 +67,7 @@ http_client:
 ```
 
 `http_client.retry.max_attempts: 0` disables retries (use the underlying
-`reqwest::Client` directly for that — `.client()` exposes it).
+`reqwest::Client` directly for that -- `.client()` exposes it).
 
 ---
 
@@ -86,7 +86,7 @@ http_client:
 
 For requests that need more than the helpers cover (custom headers,
 streaming bodies, multipart), reach through `.client()` and use the
-middleware-wrapped reqwest API directly — you still get retry, timeout,
+middleware-wrapped reqwest API directly -- you still get retry, timeout,
 tracing.
 
 ---
@@ -95,19 +95,19 @@ tracing.
 
 | Need | Use |
 |------|-----|
-| Outbound HTTP from a service | `HttpClient` — always |
+| Outbound HTTP from a service | `HttpClient` -- always |
 | Outbound HTTP from a one-shot CLI tool | `HttpClient` with smaller pool config, or plain `reqwest` for trivial cases |
 | Streaming download | `.client().get(...).send().await?.bytes_stream()` |
-| Webhook receiver | Different concern — that's [HTTP-SERVER](HTTP-SERVER.md) |
-| gRPC | Different concern — see [../transport/BACKENDS.md](../transport/BACKENDS.md) |
+| Webhook receiver | Different concern -- that's [HTTP-SERVER](HTTP-SERVER.md) |
+| gRPC | Different concern -- see [../transport/BACKENDS.md](../transport/BACKENDS.md) |
 
 ---
 
 ## Related
 
-- [HTTP-SERVER.md](HTTP-SERVER.md) — sibling for inbound HTTP
-- [../core-pillars/TRACING.md](../core-pillars/TRACING.md) — span / traceparent propagation
-- [../core-pillars/METRICS.md](../core-pillars/METRICS.md) — per-host request metrics
-- [../AUTO-WIRING.md](../AUTO-WIRING.md) — singleton model
-- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) — `http`
+- [HTTP-SERVER.md](HTTP-SERVER.md) -- sibling for inbound HTTP
+- [../core-pillars/TRACING.md](../core-pillars/TRACING.md) -- span / traceparent propagation
+- [../core-pillars/METRICS.md](../core-pillars/METRICS.md) -- per-host request metrics
+- [../AUTO-WIRING.md](../AUTO-WIRING.md) -- singleton model
+- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) -- `http`
 - Source: [../../src/http_client/](../../src/http_client/)

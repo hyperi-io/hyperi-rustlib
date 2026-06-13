@@ -83,6 +83,25 @@ mod kafka_env {
     }
 
     #[test]
+    fn test_kafka_from_env_group_instance_id() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        // Set; canonically the pod name.
+        let _guard = EnvGuard::new(&[("KAFKA_GROUP_INSTANCE_ID", "pod-7")]);
+        assert_eq!(
+            KafkaConfig::from_env_standard().group_instance_id,
+            Some("pod-7".to_string())
+        );
+    }
+
+    #[test]
+    fn test_kafka_group_instance_id_unset_by_default() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvGuard::new(&[("KAFKA_BOOTSTRAP_SERVERS", "b:9092")]);
+        // Opt-in: absent env -> dynamic membership.
+        assert_eq!(KafkaConfig::from_env_standard().group_instance_id, None);
+    }
+
+    #[test]
     fn test_kafka_from_env_legacy_brokers() {
         let _lock = ENV_LOCK.lock().unwrap();
         let _guard = EnvGuard::new(&[

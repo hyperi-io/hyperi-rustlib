@@ -76,27 +76,29 @@ pub struct FilteredDlqEntry {
 
 /// Result of partitioning a batch of messages through inbound filters.
 ///
-/// Returned from `TransportFilterEngine::partition_batch()`. Contains:
-/// - `messages`: messages that passed all filters (or had no filter match)
-/// - `dlq_entries`: messages matched by a filter with `action: dlq`. The
-///   caller is responsible for routing these to a DLQ -- the engine does
-///   NOT send to DLQ directly (transports don't have DLQ handles).
-/// - `drop_count`: count of messages matched by `action: drop` filters
-///
-/// Drop and DLQ messages are removed from `messages` -- the caller only
-/// processes `messages` for normal pipeline work, and `dlq_entries`
-/// for DLQ routing.
+/// Drop and DLQ messages are removed from `messages`; their commit tokens are
+/// preserved in `filtered_tokens`. The engine does NOT send to DLQ directly
+/// (transports hold no DLQ handle) -- the caller routes `dlq_entries`.
 #[derive(Debug)]
-pub struct FilteredBatch<T> {
+pub struct FilteredBatch<T, K> {
     /// Messages that passed all filters.
     pub messages: Vec<T>,
     /// Messages matched by filters with `action: dlq`. Caller routes to DLQ.
     pub dlq_entries: Vec<FilteredDlqEntry>,
     /// Count of messages dropped (matched by `action: drop` filters).
     pub drop_count: u64,
+    /// Commit tokens of the messages removed by `drop`/`dlq` filters.
+    ///
+    /// A filtered record WAS handled, so its source ack must still commit.
+    /// Dropping these tokens stalls the Kafka offset behind any all-filtered
+    /// stretch (replay storms + phantom KEDA lag) and leaks the Redis PEL
+    /// forever (unbounded growth + duplicate dead-letters on every restart). The
+    /// caller carries them into `WorkBatch.commit_tokens` so the block commit
+    /// covers them once inbound-DLQ routing succeeds.
+    pub filtered_tokens: Vec<K>,
 }
 
-impl<T> FilteredBatch<T> {
+impl<T, K> FilteredBatch<T, K> {
     /// Create a `FilteredBatch` containing only passing messages (no filtering).
     /// Used when there are no inbound filters configured.
     #[must_use]
@@ -105,6 +107,7 @@ impl<T> FilteredBatch<T> {
             messages,
             dlq_entries: Vec::new(),
             drop_count: 0,
+            filtered_tokens: Vec::new(),
         }
     }
 }
@@ -113,7 +116,7 @@ impl<T> FilteredBatch<T> {
 ///
 /// Embedded in every transport. Compiled from config at construction time.
 /// Zero-cost when no filters are configured (`filters_in` and `filters_out`
-/// are empty vecs → `has_inbound_filters()` returns false, branch predicted).
+/// are empty vecs -> `has_inbound_filters()` returns false, branch predicted).
 pub struct TransportFilterEngine {
     filters_in: Vec<CompiledFilter>,
     filters_out: Vec<CompiledFilter>,
@@ -255,38 +258,40 @@ impl TransportFilterEngine {
 
     /// Partition a batch of messages through inbound filters.
     ///
-    /// This is the recommended API for transports -- it returns a
-    /// `FilteredBatch` containing both passing messages AND DLQ entries.
-    /// The transport's caller routes DLQ entries via its own DLQ handle.
+    /// The recommended transport API: returns a `FilteredBatch` with passing
+    /// messages AND DLQ entries (the caller routes DLQ via its own handle).
+    /// Drop and DLQ messages are removed from `messages`; never silently lost.
     ///
-    /// Two-pass: classify each message, then partition. Drop and DLQ
-    /// messages are removed from `messages`. The function never silently
-    /// loses DLQ-classified messages.
-    ///
-    /// # Type parameter
-    ///
-    /// `T` is the message type (e.g., `Message<KafkaToken>`). The function
-    /// uses a closure to extract the payload bytes and key from each message,
-    /// avoiding tight coupling to a specific message struct.
-    pub fn partition_batch<T>(
+    /// `T` is the message type, `K` its commit token. The closures extract
+    /// payload/key/token, avoiding coupling to a specific message struct.
+    /// `get_token` runs only for removed messages, so their source acks survive
+    /// into [`FilteredBatch::filtered_tokens`].
+    pub fn partition_batch<T, K>(
         &self,
         messages: Vec<T>,
         get_payload: impl Fn(&T) -> &[u8],
         get_key: impl Fn(&T) -> Option<std::sync::Arc<str>>,
-    ) -> FilteredBatch<T> {
+        get_token: impl Fn(&T) -> K,
+    ) -> FilteredBatch<T, K> {
         if !self.has_inbound_filters() {
             return FilteredBatch::passthrough(messages);
         }
 
         let mut passing = Vec::with_capacity(messages.len());
         let mut dlq_entries: Vec<FilteredDlqEntry> = Vec::new();
+        let mut filtered_tokens: Vec<K> = Vec::new();
         let mut drop_count: u64 = 0;
 
         for msg in messages {
             let payload = get_payload(&msg);
             match self.apply_inbound(payload) {
                 FilterDisposition::Pass => passing.push(msg),
-                FilterDisposition::Drop => drop_count += 1,
+                FilterDisposition::Drop => {
+                    // Intentionally discarded, but it WAS handled: keep its ack
+                    // so the source offset advances past it.
+                    filtered_tokens.push(get_token(&msg));
+                    drop_count += 1;
+                }
                 FilterDisposition::Dlq => {
                     let key = get_key(&msg);
                     dlq_entries.push(FilteredDlqEntry {
@@ -294,6 +299,10 @@ impl TransportFilterEngine {
                         key,
                         reason: "transport filter".to_string(),
                     });
+                    // Routed to DLQ: keep its ack so the block commit covers it
+                    // once DLQ routing succeeds (a routing failure is terminal
+                    // and skips the whole commit, so re-delivery still holds).
+                    filtered_tokens.push(get_token(&msg));
                 }
             }
         }
@@ -302,6 +311,7 @@ impl TransportFilterEngine {
             messages: passing,
             dlq_entries,
             drop_count,
+            filtered_tokens,
         }
     }
 
@@ -469,6 +479,82 @@ mod tests {
     }
 
     #[test]
+    fn partition_batch_carries_filtered_tokens() {
+        // Dropped AND DLQ'd messages must surface their commit tokens in
+        // filtered_tokens, so the caller can still advance the source past
+        // them (no stalled Kafka offset / leaked Redis PEL on filtered records).
+        struct M {
+            payload: Vec<u8>,
+            token: u64,
+        }
+        let rules = vec![
+            FilterRule {
+                expression: r#"status == "drop_me""#.into(),
+                action: FilterAction::Drop,
+            },
+            FilterRule {
+                expression: r#"status == "dlq_me""#.into(),
+                action: FilterAction::Dlq,
+            },
+        ];
+        let engine =
+            TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
+
+        let messages = vec![
+            M {
+                payload: br#"{"status":"ok"}"#.to_vec(),
+                token: 1,
+            },
+            M {
+                payload: br#"{"status":"drop_me"}"#.to_vec(),
+                token: 2,
+            },
+            M {
+                payload: br#"{"status":"dlq_me"}"#.to_vec(),
+                token: 3,
+            },
+            M {
+                payload: br#"{"status":"ok"}"#.to_vec(),
+                token: 4,
+            },
+        ];
+
+        let batch =
+            engine.partition_batch(messages, |m| m.payload.as_slice(), |_m| None, |m| m.token);
+
+        // Passing messages keep tokens 1 and 4.
+        assert_eq!(batch.messages.len(), 2);
+        assert_eq!(batch.messages[0].token, 1);
+        assert_eq!(batch.messages[1].token, 4);
+        assert_eq!(batch.drop_count, 1);
+        assert_eq!(batch.dlq_entries.len(), 1);
+        // Dropped (2) and DLQ'd (3) tokens are preserved for the block commit.
+        let mut filtered = batch.filtered_tokens.clone();
+        filtered.sort_unstable();
+        assert_eq!(filtered, vec![2, 3]);
+    }
+
+    #[test]
+    fn partition_batch_passthrough_has_no_filtered_tokens() {
+        // No inbound filters -> every message passes, nothing filtered.
+        struct M {
+            payload: Vec<u8>,
+            token: u64,
+        }
+        let engine =
+            TransportFilterEngine::new(&[], &[], &TransportFilterTierConfig::default()).unwrap();
+        let messages = vec![M {
+            payload: br#"{"status":"ok"}"#.to_vec(),
+            token: 1,
+        }];
+        let batch =
+            engine.partition_batch(messages, |m| m.payload.as_slice(), |_m| None, |m| m.token);
+        assert_eq!(batch.messages.len(), 1);
+        assert!(batch.filtered_tokens.is_empty());
+        assert_eq!(batch.drop_count, 0);
+    }
+
+    #[test]
     fn engine_first_match_wins() {
         let rules = vec![
             FilterRule {
@@ -482,7 +568,7 @@ mod tests {
         ];
         let engine =
             TransportFilterEngine::new(&rules, &[], &TransportFilterTierConfig::default()).unwrap();
-        // First filter matches → Drop, not Dlq
+        // First filter matches -- Drop, not Dlq
         assert_eq!(
             engine.apply_inbound(br#"{"status":"drop_me"}"#),
             FilterDisposition::Drop

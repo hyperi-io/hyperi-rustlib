@@ -15,8 +15,8 @@ use std::future::Future;
 
 /// Transport-specific token for commit/acknowledgment.
 ///
-/// Each transport implementation provides its own token type that
-/// captures the information needed to acknowledge message processing.
+/// Each transport provides its own token type capturing what it needs to
+/// acknowledge message processing.
 pub trait CommitToken: Clone + Send + Sync + Debug + Display + 'static {
     /// Get a string representation for logging/debugging.
     fn as_str(&self) -> String {
@@ -26,17 +26,22 @@ pub trait CommitToken: Clone + Send + Sync + Debug + Display + 'static {
 
 /// Result of a [`TransportReceiver::recv`] call.
 ///
-/// Carries the messages that passed inbound filtering AND any entries those
-/// filters routed to DLQ, so a caller cannot accidentally lose dead-letters by
-/// forgetting a separate drain step (the previous two-call
-/// `recv()` + `take_filtered_dlq_entries()` contract). The caller routes
-/// `dlq_entries` onward via its own DLQ handle.
+/// Carries passing messages AND any filter-routed DLQ entries in one struct, so
+/// a caller cannot lose dead-letters by forgetting a separate drain step. The
+/// caller routes `dlq_entries` onward via its own DLQ handle.
 #[derive(Debug)]
 pub struct RecvBatch<T: CommitToken> {
     /// Messages that passed all inbound filters (or had no filter match).
     pub messages: Vec<Message<T>>,
     /// Entries matched by `action: dlq` inbound filters. Caller routes to DLQ.
     pub dlq_entries: Vec<FilteredDlqEntry>,
+    /// Commit tokens of messages removed by inbound `drop`/`dlq` filters.
+    ///
+    /// Handled records that produced no passing message. Carried into
+    /// `WorkBatch.commit_tokens` so the block commit advances the source past
+    /// them -- otherwise an all-filtered stretch stalls the Kafka offset /
+    /// leaks the Redis PEL.
+    pub filtered_tokens: Vec<T>,
 }
 
 impl<T: CommitToken> RecvBatch<T> {
@@ -46,6 +51,7 @@ impl<T: CommitToken> RecvBatch<T> {
         Self {
             messages: Vec::new(),
             dlq_entries: Vec::new(),
+            filtered_tokens: Vec::new(),
         }
     }
 
@@ -55,13 +61,15 @@ impl<T: CommitToken> RecvBatch<T> {
         Self {
             messages,
             dlq_entries: Vec::new(),
+            filtered_tokens: Vec::new(),
         }
     }
 
-    /// Whether the batch has no messages (DLQ entries may still be present).
+    /// Whether the batch has no messages AND no filtered-only acks to commit.
+    /// (DLQ entries may still be present alongside passing messages.)
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.messages.is_empty()
+        self.messages.is_empty() && self.filtered_tokens.is_empty()
     }
 
     /// Number of passing messages.
@@ -71,10 +79,7 @@ impl<T: CommitToken> RecvBatch<T> {
     }
 }
 
-/// Common transport operations shared by senders and receivers.
-///
-/// Every transport implementation provides these lifecycle and
-/// introspection methods regardless of direction.
+/// Lifecycle and introspection methods shared by senders and receivers.
 pub trait TransportBase: Send + Sync {
     /// Shutdown the transport gracefully.
     fn close(&self) -> impl Future<Output = TransportResult<()>> + Send;
@@ -88,11 +93,9 @@ pub trait TransportBase: Send + Sync {
 
 /// Send-side transport.
 ///
-/// Extends `TransportBase` with send capability. The factory returns
-/// `AnySender` (enum dispatch) for runtime transport selection.
-///
-/// All implementations auto-emit `dfe_transport_*` Prometheus metrics
-/// when a `MetricsManager` recorder is installed.
+/// The factory returns `AnySender` (enum dispatch) for runtime selection. All
+/// implementations auto-emit `dfe_transport_*` metrics when a `MetricsManager`
+/// recorder is installed.
 pub trait TransportSender: TransportBase {
     /// Send raw bytes to a key/destination.
     ///
@@ -108,35 +111,40 @@ pub trait TransportSender: TransportBase {
     /// Send a whole block of [`Record`]s in one shot.
     ///
     /// The default sends each record individually via [`send`](Self::send),
-    /// using the record's own `key` (empty string when `None`) and its payload
-    /// `Bytes` (a refcount bump, not a copy). Transports with a native batch RPC
-    /// (e.g. gRPC's `RouteBatch`) override this to send the whole block in a
-    /// single call -- serde-less and round-trip-cheaper.
-    ///
-    /// Commit tokens and inline-DLQ entries are NOT sent: they are the SENDER's
-    /// local concern. Pass the records (e.g. `&workbatch.records`) and fire the
-    /// commit tokens locally after this returns [`SendResult::Ok`].
+    /// using the record's own `key` (empty when `None`) and payload (a refcount
+    /// bump, not a copy). Transports with a native batch RPC (e.g. gRPC's
+    /// `RouteBatch`) override this. Commit tokens and inline-DLQ entries are NOT
+    /// sent -- they are the SENDER's local concern; fire the commit tokens
+    /// locally after this returns [`SendResult::Ok`].
     ///
     /// ## At-least-once caveat -- per-record fallback can partially send
     ///
-    /// The default is NOT atomic. If record `k` of `n` returns a non-`Ok`
-    /// result, records `0..k` are already on the wire and this returns that
-    /// first non-`Ok` result WITHOUT unsending them. The caller treats the whole
-    /// block as not-yet-committed and retries it; the already-sent prefix is
-    /// re-delivered (at-least-once -- duplicates, never loss). A `Backpressured`
-    /// or `Fatal` short-circuits (no further records are attempted) so the caller
-    /// retries the remainder rather than skipping past a transient failure. A
-    /// native batch override (gRPC) avoids the partial-send window entirely: the
-    /// whole block is one RPC, accepted or not.
+    /// Not atomic. If record `k` of `n` returns a transient non-`Ok`
+    /// (`Backpressured`/`Fatal`), records `0..k` are already on the wire and
+    /// this returns without unsending them. The caller retries the whole block,
+    /// re-delivering the sent prefix (at-least-once -- duplicates, never loss).
+    /// A native batch override (gRPC) sends the whole block as one RPC, avoiding
+    /// the partial-send window.
+    ///
+    /// ## Outbound-filter dispositions do NOT abort the batch
+    ///
+    /// A per-record `FilteredDlq` is the record being HANDLED, not a send
+    /// failure: skip it and continue. Returning it would make the caller retry
+    /// the whole block forever -- the deterministic filter re-matches the same
+    /// record every time (a livelock that stalls the source). `Drop` records
+    /// likewise never reach the wire. Only `Backpressured`/`Fatal`
+    /// short-circuit.
     fn send_batch(&self, records: &[Record]) -> impl Future<Output = SendResult> + Send {
         async move {
             for record in records {
                 let key = record.key.as_deref().unwrap_or("");
-                let result = self.send(key, record.payload.clone()).await;
-                if !result.is_ok() {
-                    // Backpressured / Fatal / FilteredDlq -- stop here so the
-                    // caller retries the (unconfirmed) remainder of the block.
-                    return result;
+                match self.send(key, record.payload.clone()).await {
+                    // Sent, dropped (Ok), or suppressed by an outbound dlq
+                    // filter -- all handled; keep going, do NOT abort the block.
+                    SendResult::Ok | SendResult::FilteredDlq => {}
+                    // Transient/fatal transport failure: stop so the caller
+                    // retries the unconfirmed remainder of the block.
+                    other @ (SendResult::Backpressured | SendResult::Fatal(_)) => return other,
                 }
             }
             SendResult::Ok
@@ -146,35 +154,28 @@ pub trait TransportSender: TransportBase {
 
 /// Limits for a single byte-aware [`TransportReceiver::recv_limited`] poll.
 ///
-/// A bare [`recv`](TransportReceiver::recv) takes only a RECORD cap, so a single
-/// poll can build a [`WorkBatch`] whose total bytes are arbitrarily larger than
-/// any memory budget (and, for the Kafka recv-arena, allocate one arena for the
-/// whole poll). `RecvLimits` adds the missing BYTE bound: the governed driver
-/// passes the self-regulation byte budget here so a single governed recv never
-/// retains more than `max_bytes` (plus the one-oversized-record floor) of
-/// inbound payload before the sub-block split runs.
-///
-/// `max_records` is the existing poll-safety record cap (a tiny-record flood
-/// cannot blow the count even within the byte budget). `max_bytes` is the new
-/// payload-bytes ceiling for the poll.
+/// A bare [`recv`](TransportReceiver::recv) takes only a RECORD cap, so one poll
+/// can build a [`WorkBatch`] arbitrarily larger than any memory budget.
+/// `RecvLimits` adds the BYTE bound: the governed driver passes its
+/// self-regulation byte budget here so a single recv never retains more than
+/// `max_bytes` (plus the one-oversized-record floor) before the sub-block split.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecvLimits {
-    /// Hard cap on the number of records returned by one poll (`>= 1`).
+    /// Hard cap on records per poll (`>= 1`). Bounds a tiny-record flood that
+    /// stays within the byte budget.
     pub max_records: usize,
-    /// Soft cap on the SUM of `payload.len()` returned by one poll. A transport
-    /// that has accumulated at least one record stops draining once the
-    /// accumulated payload bytes reach this value, so the poll never retains
-    /// more than `max_bytes + one oversized record`. A transport with no
-    /// byte-aware drain (the default impl) ignores this and bounds by
-    /// `max_records` only.
+    /// Soft cap on the SUM of `payload.len()` per poll. A transport that has
+    /// accumulated at least one record stops draining once payload bytes reach
+    /// this value (so it retains at most `max_bytes + one oversized record`).
+    /// The default impl has no byte-aware drain and bounds by `max_records`
+    /// only.
     pub max_bytes: u64,
 }
 
 /// Receive-side transport -- generic over commit token type.
 ///
-/// Extends `TransportBase` with receive and commit capability.
-/// Input stages (receiver, fetcher) use concrete implementations
-/// directly for type-safe token handling.
+/// Input stages (receiver, fetcher) use concrete implementations directly for
+/// type-safe token handling.
 pub trait TransportReceiver: TransportBase {
     /// The token type for this transport.
     type Token: CommitToken;
@@ -201,6 +202,16 @@ pub trait TransportReceiver: TransportBase {
     /// }
     /// for record in batch.records { /* process */ }
     /// ```
+    ///
+    /// # Cancel-safety (REQUIRED of implementors)
+    ///
+    /// The governed run loop polls `recv()` inside a `tokio::select!` and DROPS
+    /// the future when shutdown or a ticker wins, so it must not leave records
+    /// half-consumed at an `.await` -- either gather records synchronously (no
+    /// `.await` between taking a record off the wire and returning it) or buffer
+    /// internally. The in-tree Kafka (synchronous poll) and memory (awaits only
+    /// on an empty buffer) impls satisfy this; a custom impl that holds records
+    /// across an `.await` will drop data on cancellation.
     fn recv(
         &self,
         max: usize,
@@ -209,22 +220,18 @@ pub trait TransportReceiver: TransportBase {
     /// Byte-aware receive: bound a single poll by BOTH a record cap and a
     /// payload-byte cap (see [`RecvLimits`]).
     ///
-    /// This is the receive limit the governed driver uses so the
-    /// self-regulation byte budget actually constrains RECEIVE memory -- not
-    /// just the post-recv sub-block lease. A single poll retains at most
-    /// `limits.max_bytes` of payload (plus one oversized record under the
-    /// floor), so the in-flight inbound footprint is bounded BEFORE the
-    /// sub-block split, never after.
+    /// The governed driver uses this so the self-regulation byte budget bounds
+    /// RECEIVE memory, not just the post-recv sub-block lease: a poll retains at
+    /// most `limits.max_bytes` of payload (plus one oversized record), so the
+    /// inbound footprint is bounded BEFORE the sub-block split, never after.
     ///
     /// **Default impl:** falls back to [`recv`](Self::recv)`(limits.max_records)`
-    /// -- record-bounded only, byte cap ignored. This keeps every transport
-    /// green with no churn; only transports that buffer a whole poll's bytes in
-    /// one allocation (Kafka's recv-arena) override it to honour `max_bytes`.
+    /// -- record-bounded only, byte cap ignored. Only transports that buffer a
+    /// whole poll's bytes in one allocation (Kafka's recv-arena) override it.
     /// Channel/stream transports (Memory, gRPC, ...) already retain only one
-    /// record's bytes at a time, so the record-bounded fallback is correct for
-    /// them.
+    /// record's bytes at a time, so the fallback is correct for them.
     ///
-    /// Filter behaviour and the `commit_tokens` contract are identical to
+    /// Filter behaviour and the `commit_tokens` contract match
     /// [`recv`](Self::recv).
     fn recv_limited(
         &self,
@@ -245,9 +252,8 @@ pub trait TransportReceiver: TransportBase {
 
 /// Combined transport -- implements both send and receive.
 ///
-/// Convenience trait for transports that support bidirectional communication.
-/// Most concrete implementations (Kafka, gRPC, Memory, Redis, File, Pipe)
-/// implement this. Automatically implemented via blanket impl.
+/// Most concrete impls (Kafka, gRPC, Memory, Redis, File, Pipe) qualify;
+/// auto-implemented via blanket impl.
 pub trait Transport: TransportSender + TransportReceiver {}
 
 /// Blanket impl: anything that implements both traits is a Transport.
@@ -255,11 +261,9 @@ impl<T: TransportSender + TransportReceiver> Transport for T {}
 
 /// Load a transport config from the cascade under a fixed key.
 ///
-/// Consolidates the byte-identical `from_cascade()` bodies that each transport
-/// config previously repeated (try the cascade under a key, register the
-/// section, fall back to `Default`). Implementors only name their key; the
-/// loading logic lives here once. Without the `config` feature the default
-/// method just returns `Default::default()`.
+/// Consolidates the byte-identical `from_cascade()` bodies each transport config
+/// used to repeat. Implementors only name their key. Without the `config`
+/// feature the default method returns `Default::default()`.
 pub trait FromCascade: Default + serde::Serialize + serde::de::DeserializeOwned + 'static {
     /// Load `Self` from the config cascade under `key`, registering the section
     /// in the global registry; falls back to `Default` if the cascade is

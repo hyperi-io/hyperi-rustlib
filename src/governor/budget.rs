@@ -31,12 +31,12 @@
 //!
 //! [`record_cap`]: ByteBudgetController::record_cap
 //!
-//! It starts BIG (`start_bytes`) and lets the decrease loop find the
-//! right level, rather than starting small and ramping -- a cold pipeline
-//! should not be artificially throttled.
+//! Starts BIG (`start_bytes`) and lets the decrease loop find the right
+//! level, rather than starting small and ramping -- a cold pipeline should
+//! not be artificially throttled.
 //!
-//! Additive and default-off (the `governor` feature). NOT wired into any
-//! driver or recv loop here; that lands in a later phase.
+//! Gated behind the `governor` feature; folded per block by
+//! [`run_governed`](crate::worker::BatchEngine::run_governed) (default-on).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

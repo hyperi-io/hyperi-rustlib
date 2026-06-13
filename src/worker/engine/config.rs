@@ -77,7 +77,7 @@ pub struct BatchProcessingConfig {
     #[serde(default = "default_parse_error_action")]
     pub parse_error_action: ParseErrorAction,
 
-    /// Fields to pre-extract into [`super::types::ParsedMessage::Parsed::extracted`]
+    /// Fields to pre-extract into [`super::types::ParsedMessage::extracted`]
     /// for fast routing lookups.
     ///
     /// Extracting these at parse time avoids repeated `value.get()` traversals

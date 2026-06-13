@@ -881,7 +881,7 @@ mod tests {
         shutdown.cancel();
     }
 
-    /// Codex F2 regression: drain returning Err means flush() returns
+    /// Regression: drain returning Err means flush() returns
     /// Err. The ack must carry the drain error, not silently `Ok(())`.
     #[tokio::test]
     async fn flush_surfaces_drain_write_failure() {
@@ -899,7 +899,7 @@ mod tests {
         shutdown.cancel();
     }
 
-    /// Codex F2 regression: drain accepts writes but flush_durable
+    /// Regression: drain accepts writes but flush_durable
     /// fails -- flush() must surface the durable failure.
     #[tokio::test]
     async fn flush_surfaces_flush_durable_failure() {

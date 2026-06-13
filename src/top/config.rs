@@ -32,7 +32,8 @@ pub struct TopConfig {
     /// Output mode (TUI, once, or JSON).
     pub output_mode: TopOutputMode,
 
-    /// Optional regex filter for metric names.
+    /// Optional metric-name filter: substring match, or `.*` wildcards
+    /// with `^`/`$` anchors. Not a full regex.
     pub filter: Option<String>,
 }
 

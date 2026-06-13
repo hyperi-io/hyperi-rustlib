@@ -33,12 +33,18 @@ impl VectorCompatClient {
     ///
     /// Returns error if the endpoint URI is invalid.
     pub fn connect_lazy(endpoint: &str) -> TransportResult<Self> {
+        // Bound the response decode size. `usize::MAX` contradicts the never-OOM
+        // doctrine -- even a (trusted) Vector server response should not be able
+        // to drive an unbounded allocation. 64 MiB is far above any real ack
+        // response and matches the generous end of the transport size envelope.
+        const MAX_DECODE_BYTES: usize = 64 * 1024 * 1024;
+
         let channel = tonic::transport::Channel::from_shared(endpoint.to_string())
             .map_err(|e| TransportError::Config(format!("invalid Vector endpoint: {e}")))?
             .connect_lazy();
 
         let client = vector::vector_client::VectorClient::new(channel)
-            .max_decoding_message_size(usize::MAX)
+            .max_decoding_message_size(MAX_DECODE_BYTES)
             .accept_compressed(tonic::codec::CompressionEncoding::Gzip)
             .send_compressed(tonic::codec::CompressionEncoding::Gzip);
 

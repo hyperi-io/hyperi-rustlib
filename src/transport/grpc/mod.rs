@@ -84,6 +84,11 @@ pub struct GrpcTransport {
     /// Per-RPC send deadline (milliseconds, 0 = none).
     send_timeout_ms: u64,
 
+    /// tonic's max encoded message size. A batch over this fails the RPC with
+    /// an unretryable `OutOfRange`; we pre-check against it to reject early with
+    /// an actionable error instead.
+    max_message_size: usize,
+
     /// In-flight send count (for metrics).
     #[cfg(feature = "metrics")]
     inflight: AtomicU64,
@@ -94,9 +99,9 @@ pub struct GrpcTransport {
 
 /// Build a tonic `ClientTlsConfig` from the unified TLS fields on `GrpcConfig`.
 ///
-/// tonic owns its TLS stack (like librdkafka), so this maps the unified
-/// `TlsTrust` vocabulary onto `ClientTlsConfig`: private-CA PEM (else OS native
-/// roots), optional SNI domain override, and optional mTLS client identity.
+/// tonic owns its TLS stack (like librdkafka), so map `TlsTrust` onto
+/// `ClientTlsConfig`: private-CA PEM (else OS native roots), optional SNI
+/// override, optional mTLS client identity.
 fn build_grpc_client_tls(
     config: &GrpcConfig,
 ) -> TransportResult<tonic::transport::ClientTlsConfig> {
@@ -164,12 +169,11 @@ impl GrpcTransport {
     /// Create a gRPC transport bound to a pressure governor (G3, `governor`
     /// feature).
     ///
-    /// Identical to [`new`](Self::new) except the receive server consults
-    /// `pressure` BEFORE enqueuing each inbound Push / batch record: while
+    /// Like [`new`](Self::new), but the receive server consults `pressure`
+    /// before enqueuing each inbound Push / batch record: while
     /// [`UnifiedPressure::should_hold`](crate::governor::UnifiedPressure::should_hold)
     /// holds, the RPC is rejected with `Status::unavailable` (the gRPC analogue
-    /// of HTTP 503, matching the existing channel-full backpressure mapping).
-    /// Passing `None` is exactly equivalent to [`new`](Self::new).
+    /// of HTTP 503). `None` is equivalent to [`new`](Self::new).
     ///
     /// # Errors
     ///
@@ -266,13 +270,10 @@ impl GrpcTransport {
             #[cfg(not(feature = "transport-grpc-vector-compat"))]
             let router = builder.add_service(dfe_server);
 
-            // Bind the listener synchronously BEFORE spawning the serve task.
-            // Once `TcpListener::bind` returns the OS socket is listening and
-            // queues incoming connections, so `new()` returning is a true
-            // readiness signal -- callers (and their tests) can connect
-            // immediately with no polling. `serve_with_shutdown(addr, ..)`
-            // bound inside the spawned task, which made `new()` return before
-            // the socket existed and forced every consumer to poll the port.
+            // Bind the listener synchronously BEFORE spawning the serve task,
+            // so `new()` returning is a true readiness signal -- callers connect
+            // immediately, no polling. Binding inside the spawned task let
+            // `new()` return before the socket existed.
             let listener = tokio::net::TcpListener::bind(addr)
                 .await
                 .map_err(|e| TransportError::Config(format!("failed to bind {addr}: {e}")))?;
@@ -291,7 +292,7 @@ impl GrpcTransport {
             server_handle = Some(handle);
         } else {
             // No receive server -> nothing to attach the governor to. Consume
-            // it so the param stays uniform with no unused-variable warning.
+            // it to silence the unused-variable warning.
             #[cfg(feature = "governor")]
             let _ = pressure;
         }
@@ -325,6 +326,7 @@ impl GrpcTransport {
             healthy,
             recv_timeout_ms: config.recv_timeout_ms,
             send_timeout_ms: config.send_timeout_ms,
+            max_message_size: config.max_message_size,
             #[cfg(feature = "metrics")]
             inflight: AtomicU64::new(0),
             filter_engine,
@@ -358,23 +360,21 @@ impl TransportSender for GrpcTransport {
             metadata.insert("topic".to_string(), key.to_string());
         }
 
-        // Inject W3C traceparent into gRPC metadata for distributed tracing
+        // Inject W3C traceparent into gRPC metadata.
         #[cfg(feature = "transport-trace")]
         if let Some(tp) = super::propagation::current_traceparent() {
             metadata.insert(super::propagation::TRACEPARENT_HEADER.to_string(), tp);
         }
 
         let mut request = tonic::Request::new(proto::PushRequest {
-            // `payload` is already `bytes::Bytes` and the proto field is now
-            // `Bytes` too (`.bytes(".")` in build.rs) -- move the handle, no copy.
+            // proto field is `Bytes` (`.bytes(".")` in build.rs) -- move, no copy.
             payload,
             format: proto::Format::Auto.into(),
             metadata,
         });
 
         // Bound the RPC so a hung/black-holing server cannot wedge the sender
-        // task forever. Sent as the grpc-timeout header; the server aborts and
-        // the client surfaces Code::DeadlineExceeded when it elapses.
+        // task forever. Sent as the grpc-timeout header.
         if self.send_timeout_ms > 0 {
             request.set_timeout(std::time::Duration::from_millis(self.send_timeout_ms));
         }
@@ -393,9 +393,8 @@ impl TransportSender for GrpcTransport {
                 SendResult::Ok
             }
             Err(status) => match status.code() {
-                // DeadlineExceeded = our send_timeout_ms fired (slow/hung server).
-                // Transient -- treat as backpressure so the caller retries rather
-                // than dropping the message.
+                // Transient -- backpressure so the caller retries, not drop.
+                // DeadlineExceeded = send_timeout_ms fired (slow/hung server).
                 tonic::Code::Unavailable
                 | tonic::Code::ResourceExhausted
                 | tonic::Code::DeadlineExceeded => {
@@ -436,32 +435,26 @@ impl TransportSender for GrpcTransport {
 
     /// Send a whole batch of records in ONE `RouteBatch` RPC (Task 0.6).
     ///
-    /// The native batch override of [`TransportSender::send_batch`]: serde-less
-    /// rustlib<->rustlib transfer. The records map to a proto
-    /// [`Batch`](proto::Batch) via [`batch::records_to_proto`] -- payloads travel
-    /// as OPAQUE `bytes` and the JSON / MsgPack codec is NEVER invoked in
-    /// transit. The whole batch goes in a single call (batch-at-a-time, NOT
-    /// record-by-record streaming), so unlike the trait's per-record default
-    /// there is no partial-send window: the block is accepted or not as a unit.
+    /// Native batch override of [`TransportSender::send_batch`]: serde-less
+    /// rustlib<->rustlib transfer. Records map to a proto
+    /// [`Batch`](proto::Batch) via [`batch::records_to_proto`]; payloads travel
+    /// as OPAQUE `bytes`, the JSON / MsgPack codec is NEVER invoked in transit.
     ///
-    /// Commit tokens and inline-DLQ entries are NOT sent -- they are the
-    /// SENDER's local concern. Pass the records (e.g. `&workbatch.records`); the
-    /// caller fires its commit tokens locally after this returns `Ok`.
+    /// Commit tokens and inline-DLQ entries are NOT sent -- the SENDER's local
+    /// concern. Pass the records (e.g. `&workbatch.records`); the caller fires
+    /// its commit tokens locally after this returns `Ok`.
     ///
     /// ## Atomic (all-or-nothing) acceptance
     ///
-    /// The server handler reserves receiver-channel capacity for the WHOLE
-    /// batch (one `try_reserve_many`) BEFORE enqueuing any record, so the block
-    /// is accepted or rejected as a unit -- there is genuinely no partial-send
-    /// window. A `Backpressured` result means ZERO records were admitted, so the
-    /// caller safely retries the whole block (at-least-once) with no risk of the
-    /// receiver having kept a prefix on the prior attempt (no duplicate prefix).
+    /// The server reserves channel capacity for the WHOLE batch (one
+    /// `try_reserve_many`) before enqueuing any record -- no partial-send
+    /// window. `Backpressured` means ZERO records were admitted, so the caller
+    /// retries the whole block (at-least-once) with no duplicate prefix.
     ///
     /// # Errors / result
     ///
     /// Returns a [`SendResult`]. `Backpressured` maps the same transient gRPC
-    /// codes as [`send`](TransportSender::send) so the caller retries the whole
-    /// block rather than dropping it (at-least-once).
+    /// codes as [`send`](TransportSender::send).
     async fn send_batch(&self, records: &[Record]) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
@@ -473,12 +466,51 @@ impl TransportSender for GrpcTransport {
             ));
         };
 
+        // Apply outbound filters BEFORE the wire: a record matched by a `drop`
+        // or `dlq` filter must NOT be transmitted. This path once bypassed the
+        // filter entirely -- a record told to drop sailed through.
+        let to_send: Vec<Record> = if self.filter_engine.has_outbound_filters() {
+            let mut keep = Vec::with_capacity(records.len());
+            for r in records {
+                match self.filter_engine.apply_outbound(&r.payload) {
+                    super::filter::FilterDisposition::Pass => keep.push(r.clone()),
+                    super::filter::FilterDisposition::Drop
+                    | super::filter::FilterDisposition::Dlq => {}
+                }
+            }
+            keep
+        } else {
+            records.to_vec()
+        };
+
+        // Everything was filtered out -- nothing to send, batch is "done".
+        if to_send.is_empty() {
+            return SendResult::Ok;
+        }
+        let sent_count = to_send.len();
+
+        // Reject an oversized block early with an actionable error. Over
+        // max_message_size, tonic fails with an opaque OutOfRange that maps to
+        // Fatal and can never succeed on retry; the fix is a smaller block, so
+        // name the limit and point at the byte-budget lever. Payload-only bound
+        // (proto framing adds a little); tonic still backstops the margin.
+        let payload_bytes: usize = to_send.iter().map(|r| r.payload.len()).sum();
+        if payload_bytes > self.max_message_size {
+            #[cfg(feature = "metrics")]
+            metrics::counter!("dfe_transport_oversize_total", "transport" => "grpc").increment(1);
+            return SendResult::Fatal(TransportError::Config(format!(
+                "gRPC batch payload {payload_bytes} bytes exceeds max_message_size \
+                 {} -- lower the self-regulation byte budget below the gRPC limit",
+                self.max_message_size
+            )));
+        }
+
         // Map records -> proto Batch. Payloads are MOVED (Bytes handle), opaque.
-        let proto_batch = batch::records_to_proto(records.to_vec());
+        let proto_batch = batch::records_to_proto(to_send);
 
         let mut request = tonic::Request::new(proto_batch);
 
-        // Inject W3C traceparent into gRPC metadata for distributed tracing.
+        // Inject W3C traceparent into gRPC metadata.
         #[cfg(feature = "transport-trace")]
         if let Some(tp) = super::propagation::current_traceparent()
             && let Ok(val) = tp.parse()
@@ -498,15 +530,36 @@ impl TransportSender for GrpcTransport {
         self.inflight.fetch_add(1, Ordering::Relaxed);
 
         let result = match client.clone().route_batch(request).await {
-            Ok(_) => {
-                #[cfg(feature = "metrics")]
-                metrics::counter!(
-                    "dfe_transport_sent_total",
-                    "transport" => "grpc",
-                    "path" => "batch"
-                )
-                .increment(records.len() as u64);
-                SendResult::Ok
+            Ok(response) => {
+                // Server is all-or-nothing today, but the proto permits partial
+                // acceptance. Treating ANY Ok as full success would fire every
+                // commit token while the receiver kept only a prefix -- silent
+                // loss. Require accepted == sent; a shortfall is retryable
+                // (at-least-once).
+                let accepted = response.into_inner().accepted;
+                if accepted < sent_count as u64 {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!(
+                        "dfe_transport_backpressured_total",
+                        "transport" => "grpc"
+                    )
+                    .increment(1);
+                    tracing::warn!(
+                        accepted,
+                        sent = sent_count,
+                        "gRPC RouteBatch partially accepted -- retrying whole block"
+                    );
+                    SendResult::Backpressured
+                } else {
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!(
+                        "dfe_transport_sent_total",
+                        "transport" => "grpc",
+                        "path" => "batch"
+                    )
+                    .increment(sent_count as u64);
+                    SendResult::Ok
+                }
             }
             Err(status) => match status.code() {
                 tonic::Code::Unavailable
@@ -630,15 +683,20 @@ impl TransportReceiver for GrpcTransport {
 
         // Apply inbound filters via the shared partition helper; DLQ entries
         // are returned in the RecvBatch for the caller to route onward.
-        let batch =
-            self.filter_engine
-                .partition_batch(messages, |m| m.payload.as_ref(), |m| m.key.clone());
+        let batch = self.filter_engine.partition_batch(
+            messages,
+            |m| m.payload.as_ref(),
+            |m| m.key.clone(),
+            |m| m.token.clone(),
+        );
         let messages = batch.messages;
         let dlq_entries = batch.dlq_entries;
+        let filtered_tokens = batch.filtered_tokens;
 
         Ok(RecvBatch {
             messages,
             dlq_entries,
+            filtered_tokens,
         }
         .into())
     }
@@ -667,11 +725,10 @@ impl Drop for GrpcTransport {
 struct DfeTransportServiceImpl {
     sender: mpsc::Sender<Message<GrpcToken>>,
     sequence: Arc<AtomicU64>,
-    /// Optional pressure governor (G3, `governor` feature). `None` by default
-    /// -> the handlers never consult it and behaviour is byte-identical. When
-    /// `Some`, an inbound Push / batch record is rejected with
+    /// Optional pressure governor (G3, `governor` feature). `None` -> handlers
+    /// never consult it. `Some` rejects an inbound Push / batch record with
     /// `Status::unavailable` while [`UnifiedPressure::should_hold`] holds --
-    /// pressure-driven shedding ON TOP of the existing channel-full rejection.
+    /// pressure-driven shedding on top of the channel-full rejection.
     #[cfg(feature = "governor")]
     pressure: Option<Arc<crate::governor::UnifiedPressure>>,
 }
@@ -682,10 +739,8 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
         &self,
         request: Request<proto::PushRequest>,
     ) -> Result<Response<proto::PushResponse>, Status> {
-        // G3 pressure-driven shedding (governor feature, opt-in). BEFORE doing
-        // any work, if a governor is wired and it says hold, reject with
-        // `unavailable` -- the gRPC analogue of HTTP 503, mirroring the
-        // channel-full rejection below. Default `None` -> skipped, unchanged.
+        // G3 pressure shedding: reject before doing any work if the governor
+        // says hold. `unavailable` = the gRPC analogue of HTTP 503.
         #[cfg(feature = "governor")]
         if let Some(pressure) = &self.pressure
             && pressure.should_hold()
@@ -703,7 +758,7 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
         let req = request.into_inner();
         let seq = self.sequence.fetch_add(1, Ordering::Relaxed);
 
-        // Extract W3C traceparent from incoming gRPC metadata for distributed tracing
+        // Extract W3C traceparent from incoming gRPC metadata.
         #[cfg(feature = "transport-trace")]
         if let Some(tp) = req.metadata.get(super::propagation::TRACEPARENT_HEADER)
             && super::propagation::is_valid_traceparent(tp)
@@ -714,8 +769,8 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
         let format = PayloadFormat::detect(&req.payload);
         let key = req.metadata.get("topic").map(|s| Arc::from(s.as_str()));
 
-        // `req.payload` is already prost `Bytes` (`.bytes(".")` in build.rs) --
-        // the decode was zero-copy, so this is a move, not a copy.
+        // `req.payload` is prost `Bytes` (`.bytes(".")`) -- zero-copy decode,
+        // so this is a move not a copy.
         let msg = Message {
             key,
             payload: req.payload,
@@ -763,9 +818,7 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
         &self,
         request: Request<proto::Batch>,
     ) -> Result<Response<proto::BatchAck>, Status> {
-        // G3 pressure-driven shedding (governor feature, opt-in): reject the
-        // whole batch with `unavailable` while pressure holds. Default `None`
-        // -> skipped, byte-identical.
+        // G3 pressure shedding: reject the whole batch while pressure holds.
         #[cfg(feature = "governor")]
         if let Some(pressure) = &self.pressure
             && pressure.should_hold()
@@ -780,8 +833,7 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
             return Err(Status::unavailable("under pressure -- inbound held"));
         }
 
-        // Extract W3C traceparent from incoming gRPC metadata for distributed
-        // tracing, BEFORE consuming the request body.
+        // Extract W3C traceparent BEFORE consuming the request body.
         #[cfg(feature = "transport-trace")]
         if let Some(tp) = request
             .metadata()
@@ -794,24 +846,18 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
 
         let proto_batch = request.into_inner();
 
-        // Decode the proto Batch back into rustlib Records (payloads are
-        // zero-copy `Bytes`; the codec is NOT invoked here). Each record fans
-        // into the SAME mpsc channel the single-message Push path uses, so the
-        // existing recv() path delivers them unchanged.
+        // Decode proto Batch -> rustlib Records (payloads zero-copy `Bytes`,
+        // codec NOT invoked). Records fan into the SAME mpsc channel the
+        // single-message Push path uses, so recv() delivers them unchanged.
         let records = batch::proto_batch_to_records(proto_batch);
         let accepted = records.len() as u64;
 
-        // ATOMICITY (Phase 4): reserve channel capacity for the WHOLE batch up
-        // front via `try_reserve_many`, BEFORE assigning any sequence number or
-        // enqueuing ANY record. If the channel cannot fit the whole block we
-        // reject all-or-nothing -- no record is admitted, so a retry re-sends
-        // the full block with no partial-acceptance / duplicate window. This is
-        // the contract `send_batch`'s doc claims ("the block is accepted or not
-        // as a unit"). The previous per-record `try_send` loop could enqueue
-        // some records then fail mid-batch, stranding a prefix in the channel.
-        //
-        // An empty batch reserves zero permits (a harmless no-op) and the loop
-        // below does not run, matching the prior empty-batch behaviour.
+        // ATOMICITY: reserve channel capacity for the WHOLE batch via
+        // `try_reserve_many` BEFORE enqueuing ANY record. Cannot fit -> reject
+        // all-or-nothing, so a retry re-sends the full block with no
+        // partial-acceptance / duplicate window. A per-record `try_send` loop
+        // could enqueue some then fail mid-batch, stranding a prefix. An empty
+        // batch reserves zero permits (no-op).
         let permits = match self.sender.try_reserve_many(records.len()) {
             Ok(permits) => permits,
             Err(mpsc::error::TrySendError::Full(())) => {
@@ -834,15 +880,12 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
             }
         };
 
-        // Capacity is now held for every record -- enqueuing is infallible. Pair
-        // each reserved permit with a record and send.
+        // Capacity now held for every record -- enqueuing is infallible.
         for (permit, record) in permits.zip(records) {
             let seq = self.sequence.fetch_add(1, Ordering::Relaxed);
             let format = record.metadata.format;
-            // A record carrying Auto means the sender did not pin a format
-            // (e.g. it framed but did not classify). Detect from the bytes so
-            // the receiver still gets a concrete hint -- this inspects the lead
-            // byte only, it does NOT parse/decode the payload.
+            // Auto means the sender did not pin a format. Detect from the lead
+            // byte so the receiver gets a concrete hint; does NOT parse/decode.
             let format = if format == PayloadFormat::Auto {
                 PayloadFormat::detect(&record.payload)
             } else {
@@ -946,6 +989,32 @@ mod tests {
         let config = GrpcConfig::client("http://loader:6000");
         assert!(config.listen.is_none());
         assert_eq!(config.endpoint.as_deref(), Some("http://loader:6000"));
+    }
+
+    #[tokio::test]
+    async fn send_batch_rejects_oversize_block() {
+        // Over max_message_size, reject with a clear Fatal naming the limit
+        // BEFORE the RPC -- tonic would otherwise return an opaque OutOfRange
+        // (also Fatal) that can never succeed on retry. The size check fires
+        // before any connection, so no server is needed.
+        let config = GrpcConfig::client("http://127.0.0.1:1").with_max_message_size(64);
+        let transport = GrpcTransport::new(&config).await.unwrap();
+        let rec = Record {
+            payload: bytes::Bytes::from(vec![b'x'; 256]),
+            key: None,
+            headers: Vec::new(),
+            metadata: crate::transport::work_batch::RecordMeta {
+                timestamp_ms: None,
+                format: PayloadFormat::Json,
+            },
+        };
+        match transport.send_batch(&[rec]).await {
+            SendResult::Fatal(e) => assert!(
+                e.to_string().contains("max_message_size"),
+                "error should name the limit, got: {e}"
+            ),
+            other => panic!("expected Fatal for oversize block, got {other:?}"),
+        }
     }
 
     #[test]

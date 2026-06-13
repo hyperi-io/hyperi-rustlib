@@ -28,6 +28,10 @@ pub enum ParseError {
     MsgPack(String),
     /// Format not supported (feature gate not enabled).
     UnsupportedFormat(&'static str),
+    /// Payload nests deeper than [`crate::parse_guard::MAX_PARSE_DEPTH`].
+    /// Rejected BEFORE the recursive parser runs so a hostile deeply-nested
+    /// payload cannot exhaust the worker stack (a per-record error, not a crash).
+    TooDeep,
 }
 
 impl std::fmt::Display for ParseError {
@@ -37,6 +41,11 @@ impl std::fmt::Display for ParseError {
             Self::Json(e) => write!(f, "json parse error: {e}"),
             Self::MsgPack(msg) => write!(f, "msgpack decode error: {msg}"),
             Self::UnsupportedFormat(msg) => write!(f, "unsupported format: {msg}"),
+            Self::TooDeep => write!(
+                f,
+                "payload nesting exceeds the maximum parse depth of {}",
+                crate::parse_guard::MAX_PARSE_DEPTH
+            ),
         }
     }
 }
@@ -77,21 +86,30 @@ pub fn parse_payload(payload: &[u8], format: PayloadFormat) -> Result<sonic_rs::
     match effective {
         // Auto resolves to Json or MsgPack; treat residual Auto as Json.
         PayloadFormat::Json | PayloadFormat::Auto => {
+            // Reject pathological nesting with a CHEAP ITERATIVE pre-scan before
+            // the recursive SIMD parser runs -- a hostile deeply-nested payload
+            // would otherwise exhaust the worker stack and abort the process.
+            if !crate::parse_guard::json_depth_within(payload, crate::parse_guard::MAX_PARSE_DEPTH)
+            {
+                return Err(ParseError::TooDeep);
+            }
             sonic_rs::from_slice(payload).map_err(ParseError::Json)
         }
         PayloadFormat::MsgPack => {
             #[cfg(feature = "worker-msgpack")]
             {
-                // Native MsgPack: `rmpv::decode::read_value` is a SINGLE native
-                // decode (the same schema-less decoder `codec::parse` uses), then
-                // `rmpv_to_sonic` walks the value straight into a `sonic_rs::Value`.
-                // There is NO `rmp_serde -> serde_json` bridge and no JSON
-                // re-serialise -- the engine's `ParsedMessage` keeps its
-                // `sonic_rs::Value` shape so `field`/`value`/`extract_known` and
-                // the transform-closure contract are untouched.
+                // Native MsgPack: a SINGLE schema-less decode (the same decoder
+                // `codec::parse` uses), then `rmpv_to_sonic` walks the value
+                // straight into a `sonic_rs::Value` -- see that fn for the
+                // bridge-free rationale.
                 let mut cursor: &[u8] = payload;
-                let value = rmpv::decode::read_value(&mut cursor)
-                    .map_err(|e| ParseError::MsgPack(e.to_string()))?;
+                // Bound nesting depth so a hostile deeply-nested MsgPack payload
+                // cannot exhaust the stack here or in the rmpv_to_sonic walk.
+                let value = rmpv::decode::read_value_with_max_depth(
+                    &mut cursor,
+                    crate::parse_guard::MAX_PARSE_DEPTH,
+                )
+                .map_err(|e| ParseError::MsgPack(e.to_string()))?;
                 Ok(rmpv_to_sonic(&value))
             }
             #[cfg(not(feature = "worker-msgpack"))]
@@ -105,12 +123,9 @@ pub fn parse_payload(payload: &[u8], format: PayloadFormat) -> Result<sonic_rs::
 }
 
 /// Convert a native `rmpv::Value` into a `sonic_rs::Value` with a direct value
-/// walker -- NO `serde_json` intermediate and NO JSON re-serialise.
-///
-/// This is the bridge-free MsgPack path: the engine retains a
-/// `sonic_rs::Value` (so `ParsedMessage`, `extract_known`, pre-route, the
-/// interner and the transform-closure contract are unchanged) without ever
-/// passing through `rmp_serde -> serde_json`.
+/// walker -- NO `rmp_serde -> serde_json` bridge, no JSON re-serialise. The
+/// engine keeps a `sonic_rs::Value`, so `ParsedMessage`, `extract_known`,
+/// pre-route, the interner and the transform-closure contract are unchanged.
 ///
 /// ## Mapping
 ///

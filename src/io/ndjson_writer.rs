@@ -152,21 +152,13 @@ impl NdjsonWriter {
         Ok(())
     }
 
-    /// Flush any in-memory buffer through the rotating writer.
+    /// Flush the in-memory buffer through the rotating writer.
     ///
-    /// Note: `file-rotate` does not expose the underlying `File` handle,
-    /// so this can only call `flush()` (which pushes buffered bytes from
-    /// the writer's in-memory buffer to the kernel page cache). It does
-    /// NOT guarantee on-disk durability -- a power-loss event between the
-    /// page cache and the platter can still lose data. This is a
-    /// limitation of the rotation library, not the API: when
-    /// `file-rotate` gains a `sync` hook, this method will gain
-    /// `fsync`-level semantics.
-    ///
-    /// For DLQ flush callers: this is the strongest durability the file
-    /// backend can express today. Producers running with high write
-    /// rates plus an `acks=all` sibling Kafka backend will get real
-    /// durability from the Kafka path.
+    /// `file-rotate` doesn't expose the inner `File`, so this flushes to
+    /// the kernel page cache only -- NOT on-disk durability. Power loss
+    /// before write-back can still lose data. Strongest the file backend
+    /// can express until `file-rotate` gains a sync hook; for real
+    /// durability pair with an `acks=all` Kafka backend.
     ///
     /// # Errors
     ///

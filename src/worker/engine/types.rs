@@ -85,85 +85,71 @@ pub struct MessageMetadata {
 /// Holds the parsed JSON value alongside extracted fields for fast routing
 /// lookups. Built by the engine's parse step from a [`crate::transport::Record`].
 #[derive(Debug, Clone)]
-pub enum ParsedMessage {
-    /// Successfully JSON-parsed message.
-    Parsed {
-        /// Full parsed JSON value.
-        value: sonic_rs::Value,
-        /// Original raw bytes (kept for zero-copy forwarding).
-        raw: Bytes,
-        /// Detected or declared format.
-        format: PayloadFormat,
-        /// Routing key.
-        key: Option<Arc<str>>,
-        /// Transport headers.
-        headers: Vec<(String, Vec<u8>)>,
-        /// Transport provenance metadata.
-        metadata: MessageMetadata,
-        /// Pre-extracted fields for fast routing (e.g. `_table`, `_timestamp`).
-        ///
-        /// Populated by the pre-route extraction step. Keys are interned `Arc<str>`
-        /// to avoid repeated allocation during batch routing.
-        extracted: std::collections::HashMap<Arc<str>, sonic_rs::Value>,
-    },
+pub struct ParsedMessage {
+    /// Full parsed JSON value.
+    pub value: sonic_rs::Value,
+    /// Original raw bytes (kept for zero-copy forwarding).
+    pub raw: Bytes,
+    /// Detected or declared format.
+    pub format: PayloadFormat,
+    /// Routing key.
+    pub key: Option<Arc<str>>,
+    /// Transport headers.
+    pub headers: Vec<(String, Vec<u8>)>,
+    /// Transport provenance metadata.
+    pub metadata: MessageMetadata,
+    /// Pre-extracted fields for fast routing (e.g. `_table`, `_timestamp`).
+    ///
+    /// Populated by the pre-route extraction step. Keys are interned `Arc<str>`
+    /// to avoid repeated allocation during batch routing.
+    pub extracted: std::collections::HashMap<Arc<str>, sonic_rs::Value>,
 }
 
 impl ParsedMessage {
     /// Look up a field by name.
     ///
     /// Checks the `extracted` map first (interned fast path), then falls back
-    /// to `value.get(name)` for the full parsed tree. Returns `None` for the
-    /// `Raw` variant or when the field is absent.
+    /// to `value.get(name)` for the full parsed tree. `None` if absent.
     #[must_use]
     pub fn field(&self, name: &str) -> Option<&sonic_rs::Value> {
-        let Self::Parsed {
-            value, extracted, ..
-        } = self;
-        // Fast path: check pre-extracted interned keys first.
-        let interned = extracted
-            .keys()
-            .find(|k| k.as_ref() == name)
-            .and_then(|k| extracted.get(k));
-        if interned.is_some() {
-            return interned;
+        // Fast path: pre-extracted interned fields. `Arc<str>: Borrow<str>`, so
+        // this is a direct O(1) hash lookup -- the previous `keys().find(...)`
+        // linear scan plus a second `get` was slower than the map it guarded.
+        if let Some(v) = self.extracted.get(name) {
+            return Some(v);
         }
         // Slow path: walk full JSON value.
-        value.get(name)
+        self.value.get(name)
     }
 
     /// Return a reference to the parsed JSON value.
     #[must_use]
     pub fn value(&self) -> Option<&sonic_rs::Value> {
-        let Self::Parsed { value, .. } = self;
-        Some(value)
+        Some(&self.value)
     }
 
     /// Return a mutable reference to the parsed JSON value.
     #[must_use]
     pub fn value_mut(&mut self) -> Option<&mut sonic_rs::Value> {
-        let Self::Parsed { value, .. } = self;
-        Some(value)
+        Some(&mut self.value)
     }
 
     /// Return the raw payload bytes.
     #[must_use]
     pub fn raw_payload(&self) -> &[u8] {
-        let Self::Parsed { raw, .. } = self;
-        raw
+        &self.raw
     }
 
     /// Return the routing key.
     #[must_use]
     pub fn key(&self) -> Option<&str> {
-        let Self::Parsed { key, .. } = self;
-        key.as_deref()
+        self.key.as_deref()
     }
 
     /// Return transport provenance metadata.
     #[must_use]
     pub fn metadata(&self) -> &MessageMetadata {
-        let Self::Parsed { metadata, .. } = self;
-        metadata
+        &self.metadata
     }
 }
 
@@ -190,7 +176,7 @@ mod tests {
         let table_key: Arc<str> = Arc::from("_table");
         extracted.insert(Arc::clone(&table_key), sonic_rs::Value::from("events"));
 
-        let msg = ParsedMessage::Parsed {
+        let msg = ParsedMessage {
             value: sonic_rs::from_str(r#"{"_table":"events","host":"web1"}"#).unwrap(),
             raw: Bytes::from_static(b"{\"_table\":\"events\",\"host\":\"web1\"}"),
             format: PayloadFormat::Json,
@@ -210,7 +196,7 @@ mod tests {
 
     #[test]
     fn parsed_message_field_falls_back_to_value() {
-        let msg = ParsedMessage::Parsed {
+        let msg = ParsedMessage {
             value: sonic_rs::from_str(r#"{"host":"web1"}"#).unwrap(),
             raw: Bytes::from_static(b"{\"host\":\"web1\"}"),
             format: PayloadFormat::Json,
@@ -257,7 +243,7 @@ mod tests {
 
     #[test]
     fn metadata_accessor() {
-        let msg = ParsedMessage::Parsed {
+        let msg = ParsedMessage {
             value: sonic_rs::from_str(r#"{"x":1}"#).unwrap(),
             raw: Bytes::from_static(b"{\"x\":1}"),
             format: PayloadFormat::Auto,

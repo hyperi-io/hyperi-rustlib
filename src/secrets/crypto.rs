@@ -240,7 +240,7 @@ mod tests {
         assert!(matches!(err, SecretsError::CacheError(_)));
     }
 
-    /// Codex F15: domain-separated AAD. A future caller using the
+    /// Domain-separated AAD. A future caller using the
     /// same cache_key under a different domain MUST fail auth.
     #[test]
     fn aad_domain_separation_blocks_cross_module_reuse() {

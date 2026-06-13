@@ -252,25 +252,18 @@ impl Dlq {
         sink.flush().await.map_err(map_sink_err)
     }
 
-    /// Initiate shutdown and await graceful drain exit.
+    /// Cancel the internal child token (drain flushes its batch and
+    /// exits), then await the drain. Cancelling here rather than only
+    /// awaiting the join is what stops `shutdown` hanging when the
+    /// caller has not separately cancelled the token passed to `spawn`.
     ///
-    /// Cancels the internal child token (drain observes the cancellation
-    /// in its next `select!`, flushes its remaining batch, and exits),
-    /// then awaits the drain task. This is the canonical "stop the DLQ
-    /// and wait for it" call -- the previous version only awaited the
-    /// join and would hang forever unless the caller had separately
-    /// cancelled the token passed to `spawn`.
-    ///
-    /// Idempotent: safe to call from many clones; the join happens
-    /// once. Subsequent calls observe an empty join slot and return Ok.
+    /// Idempotent across clones: the join happens once; later calls see
+    /// an empty join slot and return Ok.
     ///
     /// # Errors
     ///
     /// Returns `Err(DlqError::Closed)` if the drain task panicked.
     pub async fn shutdown(&self) -> Result<(), DlqError> {
-        // Trip the child token so the drain notices on its next
-        // select!. Idempotent -- CancellationToken::cancel handles
-        // re-cancellation.
         self.cancel.cancel();
         let mut guard = self.join.lock().await;
         let Some(handle) = guard.take() else {

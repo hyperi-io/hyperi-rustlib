@@ -163,6 +163,18 @@ Liveness MUST NEVER check downstream dependencies (a DB outage shouldn't
 restart your replicas). Readiness checks dependencies AND requires an
 explicit `set_ready()` call — cleared during graceful shutdown.
 
+## Self-regulation (default vertical scaling)
+
+A rustlib data-plane app regulates its own intake. Sized for steady state, a
+pod slows down or speeds up WITHIN itself first -- the default, fast, local
+response to a burst, a stalled upstream, or a transform that balloons memory.
+Only when that vertical headroom is exhausted does it escalate to horizontal
+scale (KEDA adding pods), driven by the same pressure signal. Memory is the
+hard, never-OOM authority; CPU is left to the kernel scheduler (CFS), which
+the byte-budget loop reads through longer process times. It is ON by default
+and opt-out via `self_regulation.enabled = false`. See
+[docs/SELF-REGULATION.md](docs/SELF-REGULATION.md).
+
 ## Architecture
 
 See [docs/](docs/README.md) for the full documentation index —

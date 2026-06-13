@@ -1,6 +1,6 @@
 // Project:   hyperi-rustlib
 // File:      src/transport/vector_compat/convert.rs
-// Purpose:   Vector ↔ hyperi message conversion
+// Purpose:   Vector <-> hyperi message conversion
 // Language:  Rust
 //
 // License:   BUSL-1.1

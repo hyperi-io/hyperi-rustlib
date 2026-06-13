@@ -9,7 +9,7 @@
 //! Batch processing framework for DFE pipeline parallelisation.
 //!
 //! Provides the [`BatchProcessor`] trait for defining parallel-safe message
-//! processing, and [`BatchPipeline`] for orchestrating the parallel (rayon) →
+//! processing, and [`BatchPipeline`] for orchestrating the parallel (rayon) ->
 //! sequential (state mutation) pipeline.
 //!
 //! ## The Pattern

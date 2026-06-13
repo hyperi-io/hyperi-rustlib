@@ -42,7 +42,7 @@
 //! - **Circuit breaker**: Avoids hammering a dead sink
 //! - **Background drain**: Recovers spooled messages when sink is healthy
 //! - **Configurable ordering**: Interleaved (default) or strict FIFO
-//! - **Multiple compression codecs**: LZ4 (default), Snappy, Zstd, None
+//! - **Multiple compression codecs**: Zstd (default, level 1), LZ4, Snappy, None
 //!
 //! ## Example
 //!

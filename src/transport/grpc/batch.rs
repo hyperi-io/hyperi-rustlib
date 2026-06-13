@@ -15,30 +15,26 @@
 //!
 //! ## Payloads are OPAQUE in transit
 //!
-//! Each [`Record`] payload is mapped straight onto the
-//! proto `Record.payload` `bytes` field and back. prost is configured (in
-//! `build.rs`, `.bytes(".")`) to decode that field ZERO-COPY into
-//! [`bytes::Bytes`], so on the receive side the payload is a refcounted view of
-//! the decode buffer, never copied. The JSON / MsgPack codec
-//! ([`crate::transport::codec`]) is NEVER invoked here -- the bytes pass through
-//! untouched, so a payload that is not valid JSON or MsgPack survives a
-//! round-trip byte-identical.
+//! Each [`Record`] payload maps straight onto the proto `Record.payload`
+//! `bytes` field. prost decodes that field ZERO-COPY into [`bytes::Bytes`]
+//! (`.bytes(".")` in `build.rs`), so the receive-side payload is a refcounted
+//! view of the decode buffer. The JSON / MsgPack codec
+//! ([`crate::transport::codec`]) is NEVER invoked here -- non-JSON/MsgPack
+//! bytes survive a round-trip byte-identical.
 //!
 //! ## Swappable wire
 //!
-//! The wire is protobuf BY DEFAULT but the mapping is isolated to this module:
-//! a future hand-rolled frame could replace [`records_to_proto`] /
-//! [`proto_batch_to_records`] without touching the `WorkBatch` types or the
-//! transport seam.
+//! The mapping is isolated to this module: a future hand-rolled frame could
+//! replace [`records_to_proto`] / [`proto_batch_to_records`] without touching
+//! the `WorkBatch` types or the transport seam.
 //!
 //! ## What does NOT cross the wire
 //!
-//! `commit_tokens` and `dlq_entries` are deliberately left off the proto `Batch`.
-//! Commit tokens are the SENDER's source acks -- fired locally after the block
-//! is sent (at-least-once), they have no meaning on the receiver. Inline-DLQ
-//! entries are a local no-silent-drop concern. So the mapper takes / returns the
-//! records (`&[Record]` / `Vec<Record>`), not the whole `WorkBatch<T>`; this
-//! also avoids dragging the `CommitToken` generic onto the wire path.
+//! `commit_tokens` and `dlq_entries` are left off the proto `Batch`. Commit
+//! tokens are the SENDER's source acks -- fired locally after send
+//! (at-least-once), meaningless on the receiver. Inline-DLQ entries are a local
+//! no-silent-drop concern. So the mapper takes / returns records, not the whole
+//! `WorkBatch<T>` -- which also keeps the `CommitToken` generic off the wire.
 
 use super::proto;
 use crate::transport::types::PayloadFormat;
@@ -129,9 +125,9 @@ fn record_from_proto(record: proto::Record) -> Record {
 
 /// Map a slice of rustlib [`Record`]s onto a proto [`Batch`](proto::Batch).
 ///
-/// This is the SEND-side mapper. It takes the records (NOT the whole
-/// `WorkBatch<T>`) because commit tokens and DLQ entries do not cross the wire
-/// (see the module docs). Payloads are moved, not copied.
+/// SEND-side mapper. Takes records, not the whole `WorkBatch<T>` (commit
+/// tokens and DLQ entries do not cross the wire -- see module docs). Payloads
+/// are moved, not copied.
 #[must_use]
 pub fn records_to_proto(records: Vec<Record>) -> proto::Batch {
     proto::Batch {
@@ -141,8 +137,8 @@ pub fn records_to_proto(records: Vec<Record>) -> proto::Batch {
 
 /// Map a proto [`Batch`](proto::Batch) back onto a `Vec<Record>`.
 ///
-/// This is the RECEIVE-side mapper. The caller wraps the returned records in a
-/// fresh [`WorkBatch`](crate::transport::WorkBatch) (attaching its own commit
+/// RECEIVE-side mapper. The caller wraps the returned records in a fresh
+/// [`WorkBatch`](crate::transport::WorkBatch) (attaching its own commit
 /// tokens). Payloads are zero-copy [`Bytes`] views of the decode buffer.
 #[must_use]
 pub fn proto_batch_to_records(batch: proto::Batch) -> Vec<Record> {

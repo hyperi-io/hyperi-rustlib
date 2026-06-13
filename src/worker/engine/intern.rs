@@ -56,12 +56,9 @@ impl FieldInterner {
 
     /// Intern a field name and return a shared `Arc<str>`.
     ///
-    /// # Cost model
-    ///
-    /// - Fast path (already interned): one DashMap read-lock shard + `Arc::clone` → ~20 ns
-    /// - Slow path (first occurrence): one write to DashMap + `Arc::from` allocation → ~100 ns
-    ///
-    /// The slow path is taken at most once per unique field name per `FieldInterner` instance.
+    /// Fast path (already interned): DashMap shard read + `Arc::clone`, ~20 ns.
+    /// Slow path (first occurrence): DashMap write + `Arc::from` allocation,
+    /// ~100 ns -- taken at most once per unique field name per instance.
     #[inline]
     #[must_use]
     pub fn intern(&self, name: &str) -> Arc<str> {
@@ -91,8 +88,8 @@ impl FieldInterner {
     /// Extract known (pre-interned) fields from a parsed `sonic_rs::Value`.
     ///
     /// Iterates the top-level object keys and returns only those that are
-    /// already interned. O(known_fields × object_keys) -- typically
-    /// 6 known × 15 keys = 90 string comparisons per message.
+    /// already interned. O(known_fields x object_keys) -- typically
+    /// 6 known x 15 keys = 90 string comparisons per message.
     ///
     /// Returns an empty map if `value` is not a JSON object.
     #[must_use]

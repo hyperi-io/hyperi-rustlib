@@ -1,7 +1,7 @@
 # Cache
 
 A moka TinyLFU async cache, source-keyed and JSON-serialised. Use it
-for values that are expensive to compute but cheap to re-derive — DNS
+for values that are expensive to compute but cheap to re-derive -- DNS
 resolution results, parsed expressions, compiled regexes, fetched
 secrets, schema lookups. Don't use it as session state, response
 cache, or shared-cluster cache.
@@ -33,7 +33,7 @@ one call (e.g. clear all secrets on rotation, or all schema entries on
 schema change).
 
 Values are JSON-serialised on insert and deserialised on read. The
-penalty is one `serde` round-trip per access — fine for the workloads
+penalty is one `serde` round-trip per access -- fine for the workloads
 above. For raw `Vec<u8>` access, use `moka` directly.
 
 ---
@@ -42,7 +42,7 @@ above. For raw `Vec<u8>` access, use `moka` directly.
 
 | Use case | Use instead |
 |----------|-------------|
-| HTTP response cache | A real cache (CDN, proxy) — those handle revalidation, vary headers, etc. |
+| HTTP response cache | A real cache (CDN, proxy) -- those handle revalidation, vary headers, etc. |
 | Distributed cache across pods | Redis (see [../transport/BACKENDS.md](../transport/BACKENDS.md)) |
 | Session store | Postgres or Redis |
 | Read-through DB cache | Build it explicitly with `get_or_insert_with` semantics; the basic API here is just get/set |
@@ -60,7 +60,7 @@ cache:
 ```
 
 Choose `max_capacity` based on expected working set, not theoretical
-maximum — TinyLFU is good but not magic, and going past the working
+maximum -- TinyLFU is good but not magic, and going past the working
 set just wastes memory.
 
 ---
@@ -86,7 +86,7 @@ TinyLFU beats LRU on most workloads but loses on:
 
 - Strictly sequential scans (LRU degrades gracefully, TinyLFU has to
   re-warm)
-- Workloads with no temporal locality (cache is the wrong tool —
+- Workloads with no temporal locality (cache is the wrong tool --
   consider a bloom filter or precomputed table)
 
 For those cases, the workload shouldn't be in a cache at all.
@@ -95,7 +95,7 @@ For those cases, the workload shouldn't be in a cache at all.
 
 ## Related
 
-- [SECRETS.md](SECRETS.md) — secrets manager has its own cache with TTL
-- [../core-pillars/CONFIG.md](../core-pillars/CONFIG.md) — cascade
-- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) — `cache`
+- [SECRETS.md](SECRETS.md) -- secrets manager has its own cache with TTL
+- [../core-pillars/CONFIG.md](../core-pillars/CONFIG.md) -- cascade
+- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) -- `cache`
 - Source: [../../src/cache/](../../src/cache/)

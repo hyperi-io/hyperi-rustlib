@@ -65,8 +65,7 @@ impl SecretCache {
     ///
     /// Returns an error if the cache directory cannot be created.
     pub fn new(config: &CacheConfig) -> SecretsResult<Self> {
-        // Enforce the production guardrail at construction (Codex review
-        // 2026-06-03): reject plaintext disk cache in prod here, not only when
+        // Enforce the production guardrail at construction: reject plaintext disk cache in prod here, not only when
         // an app remembers to call validate() at startup.
         config
             .validate(crate::env::is_production())
@@ -565,7 +564,7 @@ mod tests {
         assert_eq!(mode, 0o755, "dir_mode: None must skip chmod");
     }
 
-    /// Codex F6 regression (Unix): create -> set -> clear -> set;
+    /// Regression (Unix): create -> set -> clear -> set;
     /// directory stays 0700 and the cache file lands at 0600.
     #[cfg(unix)]
     #[test]

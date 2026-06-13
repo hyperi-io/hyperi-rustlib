@@ -41,12 +41,10 @@ static REGISTRY: Mutex<Option<Registry>> = Mutex::new(None);
 
 /// A change listener callback.
 ///
-/// Stored as `Arc<dyn ...>` rather than `Box<dyn ...>` so [`register_section`]
-/// can snapshot the callbacks into a local Vec under the listener lock and
-/// then drop the lock BEFORE invoking them. Holding the listener mutex
-/// during callback invocation deadlocked re-entrant callers (e.g. a
-/// callback that registered a new listener) and forced any callback work
-/// into the critical section.
+/// `Arc<dyn ...>` not `Box<dyn ...>`: callbacks are snapshotted into a local
+/// Vec under the listener lock, then invoked after the lock drops. Holding the
+/// mutex during invocation deadlocked re-entrant callers (a callback that
+/// registers a new listener) and pulled callback work into the critical section.
 type ChangeCallback = Arc<dyn Fn(&JsonValue) + Send + Sync>;
 type ListenerCallback = ChangeCallback;
 
@@ -267,12 +265,10 @@ where
         registry.sections.insert(key.to_string(), section);
     }
 
-    // Notify listeners. Snapshot the callbacks into a local Vec under the
-    // lock, then drop the guard BEFORE invoking them. A callback that
-    // re-enters listener registration (e.g. registers a new listener
-    // while running) would otherwise deadlock against the same mutex.
-    // Callbacks may also do non-trivial work, allocation, or I/O -- none
-    // of which belong under a global mutex.
+    // Snapshot callbacks under the lock, drop the guard, then invoke. A
+    // callback that re-registers a listener would deadlock the mutex
+    // otherwise; callback work (alloc, I/O) also shouldn't run under a
+    // global lock.
     let snapshot: Option<Vec<ListenerCallback>> = LISTENERS.lock().ok().and_then(|guard| {
         guard
             .as_ref()

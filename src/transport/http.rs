@@ -165,11 +165,10 @@ pub struct HttpTransportConfig {
     #[serde(default = "default_max_body_bytes")]
     pub max_body_bytes: usize,
 
-    /// Private-CA PEM path for the send-side HTTPS client. When set and the
-    /// `tls` feature is enabled, the client trusts this CA *in addition to* the
-    /// OS native roots, built via the unified `crate::tls` module and fed to
-    /// reqwest with `use_preconfigured_tls`. None = native roots only (reqwest
-    /// default). Maps to `TlsTrust { native_roots: true, extra_roots: [ca] }`.
+    /// Private-CA PEM path for the send-side HTTPS client (needs the `tls`
+    /// feature). Trusts this CA *in addition to* the OS native roots. None =
+    /// native roots only (reqwest default). Maps to `TlsTrust { native_roots:
+    /// true, extra_roots: [ca] }`.
     #[serde(default)]
     pub tls_ca_path: Option<String>,
 }
@@ -475,9 +474,11 @@ async fn ingest_handler(
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     body: axum::body::Bytes,
-) -> axum::http::StatusCode {
+) -> axum::response::Response {
+    use axum::response::IntoResponse as _;
+
     if body.is_empty() {
-        return axum::http::StatusCode::BAD_REQUEST;
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
     }
 
     // G3 pressure-driven shedding (governor feature, opt-in). BEFORE enqueuing,
@@ -491,7 +492,7 @@ async fn ingest_handler(
         #[cfg(feature = "metrics")]
         metrics::counter!("dfe_transport_backpressured_total", "transport" => "http", "reason" => "pressure")
             .increment(1);
-        return axum::http::StatusCode::SERVICE_UNAVAILABLE;
+        return shed_503();
     }
 
     // Extract W3C traceparent from incoming HTTP headers for distributed tracing
@@ -526,20 +527,32 @@ async fn ingest_handler(
         Ok(()) => {
             #[cfg(feature = "metrics")]
             metrics::counter!("dfe_transport_sent_total", "transport" => "http").increment(1);
-            axum::http::StatusCode::OK
+            axum::http::StatusCode::OK.into_response()
         }
         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
             #[cfg(feature = "metrics")]
             metrics::counter!("dfe_transport_backpressured_total", "transport" => "http")
                 .increment(1);
-            axum::http::StatusCode::SERVICE_UNAVAILABLE
+            shed_503()
         }
         Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
             #[cfg(feature = "metrics")]
             metrics::counter!("dfe_transport_refused_total", "transport" => "http").increment(1);
-            axum::http::StatusCode::GONE
+            axum::http::StatusCode::GONE.into_response()
         }
     }
+}
+
+/// 503 shed response with a `Retry-After: 1` hint, so a well-behaved sender
+/// backs off briefly instead of hot-retrying into a pod that is already holding.
+#[cfg(feature = "http-server")]
+fn shed_503() -> axum::response::Response {
+    use axum::response::IntoResponse as _;
+    (
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        [(axum::http::header::RETRY_AFTER, "1")],
+    )
+        .into_response()
 }
 
 impl TransportBase for HttpTransport {
@@ -723,9 +736,11 @@ impl TransportReceiver for HttpTransport {
                 messages,
                 |m| m.payload.as_ref(),
                 |m| m.key.clone(),
+                |m| m.token.clone(),
             );
             let messages = batch.messages;
             let dlq_entries = batch.dlq_entries;
+            let filtered_tokens = batch.filtered_tokens;
 
             #[cfg(feature = "logger")]
             if !messages.is_empty() {
@@ -735,6 +750,7 @@ impl TransportReceiver for HttpTransport {
             Ok(RecvBatch {
                 messages,
                 dlq_entries,
+                filtered_tokens,
             }
             .into())
         }
@@ -1052,6 +1068,15 @@ mod tests {
                 resp.status(),
                 reqwest::StatusCode::SERVICE_UNAVAILABLE,
                 "pinned-high governor must shed with 503"
+            );
+            // The 503 carries a Retry-After hint so a well-behaved sender backs
+            // off instead of hot-retrying into a holding pod.
+            assert_eq!(
+                resp.headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|v| v.to_str().ok()),
+                Some("1"),
+                "503 shed must carry Retry-After"
             );
 
             // The shed POST never reached the queue.

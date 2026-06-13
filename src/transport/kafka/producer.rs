@@ -106,9 +106,7 @@ pub struct KafkaProducer {
 
 /// Producer context for delivery callbacks and metrics.
 #[derive(Clone)]
-pub struct ProducerContext {
-    // Could add metrics collection here
-}
+pub struct ProducerContext {}
 
 impl rdkafka::ClientContext for ProducerContext {}
 
@@ -120,7 +118,7 @@ impl rdkafka::producer::ProducerContext for ProducerContext {
         _result: &rdkafka::producer::DeliveryResult<'_>,
         _opaque: Self::DeliveryOpaque,
     ) {
-        // Delivery callback - could update metrics here
+        // Delivery callback -- metrics hook point.
     }
 }
 
@@ -180,16 +178,15 @@ impl KafkaProducer {
             client_config.set(*key, *value);
         }
 
-        // Apply user overrides (legacy; highest priority in the old system)
+        // Legacy overrides (highest priority in the old system).
         for (key, value) in &config.librdkafka_overrides {
             client_config.set(key, value);
         }
 
-        // Apply the Task 0.5 sizing surface (producer side):
+        // Sizing surface (producer side), applied AFTER legacy so it wins:
         //   profile defaults < named producer knobs < sizing.producer_librdkafka
-        // Applied AFTER the legacy block so the sizing surface wins over it.
-        // The raw sizing.producer_librdkafka map wins over everything (applied
-        // last inside resolved_producer_map()).
+        // The raw sizing.producer_librdkafka map wins over everything
+        // (applied last inside resolved_producer_map()).
         for (key, value) in config.sizing.resolved_producer_map() {
             client_config.set(key, value);
         }

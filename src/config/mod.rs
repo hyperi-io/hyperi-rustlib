@@ -1,6 +1,6 @@
 // Project:   hyperi-rustlib
 // File:      src/config/mod.rs
-// Purpose:   7-layer configuration cascade
+// Purpose:   8-layer configuration cascade
 // Language:  Rust
 //
 // License:   BUSL-1.1
@@ -25,34 +25,9 @@
 //!
 //! ## How .env Files Work in the Cascade
 //!
-//! The `.env` file is loaded early in the cascade using `dotenvy::dotenv()`.
-//! This populates the process environment, so `.env` values become available
-//! via `std::env::var()`. The cascade then reads environment variables at
-//! layer 2, which includes both real environment variables AND `.env` values.
-//!
-//! **Important**: Real environment variables take precedence over `.env` values
-//! because `dotenvy` does NOT overwrite existing environment variables.
-//!
-//! ```text
-//! Priority (highest wins):
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │ 1. CLI arguments (merged via merge_cli())                   │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 2. Environment variables (PREFIX_KEY)                       │
-//! │    ↑ Includes .env values (loaded into env by dotenvy)      │
-//! │    ↑ Real env vars win over .env (dotenvy doesn't overwrite)│
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 3. PostgreSQL config (if config-postgres feature enabled)   │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 4. settings.{env}.yaml (e.g., settings.production.yaml)     │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 5. settings.yaml                                            │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 6. defaults.yaml                                            │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 7. Hard-coded defaults (lowest priority)                    │
-//! └─────────────────────────────────────────────────────────────┘
-//! ```
+//! `dotenvy::dotenv()` loads `.env` into the process environment, so `.env`
+//! values are read at layer 2 alongside real env vars. Real env vars win:
+//! `dotenvy` does NOT overwrite existing variables.
 //!
 //! ## Environment Variable Naming
 //!
@@ -223,10 +198,8 @@ impl Config {
         let resolved_app_name = Self::resolve_app_name(opts.app_name.as_deref());
         let app_name_ref = resolved_app_name.as_deref();
 
-        // Load .env files in cascade order (lowest to highest priority)
-        // Home directory .env provides global defaults
-        // Project .env provides project-specific overrides
-        // Real environment variables always win (dotenvy doesn't overwrite)
+        // Load .env files (home = global defaults, project = overrides).
+        // Real env vars always win -- dotenvy doesn't overwrite.
         if opts.load_dotenv {
             Self::load_dotenv_cascade(opts.load_home_dotenv);
         }
@@ -272,9 +245,8 @@ impl Config {
 
     /// Create a new configuration with async loading (for PostgreSQL support).
     ///
-    /// This method loads configuration asynchronously, allowing PostgreSQL to be
-    /// used as a config source. PostgreSQL sits above file-based config in the
-    /// cascade, so database values override file values.
+    /// PostgreSQL sits above file-based config in the cascade, so database
+    /// values override file values.
     ///
     /// # Errors
     ///
@@ -321,13 +293,10 @@ impl Config {
             figment = figment.merge(Yaml::file(&path));
         }
 
-        // 4. PostgreSQL config (above files, below .env)
+        // 4. PostgreSQL config (above files, below .env). Figment merges are
+        // additive, later wins -- cascade position alone sets priority.
         if let Some(ref pg) = pg_config {
             let nested = pg.to_nested();
-            // For merge mode, we merge into existing config
-            // For replace mode, PostgreSQL config replaces file-based config
-            // Since figment merges are additive with later values winning,
-            // we just merge here - the position in the cascade determines priority
             figment = figment.merge(Serialized::defaults(nested));
         }
 
@@ -346,23 +315,13 @@ impl Config {
         })
     }
 
-    /// Load `.env` files in cascade order.
-    ///
-    /// Order (lowest to highest priority):
-    /// 1. `~/.env` (home directory - global defaults)
-    /// 2. Project `.env` (current directory - project overrides)
-    ///
-    /// Note: `dotenvy` does NOT overwrite existing environment variables,
-    /// so later files in the cascade take precedence. We load in reverse
-    /// order (project first, then home) so that project values are set first
-    /// and home values only fill in missing variables.
-    ///
-    /// Real environment variables always take precedence over all `.env` values.
+    /// Load `.env` files: `~/.env` (global defaults) then project `.env`
+    /// (overrides). `dotenvy` doesn't overwrite, so load in reverse --
+    /// project first wins, home only fills gaps. Real env vars beat both.
     fn load_dotenv_cascade(load_home: bool) {
         use tracing::debug;
 
-        // Load project .env first (these values take precedence)
-        // dotenvy::dotenv() looks for .env in current directory
+        // Project .env first -- these values take precedence.
         match dotenvy::dotenv() {
             Ok(path) => {
                 debug!(path = %path.display(), "Loaded project .env file");
@@ -623,9 +582,6 @@ pub fn setup(opts: ConfigOptions) -> Result<(), ConfigError> {
 }
 
 /// Initialise the global configuration with async loading (for PostgreSQL support).
-///
-/// This function loads configuration asynchronously, allowing PostgreSQL to be
-/// used as a config source.
 ///
 /// # Errors
 ///

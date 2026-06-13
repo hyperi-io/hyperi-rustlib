@@ -1,22 +1,19 @@
 # Metrics
 
-`MetricsManager::new("dfe_loader")` installs a global `metrics` recorder, builds
-a Prometheus exporter, and exposes `/metrics` on the metrics HTTP server. Once
-installed, any module can call `metrics::counter!`, `metrics::gauge!`,
-`metrics::histogram!` — the macros are no-ops when no recorder is set, so
-library code remains safe to compile without the metrics feature.
+`MetricsManager::new("dfe_loader")` installs a global `metrics` recorder, builds a
+Prometheus exporter, and serves `/metrics`. Any module then calls
+`metrics::counter!` / `gauge!` / `histogram!` -- the macros are no-ops with no
+recorder, so library code compiles without the metrics feature.
 
-Every counter / gauge / histogram constructed through `MetricsManager` also
-pushes a `MetricDescriptor` into a `MetricRegistry`. That registry is rendered
-as JSON at `/metrics/manifest` and persisted to `docs/metrics-manifest.json`
-via the `metrics-manifest` CLI subcommand. The manifest is the catalogue
-that downstream tools (Grafana auto-provisioning, alert validators, the DFE
-docs site) consume — there is no other source of metric metadata.
+Every counter / gauge / histogram built through `MetricsManager` also pushes a
+`MetricDescriptor` into a `MetricRegistry`, rendered as JSON at `/metrics/manifest`
+and to `docs/metrics-manifest.json` via the `metrics-manifest` CLI subcommand.
+That manifest is the only source of metric metadata for downstream tools (Grafana
+provisioning, alert validators, the DFE docs site).
 
-Process and container metrics (RSS, CPU, FDs, cgroup limits) auto-collect on
-a fixed interval via [sysinfo](https://crates.io/crates/sysinfo) when the
-relevant features are on. The container metrics read cgroup v1 and v2
-transparently.
+Process and container metrics (RSS, CPU, FDs, cgroup limits) auto-collect on a
+fixed interval via [sysinfo](https://crates.io/crates/sysinfo) when the relevant
+features are on; container metrics read cgroup v1 and v2 transparently.
 
 ---
 
@@ -24,12 +21,12 @@ transparently.
 
 | Feature | Adds | Use |
 |---|---|---|
-| `metrics-core` | Macros + `MetricRegistry` | Pure library crates that record but don't host the exporter |
-| `metrics-process` | `metrics-core` + sysinfo process probe | Single-binary tools that want RSS/CPU without an HTTP server |
-| `metrics` | `metrics-process` + Prometheus exporter + `/metrics` HTTP server | Services |
+| `metrics-core` | Macros + `MetricRegistry` | Library crates that record but don't host the exporter |
+| `metrics-process` | `metrics-core` + sysinfo process probe | Single binaries wanting RSS/CPU without an HTTP server |
+| `metrics` | `metrics-process` + Prometheus exporter + `/metrics` server | Services |
 
-DFE services pull `metrics`. Library crates published to consumers pull
-`metrics-core` so they don't drag a TCP listener into their dependents.
+DFE services pull `metrics`; published library crates pull `metrics-core` so they
+don't drag a TCP listener into dependents.
 
 ---
 
@@ -40,43 +37,37 @@ use hyperi_rustlib::metrics::MetricsManager;
 
 let mut mgr = MetricsManager::new("dfe_loader");
 
-// Construct metrics — every call also registers a descriptor
+// Construct metrics -- each call also registers a descriptor
 let sent = mgr.counter("transport_sent_total", "Messages sent");
 let lag = mgr.histogram("send_latency_seconds", "Send latency");
 
-// Apply labels at recording time, not at construction:
-mgr.counter_with_labels(
-    "transport_sent_total",
-    "Messages sent",
-    &["transport", "topic"],   // declared in the manifest
-    "transport",                // group
-);
+// Declare label keys + group at construction:
+mgr.counter_with_labels("transport_sent_total", "Messages sent",
+    &["transport", "topic"], "transport");
+// Apply label values at recording time:
 metrics::counter!("dfe_loader_transport_sent_total",
     "transport" => "kafka", "topic" => "events").increment(1);
 
-// Start the HTTP server
 mgr.start_server("0.0.0.0:9090").await?;
 ```
 
-Names are prefixed with the namespace automatically — `counter("foo")` registers
-as `dfe_loader_foo`. Use `counter_with_labels` / `gauge_with_labels` /
-`histogram_with_labels` when label keys belong in the manifest (i.e. always —
-unlabeled metrics are rare in DFE pipelines).
+Names are namespace-prefixed automatically -- `counter("foo")` records as
+`dfe_loader_foo`. Use `*_with_labels` so the label keys and group land in the
+manifest (i.e. nearly always; unlabeled metrics are rare in DFE pipelines).
 
-The single-binary use case is `ServiceRuntime` from `cli`, which constructs
-the manager, wires the readiness callback, attaches optional `ScalingPressure`
-and `MemoryGuard` endpoints, and merges service-specific routes via
-`start_server_with_routes`. See [../runtime/SERVICE-RUNTIME.md](../runtime/SERVICE-RUNTIME.md).
+Single-binary services use `ServiceRuntime` from `cli`, which constructs the
+manager, wires the readiness callback, attaches optional `ScalingPressure` and
+`MemoryGuard` endpoints, and merges service routes via `start_server_with_routes`.
+See [../runtime/SERVICE-RUNTIME.md](../runtime/SERVICE-RUNTIME.md).
 
 ---
 
 ## The manifest
 
 The registry tracks: name, type, description, unit, label keys, group, bucket
-spec, operational use cases, dashboard hint, app version, git commit, and
-registration timestamp.
+spec, use cases, dashboard hint, app version, git commit, registration timestamp.
 
-`GET /metrics/manifest` returns the full catalogue as JSON:
+`GET /metrics/manifest` returns the full catalogue:
 
 ```json
 {
@@ -88,7 +79,7 @@ registration timestamp.
   "metrics": [
     {
       "name": "dfe_loader_transport_sent_total",
-      "metric_type": "counter",
+      "type": "counter",
       "description": "Messages sent",
       "labels": ["transport", "topic"],
       "group": "transport"
@@ -98,14 +89,13 @@ registration timestamp.
 ```
 
 The `metrics-manifest` CLI subcommand renders the same JSON to disk without
-running the service — used in CI to keep `docs/metrics-manifest.json`
-in sync:
+running the service -- used in CI to keep `docs/metrics-manifest.json` in sync:
 
 ```bash
 my-app metrics-manifest --output docs/
 ```
 
-Set extra metadata after registration:
+Add metadata after registration:
 
 ```rust
 mgr.set_use_cases("dfe_loader_send_latency_seconds",
@@ -114,9 +104,9 @@ mgr.set_dashboard_hint("dfe_loader_send_latency_seconds", "heatmap");
 mgr.set_build_info(env!("CARGO_PKG_VERSION"), env!("GIT_COMMIT"));
 ```
 
-`DfeMetrics::register(&mgr)` (under `metrics-dfe`) registers the canonical DFE
-metric set — transport, batch engine, worker pool, memory, scaling — in one
-call so every DFE app exports the same group of metrics with matching labels.
+`DfeMetrics::register(&mgr)` (feature `metrics-dfe`) registers the canonical DFE
+metric set -- transport, batch engine, worker pool, memory, scaling -- in one call
+so every DFE app exports the same metrics with matching labels.
 
 ---
 
@@ -126,28 +116,26 @@ call so every DFE app exports the same group of metrics with matching labels.
 |---|---|
 | `/metrics` | Prometheus text |
 | `/metrics/manifest` | JSON catalogue |
-| `/healthz`, `/health/live` | `{"status":"alive"}` — process alive |
+| `/healthz`, `/health/live` | `{"status":"alive"}` -- process alive |
 | `/startupz`, `/health/startup` | 503 until `mgr.mark_started()`, then 200 |
 | `/readyz`, `/health/ready` | 200 if readiness callback + [`HealthRegistry`](HEALTH.md) both pass, else 503 |
-| `/scaling/pressure` | Float `0.0–1.0` (requires `scaling` + `set_scaling_pressure`) |
-| `/memory/pressure` | JSON with ratio + bytes (requires `memory` + `set_memory_guard`) |
+| `/scaling/pressure` | Float `0.0-1.0` (feature `scaling` + `set_scaling_pressure`) |
+| `/memory/pressure` | JSON ratio + bytes (feature `memory` + `set_memory_guard`) |
 
-Path-order note: `/metrics/manifest` is matched before `/metrics` in the
-prefix-match handler. Don't reorder.
+`/metrics/manifest` is matched before `/metrics` in the prefix-match handler --
+don't reorder.
 
 ---
 
 ## OTel mode
 
-With `otel-metrics` enabled, `MetricsManager` installs an OTel SDK meter
-provider and pushes via OTLP. With **both** `metrics` and `otel-metrics`, a
-`metrics-util` `FanoutBuilder` composes the two recorders so every macro
-records to both — `/metrics` for scrape, OTLP for push. Call
-`mgr.shutdown_otel()` before exit to flush the batch exporter, otherwise the
-last interval's data is lost.
-
-See [`OtelMetricsConfig`](../../src/metrics/otel_types.rs) for endpoint /
-protocol / batching config.
+With `otel-metrics`, `MetricsManager` installs an OTel SDK meter provider and
+pushes via OTLP. With **both** `metrics` and `otel-metrics`, a `metrics-util`
+`FanoutBuilder` composes the two recorders so every macro records to both --
+`/metrics` for scrape, OTLP for push. Call `mgr.shutdown_otel()` before exit to
+flush the batch exporter, or lose the last interval's data. See
+[`OtelMetricsConfig`](../../src/metrics/otel_types.rs) for endpoint / protocol /
+batching config.
 
 ---
 
@@ -157,47 +145,39 @@ protocol / batching config.
 |---|---|
 | `MetricsManager::new(namespace)` | Construct + install recorder |
 | `MetricsManager::with_config(MetricsConfig)` | Custom namespace, intervals, OTel config |
-| `MetricsManager::new_for_test(namespace)` *(test only)* | No global recorder install — safe for parallel tests |
+| `MetricsManager::new_for_test(namespace)` *(test only)* | No global install -- safe for parallel tests |
 | `counter` / `gauge` / `histogram` | Construct + auto-register |
 | `*_with_labels(name, desc, labels, group)` | Same, with manifest label keys + group |
 | `histogram_with_buckets` | Custom bucket spec (captured in manifest) |
-| `set_readiness_check(fn)` | Wire into `/readyz` |
-| `mark_started()` | Flip `/startupz` to 200 |
-| `set_scaling_pressure(Arc<ScalingPressure>)` | Adds `/scaling/pressure` |
-| `set_memory_guard(Arc<MemoryGuard>)` | Adds `/memory/pressure` |
-| `set_build_info(version, commit)` | Manifest metadata |
-| `set_use_cases(name, &[&str])` | Manifest annotation |
-| `set_dashboard_hint(name, hint)` | Manifest annotation |
+| `set_readiness_check(fn)` / `mark_started()` | Wire `/readyz` / flip `/startupz` |
+| `set_scaling_pressure(Arc<ScalingPressure>)` / `set_memory_guard(Arc<MemoryGuard>)` | Add `/scaling/pressure` / `/memory/pressure` |
+| `set_build_info` / `set_use_cases` / `set_dashboard_hint` | Manifest metadata |
 | `registry() -> MetricRegistry` | Cloneable handle for embedding `/metrics/manifest` in custom routers |
 | `render_handle() -> Option<RenderHandle>` | Cloneable Prometheus text renderer for axum routes |
-| `start_server(addr)` | Built-in router |
-| `start_server_with_routes(addr, extra)` | Merge service-specific routes |
+| `start_server(addr)` / `start_server_with_routes(addr, extra)` | Built-in router / merge service routes |
 | `shutdown_otel()` | Flush OTLP batch exporter |
 | `DfeMetrics::register(&mgr)` | Canonical DFE metric set (feature `metrics-dfe`) |
-| `latency_buckets()`, `size_buckets()` | Standard histogram bucket presets |
+| `latency_buckets()` / `size_buckets()` | Standard histogram bucket presets |
 
 ---
 
 ## Testing
 
-Parallel tests panic if multiple call `MetricsManager::new()` — the global
-Prometheus recorder installs once per process. Use `MetricsManager::new_for_test()`
-in unit tests: it skips the recorder install but keeps the registry, descriptor
-push, and namespacing intact. The `metrics::*` macros become no-ops, which
-is fine — most tests verify descriptor registration and naming, not record
-values.
-
-End-to-end recording is verified in the integration test suite where a
-single fixture installs the recorder once.
+Parallel tests panic if multiple call `MetricsManager::new()` -- the global
+Prometheus recorder installs once per process. Use `new_for_test()`: it skips the
+install but keeps the registry, descriptor push, and namespacing, and the macros
+become no-ops. Most tests verify descriptor registration and naming, not recorded
+values; end-to-end recording is verified in the integration suite where one
+fixture installs the recorder.
 
 ---
 
 ## Related
 
-- [CONFIG.md](CONFIG.md) — `MetricsConfig` sources from the cascade
-- [LOGGING.md](LOGGING.md) — sampled log + counter is the standard pair
-- [HEALTH.md](HEALTH.md) — `/readyz` consults `HealthRegistry`
-- [TRACING.md](TRACING.md) — OTel-metrics is configured separately from OTel-tracing
-- [../runtime/SERVICE-RUNTIME.md](../runtime/SERVICE-RUNTIME.md) — `ServiceRuntime` wires the manager
+- [CONFIG.md](CONFIG.md) -- `MetricsConfig` sources from the cascade
+- [LOGGING.md](LOGGING.md) -- sampled log + counter is the standard pair
+- [HEALTH.md](HEALTH.md) -- `/readyz` consults `HealthRegistry`
+- [TRACING.md](TRACING.md) -- OTel-metrics is configured separately from OTel-tracing
+- [../runtime/SERVICE-RUNTIME.md](../runtime/SERVICE-RUNTIME.md) -- `ServiceRuntime` wires the manager
 - [../AUTO-WIRING.md](../AUTO-WIRING.md), [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md)
 - Source: [`src/metrics/mod.rs`](../../src/metrics/mod.rs), [`src/metrics/manifest.rs`](../../src/metrics/manifest.rs), [`src/metrics/dfe.rs`](../../src/metrics/dfe.rs)

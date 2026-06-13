@@ -12,7 +12,6 @@ use super::config::WorkerPoolConfig;
 
 /// Register all worker pool metrics with the `MetricsManager`.
 ///
-/// This registers both operational metrics and threshold gauges.
 /// Threshold gauges are emitted immediately with current config values.
 pub fn register(manager: &MetricsManager, config: &WorkerPoolConfig) {
     // Operational metrics -- register descriptions (return values intentionally unused)
@@ -70,7 +69,7 @@ pub fn register(manager: &MetricsManager, config: &WorkerPoolConfig) {
 /// Emit threshold gauge values (called at startup and on config reload).
 ///
 /// Metric names match config keys exactly for mechanical derivation:
-/// config key `grow_below` → metric `worker_pool_grow_below`.
+/// config key `grow_below` -> metric `worker_pool_grow_below`.
 pub fn emit_thresholds(config: &WorkerPoolConfig) {
     metrics::gauge!("worker_pool_min_threads").set(config.min_threads as f64);
     metrics::gauge!("worker_pool_max_threads").set(config.max_threads as f64);

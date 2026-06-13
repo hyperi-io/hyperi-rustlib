@@ -120,24 +120,17 @@ impl KafkaDlqInner {
         Ok(())
     }
 
-    /// Block until every entry previously queued by `send_batch` has
-    /// been acknowledged by the broker (per the producer's `acks`
-    /// configuration).
-    ///
-    /// `send_batch` is sync-shaped -- it hands payloads to the
-    /// background producer thread and returns immediately. Without this
-    /// flush, the orchestrator's barrier would ack `Dlq::flush()`
-    /// callers when their entries were merely queued, not when they
-    /// were durably written. The reviewer (hyperi-rustlib pre-GA C06)
-    /// flagged exactly this gap.
+    /// Block until every entry queued by `send_batch` is acked by the
+    /// broker (per the producer's `acks` config). `send_batch` is
+    /// sync-shaped -- without this flush the orchestrator barrier would
+    /// ack `Dlq::flush()` callers while entries are merely queued, not
+    /// durable (hyperi-rustlib pre-GA C06).
     ///
     /// # Errors
     ///
-    /// `DlqError::Kafka` when the producer flush timeout expires with
-    /// messages still outstanding. The previous shape returned `Ok(())`
-    /// regardless -- callers thought the DLQ was drained while Kafka
-    /// still owned in-flight data, so a process exit lost entries
-    /// (Codex F3).
+    /// `DlqError::Kafka` when the flush timeout expires with messages
+    /// still outstanding. Returning `Ok(())` regardless would let a
+    /// process exit lose in-flight entries.
     pub async fn flush_durable(&mut self) -> Result<(), DlqError> {
         // Bounded wait -- typical producer flush completes in
         // milliseconds; a 30s ceiling avoids wedging the actor on a

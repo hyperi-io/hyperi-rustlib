@@ -412,11 +412,15 @@ impl TransportReceiver for RedisTransport {
 
         // Apply inbound filters via the shared partition helper; DLQ entries
         // are returned in the RecvBatch for the caller to route onward.
-        let batch =
-            self.filter_engine
-                .partition_batch(messages, |m| m.payload.as_ref(), |m| m.key.clone());
+        let batch = self.filter_engine.partition_batch(
+            messages,
+            |m| m.payload.as_ref(),
+            |m| m.key.clone(),
+            |m| m.token.clone(),
+        );
         let messages = batch.messages;
         let dlq_entries = batch.dlq_entries;
+        let filtered_tokens = batch.filtered_tokens;
 
         #[cfg(feature = "logger")]
         if !messages.is_empty() {
@@ -435,6 +439,7 @@ impl TransportReceiver for RedisTransport {
         Ok(RecvBatch {
             messages,
             dlq_entries,
+            filtered_tokens,
         }
         .into())
     }

@@ -42,7 +42,7 @@ pub enum TransportError {
     #[error("transport operation timed out")]
     Timeout,
 
-    /// Backpressure - transport cannot accept more messages.
+    /// Backpressure -- transport cannot accept more messages.
     #[error("transport backpressure")]
     Backpressure,
 

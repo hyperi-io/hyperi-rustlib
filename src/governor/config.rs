@@ -228,6 +228,20 @@ mod tests {
         assert!((h.resume_below - 0.65).abs() < 1e-9);
     }
 
+    /// An out-of-`[0,1]` band (here a negative resume that could never release
+    /// the latch) must fall back to the safe defaults, not wedge the governor.
+    #[test]
+    fn out_of_range_band_falls_back_to_defaults() {
+        let cfg = SelfRegulationConfig {
+            pause_above: 0.9,
+            resume_below: -0.2, // below the pressure clamp floor
+            ..Default::default()
+        };
+        let h = cfg.hysteresis();
+        assert!((h.pause_above - 0.80).abs() < 1e-9);
+        assert!((h.resume_below - 0.65).abs() < 1e-9);
+    }
+
     #[test]
     fn profile_sizes_the_byte_budget() {
         let tp = SelfRegulationConfig {

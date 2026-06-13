@@ -59,6 +59,14 @@ pub enum EngineError {
     /// is re-delivered rather than partially committed.
     #[error("parse failed (fail_batch): {0}")]
     ParseBatchFailed(String),
+    /// [`CommitMode::SinkManaged`] on the streaming/governed driver: sub-blocks
+    /// carry no tokens, so the sink can't own the commit. Use
+    /// [`CommitMode::Auto`], or `run_workbatch` for sink-managed commits.
+    #[error(
+        "CommitMode::SinkManaged unsupported on the streaming/governed driver; \
+         use CommitMode::Auto, or run_workbatch for sink-managed commits"
+    )]
+    SinkManagedUnsupported,
 }
 
 /// What a [`BatchEngine`] run loop does with inbound-filter DLQ entries
@@ -368,7 +376,7 @@ impl BatchEngine {
                             timestamp_ms: msg.metadata.timestamp_ms,
                             format,
                         };
-                        parsed_msgs.push(Ok(ParsedMessage::Parsed {
+                        parsed_msgs.push(Ok(ParsedMessage {
                             value,
                             raw: msg.payload.clone(),
                             format,
@@ -593,6 +601,9 @@ impl BatchEngine {
 ///
 /// [`MemoryGuard`]: crate::memory::MemoryGuard
 #[cfg(feature = "memory")]
+#[must_use = "the lease must be held for the lifetime of the in-flight block; \
+              dropping it immediately releases the reservation and corrupts the \
+              in-flight byte accounting"]
 pub(crate) struct IngressLease<'a> {
     guard: &'a crate::memory::MemoryGuard,
     bytes: u64,

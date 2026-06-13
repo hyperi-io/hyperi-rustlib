@@ -9,11 +9,8 @@
 //! Pre-built service infrastructure for DFE pipeline applications.
 //!
 //! [`ServiceRuntime`] is created by [`super::run_app`] before calling
-//! [`DfeApp::run_service`]. It contains all the common infrastructure
-//! that every DFE app needs -- metrics, memory guard, scaling, shutdown,
-//! worker pool, and runtime context. Apps receive it fully wired.
-//!
-//! This eliminates ~50 lines of identical boilerplate per DFE app.
+//! [`DfeApp::run_service`]. Apps receive it fully wired -- eliminates
+//! ~50 lines of identical boilerplate per DFE app.
 //!
 //! ## What's included (always)
 //!
@@ -89,13 +86,12 @@ pub struct ServiceRuntime {
     #[cfg(feature = "scaling")]
     pub scaling: Option<Arc<crate::ScalingPressure>>,
 
-    /// Self-regulation governor (`governor` feature). Built default-ON (opt-out
-    /// via `self_regulation.enabled = false`) from the cascade. `None` when
-    /// disabled by config -- in which case nothing was constructed and the data
-    /// path is byte-identical to pre-governor behaviour.
+    /// Self-regulation governor (`governor` feature). Default-ON, opt-out via
+    /// `self_regulation.enabled = false`. `None` when disabled -- nothing is
+    /// constructed and the data path is byte-identical to pre-governor.
     ///
     /// Thread [`pressure`](crate::SelfRegulationGovernor::pressure) into your
-    /// receive transports' inbound gate / `with_pressure` hooks, and the
+    /// receive transports' inbound gate / `with_pressure` hooks. The
     /// [`budget`](crate::SelfRegulationGovernor::budget) is already wired into
     /// the [`batch_engine`](Self::batch_engine) governed run path.
     #[cfg(feature = "governor")]
@@ -280,23 +276,15 @@ impl ServiceRuntime {
     /// Build a governed receive transport from config in ONE call
     /// (`governor` + `transport` features).
     ///
-    /// This is the receive-side analogue of the byte-budget wiring the runtime
-    /// already does for the [`batch_engine`](Self::batch_engine): it reads the
-    /// transport config at `key` and threads the runtime's
+    /// Reads the transport config at `key` and threads the runtime's
     /// [`governor`](Self::governor) pressure into the receiver's inbound brake
-    /// (Kafka pause-partitions gate, HTTP/gRPC 503/`unavailable` shed) so an app
-    /// does NOT repeat the `gate_actuator -> InboundGate -> with_inbound_gate`
-    /// dance by hand.
-    ///
-    /// Construction order is respected for free: the
-    /// [`governor`](Self::governor) was built in `build` BEFORE
-    /// the app calls this in `run_service()`, so the pressure latch already
-    /// exists -- this just clones it (an `Arc` bump) into the transport.
+    /// (Kafka pause-partitions gate, HTTP/gRPC 503/`unavailable` shed) so apps
+    /// skip the `gate_actuator -> InboundGate -> with_inbound_gate` dance.
     ///
     /// When the governor is disabled (`self_regulation.enabled = false`,
     /// [`governor`](Self::governor) is `None`) this falls back to the plain
     /// [`AnyReceiver::from_config`](crate::transport::factory::AnyReceiver::from_config)
-    /// so the data path stays byte-identical to pre-governor behaviour.
+    /// -- data path stays byte-identical to pre-governor.
     ///
     /// # Errors
     ///

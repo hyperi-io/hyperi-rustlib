@@ -49,7 +49,7 @@ pub fn run_oneshot(config: &TopConfig) -> Result<(), TopError> {
     Ok(())
 }
 
-/// Filter samples by regex pattern on metric name.
+/// Filter samples by metric-name pattern (substring or `.*` wildcard).
 fn filter_samples<'a>(samples: &'a [MetricSample], filter: Option<&str>) -> Vec<&'a MetricSample> {
     match filter {
         Some(pattern) => samples
@@ -60,14 +60,13 @@ fn filter_samples<'a>(samples: &'a [MetricSample], filter: Option<&str>) -> Vec<
     }
 }
 
-/// Simple pattern matching -- supports basic regex-like patterns.
-/// Uses contains for plain strings, or regex for patterns with metacharacters.
+/// Plain strings match by `contains`; patterns with metacharacters go
+/// through the lightweight `.*`/anchor matcher (not the `regex` crate).
 fn match_filter(name: &str, pattern: &str) -> bool {
     // If pattern has no regex metacharacters, do simple contains match
     if !has_regex_chars(pattern) {
         return name.contains(pattern);
     }
-    // Compile regex (fallback to contains on invalid pattern)
     regex_match(name, pattern)
 }
 

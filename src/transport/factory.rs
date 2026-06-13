@@ -44,13 +44,10 @@ use super::types::SendResult;
 use super::types::TransportType;
 use super::work_batch::{Record, WorkBatch};
 
-/// Type-erased transport sender.
+/// Type-erased transport sender, created by the factory from config.
 ///
-/// Wraps any concrete transport sender behind an enum for runtime
-/// dispatch. Created by the transport factory from config.
-///
-/// Uses enum dispatch (not trait objects) because `TransportSender`
-/// has `impl Future` return types which prevent `dyn` dispatch.
+/// Enum dispatch, not trait objects: `TransportSender` has `impl Future`
+/// returns which prevent `dyn` dispatch.
 pub enum AnySender {
     #[cfg(feature = "transport-kafka")]
     Kafka(super::kafka::KafkaTransport),
@@ -238,12 +235,7 @@ impl AnySender {
     /// ```
     pub async fn from_config(key: &str) -> TransportResult<Self> {
         #[cfg(feature = "config")]
-        let config = {
-            let cfg = crate::config::try_get()
-                .ok_or_else(|| TransportError::Config("config not initialised".into()))?;
-            cfg.unmarshal_key::<super::TransportConfig>(key)
-                .map_err(|e| TransportError::Config(format!("failed to read {key}: {e}")))?
-        };
+        let config = read_transport_config(key)?;
 
         #[cfg(not(feature = "config"))]
         let config = {
@@ -336,19 +328,14 @@ impl AnySender {
 
 /// Type-erased commit token produced by [`AnyReceiver`].
 ///
-/// Wraps each backend's concrete token in a matching enum variant so that
-/// `AnyReceiver::commit` can route tokens back to the correct backend without
-/// heap allocation or trait objects.  The variant set mirrors the enabled
-/// transport feature flags exactly.
+/// Wraps each backend's concrete token in a matching variant so
+/// `AnyReceiver::commit` routes tokens back to the correct backend with no heap
+/// allocation or trait objects. Variant set mirrors the enabled feature flags.
+/// `commit` skips tokens whose variant does not match the active backend
+/// (defensive; cannot occur in practice -- tokens come from the same receiver).
 ///
-/// Tokens are always produced by the same `AnyReceiver` that delivered the
-/// messages, so the active variant and active receiver variant will always
-/// agree.  `commit` skips tokens whose variant does not match the active
-/// backend (defensive; should not occur in practice).
-///
-/// `#[non_exhaustive]`: adding a new backend variant later is not a breaking
-/// change. Downstream crates that match on `AnyToken` must include a wildcard
-/// arm.
+/// `#[non_exhaustive]`: adding a backend variant is not a breaking change.
+/// Downstream `match` on `AnyToken` must include a wildcard arm.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AnyToken {
@@ -410,21 +397,14 @@ impl CommitToken for AnyToken {}
 // AnyReceiver -- type-erased transport receiver, mirroring AnySender.
 // ---------------------------------------------------------------------------
 
-/// Type-erased transport receiver.
-///
-/// Wraps any concrete transport receiver behind an enum for runtime
-/// dispatch. Created by the transport factory from config, mirroring
+/// Type-erased transport receiver, created by the factory, mirroring
 /// [`AnySender`].
 ///
-/// Uses enum dispatch (not trait objects) because [`TransportReceiver`]
-/// has `impl Future` return types and an associated `Token` type that
-/// prevent `dyn` dispatch.
-///
-/// The [`AnyReceiver::recv`] method wraps each backend token in the
-/// corresponding [`AnyToken`] variant.  [`AnyReceiver::commit`] extracts
-/// the inner tokens for the active backend and forwards to that backend's
-/// own `commit` -- tokens from a different variant are silently skipped
-/// (they cannot legitimately appear but the code stays defensive).
+/// Enum dispatch, not trait objects: [`TransportReceiver`] has `impl Future`
+/// returns and an associated `Token` type, both of which prevent `dyn`.
+/// [`AnyReceiver::recv`] wraps each backend token in the matching [`AnyToken`]
+/// variant; [`AnyReceiver::commit`] forwards the inner tokens to that backend
+/// (variant mismatches skipped defensively -- cannot legitimately appear).
 pub enum AnyReceiver {
     #[cfg(feature = "transport-kafka")]
     Kafka(super::kafka::KafkaTransport),
@@ -672,13 +652,12 @@ impl TransportReceiver for AnyReceiver {
         allow(unused_variables)
     )]
     async fn commit(&self, tokens: &[AnyToken]) -> TransportResult<()> {
-        // Each arm uses `match tok { Variant(x) => Some(x), #[allow(unreachable_patterns)] _ => None }`
-        // rather than `if let`.  When only a single transport feature is enabled, the AnyToken enum
-        // has a single variant, making an `if let` irrefutable (an error under -D warnings).
-        // The explicit wildcard arm with `#[allow(unreachable_patterns)]` avoids that -- it is
-        // genuinely unreachable in the single-feature case but legal.  Tokens from a non-matching
-        // variant indicate a programming error; they are silently filtered out rather than panicking
-        // (defensive behaviour, they cannot legitimately arise from this receiver's recv).
+        // `match tok { Variant(x) => Some(x), _ => None }` not `if let`: with a
+        // single feature enabled AnyToken has one variant, making `if let`
+        // irrefutable (error under -D warnings); the wildcard arm is unreachable
+        // but legal there. Tokens from a non-matching variant are a programming
+        // error (cannot arise from this receiver's recv) -- filtered out
+        // defensively, not panicked on.
         match self {
             #[cfg(feature = "transport-kafka")]
             Self::Kafka(t) => {
@@ -772,6 +751,16 @@ impl TransportReceiver for AnyReceiver {
     }
 }
 
+/// Read a [`TransportConfig`](super::TransportConfig) from the global cascade
+/// under `key`. Shared by the `from_config*` constructors.
+#[cfg(feature = "config")]
+fn read_transport_config(key: &str) -> TransportResult<super::TransportConfig> {
+    let cfg = crate::config::try_get()
+        .ok_or_else(|| TransportError::Config("config not initialised".into()))?;
+    cfg.unmarshal_key::<super::TransportConfig>(key)
+        .map_err(|e| TransportError::Config(format!("failed to read {key}: {e}")))
+}
+
 impl AnyReceiver {
     /// Create a receiver from the config cascade.
     ///
@@ -794,12 +783,7 @@ impl AnyReceiver {
     /// ```
     pub async fn from_config(key: &str) -> TransportResult<Self> {
         #[cfg(feature = "config")]
-        let config = {
-            let cfg = crate::config::try_get()
-                .ok_or_else(|| TransportError::Config("config not initialised".into()))?;
-            cfg.unmarshal_key::<super::TransportConfig>(key)
-                .map_err(|e| TransportError::Config(format!("failed to read {key}: {e}")))?
-        };
+        let config = read_transport_config(key)?;
 
         #[cfg(not(feature = "config"))]
         let config = {
@@ -907,12 +891,7 @@ impl AnyReceiver {
         governor: &crate::SelfRegulationGovernor,
     ) -> TransportResult<Self> {
         #[cfg(feature = "config")]
-        let config = {
-            let cfg = crate::config::try_get()
-                .ok_or_else(|| TransportError::Config("config not initialised".into()))?;
-            cfg.unmarshal_key::<super::TransportConfig>(key)
-                .map_err(|e| TransportError::Config(format!("failed to read {key}: {e}")))?
-        };
+        let config = read_transport_config(key)?;
 
         #[cfg(not(feature = "config"))]
         let config = {

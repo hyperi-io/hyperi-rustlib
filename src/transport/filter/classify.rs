@@ -451,7 +451,7 @@ mod tests {
         assert_eq!(result.tier(), FilterTier::Tier1);
     }
 
-    /// Codex F4 regression: real `.matches()` after a same-name
+    /// Regression: real `.matches()` after a same-name
     /// occurrence inside a string must still classify as Tier 3.
     /// Pre-fix `expr.find` returned the in-string position and
     /// the function never looked further.

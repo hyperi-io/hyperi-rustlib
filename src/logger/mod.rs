@@ -71,6 +71,10 @@ pub enum LoggerError {
     /// Invalid log level.
     #[error("invalid log level: {0}")]
     InvalidLevel(String),
+
+    /// Invalid log format (expected json, text, or auto).
+    #[error("invalid log format: {0}")]
+    InvalidFormat(String),
 }
 
 /// Log output format.
@@ -110,7 +114,7 @@ impl std::str::FromStr for LogFormat {
             "json" => Ok(Self::Json),
             "text" | "pretty" | "human" => Ok(Self::Text),
             "auto" => Ok(Self::Auto),
-            _ => Err(LoggerError::InvalidLevel(s.to_string())),
+            _ => Err(LoggerError::InvalidFormat(s.to_string())),
         }
     }
 }
@@ -397,6 +401,11 @@ mod tests {
         assert_eq!("text".parse::<LogFormat>().unwrap(), LogFormat::Text);
         assert_eq!("pretty".parse::<LogFormat>().unwrap(), LogFormat::Text);
         assert_eq!("auto".parse::<LogFormat>().unwrap(), LogFormat::Auto);
+        // A bad format string reports InvalidFormat, not InvalidLevel.
+        assert!(matches!(
+            "yaml".parse::<LogFormat>(),
+            Err(LoggerError::InvalidFormat(_))
+        ));
     }
 
     #[test]

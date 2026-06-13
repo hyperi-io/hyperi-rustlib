@@ -78,7 +78,7 @@ impl Default for MemoryConfig {
 /// Internal message type for the channel.
 struct InternalMessage {
     key: Option<Arc<str>>,
-    payload: Vec<u8>,
+    payload: bytes::Bytes,
     seq: u64,
     timestamp_ms: i64,
 }
@@ -152,7 +152,7 @@ impl MemoryTransport {
 
         let msg = InternalMessage {
             key: key.map(Arc::from),
-            payload,
+            payload: payload.into(),
             seq,
             timestamp_ms,
         };
@@ -188,7 +188,7 @@ impl MemorySender<'_> {
 
         let msg = InternalMessage {
             key: key.map(Arc::from),
-            payload,
+            payload: payload.into(),
             seq,
             timestamp_ms,
         };
@@ -235,7 +235,7 @@ impl TransportSender for MemoryTransport {
 
         let msg = InternalMessage {
             key: Some(Arc::from(key)),
-            payload: payload.to_vec(),
+            payload,
             seq,
             timestamp_ms,
         };
@@ -287,7 +287,7 @@ impl TransportReceiver for MemoryTransport {
             };
 
             if let Some(internal) = result {
-                let payload: bytes::Bytes = internal.payload.into();
+                let payload = internal.payload;
                 let format = PayloadFormat::detect(&payload);
                 messages.push(Message {
                     key: internal.key,
@@ -301,15 +301,20 @@ impl TransportReceiver for MemoryTransport {
 
         // Apply inbound filters via the shared partition helper; DLQ entries
         // are returned in the RecvBatch for the caller to route onward.
-        let batch =
-            self.filter_engine
-                .partition_batch(messages, |m| m.payload.as_ref(), |m| m.key.clone());
+        let batch = self.filter_engine.partition_batch(
+            messages,
+            |m| m.payload.as_ref(),
+            |m| m.key.clone(),
+            |m| m.token,
+        );
         let messages = batch.messages;
         let dlq_entries = batch.dlq_entries;
+        let filtered_tokens = batch.filtered_tokens;
 
         Ok(RecvBatch {
             messages,
             dlq_entries,
+            filtered_tokens,
         }
         .into())
     }

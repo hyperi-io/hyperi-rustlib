@@ -265,8 +265,9 @@ impl BatchEngine {
     ///
     /// `sub_block_bytes` is the target sum of `payload.len()` per sub-block (floor
     /// one record, so a record larger than the target is still its own sub-block
-    /// and the loop never stalls). It is taken as a parameter so the path is
-    /// testable; Phase 3 wires the byte budget from the governor.
+    /// and the loop never stalls). Taken as an explicit parameter so the path is
+    /// testable in isolation; [`run_governed`](Self::run_governed) supplies it
+    /// from the governor's byte budget.
     ///
     /// Fan-out WITHIN a sub-block's `process` is fine (records grow); the source
     /// acks are still the batch's input tokens, committed once at the end.
@@ -294,6 +295,14 @@ impl BatchEngine {
         Ticker: FnMut() -> TickerFut,
         TickerFut: std::future::Future<Output = Result<(), EngineError>>,
     {
+        // SinkManaged is unrepresentable on the streaming path: sub-block views
+        // carry EMPTY tokens, so the sink never sees the block's source acks and
+        // cannot own the commit. Fail fast at startup instead of freezing the
+        // partition at runtime.
+        if matches!(commit, CommitMode::SinkManaged) {
+            return Err(EngineError::SinkManagedUnsupported);
+        }
+
         tracing::info!(
             chunk_size = self.config.max_chunk_size,
             commit = ?commit,
@@ -394,12 +403,23 @@ impl BatchEngine {
         Ticker: FnMut() -> TickerFut,
         TickerFut: std::future::Future<Output = Result<(), EngineError>>,
     {
-        // Governor OFF -> the original whole-batch loop, byte-for-byte.
+        // Governor OFF -> the original whole-batch loop, byte-for-byte. The
+        // whole-batch path DOES support SinkManaged (the sink receives the full
+        // block with its tokens), so the guard below must sit AFTER this
+        // delegate, not before it.
         let Some(budget) = self.byte_budget.clone() else {
             return self
                 .run_workbatch(receiver, shutdown, process, sink, commit, ticker)
                 .await;
         };
+
+        // Governor ON streams in sub-blocks whose views carry EMPTY tokens, so
+        // the sink can never own a SinkManaged commit -- reject it at startup
+        // rather than silently freeze the source offset. (Same guard as
+        // run_workbatch_streaming, which this path bypasses.)
+        if matches!(commit, CommitMode::SinkManaged) {
+            return Err(EngineError::SinkManagedUnsupported);
+        }
 
         tracing::info!(
             chunk_size = self.config.max_chunk_size,
@@ -501,8 +521,13 @@ impl BatchEngine {
                     {
                         metrics::gauge!("self_regulation_byte_budget")
                             .set(budget.byte_budget() as f64);
-                        metrics::gauge!("recv_block_bytes").set(block_bytes as f64);
-                        metrics::gauge!("pressure_ratio").set(budget.pressure().level());
+                        metrics::gauge!("self_regulation_recv_block_bytes")
+                            .set(block_bytes as f64);
+                        // `self_regulation_` domain prefix: a bare `pressure_ratio`
+                        // collides with MemoryGuard's and ScalingPressure's own
+                        // pressure gauges on the same registry.
+                        metrics::gauge!("self_regulation_pressure_ratio")
+                            .set(budget.pressure().level());
                     }
                 }
             }
@@ -620,7 +645,12 @@ impl BatchEngine {
         // never silently dropped. The batch comes back with its dlq_entries
         // consumed so the process stage sees a clean block.
         let batch = self.apply_workbatch_dlq_policy(batch)?;
-        if batch.is_empty() {
+        // Skip ONLY a truly-empty block. A block with no records but with
+        // commit_tokens is the all-filtered case (every record was dropped/
+        // DLQ-routed by an inbound filter): those acks must still be committed
+        // so the source advances past the filtered records -- returning None
+        // here would strand them (stalled Kafka offset / leaked Redis PEL).
+        if batch.records.is_empty() && batch.commit_tokens.is_empty() {
             return Ok(None);
         }
         Ok(Some(batch))
@@ -653,7 +683,26 @@ impl BatchEngine {
         let _ingress_lease = self.lease_ingress_batch(&batch);
 
         // process() may fan out / fan in; it preserves the input commit_tokens.
+        // Capture the input ack count so a contract breach is LOGGED rather than
+        // silently freezing the source offset: a closure that rebuilds its
+        // output with WorkBatch::from_records (instead of map_records) drops the
+        // tokens to zero, the Auto commit below commits `&[]`, and the partition
+        // stalls with no diagnostic. One len() compare per block (not per
+        // record) -- nil hot-path cost.
+        let input_token_count = batch.commit_tokens.len();
+
         let mut out_batch = process(batch)?;
+
+        if out_batch.commit_tokens.len() != input_token_count {
+            tracing::warn!(
+                input_tokens = input_token_count,
+                output_tokens = out_batch.commit_tokens.len(),
+                "process() changed the commit-token count -- the run contract is \
+                 that process preserves source acks (transform records, not \
+                 tokens). A drop toward zero will under-commit and stall the \
+                 source offset; use map_records, not WorkBatch::from_records."
+            );
+        }
 
         // Route any parse/process-generated DLQ entries the out-batch carries,
         // through the SAME policy + route point as the inbound-filter entries
@@ -684,7 +733,15 @@ impl BatchEngine {
         // watermark on restart -- no later block can commit ahead of the
         // failure. The app owns restart/retry policy; the engine never invents
         // a silent skip.
-        if let Err(e) = sink(&out_batch).await {
+        // Skip the sink when there is nothing to send (e.g. every record in the
+        // block was filtered out): the sink has no work, but the block's
+        // commit_tokens -- which include the filtered records' acks -- must still
+        // be committed below so the source advances past them. (The streaming
+        // path gets this for free: a zero-record block runs zero sub-blocks and
+        // still commits once at the end.)
+        if !out_batch.records.is_empty()
+            && let Err(e) = sink(&out_batch).await
+        {
             tracing::error!(error = %e, "Sink failed (workbatch) -- terminal, stopping the run loop (ack barrier)");
             return Err(e);
         }
@@ -875,20 +932,20 @@ impl BatchEngine {
 
         // Parse each record on the pool. The pool's map_owned applies the scaler
         // semaphore per item, so the parse phase obeys the CPU cap exactly as the
-        // legacy parsed path does. Carry the index so failures keep their bytes.
-        let indexed: Vec<(usize, Record)> = records.into_iter().enumerate().collect();
-        let parsed_each: Vec<(usize, Record, Result<ParsedPayload, String>)> =
-            self.pool.map_owned(indexed, |(idx, record)| {
+        // legacy parsed path does. map_owned preserves input order, so a record
+        // and its parse result stay aligned without threading an explicit index.
+        let parsed_each: Vec<(Record, Result<ParsedPayload, String>)> =
+            self.pool.map_owned(records, |record| {
                 let format: PayloadFormat = record.metadata.format;
                 let result =
                     codec::parse(&record.payload, format).map_err(|e| format!("parse error: {e}"));
-                (idx, record, result)
+                (record, result)
             });
 
         let action = self.config.parse_error_action;
         let mut keep_records = Vec::new();
         let mut keep_parsed = Vec::new();
-        for (_idx, record, result) in parsed_each {
+        for (record, result) in parsed_each {
             match result {
                 Ok(payload) => {
                     keep_records.push(record);
@@ -2270,6 +2327,37 @@ mod tests {
         );
     }
 
+    /// The streaming path cannot honour `SinkManaged`: its sub-block views carry
+    /// EMPTY commit tokens, so the sink never sees the block's source acks and
+    /// physically cannot own the commit. The driver must fail fast at startup
+    /// rather than silently commit nothing and freeze the source offset.
+    #[tokio::test]
+    async fn streaming_rejects_sink_managed_commit() {
+        let transport = mem_transport(50);
+        let engine = default_engine();
+        let shutdown = CancellationToken::new();
+
+        let result = engine
+            .run_workbatch_streaming(
+                &transport,
+                shutdown,
+                |batch| Ok(batch),
+                move |_out: &WorkBatch<_>| async move { Ok(()) },
+                CommitMode::SinkManaged,
+                10_000,
+                None::<(
+                    Duration,
+                    fn() -> std::future::Ready<Result<(), EngineError>>,
+                )>,
+            )
+            .await;
+
+        assert!(
+            matches!(result, Err(EngineError::SinkManagedUnsupported)),
+            "SinkManaged on the streaming path must fail fast, got {result:?}"
+        );
+    }
+
     // ---- Phase 3: governed run path (default-on self-regulation) ----------
 
     /// Build a real governor over a MemoryGuard and wire its byte budget into
@@ -2697,7 +2785,7 @@ mod tests {
 
     // ---- Remediation Phase 2: byte-aware recv bounds RECEIVE memory -------
     //
-    // The gap (Codex finding): the governed driver bounds memory by the
+    // The gap: the governed driver bounds memory by the
     // post-recv SUB-BLOCK lease, but `recv(max)` is RECORD-bounded only -- a
     // single poll can build a WorkBatch whose total bytes >> byte_budget BEFORE
     // any sub-block split, so the byte budget did NOT bound RECEIVE memory. The

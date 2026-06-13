@@ -74,13 +74,7 @@ impl HttpServer {
         Arc::clone(&self.ready)
     }
 
-    /// Serve the given router until a shutdown signal is received.
-    ///
-    /// This method will:
-    /// 1. Bind to the configured address
-    /// 2. Optionally add health check endpoints
-    /// 3. Run until SIGTERM or SIGINT is received
-    /// 4. Perform graceful shutdown
+    /// Serve the given router until SIGTERM/SIGINT, then drain gracefully.
     ///
     /// # Errors
     ///
@@ -108,7 +102,7 @@ impl HttpServer {
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
-        // Enforce config validity before binding (Codex review 2026-06-03): a
+        // Enforce config validity before binding: a
         // config requesting unsupported in-process TLS must fail loudly here,
         // not bind cleartext while is_tls_enabled() reports true.
         self.config.validate().map_err(HttpServerError::TlsConfig)?;
@@ -186,7 +180,7 @@ impl HttpServer {
     ///
     /// Returns an error if binding fails.
     pub async fn serve_with_handle(self, app: Router) -> Result<(ShutdownHandle, ServerFuture)> {
-        // Same validation gate as serve_with_shutdown (Codex review 2026-06-03).
+        // Same validation gate as serve_with_shutdown.
         self.config.validate().map_err(HttpServerError::TlsConfig)?;
         let (tx, rx) = watch::channel(());
         let handle = ShutdownHandle { sender: tx };
@@ -527,7 +521,7 @@ mod tests {
         }
     }
 
-    /// Codex F12 regression: shutdown signal flips the readiness
+    /// Regression: shutdown signal flips the readiness
     /// flag so /health/ready returns 503 before the drain window
     /// completes. K8s endpoint controller stops routing on the 503.
     #[tokio::test]

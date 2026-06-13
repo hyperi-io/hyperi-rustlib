@@ -6,44 +6,35 @@
 // License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! # Parse-on-demand codec (Task 0.3a)
+//! # Parse-on-demand codec
 //!
-//! The data-plane spine frames bytes into a [`WorkBatch`](super::WorkBatch)
-//! WITHOUT parsing (Task 0.2). A transform / router that needs to read a field
-//! parses on demand -- and it should not care whether the record arrived as
-//! JSON or MsgPack. This module is that parse step.
+//! The spine frames bytes into a [`WorkBatch`](super::WorkBatch) WITHOUT
+//! parsing. A transform/router that needs a field parses on demand here, format-
+//! agnostic.
 //!
 //! ## Native, no JSON bridge
 //!
-//! There is no `rmp_serde -> serde_json::Value -> serde_json::to_vec ->
-//! sonic_rs` bridge anywhere on the parse path -- that double-parse-and-
-//! re-serialise was killed in Phase 0.7c (the engine `parse.rs` MsgPack path
-//! now walks `rmpv` straight into a `sonic_rs::Value`). Both this codec and
-//! the engine decode natively:
+//! No `rmp_serde -> serde_json::Value -> sonic_rs` double-parse anywhere on the
+//! parse path. Both arms decode natively:
 //!
-//! - **JSON** is parsed once with [`sonic_rs`] (SIMD, AVX2/NEON).
-//! - **MsgPack** is parsed once with [`rmpv`] -- the schema-less `Value` decoder
-//!   from the same `3Hren/msgpack-rust` workspace as `rmp-serde`. No
-//!   intermediate `serde_json::Value`, no JSON re-serialise.
+//! - **JSON** -- [`sonic_rs`] (SIMD, AVX2/NEON).
+//! - **MsgPack** -- [`rmpv`] schema-less `Value` decoder. No intermediate
+//!   `serde_json::Value`, no JSON re-serialise.
 //!
 //! ## Unified routing-field accessor
 //!
-//! A router keys off ONE field (`_table`, `org_id`, ...) and must not branch on
-//! wire format. [`ParsedPayload`] exposes a format-agnostic accessor:
+//! A router keys off ONE field and must not branch on wire format.
+//! [`ParsedPayload`] exposes a format-agnostic accessor:
 //!
 //! - [`ParsedPayload::field_str`] -- the common case: a top-level string field.
-//! - [`ParsedPayload::field`] -- a [`FieldRef`] covering the scalar routing
-//!   cases (string / int / float / bool / null), with everything else
-//!   ([`FieldRef::Other`]) deliberately collapsed because routers do not key
-//!   off nested containers.
+//! - [`ParsedPayload::field`] -- a [`FieldRef`] over the scalar routing cases
+//!   (string/int/float/bool/null); everything else collapses to
+//!   [`FieldRef::Other`] because routers do not key off containers.
 //!
-//! **Scope:** top-level object-key lookup only. No deep JSON-path -- routing
-//! keys live at the top level, and a deep-path query is a separate concern that
-//! YAGNI keeps out of the hot routing path.
+//! **Scope:** top-level object-key lookup only. No deep JSON-path (YAGNI -- keys
+//! live at the top level).
 //!
-//! See `docs/MIGRATIONS.md` (codec consolidation: native rmpv, JSON bridge
-//! removed) and `docs/SELF-REGULATION.md` for where this codec sits in the
-//! `WorkBatch` data-plane spine. The block contract is in
+//! See `docs/MIGRATIONS.md` and `docs/SELF-REGULATION.md`. Block contract in
 //! [`WorkBatch`](crate::transport::WorkBatch).
 
 use super::types::PayloadFormat;
@@ -53,6 +44,7 @@ use thiserror::Error;
 
 /// A parse failure, tagged by the format that failed.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum CodecError {
     /// JSON parse failed (sonic_rs SIMD parser).
     #[error("json parse error: {0}")]
@@ -64,34 +56,35 @@ pub enum CodecError {
 
     /// MsgPack serialise failed (native rmpv encoder).
     ///
-    /// `rmpv::encode::Error` is `rmp::encode::ValueWriteError` -- an I/O write
-    /// failure from the underlying writer. Serialising into an in-memory `Vec`
-    /// effectively never fails, but the encoder is fallible so we surface it
-    /// rather than panic. JSON serialise reuses [`CodecError::Json`]
-    /// (`sonic_rs::Error` already covers both parse and serialise).
+    /// An in-memory `Vec` write effectively never fails, but the encoder is
+    /// fallible so we surface it rather than panic. JSON serialise reuses
+    /// [`CodecError::Json`].
     #[error("msgpack encode error: {0}")]
     Encode(#[from] rmpv::encode::Error),
 
     /// Trailing bytes remain after a complete MsgPack value was decoded.
     ///
-    /// A single-record payload must encode exactly ONE value with no leftover
-    /// bytes. Trailing bytes indicate corruption, a framing error, or two
-    /// values concatenated (MsgPack stream framing is a separate, deferred
-    /// feature -- it is NOT supported here).
-    ///
-    /// The `usize` is the number of bytes that remained unconsumed.
+    /// A single-record payload must encode exactly ONE value. Trailing bytes
+    /// (the `usize`) mean corruption, framing error, or concatenated values --
+    /// MsgPack stream framing is a separate, deferred feature, not supported here.
     #[error("msgpack trailing bytes: {0} byte(s) remain after value")]
     TrailingBytes(usize),
+
+    /// Payload nests deeper than [`crate::parse_guard::MAX_PARSE_DEPTH`].
+    /// Rejected BEFORE the recursive parser runs so a hostile deeply-nested
+    /// payload cannot exhaust the worker stack.
+    #[error("payload nesting exceeds the maximum parse depth")]
+    TooDeep,
 }
 
 /// A parsed payload, retaining its native value representation.
 ///
-/// JSON stays a [`sonic_rs::Value`] (so the SIMD parse is not thrown away) and
-/// MsgPack stays an [`rmpv::Value`] (native, no JSON bridge). A consumer that
-/// only needs a routing field should reach for [`ParsedPayload::field_str`] /
-/// [`ParsedPayload::field`] rather than matching the variant -- that is the
-/// whole point of the unified accessor.
+/// JSON stays a [`sonic_rs::Value`] (SIMD parse not thrown away), MsgPack stays
+/// an [`rmpv::Value`] (no JSON bridge). For a routing field, prefer
+/// [`ParsedPayload::field_str`] / [`ParsedPayload::field`] over matching the
+/// variant -- that is the point of the unified accessor.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum ParsedPayload {
     /// JSON value parsed by sonic_rs (SIMD).
     Json(sonic_rs::Value),
@@ -109,6 +102,7 @@ pub enum ParsedPayload {
 /// `Str` borrows from the parsed value (zero-copy); the numeric / bool variants
 /// are `Copy` scalars.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum FieldRef<'a> {
     /// A string field (borrowed from the parsed value).
     Str(&'a str),
@@ -145,20 +139,31 @@ pub fn parse(payload: &Bytes, format: PayloadFormat) -> Result<ParsedPayload, Co
     match effective {
         // detect() never yields Auto, but treat a residual Auto as JSON.
         PayloadFormat::Json | PayloadFormat::Auto => {
+            // Cheap iterative depth pre-scan before the recursive SIMD parser:
+            // reject pathological nesting that would otherwise blow the stack.
+            if !crate::parse_guard::json_depth_within(payload, crate::parse_guard::MAX_PARSE_DEPTH)
+            {
+                return Err(CodecError::TooDeep);
+            }
             let value: sonic_rs::Value = sonic_rs::from_slice(payload)?;
             Ok(ParsedPayload::Json(value))
         }
         PayloadFormat::MsgPack => {
-            // rmpv::decode::read_value reads from any `io::Read`; a byte slice
-            // is one. `&mut &[u8]` advances the cursor as it decodes. This is a
-            // SINGLE native decode -- no rmp_serde, no serde_json, no re-encode.
+            // `&mut &[u8]` is the io::Read cursor; advances as it decodes. SINGLE
+            // native decode -- no rmp_serde, no serde_json, no re-encode.
+            //
+            // Bound nesting depth: a malicious/corrupt payload can encode deep
+            // nesting that drives recursive decode into worker-thread stack
+            // exhaustion. rmpv defaults to 1024; tighten to the shared parse-path
+            // bound on this untrusted path.
             let mut cursor: &[u8] = payload.as_ref();
-            let value = rmpv::decode::read_value(&mut cursor)?;
-            // A single-record payload encodes exactly ONE value. Any bytes still
-            // in `cursor` after the value was decoded indicate corruption,
-            // framing misalignment, or concatenated values. Reject them.
-            // MsgPack-stream framing (multiple values per payload) is a separate
-            // deferred feature -- do NOT silently accept trailing bytes here.
+            let value = rmpv::decode::read_value_with_max_depth(
+                &mut cursor,
+                crate::parse_guard::MAX_PARSE_DEPTH,
+            )?;
+            // One value per record. Leftover bytes mean corruption, framing
+            // misalignment, or concatenated values -- reject. MsgPack-stream
+            // framing is a separate deferred feature; do NOT silently accept.
             let remaining = cursor.len();
             if remaining > 0 {
                 return Err(CodecError::TrailingBytes(remaining));
@@ -246,32 +251,22 @@ impl ParsedPayload {
         }
     }
 
-    /// Serialise back to the payload's OWN wire format (Task 0.3b).
+    /// Serialise back to the payload's OWN wire format.
     ///
-    /// `Json` -> JSON bytes (via [`to_json_bytes`]), `MsgPack` -> MsgPack bytes
-    /// (via [`to_msgpack_bytes`]). Same format in, same format out -- no
-    /// cross-format conversion, no bridge.
+    /// Same format in, same format out -- no cross-format conversion, no bridge.
     ///
     /// ## Pass-through contract -- DO NOT round-trip untouched records
     ///
-    /// This is the egress face of a *parse-on-demand* spine. The governing
-    /// principle is "serde is the enemy / zero re-representation": a record that
-    /// a transform did NOT change must re-use its original `Record.payload`
-    /// (the `Bytes` it arrived as) directly on egress. `to_bytes` is ONLY for a
-    /// record a transform actually mutated.
+    /// `to_bytes` is ONLY for a record a transform actually mutated. A record
+    /// the transform did NOT change must re-use its original `Record.payload`
+    /// directly on egress ("serde is the enemy / zero re-representation").
+    /// Calling `to_bytes` on an unmodified record pays a parse + re-serialise for
+    /// nothing AND can alter the wire bytes (key order, number formatting,
+    /// whitespace) even though the value is identical.
     ///
-    /// Calling `to_bytes` on an unmodified record is a correctness *and*
-    /// performance bug: it pays a full parse + re-serialise for nothing AND can
-    /// alter the wire bytes (key order, number formatting, whitespace) even
-    /// though the logical value is identical. Reuse the original `Bytes`; only
-    /// reach for `to_bytes` once the value has been edited.
-    ///
-    /// There is deliberately NO `to_bytes_as` cross-format egress. JSON and
-    /// MsgPack have distinct value models (`sonic_rs::Value` vs `rmpv::Value`)
-    /// with no native conversion between them; bridging would mean either a
-    /// hand-rolled recursive value walker or a `serde_json` hop -- the exact
-    /// double-representation this spine exists to avoid. Cross-format egress, if
-    /// a consumer ever needs it, is a separate, explicit concern (YAGNI).
+    /// No `to_bytes_as` cross-format egress: `sonic_rs::Value` and `rmpv::Value`
+    /// have no native conversion, so bridging would reintroduce the exact double-
+    /// representation this spine exists to avoid (YAGNI).
     ///
     /// # Errors
     ///
@@ -415,6 +410,28 @@ mod tests {
         let parsed = parse(&Bytes::from_static(b"[1,2,3]"), PayloadFormat::Json).unwrap();
         assert!(parsed.is_json());
         assert_eq!(parsed.field_str("anything"), None);
+    }
+
+    #[test]
+    fn parse_msgpack_rejects_excessive_nesting() {
+        // 70 nested single-element arrays exceed the 64-level decode-depth bound
+        // that guards worker-thread stacks against a deeply-nested hostile or
+        // corrupt payload. 0x91 = fixarray of 1 element; 0xc0 = nil leaf.
+        let mut buf = vec![0x91u8; 70];
+        buf.push(0xc0);
+        let result = parse(&Bytes::from(buf), PayloadFormat::MsgPack);
+        assert!(
+            matches!(result, Err(CodecError::MsgPack(_))),
+            "deeply nested msgpack must be rejected by the depth bound, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn parse_msgpack_allows_reasonable_nesting() {
+        // Nesting well under the bound parses fine (no false positive).
+        let mut buf = vec![0x91u8; 8];
+        buf.push(0xc0);
+        assert!(parse(&Bytes::from(buf), PayloadFormat::MsgPack).is_ok());
     }
 
     // ---- parse(): MsgPack (native rmpv, hand-rolled bytes) -----------------

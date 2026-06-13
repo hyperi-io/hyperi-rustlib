@@ -6,37 +6,32 @@
 // License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Standard DFE metrics.
+//! Standard DFE metrics for pipeline components (receiver, loader, engine).
 //!
-//! Pre-defined metric set for DFE pipeline components (receiver, loader, engine).
 //! Call [`DfeMetrics::register`] **after** creating a
-//! [`MetricsManager`](super::MetricsManager) -- the manager must exist so that
-//! platform metrics are automatically captured in the manifest registry.
-//!
-//! All methods are `#[inline]` and designed for hot-path use.
+//! [`MetricsManager`](super::MetricsManager): the manager must exist so platform
+//! metrics land in the manifest registry. Methods are `#[inline]` for hot-path use.
 //!
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::metrics::{MetricsManager, DfeMetrics};
+//! use hyperi_rustlib::metrics::{MetricsManager, DfeMetrics, TransportKind};
 //!
 //! let mgr = MetricsManager::new("myapp");
 //! let dfe = DfeMetrics::register(&mgr);
 //!
-//! dfe.transport_sent("kafka", 100);
+//! dfe.transport_sent(TransportKind::Kafka, 100);
 //! dfe.records_received(500);
 //! dfe.scaling_pressure(42.0);
 //! ```
 
 use super::manifest::{MetricDescriptor, MetricType};
 
-/// Standard DFE metric set.
+/// Standard DFE metric set: labelled counters, gauges, and histograms across
+/// transport, pipeline, records, scaling, spool, and security.
 ///
-/// Provides labelled counters, gauges, and histograms covering transport,
-/// pipeline, records, scaling, spool, and security concerns.
-///
-/// Construct via [`DfeMetrics::register`] -- this describes all metrics with
-/// the global recorder AND pushes descriptors into the manifest registry.
+/// Construct via [`DfeMetrics::register`] -- describes all metrics with the
+/// global recorder AND pushes descriptors into the manifest registry.
 pub struct DfeMetrics {
     /// Prevent external construction.
     _private: (),
@@ -44,14 +39,12 @@ pub struct DfeMetrics {
 
 impl DfeMetrics {
     /// Register all DFE metric descriptions with the global recorder and
-    /// manifest registry.
+    /// manifest registry. Call **once** after creating a
+    /// [`MetricsManager`](super::MetricsManager). Returned handle is zero-sized
+    /// (recording goes through the global `metrics!` macros).
     ///
-    /// Call this **once** after creating a [`MetricsManager`](super::MetricsManager).
-    /// The returned handle is cheaply clonable (it's zero-sized -- all recording
-    /// goes through the global `metrics!` macros).
-    ///
-    /// **Breaking change (v1.22):** Now takes `&MetricsManager` to ensure
-    /// platform metrics are tightly coupled with the manifest registry.
+    /// **Breaking change (v1.22):** takes `&MetricsManager` so platform metrics
+    /// are tightly coupled with the manifest registry.
     #[must_use]
     #[allow(clippy::too_many_lines)]
     pub fn register(manager: &super::MetricsManager) -> Self {

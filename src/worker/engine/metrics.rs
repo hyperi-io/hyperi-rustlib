@@ -57,21 +57,33 @@ pub fn register(manager: &MetricsManager, config: &BatchProcessingConfig) {
     // the metrics manifest advertises them even before the first throttle.
     #[cfg(feature = "governor")]
     {
+        // Names MUST match the emit sites (gate.rs / driver.rs): all carry the
+        // `self_regulation_` domain prefix so the manifest advertises the same
+        // series that actually carry data (a bare `pressure_ratio` would also
+        // collide with MemoryGuard/ScalingPressure on the registry).
         let _ = manager.gauge(
             "self_regulation_byte_budget",
             "Current AIMD byte budget (inbound block size lever)",
         );
         let _ = manager.gauge(
-            "pressure_ratio",
+            "self_regulation_recv_block_bytes",
+            "Bytes in the most recent received block (vs the byte budget)",
+        );
+        let _ = manager.gauge(
+            "self_regulation_pressure_ratio",
             "Combined self-regulation pressure level (0.0-1.0)",
         );
         let _ = manager.gauge(
-            "inbound_paused",
-            "1 while the inbound gate is holding under pressure, else 0",
+            "self_regulation_inbound_paused",
+            "1 while the inbound gate is holding under pressure, else 0 (per source)",
         );
         let _ = manager.counter(
             "self_regulation_inbound_pauses_total",
-            "Inbound gate pause (rising-edge) events",
+            "Inbound gate pause (rising-edge) events (per source)",
+        );
+        let _ = manager.counter(
+            "self_regulation_kafka_gate_errors_total",
+            "Kafka pause/resume actuator failures (brake degraded)",
         );
     }
 

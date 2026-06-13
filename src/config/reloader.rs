@@ -66,73 +66,10 @@
 //! }
 //! ```
 //!
-//! ## Migration from Component-Specific Implementations
-//!
-//! ### From dfe-loader's `ConfigWatcher` (file polling)
-//!
-//! ```text
-//! // Before:
-//! let watcher = ConfigWatcher::new(WatcherConfig {
-//!     config_path, poll_interval, debounce, enabled: true,
-//! }, shared)?;
-//! let _handle = watcher.start();
-//!
-//! // After:
-//! let reloader = ConfigReloader::new(
-//!     ReloaderConfig {
-//!         config_path: Some(config_path),
-//!         poll_interval,
-//!         debounce,
-//!         enable_sighup: true,      // bonus: also reload on SIGHUP
-//!         periodic_interval: Duration::ZERO,
-//!     },
-//!     shared,
-//!     || Config::load(path),        // your reload function
-//!     |c| c.validate(),             // your validate function
-//! );
-//! let _handle = reloader.start();
-//! ```
-//!
-//! ### From dfe-receiver's `config_reload_task` (SIGHUP + periodic)
-//!
-//! ```text
-//! // Before (inline in main.rs):
-//! tokio::spawn(config_reload_task(state, reload_secs));
-//!
-//! // After:
-//! let reloader = ConfigReloader::new(
-//!     ReloaderConfig {
-//!         periodic_interval: Duration::from_secs(reload_secs),
-//!         enable_sighup: true,
-//!         config_path: None,         // no file watching
-//!         ..Default::default()
-//!     },
-//!     shared,
-//!     || Config::load(path),
-//!     |c| c.validate(),
-//! );
-//! let _handle = reloader.start();
-//! ```
-//!
-//! ### From dfe-archiver (not yet wired)
-//!
-//! The archiver has `SharedConfig` and `reload_config()` ready but not
-//! connected. Use `ConfigReloader` to complete the integration:
-//!
-//! ```text
-//! let reloader = ConfigReloader::new(
-//!     ReloaderConfig {
-//!         config_path: config.config_path.as_ref().map(PathBuf::from),
-//!         periodic_interval: Duration::from_secs(config.config_reload_secs),
-//!         enable_sighup: true,
-//!         ..Default::default()
-//!     },
-//!     shared,
-//!     || load_config(config_path),
-//!     |c| validate_config(c),
-//! );
-//! let _handle = reloader.start();
-//! ```
+//! Replaces the per-component reload implementations in dfe-loader
+//! (`ConfigWatcher`, file polling), dfe-receiver (`config_reload_task`,
+//! SIGHUP + periodic), and dfe-archiver: set the matching `ReloaderConfig`
+//! fields and pass the component's existing load/validate functions.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -478,7 +415,7 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
         }
     }
 
-    /// Attempt to reload config: load → validate → update shared.
+    /// Attempt to reload config: load -> validate -> update shared.
     fn do_reload(&self) {
         match (self.reload_fn)() {
             Ok(new_config) => {

@@ -268,15 +268,10 @@ impl CompiledFilter {
                 action,
                 ..
             } => {
-                // Fast path: pre-compiled memmem Finder for single-segment
-                // fields. SIMD substring search ~10-20ns vs sonic-rs ~200ns.
-                //
-                // The `"key":` pattern can occur inside string VALUES, not
-                // just as a JSON property name (e.g. `{"description":"hey
-                // \"key\": stuff"}`). Iterate every hit and require it to be
-                // at a structural position (outside any string value) before
-                // declaring the field present. Without this, Tier-1 returns
-                // false positives that violate `has(field)` semantics.
+                // Fast path: pre-compiled memmem Finder, single-segment fields.
+                // SIMD ~10-20ns vs sonic-rs ~200ns. `first_structural_hit`
+                // rejects `"key":` matches inside string values (else false
+                // positives violate `has(field)` semantics).
                 if let Some(n) = needle {
                     return first_structural_hit(payload, n.find_iter(payload)).map(|_| *action);
                 }
@@ -325,7 +320,7 @@ impl CompiledFilter {
                     let field_val = extract_string_value(&lv);
                     (field_val != value.as_str()).then_some(*action)
                 }
-                // Field missing → not equal to anything → match
+                // Field missing -> not equal to anything -> match
                 Err(_) => Some(*action),
             }),
             Self::FieldStartsWith {
@@ -439,30 +434,17 @@ fn split_field_path(field: &str) -> Vec<String> {
     field.split('.').map(String::from).collect()
 }
 
-/// Returns true if byte position `pos` in `payload` is at a JSON-structural
-/// position (outside any string value).
+/// First memmem `hits` position at a **top-level structural position** --
+/// outside any string AND at object depth 1 (immediate child of the root).
 ///
-/// Tier-1 `FieldExists` / `FieldNotExists` use `memmem::Finder` to scan
-/// raw bytes for the pattern `"key":`. That pattern can also occur inside
-/// a string VALUE (e.g. `{"description":"my \"key\": stuff"}`), producing
-/// a false positive. This helper scans forward from position 0 counting
-/// UNESCAPED quote characters: an even count at `pos` means `pos` is at a
-/// structural position; odd means it's inside a string value.
+/// Tier-1 `FieldExists` / `FieldNotExists` scan raw bytes for `"key":`, which
+/// can also occur inside a string VALUE (e.g. `{"d":"my \"key\": stuff"}`).
+/// Walking once and tracking string-state + depth rejects those false hits.
 ///
-/// Cost: O(pos), dominated by SIMD `memchr` finds. ~5ns per quote; total
-/// stays well under 100ns for sub-kilobyte payloads. Keeps Tier-1 in its
-/// typical 50-200ns budget.
-/// Walks `payload` once, tracking JSON string-state + object/array
-/// depth, and returns the first SIMD hit at a **top-level structural
-/// position** -- outside any string AND at object depth 1 (immediate
-/// child of the root object).
-///
-/// Strict CEL semantics (F13): `has(_table)` on
-/// `{"data":{"_table":"events"}}` must NOT match -- `_table` is at
-/// depth 2 inside `data`, not the implicit root. The previous shape
-/// of this helper matched anywhere outside string values, which
-/// broke the contract for routed messages where the same field
-/// name commonly appears nested in user data.
+/// Strict CEL semantics (F13): `has(_table)` on `{"data":{"_table":"events"}}`
+/// must NOT match -- `_table` is at depth 2, not the implicit root. Matching
+/// anywhere outside string values broke this for routed messages where the
+/// same field name commonly appears nested in user data.
 #[inline]
 fn first_structural_hit(payload: &[u8], hits: impl IntoIterator<Item = usize>) -> Option<usize> {
     let mut in_string = false;

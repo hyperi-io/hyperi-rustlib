@@ -39,10 +39,6 @@ use crate::transport::error::{TransportError, TransportResult};
 // ============================================================================
 
 /// Resolves Kafka topics from the broker with filtering and suppression.
-///
-/// Fetches all topics from the broker, applies suppression rules to eliminate
-/// redundant topics (e.g. `_load` over `_land`), then filters the result with
-/// include/exclude regex patterns.
 pub struct TopicResolver {
     admin: KafkaAdmin,
     suppression_rules: Vec<SuppressionRule>,
@@ -141,11 +137,9 @@ impl std::fmt::Debug for TopicResolver {
 /// For each rule: collect base names that have a `preferred_suffix` topic,
 /// then remove any topic with `suppressed_suffix` whose base name is in the set.
 ///
-/// ## Example
-///
 /// With the default rule (`_load` suppresses `_land`):
-/// - `auth_load` + `auth_land` → keeps `auth_load`, drops `auth_land`
-/// - `events_land` (no `events_load`) → kept
+/// - `auth_load` + `auth_land` -> keeps `auth_load`, drops `auth_land`
+/// - `events_land` (no `events_load`) -> kept
 #[must_use]
 pub fn apply_suppression_rules(topics: Vec<String>, rules: &[SuppressionRule]) -> Vec<String> {
     if rules.is_empty() {

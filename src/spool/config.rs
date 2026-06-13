@@ -17,27 +17,19 @@ pub struct SpoolConfig {
     /// Path to the queue file.
     pub path: PathBuf,
 
-    /// Enable zstd compression for stored items.
-    /// Reduces disk usage at the cost of CPU.
-    /// Defaults to false.
+    /// Enable zstd compression. Trades CPU for disk. Default false.
     #[serde(default)]
     pub compress: bool,
 
-    /// Zstd compression level (1-22, higher = better compression, slower).
-    /// Only used if `compress` is true.
-    /// Defaults to 3 (fast compression).
+    /// Zstd level (1-22, higher = smaller/slower). Default 3.
     #[serde(default = "default_compression_level")]
     pub compression_level: i32,
 
-    /// Maximum number of items in the queue.
-    /// If set, push operations will fail when the limit is reached.
-    /// Defaults to None (unlimited).
+    /// Item-count cap. `push` fails when reached. Default unlimited.
     #[serde(default)]
     pub max_items: Option<usize>,
 
-    /// Maximum total size of the queue file in bytes.
-    /// If set, push operations will fail when the limit is reached.
-    /// Defaults to None (unlimited).
+    /// Queue file size cap in bytes. `push` fails when reached. Default unlimited.
     #[serde(default)]
     pub max_size_bytes: Option<u64>,
 }
