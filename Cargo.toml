@@ -20,6 +20,10 @@ Opinionated, drop-in, working out of the box. The patterns from blog posts, wate
 """
 # BUSL-1.1 (Business Source License 1.1); each release converts to Apache-2.0
 # on its third anniversary. Full text + Affiliate/Australia annexures: LICENSE.
+# `license` gives an SPDX identifier so downstream cargo-deny can classify the
+# crate; `license-file` carries the full parametrised body + annexures. Cargo
+# permits both (emits an informational note, not an error).
+license = "BUSL-1.1"
 license-file = "LICENSE"
 repository = "https://github.com/hyperi-io/hyperi-rustlib"
 publish = true
