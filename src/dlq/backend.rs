@@ -22,9 +22,9 @@ use super::error::DlqError;
 /// Variants are feature-gated:
 ///
 /// - [`Self::File`] -- always available
-/// - [`Self::Kafka`] -- `dlq-kafka` feature
-/// - [`Self::Http`] -- `dlq-http` feature
-/// - [`Self::Redis`] -- `dlq-redis` feature
+/// - `Kafka` -- `dlq-kafka` feature
+/// - `Http` -- `dlq-http` feature
+/// - `Redis` -- `dlq-redis` feature
 ///
 /// Each variant's inner struct lives in its sibling module
 /// (`file::FileDlqInner`, `kafka::KafkaDlqInner`, etc.). They are

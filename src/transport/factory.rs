@@ -906,8 +906,8 @@ impl AnyReceiver {
     /// pressure:
     ///
     /// - **Kafka**: the consumer's assigned partitions are paused/resumed via
-    ///   [`SelfRegulationGovernor::attach_kafka_gate`](crate::SelfRegulationGovernor::attach_kafka_gate)
-    ///   (the full `gate_actuator -> InboundGate -> with_inbound_gate` dance).
+    ///   `SelfRegulationGovernor::attach_kafka_gate` (`transport-kafka` feature)
+    ///   -- the full `gate_actuator -> InboundGate -> with_inbound_gate` dance.
     /// - **HTTP / gRPC**: the embedded receive server is built with
     ///   `with_pressure(Some(governor.pressure()))`, so it sheds with 503 /
     ///   `Status::unavailable` while the pressure latch holds.

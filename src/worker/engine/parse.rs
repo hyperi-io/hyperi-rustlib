@@ -28,7 +28,7 @@ pub enum ParseError {
     MsgPack(String),
     /// Format not supported (feature gate not enabled).
     UnsupportedFormat(&'static str),
-    /// Payload nests deeper than [`crate::parse_guard::MAX_PARSE_DEPTH`].
+    /// Payload nests deeper than `MAX_PARSE_DEPTH` (`parse_guard` module).
     /// Rejected BEFORE the recursive parser runs so a hostile deeply-nested
     /// payload cannot exhaust the worker stack (a per-record error, not a crash).
     TooDeep,

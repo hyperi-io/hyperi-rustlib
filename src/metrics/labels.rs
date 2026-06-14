@@ -42,6 +42,10 @@ pub enum TransportKind {
     Http,
     Redis,
     Routed,
+    /// Generic / combined output sink where the concrete backend is not
+    /// distinguished -- e.g. an app with a single combined send-error
+    /// counter spanning more than one producer.
+    Output,
 }
 
 impl TransportKind {
@@ -57,6 +61,7 @@ impl TransportKind {
             Self::Http => "http",
             Self::Redis => "redis",
             Self::Routed => "routed",
+            Self::Output => "output",
         }
     }
 }
@@ -230,6 +235,7 @@ mod tests {
             TransportKind::Http.as_label(),
             TransportKind::Redis.as_label(),
             TransportKind::Routed.as_label(),
+            TransportKind::Output.as_label(),
             FlushTrigger::Size.as_label(),
             FlushTrigger::Records.as_label(),
             FlushTrigger::Age.as_label(),

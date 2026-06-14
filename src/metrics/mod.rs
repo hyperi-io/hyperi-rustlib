@@ -15,7 +15,7 @@
 //! Counter/Gauge/Histogram types, automatic process + cgroup container metrics,
 //! built-in HTTP server, readiness/startup probes, optional scaling-pressure and
 //! memory-guard endpoints, custom routes via
-//! [`start_server_with_routes`](MetricsManager::start_server_with_routes).
+//! `MetricsManager::start_server_with_routes` (`http-server` feature).
 //!
 //! ## Basic Example
 //!
@@ -924,7 +924,7 @@ impl MetricsManager {
     ///
     /// Uses interior mutability (writes through the registry's `Arc<RwLock>`),
     /// so only `&self` is needed. Called automatically by
-    /// [`dfe_groups::AppMetrics::new()`] if the `metrics-dfe` feature is enabled.
+    /// `dfe_groups::AppMetrics::new()` if the `metrics-dfe` feature is enabled.
     pub fn set_build_info(&self, version: &str, commit: &str) {
         self.registry.set_build_info(version, commit);
     }
@@ -954,7 +954,8 @@ impl MetricsManager {
 
     /// Get the namespace prefix (e.g. `dfe_loader`).
     ///
-    /// Used by [`dfe_groups`] metric structs to build labelled metric keys.
+    /// Used by `dfe_groups` metric structs (`metrics-dfe` feature) to build
+    /// labelled metric keys.
     #[must_use]
     pub fn namespace(&self) -> &str {
         &self.config.namespace

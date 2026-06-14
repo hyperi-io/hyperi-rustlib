@@ -70,7 +70,7 @@ pub enum CodecError {
     #[error("msgpack trailing bytes: {0} byte(s) remain after value")]
     TrailingBytes(usize),
 
-    /// Payload nests deeper than [`crate::parse_guard::MAX_PARSE_DEPTH`].
+    /// Payload nests deeper than `MAX_PARSE_DEPTH` (`parse_guard` module).
     /// Rejected BEFORE the recursive parser runs so a hostile deeply-nested
     /// payload cannot exhaust the worker stack.
     #[error("payload nesting exceeds the maximum parse depth")]

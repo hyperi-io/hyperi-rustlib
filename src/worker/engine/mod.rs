@@ -150,8 +150,8 @@ use super::config::WorkerPoolConfig;
 /// chunks (the retired `check_memory_pressure` proto-actuator). It is now the
 /// self-regulation governor's job: the inbound GATE pauses the source transport
 /// and the streaming byte-budget lever bounds peak in-flight memory. See
-/// [`run_governed`](Self::run_governed). With the governor OFF, there is no
-/// active brake -- that is the deliberate opt-out.
+/// `run_governed` (`transport` + `governor` features). With the governor OFF,
+/// there is no active brake -- that is the deliberate opt-out.
 pub struct BatchEngine {
     config: BatchProcessingConfig,
     pool: Arc<AdaptiveWorkerPool>,
@@ -168,7 +168,7 @@ pub struct BatchEngine {
     /// default, and whenever self-regulation is OFF) keeps the engine on the
     /// whole-batch [`run_workbatch`](Self::run_workbatch) loop -- byte-identical
     /// to pre-governor behaviour. When wired (by `ServiceRuntime` when the
-    /// governor is enabled), [`run_governed`](Self::run_governed) streams in
+    /// governor is enabled), `run_governed` streams in
     /// budget-sized sub-blocks and feeds the AIMD loop per block.
     #[cfg(feature = "governor")]
     byte_budget: Option<Arc<crate::governor::ByteBudgetController>>,
@@ -212,7 +212,7 @@ impl BatchEngine {
     /// Wire the self-regulation byte-budget lever (`governor` feature).
     ///
     /// Called by `ServiceRuntime::build()` when the governor is enabled. Once
-    /// wired, [`run_governed`](Self::run_governed) streams the input in
+    /// wired, `run_governed` streams the input in
     /// budget-sized sub-blocks and drives the AIMD loop per block. Without it
     /// (governor off), `run_governed` falls back to the whole-batch loop.
     #[cfg(feature = "governor")]
@@ -221,7 +221,7 @@ impl BatchEngine {
     }
 
     /// Whether the self-regulation byte-budget lever is wired (`governor`
-    /// feature). When `false`, [`run_governed`](Self::run_governed) is the
+    /// feature). When `false`, `run_governed` is the
     /// whole-batch loop.
     #[cfg(feature = "governor")]
     #[must_use]
