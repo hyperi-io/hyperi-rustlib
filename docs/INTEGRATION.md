@@ -205,9 +205,9 @@ In your app repo:
 
 ```
 config/
-├── defaults.yaml          # Safe fallback baseline (always loaded last)
-├── settings.yaml          # Team defaults (committed)
-└── settings.production.yaml   # Per-env overrides (committed)
+|-- defaults.yaml          # Safe fallback baseline (always loaded last)
+|-- settings.yaml          # Team defaults (committed)
+`-- settings.production.yaml   # Per-env overrides (committed)
 .env                       # Local-dev secrets (gitignored)
 ```
 

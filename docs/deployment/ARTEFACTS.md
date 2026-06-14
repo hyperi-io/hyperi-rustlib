@@ -14,11 +14,11 @@ Subcommand: the `cli` feature's `StandardCommand::GenerateArtefacts`
 
 ```text
 ci/
-├── metrics-manifest.json        # when `metrics` feature on
-├── deployment-contract.json     # when DfeApp::deployment_contract() is Some
-├── container-manifest.json      # minimal CI-consumable subset
-├── Dockerfile.runtime           # runtime-stage fragment for CI composition
-└── argocd-application.yaml      # ArgoCD Application CR
+|-- metrics-manifest.json        # when `metrics` feature on
+|-- deployment-contract.json     # when DfeApp::deployment_contract() is Some
+|-- container-manifest.json      # minimal CI-consumable subset
+|-- Dockerfile.runtime           # runtime-stage fragment for CI composition
+`-- argocd-application.yaml      # ArgoCD Application CR
 ```
 
 The Helm `chart/` tree is NOT written by `generate-artefacts`. Apps
@@ -27,19 +27,19 @@ because the chart is a directory tree, not a single file:
 
 ```text
 chart/
-├── Chart.yaml
-├── values.yaml
-└── templates/
-    ├── _helpers.tpl
-    ├── deployment.yaml
-    ├── service.yaml
-    ├── serviceaccount.yaml
-    ├── configmap.yaml
-    ├── secret.yaml
-    ├── hpa.yaml
-    ├── keda-scaledobject.yaml   # only when keda.is_some()
-    ├── keda-triggerauth.yaml    # only when keda.is_some()
-    └── NOTES.txt
+|-- Chart.yaml
+|-- values.yaml
+`-- templates/
+    |-- _helpers.tpl
+    |-- deployment.yaml
+    |-- service.yaml
+    |-- serviceaccount.yaml
+    |-- configmap.yaml
+    |-- secret.yaml
+    |-- hpa.yaml
+    |-- keda-scaledobject.yaml   # only when keda.is_some()
+    |-- keda-triggerauth.yaml    # only when keda.is_some()
+    `-- NOTES.txt
 ```
 
 ---

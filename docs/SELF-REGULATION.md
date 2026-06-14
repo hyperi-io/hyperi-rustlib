@@ -125,17 +125,34 @@ source would plug in as a SOFT, weighted source and every existing caller
 of `level()` / `should_hold()` is untouched. The decision to drop CPU is a
 default, not a wall.
 
+### The memory signal: max, high, and PSI
+
+The HARD memory source reads the container's own cgroup, not host `used/total`
+(on a shared node the host figure is unrelated to this pod's limit). Three
+cgroup v2 inputs, container-first:
+
+- **`memory.max`** -- the hard ceiling. Cross it and the kernel OOM-kills the
+  pod. Base pressure ratio is `memory.current / memory.max`.
+- **`memory.high`** -- the soft throttle. The kernel reclaims hard and throttles
+  allocations here, BEFORE the OOM-kill, so the signal takes the WORST of
+  `current/max` and `current/high` -- shedding before the throttle's latency
+  cliff, not just before the kill. The `MemoryGuard` likewise caps its
+  admission limit at `memory.high` when that is below `max * headroom`.
+- **`memory.pressure` (PSI `some avg10`)** -- the earliest signal: the fraction
+  of the last 10s in which a task stalled on memory. Emitted as the
+  `worker_pool_memory_psi_some` gauge for observability/alerting. NOT folded
+  into the shed decision -- the actionable stall-percent is workload-specific
+  and wants per-service calibration, not a guessed constant.
+
 ---
 
 ## How the loop works
 
-```text
-  MemoryGuard.pressure_ratio()  --HARD-->  UnifiedPressure.level()
-                                                |
-                  +-----------------------------+-----------------------------+
-                  |                                                           |
-          InboundGate                                              ByteBudgetController
-   (pause/resume the SOURCE)                                  (AIMD lever -> sub-block size)
+```mermaid
+flowchart TD
+    MG["MemoryGuard.pressure_ratio()"] -->|HARD| UP["UnifiedPressure.level()"]
+    UP --> IG["InboundGate<br/>(pause/resume the SOURCE)"]
+    UP --> BB["ByteBudgetController<br/>(AIMD lever -> sub-block size)"]
 ```
 
 - **InboundGate** (`src/governor/gate.rs`) turns the latch into EDGE events:

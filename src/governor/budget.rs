@@ -407,6 +407,47 @@ mod tests {
         assert!(ctl.byte_budget() >= 1, "never zero");
     }
 
+    /// Anti-starvation lifecycle: sustained "behind" pins the budget at the
+    /// record floor (never zero, always room for >=1 record), and once the
+    /// pressure clears the budget RECOVERS via additive-increase -- the floor
+    /// is a floor, not a trap. The recovery is deliberately the gentle linear
+    /// AIMD climb, NOT a jump-reset: a reset on repeated floor hits would
+    /// re-introduce the very oscillation AIMD exists to damp.
+    #[test]
+    fn floor_never_starves_then_recovers_when_pressure_clears() {
+        let src = Arc::new(MockSource::new(0.0));
+        let (ctl, _p) = controller(test_cfg(), &src);
+
+        // Sustained behind (rho 0.9 > 0.7) -> pinned to the 1000-byte floor.
+        for _ in 0..30 {
+            ctl.observe(500, ms(90), ms(100));
+        }
+        assert_eq!(ctl.byte_budget(), 1_000, "sustained pressure pins to floor");
+        // The floor still admits at least one record -- no starvation/livelock.
+        assert!(ctl.byte_budget() >= test_cfg().nominal_record_bytes);
+        assert!(ctl.record_cap() >= 1);
+
+        // Pressure clears (rho 0.1 << 0.7) -> additive-increase climbs back.
+        ctl.observe(500, ms(10), ms(100));
+        assert_eq!(
+            ctl.byte_budget(),
+            6_000,
+            "floor + one ai_step (1000 + 5000)"
+        );
+        let mut last = ctl.byte_budget();
+        for _ in 0..50 {
+            ctl.observe(500, ms(10), ms(100));
+            let now = ctl.byte_budget();
+            assert!(now >= last, "must be monotone up while recovering");
+            last = now;
+        }
+        assert_eq!(
+            ctl.byte_budget(),
+            100_000,
+            "recovers all the way to the cap"
+        );
+    }
+
     /// THE adversarial test: memory HARD override beats rho.
     ///
     /// Even with rho deep in slack (would grow), forcing memory pressure

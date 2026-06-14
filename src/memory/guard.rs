@@ -144,6 +144,22 @@ fn sane_fraction(v: f64, default: f64, name: &str) -> f64 {
     }
 }
 
+/// Effective auto-detected limit: cgroup limit * headroom, capped at the soft
+/// throttle (`memory.high`) when that is set lower.
+///
+/// The kernel reclaims hard and throttles allocations at `memory.high` (before
+/// the `memory.max` OOM-kill), so admitting past it courts a latency cliff.
+/// Pure, so the cap logic is unit-testable without touching the real cgroup
+/// files.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn effective_auto_limit(detected: u64, headroom: f64, high: Option<u64>) -> u64 {
+    let headroom_limit = (detected as f64 * headroom) as u64;
+    match high {
+        Some(h) => headroom_limit.min(h),
+        None => headroom_limit,
+    }
+}
+
 /// Default cgroup headroom: use 85% of cgroup limit.
 ///
 /// Rationale: Rust has no GC so no spike headroom needed (unlike JVM 75% / Go 80%).
@@ -325,9 +341,11 @@ impl MemoryGuard {
         let raw_limit = if config.limit_bytes > 0 {
             config.limit_bytes
         } else {
-            let detected = cgroup::detect_memory_limit();
-            // Apply headroom -- don't use 100% of cgroup limit
-            (detected as f64 * cgroup_headroom) as u64
+            effective_auto_limit(
+                cgroup::detect_memory_limit(),
+                cgroup_headroom,
+                cgroup::detect_memory_high(),
+            )
         };
         // Never permit a zero effective limit: every pressure calculation
         // divides by it.
@@ -647,6 +665,17 @@ mod tests {
             900,
             "counter untouched by try_reserve"
         );
+    }
+
+    #[test]
+    fn effective_auto_limit_caps_at_memory_high() {
+        // headroom 0.85 of 1000 = 850; high 600 is lower -> cap at the soft
+        // throttle so we shed before the kernel does.
+        assert_eq!(effective_auto_limit(1000, 0.85, Some(600)), 600);
+        // high above the headroom limit -> headroom wins (no change).
+        assert_eq!(effective_auto_limit(1000, 0.85, Some(900)), 850);
+        // no memory.high in force -> headroom limit.
+        assert_eq!(effective_auto_limit(1000, 0.85, None), 850);
     }
 
     #[test]

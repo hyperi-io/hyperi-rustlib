@@ -238,6 +238,13 @@ impl ScalingController {
             .set(decision.target.saturating_sub(leased) as f64);
         metrics::gauge!("worker_pool_cpu_utilisation").set(cpu_util);
         metrics::gauge!("worker_pool_memory_utilisation").set(effective_memory_pressure);
+        // PSI memory stall (some avg10) -- the earliest memory-pressure signal,
+        // surfaced for observability/alerting. Deliberately NOT folded into the
+        // scale decision: the actionable stall-percent is workload-specific.
+        #[cfg(feature = "memory")]
+        if let Some(stall) = crate::memory::detect_memory_stall() {
+            metrics::gauge!("worker_pool_memory_psi_some").set(stall);
+        }
         metrics::gauge!("worker_pool_saturation")
             .set(decision.target as f64 / cfg.max_threads.max(1) as f64);
 

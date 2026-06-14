@@ -661,87 +661,66 @@ impl TransportReceiver for AnyReceiver {
         match self {
             #[cfg(feature = "transport-kafka")]
             Self::Kafka(t) => {
-                let inner: Vec<_> = tokens
-                    .iter()
-                    .filter_map(|tok| match tok {
-                        AnyToken::Kafka(k) => Some(k.clone()),
-                        #[allow(unreachable_patterns)]
-                        _ => None,
-                    })
-                    .collect();
-                t.commit(&inner).await
+                t.commit(&extract_tokens(tokens, |tok| match tok {
+                    AnyToken::Kafka(k) => Some(k.clone()),
+                    #[allow(unreachable_patterns)]
+                    _ => None,
+                }))
+                .await
             }
             #[cfg(feature = "transport-grpc")]
             Self::Grpc(t) => {
-                let inner: Vec<_> = tokens
-                    .iter()
-                    .filter_map(|tok| match tok {
-                        AnyToken::Grpc(g) => Some(g.clone()),
-                        #[allow(unreachable_patterns)]
-                        _ => None,
-                    })
-                    .collect();
-                t.commit(&inner).await
+                t.commit(&extract_tokens(tokens, |tok| match tok {
+                    AnyToken::Grpc(g) => Some(g.clone()),
+                    #[allow(unreachable_patterns)]
+                    _ => None,
+                }))
+                .await
             }
             #[cfg(feature = "transport-memory")]
             Self::Memory(t) => {
-                let inner: Vec<_> = tokens
-                    .iter()
-                    .filter_map(|tok| match tok {
-                        AnyToken::Memory(m) => Some(*m),
-                        #[allow(unreachable_patterns)]
-                        _ => None,
-                    })
-                    .collect();
-                t.commit(&inner).await
+                t.commit(&extract_tokens(tokens, |tok| match tok {
+                    AnyToken::Memory(m) => Some(*m),
+                    #[allow(unreachable_patterns)]
+                    _ => None,
+                }))
+                .await
             }
             #[cfg(feature = "transport-pipe")]
             Self::Pipe(t) => {
-                let inner: Vec<_> = tokens
-                    .iter()
-                    .filter_map(|tok| match tok {
-                        AnyToken::Pipe(p) => Some(*p),
-                        #[allow(unreachable_patterns)]
-                        _ => None,
-                    })
-                    .collect();
-                t.commit(&inner).await
+                t.commit(&extract_tokens(tokens, |tok| match tok {
+                    AnyToken::Pipe(p) => Some(*p),
+                    #[allow(unreachable_patterns)]
+                    _ => None,
+                }))
+                .await
             }
             #[cfg(feature = "transport-file")]
             Self::File(t) => {
-                let inner: Vec<_> = tokens
-                    .iter()
-                    .filter_map(|tok| match tok {
-                        AnyToken::File(f) => Some(*f),
-                        #[allow(unreachable_patterns)]
-                        _ => None,
-                    })
-                    .collect();
-                t.commit(&inner).await
+                t.commit(&extract_tokens(tokens, |tok| match tok {
+                    AnyToken::File(f) => Some(*f),
+                    #[allow(unreachable_patterns)]
+                    _ => None,
+                }))
+                .await
             }
             #[cfg(feature = "transport-http")]
             Self::Http(t) => {
-                let inner: Vec<_> = tokens
-                    .iter()
-                    .filter_map(|tok| match tok {
-                        AnyToken::Http(h) => Some(h.clone()),
-                        #[allow(unreachable_patterns)]
-                        _ => None,
-                    })
-                    .collect();
-                t.commit(&inner).await
+                t.commit(&extract_tokens(tokens, |tok| match tok {
+                    AnyToken::Http(h) => Some(h.clone()),
+                    #[allow(unreachable_patterns)]
+                    _ => None,
+                }))
+                .await
             }
             #[cfg(feature = "transport-redis")]
             Self::Redis(t) => {
-                let inner: Vec<_> = tokens
-                    .iter()
-                    .filter_map(|tok| match tok {
-                        AnyToken::Redis(r) => Some(r.clone()),
-                        #[allow(unreachable_patterns)]
-                        _ => None,
-                    })
-                    .collect();
-                t.commit(&inner).await
+                t.commit(&extract_tokens(tokens, |tok| match tok {
+                    AnyToken::Redis(r) => Some(r.clone()),
+                    #[allow(unreachable_patterns)]
+                    _ => None,
+                }))
+                .await
             }
             #[allow(unreachable_patterns)]
             _ => Err(TransportError::Config(
@@ -759,6 +738,23 @@ fn read_transport_config(key: &str) -> TransportResult<super::TransportConfig> {
         .ok_or_else(|| TransportError::Config("config not initialised".into()))?;
     cfg.unmarshal_key::<super::TransportConfig>(key)
         .map_err(|e| TransportError::Config(format!("failed to read {key}: {e}")))
+}
+
+/// Collect the tokens of one `AnyToken` variant from a mixed slice. The
+/// per-variant match stays in the caller -- a single-feature build has one
+/// variant, making `if let` irrefutable under -D warnings -- so this only
+/// folds away the repeated `.collect()`.
+#[cfg(any(
+    feature = "transport-kafka",
+    feature = "transport-grpc",
+    feature = "transport-memory",
+    feature = "transport-pipe",
+    feature = "transport-file",
+    feature = "transport-http",
+    feature = "transport-redis",
+))]
+fn extract_tokens<T>(tokens: &[AnyToken], pick: impl Fn(&AnyToken) -> Option<T>) -> Vec<T> {
+    tokens.iter().filter_map(pick).collect()
 }
 
 impl AnyReceiver {
@@ -1055,6 +1051,9 @@ mod tests {
 
         // Commit the AnyToken slice -- routes back to the MemoryTransport.
         let tokens: Vec<AnyToken> = batch.commit_tokens;
+        // Irrefutable when transport-memory is the only variant compiled in,
+        // refutable when other transports are enabled -- allow either.
+        #[allow(irrefutable_let_patterns)]
         let seq_before = if let AnyReceiver::Memory(ref t) = receiver {
             t.committed_sequence()
         } else {
@@ -1064,6 +1063,7 @@ mod tests {
         receiver.commit(&tokens).await.expect("commit must succeed");
 
         // The memory transport tracks the max committed seq; it must have advanced.
+        #[allow(irrefutable_let_patterns)]
         if let AnyReceiver::Memory(ref t) = receiver {
             let seq_after = t.committed_sequence();
             assert!(
