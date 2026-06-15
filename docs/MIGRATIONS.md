@@ -10,11 +10,40 @@ six core DFE apps migrate in lockstep.
 
 ---
 
+## 2.8.13 -- `KedaContract` is now `#[non_exhaustive]`
+
+A `fix:`. [`KedaContract`](../src/deployment/keda.rs) is now
+`#[non_exhaustive]`. Downstream crates can no longer construct it via a full
+struct literal (`KedaContract { .. }`) -- the compiler forces construction
+through `from_config` / `From<&KedaConfig>` / `Default` instead.
+
+This is a one-time construction-pattern migration. It costs zero
+expressiveness: `KedaContract` is a strict subset of `KedaConfig` and
+`from_config` is total, so anything a literal could express is reachable via
+config. In return, ALL future contract-field additions become non-breaking
+for consumers (the new field is filled by `from_config`/`Default`, not
+something every downstream literal must add) -- it stops the 2.8.12
+source break from recurring.
+
+- **Action required on the bump:** any app that builds the contract via a
+  struct literal (e.g. dfe-receiver's `src/deployment.rs`) must switch to one
+  of:
+    - `KedaConfig { ..real values.., ..Default::default() }.into()`
+    - `KedaContract::from_config(&cfg)`
+    - `KedaContract::default()` + field mutation
+  Apps already using `from_config` / `.into()` / `Default` need no change.
+
+---
+
 ## 2.8.12 -- silent-footgun fixes (scaling feature, MemoryGuard cascade, KEDA trigger)
 
 A `fix:`. Three "set it, nothing happens" footguns surfaced by the
-2.8.10/2.8.11 scaling rollout. All additive -- existing apps recompile
-unchanged; two carry a behaviour change worth reviewing on the bump.
+2.8.10/2.8.11 scaling rollout. Two carry a behaviour change worth reviewing
+on the bump; the `KedaContract` field additions are a source break for any
+app that builds the contract via a full struct literal -- those constructors
+must add the two new fields (or migrate to `from_config`/`.into()`/`Default`).
+2.8.13's `#[non_exhaustive]` prevents this recurring on future field
+additions.
 
 ### `scaling` feature now pulls `expression`
 

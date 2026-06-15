@@ -80,8 +80,21 @@ impl Default for KedaConfig {
 /// versions: an older artefact JSON missing newer trigger fields (e.g. the
 /// 2.8.12 `scaling_pressure_*` pair) deserialises with those fields defaulted
 /// rather than erroring.
+///
+/// `#[non_exhaustive]`: downstream crates MUST NOT construct this via a struct
+/// literal (`KedaContract { .. }`). The contract is a strict subset of
+/// [`KedaConfig`] and [`KedaContract::from_config`] is total, so construct via
+/// one of:
+///   - `KedaConfig { ..real values.., ..Default::default() }.into()`
+///   - [`KedaContract::from_config`]`(&cfg)`
+///   - [`KedaContract::default`]`()` + field mutation
+///
+/// This keeps future contract-field additions non-breaking for consumers: a
+/// new field is filled by `from_config`/`Default` rather than forcing every
+/// downstream literal to add it (the 2.8.12 source break this prevents).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct KedaContract {
     pub min_replicas: u32,
     pub max_replicas: u32,
