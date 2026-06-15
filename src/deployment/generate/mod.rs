@@ -280,6 +280,41 @@ mod tests {
     }
 
     #[test]
+    fn test_values_yaml_has_scaling_pressure_block() {
+        let contract = test_contract();
+        let dir = tempfile::tempdir().unwrap();
+        generate_chart(&contract, dir.path(), None).unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("values.yaml")).unwrap();
+        // Opt-in (default off), with the per-pod-sum query derived from
+        // metric_prefix and the threshold seeded from the contract.
+        assert!(content.contains("scalingPressure:"));
+        assert!(content.contains("query: \"avg(loader_scaling_pressure)\""));
+        assert!(content.contains("threshold: \"70\""));
+    }
+
+    #[test]
+    fn test_keda_scaledobject_has_scaling_pressure_trigger() {
+        let contract = test_contract();
+        let dir = tempfile::tempdir().unwrap();
+        generate_chart(&contract, dir.path(), None).unwrap();
+
+        let keda_yaml =
+            std::fs::read_to_string(dir.path().join("templates/keda-scaledobject.yaml")).unwrap();
+        // Runtime-gated Prometheus trigger on the correlated-composite gauge.
+        assert!(
+            keda_yaml.contains("if .Values.keda.scalingPressure.enabled"),
+            "scaledobject missing scalingPressure guard:\n{keda_yaml}"
+        );
+        assert!(keda_yaml.contains("type: prometheus"));
+        assert!(keda_yaml.contains(".Values.keda.scalingPressure.query"));
+        assert!(
+            keda_yaml.contains("metricType: Value"),
+            "capped per-pod composite uses avg()+Value (per KEDA.md):\n{keda_yaml}"
+        );
+    }
+
+    #[test]
     fn test_helpers_contain_secret_helpers() {
         let contract = test_contract();
         let dir = tempfile::tempdir().unwrap();

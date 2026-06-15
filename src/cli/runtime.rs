@@ -144,8 +144,13 @@ impl ServiceRuntime {
         }
 
         // --- Memory guard ---
+        // Cascade `memory:` section is the base, flat {PREFIX}_MEMORY_* env
+        // overlaid on top. `from_env` alone (pre-2.8.12) read only the flat
+        // env and silently ignored the YAML `memory:` section.
         #[cfg(feature = "memory")]
-        let memory_guard = Arc::new(MemoryGuard::new(MemoryGuardConfig::from_env(env_prefix)));
+        let memory_guard = Arc::new(MemoryGuard::new(MemoryGuardConfig::from_cascade_with_env(
+            env_prefix,
+        )));
 
         // --- Self-regulation governor (default-ON, opt-out) ---
         //

@@ -83,6 +83,11 @@ Triggers KEDA gets:
    `values.yaml.config.kafka`, overridable per-deployment.
 2. **CPU** (optional, when `keda.cpu.enabled`) -- utilisation
    percentage via `metricType: Utilization`.
+3. **Scaling pressure** (optional, when `keda.scalingPressure.enabled`) --
+   a Prometheus trigger on `avg({metric_prefix}_scaling_pressure)`
+   (`metricType: Value`), the correlated-composite engine gauge (below).
+   Opt-in: `serverAddress` is cluster-specific and must be set in
+   `values.yaml` before enabling. rustlib 2.8.12.
 
 ```yaml
 apiVersion: keda.sh/v1alpha1
@@ -114,10 +119,20 @@ spec:
       metadata:
         value: {{ .Values.keda.cpu.threshold | quote }}
     {{- end }}
+    {{- if .Values.keda.scalingPressure.enabled }}
+    - type: prometheus
+      metricType: Value
+      metadata:
+        serverAddress: {{ .Values.keda.scalingPressure.serverAddress | quote }}
+        query:         {{ .Values.keda.scalingPressure.query | quote }}
+        threshold:     {{ .Values.keda.scalingPressure.threshold | quote }}
+    {{- end }}
 ```
 
-KEDA scales to the **max** of all triggers -- high lag OR high CPU
-grows the pool; both must subside to shrink.
+KEDA scales to the **max** of all triggers -- high lag OR high CPU OR
+high correlated-composite pressure grows the pool; all must subside to
+shrink. The scaling-pressure trigger is OFF by default (`serverAddress`
+is cluster-specific) -- the chart wires it; the operator enables it.
 
 The `TriggerAuthentication` template wires SASL credentials from the
 `kafka` secret group. With no `kafka` group, no `TriggerAuthentication`

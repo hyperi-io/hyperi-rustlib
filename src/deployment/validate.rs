@@ -255,6 +255,26 @@ fn validate_keda_values(
             actual: enabled.to_string(),
         });
     }
+
+    // Scaling-pressure trigger (Prometheus). Threshold is a string in values.yaml.
+    let scaling_pressure = &chart_keda["scalingPressure"];
+    check_str_num(
+        scaling_pressure,
+        "threshold",
+        u64::from(keda.scaling_pressure_threshold),
+        "keda.scalingPressure.threshold",
+        mismatches,
+    );
+
+    if let Some(enabled) = scaling_pressure["enabled"].as_bool()
+        && enabled != keda.scaling_pressure_enabled
+    {
+        mismatches.push(ContractMismatch {
+            field: "keda.scalingPressure.enabled".into(),
+            expected: keda.scaling_pressure_enabled.to_string(),
+            actual: enabled.to_string(),
+        });
+    }
 }
 
 fn validate_deployment_template(
@@ -488,7 +508,8 @@ mod tests {
              podAnnotations:\n  prometheus.io/port: \"9090\"\n  prometheus.io/path: \"/metrics\"\n\
              keda:\n  minReplicaCount: 1\n  maxReplicaCount: 10\n  pollingInterval: 15\n  cooldownPeriod: 300\n\
                kafka:\n    lagThreshold: \"1000\"\n    activationLagThreshold: \"0\"\n\
-               cpu:\n    enabled: true\n    threshold: \"80\"\n",
+               cpu:\n    enabled: true\n    threshold: \"80\"\n\
+               scalingPressure:\n    enabled: false\n    threshold: \"70\"\n",
         )
         .unwrap();
 

@@ -21,10 +21,12 @@
     feature = "config",
     feature = "worker-batch",
     feature = "governor",
+    feature = "memory",
     feature = "scaling"
 ))]
 
 use hyperi_rustlib::config::{self, ConfigOptions};
+use hyperi_rustlib::memory::MemoryGuardConfig;
 use hyperi_rustlib::worker::BatchProcessingConfig;
 use hyperi_rustlib::{ScalingPressureConfig, SelfRegulationConfig, WorkerPoolConfig};
 
@@ -47,6 +49,9 @@ batch_processing:
 scaling:
   enabled: false
   memory_gate_threshold: 0.55
+memory:
+  limit_bytes: 123456789
+  pressure_threshold: 0.66
 ";
 
     let dir = std::env::temp_dir().join(format!("rustlib-cascade-honoured-{}", std::process::id()));
@@ -92,6 +97,21 @@ scaling:
     assert!(
         (sp.memory_gate_threshold - 0.55).abs() < 1e-9,
         "scaling.memory_gate_threshold must come from the file (0.55), not the default (0.8)"
+    );
+
+    // --- memory: cascade section honoured by the LIVE guard path (2.8.12) ---
+    // Pre-2.8.12 the ServiceRuntime guard used from_env, which reads only the
+    // flat {PREFIX}_MEMORY_* env vars and ignored this YAML section entirely.
+    // from_cascade_with_env is what runtime.rs now uses; the env prefix below
+    // is unset, so it reflects the cascade with no flat-env overlay.
+    let mem = MemoryGuardConfig::from_cascade_with_env("RUSTLIB_CASCADE_HONOURED_UNSET");
+    assert_eq!(
+        mem.limit_bytes, 123_456_789,
+        "memory.limit_bytes must come from the config file, not the default (0)"
+    );
+    assert!(
+        (mem.pressure_threshold - 0.66).abs() < 1e-9,
+        "memory.pressure_threshold must come from the file (0.66), not the default (0.80)"
     );
 
     std::fs::remove_dir_all(&dir).ok();

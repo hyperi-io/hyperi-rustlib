@@ -223,20 +223,48 @@ impl MemoryGuardConfig {
     #[must_use]
     #[cfg(feature = "config")]
     pub fn from_env(prefix: &str) -> Self {
+        let mut config = Self::default();
+        config.apply_flat_env(prefix);
+        config
+    }
+
+    /// Overlay the flat `{PREFIX}_MEMORY_*` env vars onto this config in place.
+    ///
+    /// This is the legacy DFE single-underscore convention
+    /// (`DFE_MEMORY_LIMIT_BYTES`), distinct from the config cascade's nested
+    /// `__` env layer (`{APP}__MEMORY__LIMIT_BYTES`). A present var wins; an
+    /// absent var leaves the field untouched.
+    #[cfg(feature = "config")]
+    fn apply_flat_env(&mut self, prefix: &str) {
         use crate::config::flat_env::flat_env_parsed;
 
-        let mut config = Self::default();
-
         if let Some(v) = flat_env_parsed::<u64>(prefix, "MEMORY_LIMIT_BYTES") {
-            config.limit_bytes = v;
+            self.limit_bytes = v;
         }
         if let Some(v) = flat_env_parsed::<f64>(prefix, "MEMORY_PRESSURE_THRESHOLD") {
-            config.pressure_threshold = v;
+            self.pressure_threshold = v;
         }
         if let Some(v) = flat_env_parsed::<f64>(prefix, "MEMORY_CGROUP_HEADROOM") {
-            config.cgroup_headroom = v;
+            self.cgroup_headroom = v;
         }
+    }
 
+    /// Cascade-honouring resolution: the config cascade `memory:` section
+    /// (`defaults.yaml` < `settings.yaml` < `settings.{env}.yaml` < nested `__`
+    /// env) is the BASE, with the legacy flat `{PREFIX}_MEMORY_*` env vars
+    /// overlaid as the most-specific operator override.
+    ///
+    /// This is what the live guard should use. [`from_env`](Self::from_env)
+    /// alone ignores the cascade `memory:` section entirely -- setting it in
+    /// YAML did nothing for the guard before 2.8.12 (the recurring
+    /// "set a cascade value, nothing happens" footgun). Requires
+    /// `config::setup()` to have populated the cascade (which `run_app` now
+    /// does, since 2.8.11).
+    #[must_use]
+    #[cfg(feature = "config")]
+    pub fn from_cascade_with_env(prefix: &str) -> Self {
+        let mut config = Self::from_cascade();
+        config.apply_flat_env(prefix);
         config
     }
 

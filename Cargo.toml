@@ -124,8 +124,14 @@ memory = ["sysinfo", "tracing"]
 # implies `memory`.
 governor = ["memory"]
 
-# Scaling pressure calculation (KEDA autoscaling)
-scaling = ["parking_lot", "tracing"]
+# Scaling pressure calculation (KEDA autoscaling).
+# Pulls `expression`: the horizontal-scaling ScalingEngine is
+# `#[cfg(all(scaling, expression))]`, so without CEL the engine (and its
+# `{ns}_scaling_pressure` gauge + smart default) silently compiles out --
+# signals get pushed to a cell nobody reads. 4/6 DFE apps hit this on the
+# 2.8.10 adoption. Making scaling imply expression removes the footgun; the
+# bare `ScalingPressure` composite (worker-pool) needs no CEL and is unaffected.
+scaling = ["expression", "parking_lot", "tracing"]
 
 # Adaptive worker pool tiers (2.6.0 split):
 # - worker-pool: just AdaptiveWorkerPool (rayon + tokio + sysinfo)

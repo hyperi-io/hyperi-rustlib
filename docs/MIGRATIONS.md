@@ -10,6 +10,61 @@ six core DFE apps migrate in lockstep.
 
 ---
 
+## 2.8.12 -- silent-footgun fixes (scaling feature, MemoryGuard cascade, KEDA trigger)
+
+A `fix:`. Three "set it, nothing happens" footguns surfaced by the
+2.8.10/2.8.11 scaling rollout. All additive -- existing apps recompile
+unchanged; two carry a behaviour change worth reviewing on the bump.
+
+### `scaling` feature now pulls `expression`
+
+The horizontal `ScalingEngine` is `#[cfg(all(scaling, expression))]`. With
+`scaling` enabled but not `expression`, the engine -- and the
+`{ns}_scaling_pressure` gauge + smart default -- silently compiled OUT:
+signals were pushed to a cell nobody read. 4/6 DFE apps hit this on the
+2.8.10 adoption. `scaling` now implies `expression`, so enabling `scaling`
+(or `cli-service`, which pulls it) always builds the engine.
+
+- **Action:** none required. Apps that manually added `expression` to work
+  around this can drop it (harmless to keep). The `cel` crate cost is now
+  always paid with `scaling`/`cli-service` -- in practice it always was,
+  since every DFE app needs the engine.
+
+### MemoryGuard reads the cascade `memory:` section (BEHAVIOUR CHANGE)
+
+`ServiceRuntime` built the live `MemoryGuard` via
+`MemoryGuardConfig::from_env`, which reads ONLY flat `{PREFIX}_MEMORY_*`
+env vars and IGNORED the cascade `memory:` section -- setting `memory:` in
+YAML did nothing for the guard. It now uses the new
+`MemoryGuardConfig::from_cascade_with_env(prefix)`: the cascade `memory:`
+section is the base, flat `{PREFIX}_MEMORY_*` env overlaid on top
+(back-compat, the flat env still wins).
+
+- **Action required on the bump:** REVIEW any `memory:` section in app
+  config. `limit_bytes` / `pressure_threshold` / `cgroup_headroom` set in
+  YAML now take effect (were silently defaulted). `from_env` is unchanged
+  and still available for non-cascade callers.
+
+### `KedaContract` gains a scaling-pressure Prometheus trigger (additive)
+
+`KedaConfig` + `KedaContract` gain `scaling_pressure_enabled` (default
+`false`) and `scaling_pressure_threshold` (default `70`). The generated
+Helm chart now emits a `keda.scalingPressure` values block and a
+runtime-gated Prometheus trigger querying
+`avg({metric_prefix}_scaling_pressure)` with `metricType: Value` -- the
+composite is a capped per-pod 0-100 score, so KEDA scales proportionally to
+hold the average at the threshold (the `avg()+Value` consumption the KEDA
+doc prescribes; never `sum()` a ratio). Opt-in: the Prometheus
+`serverAddress` is cluster-specific and MUST be set in `values.yaml` before
+enabling. `#[serde(default)]` on `KedaContract` keeps older contract
+artefacts deserialising across the bump.
+
+- **Action:** to wire KEDA to the engine gauge, set
+  `keda.scalingPressure.enabled: true` + `serverAddress` in the deployed
+  `values.yaml`. Existing kafka-lag + CPU triggers are untouched.
+
+---
+
 ## 2.8.11 -- config cascade ACTUALLY applies on the run_app path
 
 A `fix:`. Before this release, [`run_app`](../src/cli/app.rs) built the

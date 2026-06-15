@@ -274,6 +274,19 @@ fn gen_values_yaml(c: &DeploymentContract) -> String {
              \x20   enabled: {cpu_enabled}\n\
              \x20   # -- CPU utilisation percentage threshold\n\
              \x20   threshold: \"{cpu_threshold}\"\n\
+             \x20 scalingPressure:\n\
+             \x20   # -- Prometheus trigger on the correlated-composite\n\
+             \x20   # {metric_prefix}_scaling_pressure gauge (rustlib ScalingEngine).\n\
+             \x20   # Opt-in: set serverAddress to your Prometheus before enabling.\n\
+             \x20   enabled: {sp_enabled}\n\
+             \x20   # -- Prometheus endpoint KEDA queries (cluster-specific)\n\
+             \x20   serverAddress: \"\"\n\
+             \x20   # -- PromQL returning ONE scalar. The composite is a capped\n\
+             \x20   # per-pod 0-100 score, so avg across pods + metricType Value\n\
+             \x20   # (proportional). Never sum() a ratio. See docs/deployment/KEDA.md.\n\
+             \x20   query: \"avg({metric_prefix}_scaling_pressure)\"\n\
+             \x20   # -- Per-pod scaling_pressure target (gauge is 0-100)\n\
+             \x20   threshold: \"{sp_threshold}\"\n\
              \n",
             min = keda.min_replicas,
             max = keda.max_replicas,
@@ -283,6 +296,9 @@ fn gen_values_yaml(c: &DeploymentContract) -> String {
             activation = keda.activation_lag_threshold,
             cpu_enabled = keda.cpu_enabled,
             cpu_threshold = keda.cpu_threshold,
+            metric_prefix = c.metric_prefix,
+            sp_enabled = keda.scaling_pressure_enabled,
+            sp_threshold = keda.scaling_pressure_threshold,
         ));
     } else {
         out.push_str(
@@ -796,6 +812,17 @@ spec:
       metricType: Utilization
       metadata:
         value: {{{{ .Values.keda.cpu.threshold | quote }}}}
+    {{{{- end }}}}
+    {{{{- if .Values.keda.scalingPressure.enabled }}}}
+    # Correlated-composite scaling pressure (rustlib ScalingEngine).
+    # The composite is a capped per-pod 0-100 score: query avg()s it across
+    # pods and metricType Value scales proportionally to hold avg <= threshold.
+    - type: prometheus
+      metricType: Value
+      metadata:
+        serverAddress: {{{{ .Values.keda.scalingPressure.serverAddress | quote }}}}
+        query: {{{{ .Values.keda.scalingPressure.query | quote }}}}
+        threshold: {{{{ .Values.keda.scalingPressure.threshold | quote }}}}
     {{{{- end }}}}
 {{{{- end }}}}
 "#,
