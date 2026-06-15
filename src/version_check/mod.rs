@@ -177,8 +177,22 @@ impl VersionCheck {
         let config = self.config.clone();
         tokio::spawn(async move {
             match do_version_check(&config).await {
-                Ok(resp) => log_version_response(&config, &resp),
+                Ok(resp) => {
+                    // New default (metrics audit): bounded-enum `result` label
+                    // (ok/stale/error) -- NEVER the version string (unbounded
+                    // cardinality). NOTE: emitted with a bare name; the spec's
+                    // `{ns}_` prefix needs a MetricsManager handle threaded into
+                    // version_check, deferred to avoid touching the runtime here.
+                    #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
+                    {
+                        let result = if resp.update_available { "stale" } else { "ok" };
+                        metrics::counter!("version_check_total", "result" => result).increment(1);
+                    }
+                    log_version_response(&config, &resp);
+                }
                 Err(e) => {
+                    #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
+                    metrics::counter!("version_check_total", "result" => "error").increment(1);
                     tracing::warn!(error = %e, "version check failed (non-fatal)");
                 }
             }

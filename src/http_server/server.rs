@@ -283,6 +283,16 @@ impl HttpServer {
             router = router.route("/config", get(config_dump));
         }
 
+        // New default (metrics audit): http-server emits ZERO today. Add the
+        // originator scale signals (spec 5b) -- in-flight gauge + shed counter
+        // + requests counter + duration histogram -- via a thin axum middleware.
+        // Route label is OMITTED deliberately (only method + status): a clean
+        // templated route is not reachable from this `from_fn` seam, and the raw
+        // path is a cardinality bomb. The `metrics` crate is not part of the
+        // `http-server` feature, so the whole layer is `metrics`-gated.
+        #[cfg(feature = "metrics")]
+        let router = router.layer(axum::middleware::from_fn(http_server_metrics));
+
         router
             .layer(TraceLayer::new_for_http())
             .layer(TimeoutLayer::with_status_code(
@@ -293,6 +303,63 @@ impl HttpServer {
             // upstream should see backpressure via send-timeout.
             .layer(ConcurrencyLimitLayer::new(self.config.max_connections))
     }
+}
+
+/// Axum middleware that records the built-in HTTP-server metrics.
+///
+/// - `dfe_http_server_inflight_requests` gauge: maintained directly (inc on
+///   arrival, dec on completion) -- the primary push-originator scale signal.
+/// - `dfe_http_server_requests_total{method,status}` counter: RPS by outcome.
+/// - `dfe_http_server_request_duration_seconds` histogram.
+/// - `dfe_http_server_shed_total` counter: 503s (self-regulation shedding).
+///
+/// No route label (bounded cardinality -- see `build_router`). Named `dfe_`
+/// to sit alongside the other transport-family metrics (no MetricsManager
+/// namespace is threaded into the HTTP server).
+#[cfg(feature = "metrics")]
+async fn http_server_metrics(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    // RAII so the in-flight gauge is balanced even if the request future is
+    // DROPPED at the await (timeout / client disconnect / handler panic) --
+    // a bare inc/dec pair leaks the gauge upward on every such request and
+    // poisons the exact push-originator scale signal this metric exists for.
+    struct InflightGuard;
+    impl InflightGuard {
+        fn new() -> Self {
+            metrics::gauge!("dfe_http_server_inflight_requests").increment(1.0);
+            Self
+        }
+    }
+    impl Drop for InflightGuard {
+        fn drop(&mut self) {
+            metrics::gauge!("dfe_http_server_inflight_requests").decrement(1.0);
+        }
+    }
+
+    let method = req.method().as_str().to_owned();
+    let start = std::time::Instant::now();
+    let _inflight = InflightGuard::new();
+
+    // If this await is cancelled, `_inflight` drops -> the gauge is decremented;
+    // the completion counters below are correctly skipped (no completed status).
+    let response = next.run(req).await;
+
+    let status = response.status();
+    metrics::counter!(
+        "dfe_http_server_requests_total",
+        "method" => method,
+        "status" => status.as_u16().to_string()
+    )
+    .increment(1);
+    metrics::histogram!("dfe_http_server_request_duration_seconds")
+        .record(start.elapsed().as_secs_f64());
+    if status == StatusCode::SERVICE_UNAVAILABLE {
+        metrics::counter!("dfe_http_server_shed_total").increment(1);
+    }
+
+    response
 }
 
 /// Handle for triggering server shutdown.

@@ -8,8 +8,20 @@
 
 //! # Memory Transport
 //!
-//! In-memory transport using tokio channels for unit testing.
-//! No persistence, same-process only.
+//! In-memory transport backed by tokio channels. It exists primarily as a
+//! **no-mocks test substrate**: a REAL `Transport` implementation (send / recv
+//! / commit / DLQ / `WorkBatch`, with Kafka-style CUMULATIVE commit semantics)
+//! so the engine, driver, filter, routed and factory test suites can exercise
+//! the actual transport trait end-to-end -- fast, deterministic, in-process --
+//! WITHOUT standing up a Kafka or Redis broker. Per the HyperI no-mocks policy
+//! we run tests against this real backend rather than mocking the trait.
+//!
+//! It doubles as a **same-process loopback** for local dev / demos
+//! (`transport: memory` via the factory).
+//!
+//! NOT a production backend: no persistence, same-process only (sender and
+//! receiver are tied to one instance), and no cross-pod surface -- so it is
+//! also not horizontally autoscalable (it has no lag / backpressure signal).
 //!
 //! ## Example
 //!

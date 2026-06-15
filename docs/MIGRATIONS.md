@@ -10,6 +10,88 @@ six core DFE apps migrate in lockstep.
 
 ---
 
+## 2.8.10 -- horizontal scaling pressure + metrics overhaul
+
+A `fix:` (the existing scaling was not fit for purpose). Adds the
+CEL-over-local-metrics scaling-pressure ENGINE + the compound transport
+pressure, and overhauls metric conventions. The 6 core apps adopt in
+lockstep. Full design: [deployment/KEDA.md](deployment/KEDA.md), specs +
+the scaling ACR under `docs/superpowers/`.
+
+### CPU metric: gauge-of-percentage -> cumulative COUNTER (BEHAVIOUR)
+
+`{ns}_process_cpu_seconds_total` was a GAUGE holding `cpu_usage()` (an
+instantaneous percentage) under a `_total` counter name -- `rate()` and
+utilisation were meaningless. Now a proper monotonic COUNTER of
+cumulative CPU seconds (Linux `utime+stime` from `/proc/self/stat`,
+USER_HZ 100, whole-second granularity).
+
+- Dashboards reading it as a gauge must switch to
+  `rate({ns}_process_cpu_seconds_total[5m])`.
+- CPU utilisation = `rate(...) / {ns}_container_cpu_limit_cores`.
+- Non-Linux: not emitted (production is Linux).
+
+### Histogram unit no longer hard-coded to seconds (additive)
+
+New `MetricsManager::histogram_with_unit(name, desc, unit)` and
+`histogram_count(name, desc)`. `histogram()` stays seconds (latency
+common case). `batch_engine_chunk_size` is now a count histogram.
+
+### Metric renames -- DUAL-EMITTED this release, OLD dropped next
+
+No native Prometheus rename, so both names emit for 2.8.10; move
+dashboards to NEW now, OLD is removed next release.
+
+| Old (still emitted) | New |
+|---|---|
+| `worker_pool_cpu_utilisation` | `..._cpu_utilisation_ratio` |
+| `worker_pool_memory_utilisation` | `..._memory_utilisation_ratio` |
+| `worker_pool_saturation` | `..._saturation_ratio` |
+| `worker_pool_grow_below` / `_shrink_above` / `_emergency_above` / `_memory_pressure_cap` | `..._ratio` |
+| `worker_pool_scale_interval_secs` | `..._scale_interval_seconds` |
+| `worker_pool_health_saturation_timeout_secs` | `..._seconds` |
+| `self_regulation_byte_budget` | `..._byte_budget_bytes` |
+| `transport_filtered_total` | `dfe_transport_filtered_total` |
+| `dfe_scaling_memory_pressure` | `dfe_scaling_memory_pressure_ratio` |
+| `dfe_spool_disk_available` | `dfe_spool_disk_available_bytes` |
+
+### New default metrics (the "pre-supply" RULE)
+
+Scaling: `{ns}_scaling_pressure{name}`,
+`{ns}_transport_inbound_pressure_ratio`,
+`{ns}_transport_outbound_pressure_ratio`, `{ns}_scaling_circuit_open`.
+Kafka: `kafka_consumer_group_lag` (summed over THIS pod's ASSIGNED
+partitions -- inherently per-pod). http-server:
+`dfe_http_server_requests_total{method,status}`,
+`dfe_http_server_inflight_requests`,
+`dfe_http_server_request_duration_seconds`, `dfe_http_server_shed_total`.
+gRPC: `dfe_grpc_server_inflight_requests`, `dfe_grpc_server_shed_total`,
+`dfe_transport_received_total`. spool/dlq:
+`dfe_spool_{enqueue,dequeue}_total`, `dfe_spool_disk_usage_ratio`,
+`dfe_dlq_queue_depth`, `dfe_dlq_{admitted,retried}_total`. version-check:
+`version_check_total{result}`.
+
+### New scaling config + API (additive)
+
+`scaling` key gains `interval_secs`, `params`, `pressures`, `transport`
+(read by the new `ScalingEngineConfig`; the legacy `ScalingPressureConfig`
+still reads `enabled`/`memory_gate_threshold` from the same section).
+New API: `ScalingEngine`, `ScalingEngineConfig`, `PressureExpr`,
+`ScalingTransport`, `TransportSignals`, `ScalingSignalsCell`,
+`PressureTargets`, `inbound_pressure`, `outbound_pressure`.
+`ServiceRuntime` gains `scaling_engine` + `scaling_signals` (push per-pod
+signals there). Legacy `ScalingPressure` unchanged (worker-pool feedback).
+
+**App adoption:** set `scaling.transport.inbound` (so the compound inbound
+signal is picked) + `scaling.params.lag_target` (PER-POD), and push signals
+via `runtime.scaling_signals.set_*` from receive/send loops. If inbound is
+NOT a rustlib transport, the default is CPU-only -- add a domain pressure
+expression. Consume per [deployment/KEDA.md](deployment/KEDA.md)
+(`sum()+AverageValue` for raw lag, `avg()+Value` for ratios, cap
+`maxReplicas` at partition count).
+
+---
+
 ## Unreleased -- WorkBatch data-plane spine + self-regulation (Phase 0)
 
 The data plane flips onto a single zero-copy currency -- `WorkBatch` (a block

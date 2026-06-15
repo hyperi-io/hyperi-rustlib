@@ -237,6 +237,8 @@ impl GrpcTransport {
             let dfe_svc = DfeTransportServiceImpl {
                 sender: tx.clone(),
                 sequence: sequence.clone(),
+                #[cfg(feature = "metrics")]
+                server_inflight: Arc::new(AtomicU64::new(0)),
                 #[cfg(feature = "governor")]
                 pressure: pressure.clone(),
             };
@@ -720,11 +722,40 @@ impl Drop for GrpcTransport {
 
 // --- DFE Transport gRPC service implementation ---
 
+/// RAII guard that keeps `dfe_grpc_server_inflight_requests` accurate across
+/// every handler return path (including early `?`/`return` and panics): inc on
+/// construction, dec + re-publish the gauge on drop. No `unsafe`.
+#[cfg(feature = "metrics")]
+struct InflightGuard(Arc<AtomicU64>);
+
+#[cfg(feature = "metrics")]
+impl InflightGuard {
+    fn enter(counter: &Arc<AtomicU64>) -> Self {
+        let n = counter.fetch_add(1, Ordering::Relaxed) + 1;
+        metrics::gauge!("dfe_grpc_server_inflight_requests").set(n as f64);
+        Self(Arc::clone(counter))
+    }
+}
+
+#[cfg(feature = "metrics")]
+impl Drop for InflightGuard {
+    fn drop(&mut self) {
+        let n = self.0.fetch_sub(1, Ordering::Relaxed).saturating_sub(1);
+        metrics::gauge!("dfe_grpc_server_inflight_requests").set(n as f64);
+    }
+}
+
 /// Internal service implementation that receives Push RPCs
 /// and forwards messages into the transport's mpsc channel.
 struct DfeTransportServiceImpl {
     sender: mpsc::Sender<Message<GrpcToken>>,
     sequence: Arc<AtomicU64>,
+    /// Server-side in-flight request count, maintained directly (inc on RPC
+    /// arrival, dec on completion). The push-originator scale signal (spec 5b):
+    /// counter-subtraction (`started - handled`) is restart-skewed, so a live
+    /// gauge is the correct shape. Drives `dfe_grpc_server_inflight_requests`.
+    #[cfg(feature = "metrics")]
+    server_inflight: Arc<AtomicU64>,
     /// Optional pressure governor (G3, `governor` feature). `None` -> handlers
     /// never consult it. `Some` rejects an inbound Push / batch record with
     /// `Status::unavailable` while [`UnifiedPressure::should_hold`] holds --
@@ -739,6 +770,10 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
         &self,
         request: Request<proto::PushRequest>,
     ) -> Result<Response<proto::PushResponse>, Status> {
+        // Server-side in-flight gauge: held for the whole handler, dec on drop.
+        #[cfg(feature = "metrics")]
+        let _inflight = InflightGuard::enter(&self.server_inflight);
+
         // G3 pressure shedding: reject before doing any work if the governor
         // says hold. `unavailable` = the gRPC analogue of HTTP 503.
         #[cfg(feature = "governor")]
@@ -746,12 +781,16 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
             && pressure.should_hold()
         {
             #[cfg(feature = "metrics")]
-            metrics::counter!(
-                "dfe_transport_backpressured_total",
-                "transport" => "grpc",
-                "reason" => "pressure"
-            )
-            .increment(1);
+            {
+                metrics::counter!(
+                    "dfe_transport_backpressured_total",
+                    "transport" => "grpc",
+                    "reason" => "pressure"
+                )
+                .increment(1);
+                // New default (metrics audit): shed = UNAVAILABLE/ResourceExhausted.
+                metrics::counter!("dfe_grpc_server_shed_total").increment(1);
+            }
             return Err(Status::unavailable("under pressure -- inbound held"));
         }
 
@@ -785,6 +824,10 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
                 {
                     metrics::counter!("dfe_transport_sent_total", "transport" => "grpc")
                         .increment(1);
+                    // New default (metrics audit): inbound throughput on the
+                    // SERVER side (was only emitted by file/pipe/redis).
+                    metrics::counter!("dfe_transport_received_total", "transport" => "grpc")
+                        .increment(1);
                     metrics::gauge!("dfe_transport_queue_size", "transport" => "grpc").set(
                         self.sender
                             .max_capacity()
@@ -795,20 +838,26 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
             }
             Err(mpsc::error::TrySendError::Full(_)) => {
                 #[cfg(feature = "metrics")]
-                metrics::counter!(
-                    "dfe_transport_backpressured_total",
-                    "transport" => "grpc"
-                )
-                .increment(1);
+                {
+                    metrics::counter!(
+                        "dfe_transport_backpressured_total",
+                        "transport" => "grpc"
+                    )
+                    .increment(1);
+                    metrics::counter!("dfe_grpc_server_shed_total").increment(1);
+                }
                 Err(Status::resource_exhausted("receiver buffer full"))
             }
             Err(mpsc::error::TrySendError::Closed(_)) => {
                 #[cfg(feature = "metrics")]
-                metrics::counter!(
-                    "dfe_transport_refused_total",
-                    "transport" => "grpc"
-                )
-                .increment(1);
+                {
+                    metrics::counter!(
+                        "dfe_transport_refused_total",
+                        "transport" => "grpc"
+                    )
+                    .increment(1);
+                    metrics::counter!("dfe_grpc_server_shed_total").increment(1);
+                }
                 Err(Status::unavailable("receiver closed"))
             }
         }
@@ -818,18 +867,25 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
         &self,
         request: Request<proto::Batch>,
     ) -> Result<Response<proto::BatchAck>, Status> {
+        // Server-side in-flight gauge: held for the whole handler, dec on drop.
+        #[cfg(feature = "metrics")]
+        let _inflight = InflightGuard::enter(&self.server_inflight);
+
         // G3 pressure shedding: reject the whole batch while pressure holds.
         #[cfg(feature = "governor")]
         if let Some(pressure) = &self.pressure
             && pressure.should_hold()
         {
             #[cfg(feature = "metrics")]
-            metrics::counter!(
-                "dfe_transport_backpressured_total",
-                "transport" => "grpc",
-                "reason" => "pressure"
-            )
-            .increment(1);
+            {
+                metrics::counter!(
+                    "dfe_transport_backpressured_total",
+                    "transport" => "grpc",
+                    "reason" => "pressure"
+                )
+                .increment(1);
+                metrics::counter!("dfe_grpc_server_shed_total").increment(1);
+            }
             return Err(Status::unavailable("under pressure -- inbound held"));
         }
 
@@ -862,20 +918,26 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
             Ok(permits) => permits,
             Err(mpsc::error::TrySendError::Full(())) => {
                 #[cfg(feature = "metrics")]
-                metrics::counter!(
-                    "dfe_transport_backpressured_total",
-                    "transport" => "grpc"
-                )
-                .increment(1);
+                {
+                    metrics::counter!(
+                        "dfe_transport_backpressured_total",
+                        "transport" => "grpc"
+                    )
+                    .increment(1);
+                    metrics::counter!("dfe_grpc_server_shed_total").increment(1);
+                }
                 return Err(Status::resource_exhausted("receiver buffer full"));
             }
             Err(mpsc::error::TrySendError::Closed(())) => {
                 #[cfg(feature = "metrics")]
-                metrics::counter!(
-                    "dfe_transport_refused_total",
-                    "transport" => "grpc"
-                )
-                .increment(1);
+                {
+                    metrics::counter!(
+                        "dfe_transport_refused_total",
+                        "transport" => "grpc"
+                    )
+                    .increment(1);
+                    metrics::counter!("dfe_grpc_server_shed_total").increment(1);
+                }
                 return Err(Status::unavailable("receiver closed"));
             }
         };
@@ -902,12 +964,17 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
         }
 
         #[cfg(feature = "metrics")]
-        metrics::counter!(
-            "dfe_transport_sent_total",
-            "transport" => "grpc",
-            "path" => "batch"
-        )
-        .increment(accepted);
+        {
+            metrics::counter!(
+                "dfe_transport_sent_total",
+                "transport" => "grpc",
+                "path" => "batch"
+            )
+            .increment(accepted);
+            // New default (metrics audit): inbound throughput on the SERVER side.
+            metrics::counter!("dfe_transport_received_total", "transport" => "grpc")
+                .increment(accepted);
+        }
 
         Ok(Response::new(proto::BatchAck { accepted }))
     }

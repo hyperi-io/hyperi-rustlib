@@ -313,6 +313,8 @@ impl<S: Sink> TieredSink<S> {
                 .set(self.spool_count.load(AtomicOrdering::Relaxed) as f64);
             ::metrics::gauge!("dfe_spool_bytes")
                 .set(self.spool_bytes.load(AtomicOrdering::Relaxed) as f64);
+            // New default (metrics audit): spill RATE. drain < enqueue => backlog.
+            ::metrics::counter!("dfe_spool_enqueue_total").increment(1);
         }
 
         #[cfg(feature = "tracing")]
@@ -538,6 +540,12 @@ async fn disk_capacity_poller(
         if let Some((total, avail)) = disk_space {
             ::metrics::gauge!("dfe_spool_disk_available_bytes").set(avail as f64);
             ::metrics::gauge!("dfe_spool_disk_total_bytes").set(total as f64);
+            // New default (metrics audit): disk fill fraction (0.0-1.0). Disk
+            // total is known here, so emit the ratio directly.
+            if total > 0 {
+                ::metrics::gauge!("dfe_spool_disk_usage_ratio")
+                    .set(1.0 - (avail as f64 / total as f64));
+            }
         }
 
         let available = disk_space.is_none_or(|(total, avail)| {

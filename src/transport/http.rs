@@ -747,6 +747,14 @@ impl TransportReceiver for HttpTransport {
                 tracing::debug!(messages = messages.len(), "HTTP transport: batch received");
             }
 
+            // New default (metrics audit): inbound throughput (was only emitted
+            // by file/pipe/redis). Counts post-filter delivered messages.
+            #[cfg(feature = "metrics")]
+            if !messages.is_empty() {
+                metrics::counter!("dfe_transport_received_total", "transport" => "http")
+                    .increment(messages.len() as u64);
+            }
+
             Ok(RecvBatch {
                 messages,
                 dlq_entries,

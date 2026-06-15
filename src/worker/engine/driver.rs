@@ -527,6 +527,10 @@ impl BatchEngine {
                     {
                         metrics::gauge!("self_regulation_byte_budget")
                             .set(budget.byte_budget() as f64);
+                        // dual-emit: drop OLD in next release (MIGRATIONS) --
+                        // `_bytes` is the convention base-unit suffix.
+                        metrics::gauge!("self_regulation_byte_budget_bytes")
+                            .set(budget.byte_budget() as f64);
                         metrics::gauge!("self_regulation_recv_block_bytes")
                             .set(block_bytes as f64);
                         // `self_regulation_` domain prefix: a bare `pressure_ratio`

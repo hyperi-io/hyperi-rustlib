@@ -32,13 +32,29 @@ pub fn register(manager: &MetricsManager, config: &WorkerPoolConfig) {
         "worker_pool_cpu_utilisation",
         "Current CPU utilisation sample",
     );
+    // dual-emit: drop OLD in next release (MIGRATIONS) -- `_ratio` is the
+    // Prometheus/OTel-convention name for a 0-1 ratio gauge.
+    let _ = manager.gauge(
+        "worker_pool_cpu_utilisation_ratio",
+        "Current CPU utilisation sample (0.0-1.0)",
+    );
     let _ = manager.gauge(
         "worker_pool_memory_utilisation",
         "Effective memory pressure",
     );
+    // dual-emit: drop OLD in next release (MIGRATIONS)
+    let _ = manager.gauge(
+        "worker_pool_memory_utilisation_ratio",
+        "Effective memory pressure (0.0-1.0)",
+    );
     let _ = manager.gauge(
         "worker_pool_saturation",
         "Pool saturation ratio (active/max)",
+    );
+    // dual-emit: drop OLD in next release (MIGRATIONS)
+    let _ = manager.gauge(
+        "worker_pool_saturation_ratio",
+        "Pool saturation ratio, active/max (0.0-1.0)",
     );
     let _ = manager.counter(
         "worker_pool_tasks_total",
@@ -62,6 +78,34 @@ pub fn register(manager: &MetricsManager, config: &WorkerPoolConfig) {
         "Current async fan-out tasks in flight",
     );
 
+    // Threshold descriptors (NEW convention names; values emitted by
+    // emit_thresholds). The dual-emit OLD names are emitted but not separately
+    // registered -- they drop next release (MIGRATIONS).
+    let _ = manager.gauge(
+        "worker_pool_grow_below_ratio",
+        "Grow-below CPU threshold (0.0-1.0)",
+    );
+    let _ = manager.gauge(
+        "worker_pool_shrink_above_ratio",
+        "Shrink-above CPU threshold (0.0-1.0)",
+    );
+    let _ = manager.gauge(
+        "worker_pool_emergency_above_ratio",
+        "Emergency-above CPU threshold (0.0-1.0)",
+    );
+    let _ = manager.gauge(
+        "worker_pool_memory_pressure_cap_ratio",
+        "Memory pressure cap (0.0-1.0)",
+    );
+    let _ = manager.gauge(
+        "worker_pool_scale_interval_seconds",
+        "Scaling interval (seconds)",
+    );
+    let _ = manager.gauge(
+        "worker_pool_health_saturation_timeout_seconds",
+        "Health saturation timeout (seconds)",
+    );
+
     // Threshold gauges (config values as metrics -- emitted immediately)
     emit_thresholds(config);
 }
@@ -80,5 +124,17 @@ pub fn emit_thresholds(config: &WorkerPoolConfig) {
     metrics::gauge!("worker_pool_scale_interval_secs").set(config.scale_interval_secs as f64);
     metrics::gauge!("worker_pool_async_concurrency").set(config.async_concurrency as f64);
     metrics::gauge!("worker_pool_health_saturation_timeout_secs")
+        .set(config.health_saturation_timeout_secs as f64);
+
+    // dual-emit: drop OLD in next release (MIGRATIONS). The threshold gauges
+    // above are pressure-CEL inputs / Grafana overlay lines; the `_ratio`
+    // (0-1 ratio thresholds) and `_seconds` (was `_secs`) names match the
+    // Prometheus/OTel base-unit convention.
+    metrics::gauge!("worker_pool_grow_below_ratio").set(config.grow_below);
+    metrics::gauge!("worker_pool_shrink_above_ratio").set(config.shrink_above);
+    metrics::gauge!("worker_pool_emergency_above_ratio").set(config.emergency_above);
+    metrics::gauge!("worker_pool_memory_pressure_cap_ratio").set(config.memory_pressure_cap);
+    metrics::gauge!("worker_pool_scale_interval_seconds").set(config.scale_interval_secs as f64);
+    metrics::gauge!("worker_pool_health_saturation_timeout_seconds")
         .set(config.health_saturation_timeout_secs as f64);
 }

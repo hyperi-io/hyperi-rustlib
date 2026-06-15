@@ -344,6 +344,15 @@ impl StatsContext {
             .set(*offset as f64);
         }
 
+        // Summed consumer-group lag over THIS instance's ASSIGNED partitions.
+        // rdkafka reports consumer_lag only for assigned partitions, so this sum
+        // is inherently PER-POD (it falls as the group grows and each pod is
+        // assigned fewer partitions). This is the DEFAULT horizontal scale
+        // signal (scaling ACR / spec 5c); the per-partition series above is the
+        // opt-in detailed view. Consume via sum()+AverageValue (KEDA per-pod
+        // lagThreshold semantics), never an absolute total against a fixed target.
+        metrics::gauge!("kafka_consumer_group_lag").set(total_consumer_lag(&m) as f64);
+
         // Rebalance count
         if m.rebalance_count > 0 {
             metrics::gauge!("rdkafka_consumer_rebalance_count").set(m.rebalance_count as f64);

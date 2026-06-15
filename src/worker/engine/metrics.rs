@@ -41,7 +41,7 @@ pub fn register(manager: &MetricsManager, config: &BatchProcessingConfig) {
         "batch_engine_transform_duration_seconds",
         "App transform time per chunk",
     );
-    let _ = manager.histogram("batch_engine_chunk_size", "Actual items per chunk");
+    let _ = manager.histogram_count("batch_engine_chunk_size", "Actual items per chunk");
     let _ = manager.histogram(
         "batch_engine_pre_route_duration_seconds",
         "Pre-route extraction time per chunk",
@@ -64,6 +64,12 @@ pub fn register(manager: &MetricsManager, config: &BatchProcessingConfig) {
         let _ = manager.gauge(
             "self_regulation_byte_budget",
             "Current AIMD byte budget (inbound block size lever)",
+        );
+        // dual-emit: drop OLD in next release (MIGRATIONS) -- `_bytes` suffix
+        // matches the Prometheus/OTel base-unit convention.
+        let _ = manager.gauge(
+            "self_regulation_byte_budget_bytes",
+            "Current AIMD byte budget in bytes (inbound block size lever)",
         );
         let _ = manager.gauge(
             "self_regulation_recv_block_bytes",

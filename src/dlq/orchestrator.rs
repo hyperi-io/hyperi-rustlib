@@ -204,7 +204,20 @@ impl Dlq {
         let Some(sink) = self.sink.as_ref() else {
             return Ok(());
         };
-        sink.try_push(entry).map_err(map_sink_err)
+        // `let_and_return` is allowed because the binding IS consumed by the
+        // metrics block below when the `metrics` feature is on.
+        #[cfg_attr(not(feature = "metrics"), allow(clippy::let_and_return))]
+        let res = sink.try_push(entry).map_err(map_sink_err);
+        // New default (metrics audit): admission + queue depth. The drop path
+        // is already counted as `dfe_dlq_dropped_total` by the BackgroundSink.
+        // `dfe_dlq_queue_depth` is a clear-named alias of the sink's
+        // `dfe_dlq_pending` gauge -- rising depth = downstream failing.
+        #[cfg(feature = "metrics")]
+        if res.is_ok() {
+            metrics::counter!("dfe_dlq_admitted_total").increment(1);
+            metrics::gauge!("dfe_dlq_queue_depth").set(sink.pending() as f64);
+        }
+        res
     }
 
     /// Async submission that awaits queue space.
@@ -219,7 +232,15 @@ impl Dlq {
         let Some(sink) = self.sink.as_ref() else {
             return Ok(());
         };
-        sink.push_blocking(entry).await.map_err(map_sink_err)
+        #[cfg_attr(not(feature = "metrics"), allow(clippy::let_and_return))]
+        let res = sink.push_blocking(entry).await.map_err(map_sink_err);
+        // New default (metrics audit): admission + queue depth (see `try_send`).
+        #[cfg(feature = "metrics")]
+        if res.is_ok() {
+            metrics::counter!("dfe_dlq_admitted_total").increment(1);
+            metrics::gauge!("dfe_dlq_queue_depth").set(sink.pending() as f64);
+        }
+        res
     }
 
     /// Async batch submission. Each entry is queued individually; the
@@ -234,7 +255,13 @@ impl Dlq {
         };
         for entry in entries {
             sink.push_blocking(entry).await.map_err(map_sink_err)?;
+            // Count each admitted entry (matches try_send/send). A mid-batch
+            // error counts the prefix already pushed -- at-least-once.
+            #[cfg(feature = "metrics")]
+            metrics::counter!("dfe_dlq_admitted_total").increment(1);
         }
+        #[cfg(feature = "metrics")]
+        metrics::gauge!("dfe_dlq_queue_depth").set(sink.pending() as f64);
         Ok(())
     }
 
@@ -376,6 +403,14 @@ impl SinkDrain<DlqEntry> for DlqDrain {
                                 count = batch.len(),
                                 "DLQ backend failed in cascade, trying next"
                             );
+                            // New default (metrics audit): a cascade fall-through
+                            // to the next backend is a retry attempt.
+                            #[cfg(feature = "metrics")]
+                            metrics::counter!(
+                                "dfe_dlq_retried_total",
+                                "backend" => backend.name()
+                            )
+                            .increment(1);
                             last_err = Some(e);
                         }
                     }

@@ -272,6 +272,10 @@ pub async fn drain_loop<S: Sink>(
             DrainResult::Success => {
                 drainer.record_success();
                 circuit.record_success().await;
+                // New default (metrics audit): drain RATE. drain < enqueue =>
+                // backlog growing => scale signal.
+                #[cfg(feature = "metrics")]
+                ::metrics::counter!("dfe_spool_dequeue_total").increment(1);
                 #[cfg(feature = "tracing")]
                 tracing::debug!(rate = drainer.current_rate(), "Drained message to sink");
             }

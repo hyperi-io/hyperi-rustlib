@@ -416,6 +416,11 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
     }
 
     /// Attempt to reload config: load -> validate -> update shared.
+    //
+    // NOTE (metrics audit): `config_reloads_total` carries no `{ns}` prefix and
+    // can collide with an app-level `AppMetrics` series of the same name on the
+    // shared registry. Left unchanged (low priority -- the `result` label keeps
+    // it usable); a future pass should reconcile to one canonical series.
     fn do_reload(&self) {
         match (self.reload_fn)() {
             Ok(new_config) => {

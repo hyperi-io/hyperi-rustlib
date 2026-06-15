@@ -105,6 +105,9 @@ pub fn install_signal_handler() -> CancellationToken {
         }
 
         // Emit eviction metric when SIGTERM received in K8s
+        // TODO (metrics audit): `pod_eviction_received_total` has no `{ns}`
+        // prefix -- left as-is (no clean namespace available at this layer;
+        // shutdown runs before any MetricsManager handle is threaded here).
         #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
         if crate::env::runtime_context().is_kubernetes() {
             metrics::counter!("pod_eviction_received_total").increment(1);

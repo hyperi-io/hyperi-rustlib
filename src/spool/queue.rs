@@ -97,7 +97,11 @@ impl Spool {
 
         self.len += 1;
         #[cfg(feature = "metrics")]
-        ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+        {
+            ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+            // New default (metrics audit): spill RATE. drain < enqueue => backlog.
+            ::metrics::counter!("dfe_spool_enqueue_total").increment(1);
+        }
         Ok(())
     }
 
@@ -167,7 +171,11 @@ impl Spool {
                     .map_err(|e| SpoolError::Queue(e.to_string()))?;
                 self.len = self.len.saturating_sub(1);
                 #[cfg(feature = "metrics")]
-                ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+                {
+                    ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+                    // New default (metrics audit): drain RATE.
+                    ::metrics::counter!("dfe_spool_dequeue_total").increment(1);
+                }
                 Ok(Some(data))
             }
             Err(yaque::TryRecvError::Io(e)) => Err(SpoolError::Io(e)),
@@ -200,7 +208,11 @@ impl Spool {
             .map_err(|e| SpoolError::Queue(e.to_string()))?;
         self.len = self.len.saturating_sub(1);
         #[cfg(feature = "metrics")]
-        ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+        {
+            ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+            // New default (metrics audit): drain RATE.
+            ::metrics::counter!("dfe_spool_dequeue_total").increment(1);
+        }
         Ok(data)
     }
 

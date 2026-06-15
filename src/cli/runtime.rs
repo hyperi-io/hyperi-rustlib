@@ -86,6 +86,22 @@ pub struct ServiceRuntime {
     #[cfg(feature = "scaling")]
     pub scaling: Option<Arc<crate::ScalingPressure>>,
 
+    /// Horizontal scaling-pressure ENGINE (CEL over local, correlated metrics).
+    /// Emits `{ns}_scaling_pressure{name}` per configured pressure plus the
+    /// gratis compound `{ns}_transport_{inbound,outbound}_pressure_ratio` and
+    /// `{ns}_scaling_circuit_open`. `None` unless both `scaling` + `expression`
+    /// are enabled. Runs its own periodic tick (CPU sampled internally).
+    #[cfg(all(feature = "scaling", feature = "expression"))]
+    pub scaling_engine: Option<Arc<crate::scaling::ScalingEngine>>,
+
+    /// Lock-free cell for pushing per-pod transport scaling signals (kafka
+    /// assigned-lag, in-flight, shed rate, circuit, ...) that the
+    /// `scaling_engine` reads each tick. Update it from
+    /// your receive/send loops; CPU is sampled by the engine itself. When no
+    /// signals are pushed, the smart default reduces to CPU-only (ACR F2).
+    #[cfg(feature = "scaling")]
+    pub scaling_signals: Arc<crate::scaling::ScalingSignalsCell>,
+
     /// Self-regulation governor (`governor` feature). Default-ON, opt-out via
     /// `self_regulation.enabled = false`. `None` when disabled -- nothing is
     /// constructed and the data path is byte-identical to pre-governor.
@@ -215,6 +231,40 @@ impl ServiceRuntime {
             pool.start_scaling_loop(shutdown.clone());
         }
 
+        // --- Horizontal scaling-pressure engine (CEL over local metrics) ---
+        #[cfg(feature = "scaling")]
+        let scaling_signals = Arc::new(crate::scaling::ScalingSignalsCell::new());
+
+        #[cfg(all(feature = "scaling", feature = "expression"))]
+        let scaling_engine = {
+            let sp_cfg = crate::scaling::ScalingEngineConfig::from_cascade();
+            let inbound = sp_cfg.transport.inbound.as_deref().map_or(
+                crate::scaling::ScalingTransport::Other,
+                crate::scaling::ScalingTransport::from_label,
+            );
+            let outbound = sp_cfg.transport.outbound.as_deref().map_or(
+                crate::scaling::ScalingTransport::Other,
+                crate::scaling::ScalingTransport::from_label,
+            );
+            let (engine, errors) =
+                crate::scaling::ScalingEngine::new(app_name, &sp_cfg, inbound, outbound);
+            for e in &errors {
+                tracing::error!(target: "scaling", "{e}");
+            }
+            let engine = Arc::new(engine);
+            if engine.is_enabled() {
+                tokio::spawn(run_scaling_pressure_loop(
+                    Arc::clone(&engine),
+                    Arc::clone(&scaling_signals),
+                    sp_cfg.interval_secs,
+                    #[cfg(feature = "memory")]
+                    Arc::clone(&memory_guard),
+                    shutdown.clone(),
+                ));
+            }
+            Some(engine)
+        };
+
         // --- Start metrics server ---
         if let Err(e) = metrics.start_server(metrics_addr).await {
             tracing::error!(error = %e, addr = metrics_addr, "Failed to start metrics server");
@@ -252,6 +302,10 @@ impl ServiceRuntime {
             batch_engine,
             #[cfg(feature = "scaling")]
             scaling,
+            #[cfg(all(feature = "scaling", feature = "expression"))]
+            scaling_engine,
+            #[cfg(feature = "scaling")]
+            scaling_signals,
             #[cfg(feature = "governor")]
             governor,
         })
@@ -301,4 +355,65 @@ impl ServiceRuntime {
             None => AnyReceiver::from_config(key).await,
         }
     }
+}
+
+/// Periodic scaling-pressure tick: sample CPU (rate of the cumulative counter
+/// over the wall window / cores), read the pushed transport signals, and let the
+/// engine evaluate + publish its gauges. Off the data hot-path (interval-driven).
+#[cfg(all(feature = "scaling", feature = "expression"))]
+async fn run_scaling_pressure_loop(
+    engine: Arc<crate::scaling::ScalingEngine>,
+    signals: Arc<crate::scaling::ScalingSignalsCell>,
+    interval_secs: u64,
+    #[cfg(feature = "memory")] memory_guard: Arc<MemoryGuard>,
+    shutdown: CancellationToken,
+) {
+    use std::time::{Duration, Instant};
+
+    // CPU utilisation denominator: the cgroup CPU limit, else the visible core
+    // count. Never 0.
+    let cores = crate::metrics::cpu_limit_cores()
+        .or_else(|| {
+            std::thread::available_parallelism()
+                .ok()
+                .map(|n| n.get() as f64)
+        })
+        .filter(|c| *c > 0.0)
+        .unwrap_or(1.0);
+
+    let mut last_cpu = crate::metrics::cumulative_cpu_seconds();
+    let mut last_at = Instant::now();
+    let mut ticker = tokio::time::interval(Duration::from_secs(interval_secs.max(1)));
+    // tokio's first interval tick fires immediately -- consume it so the first
+    // real sample below spans a full interval (no divide-by-near-zero CPU spike).
+    ticker.tick().await;
+
+    loop {
+        tokio::select! {
+            () = shutdown.cancelled() => break,
+            _ = ticker.tick() => {
+                let now_cpu = crate::metrics::cumulative_cpu_seconds();
+                let now_at = Instant::now();
+                let cpu_ratio = match (last_cpu, now_cpu) {
+                    (Some(prev), Some(cur)) => {
+                        let elapsed = now_at.duration_since(last_at).as_secs_f64().max(1e-3);
+                        // (cur - prev) can go negative on a counter reset -> floor 0.
+                        ((cur - prev).max(0.0) / elapsed) / cores
+                    }
+                    _ => 0.0,
+                };
+                last_cpu = now_cpu;
+                last_at = now_at;
+
+                #[cfg(feature = "memory")]
+                let memory_ratio = memory_guard.pressure_ratio();
+                #[cfg(not(feature = "memory"))]
+                let memory_ratio = 0.0;
+
+                engine.tick(&signals.snapshot(), cpu_ratio, memory_ratio);
+            }
+        }
+    }
+
+    tracing::info!(target: "scaling", "Scaling-pressure loop shutting down");
 }

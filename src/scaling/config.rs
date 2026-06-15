@@ -12,6 +12,8 @@
 //! all apps. Per-component weights and saturation points are defined in each
 //! app's own config struct and passed as [`ScalingComponent`] at construction.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// Base configuration for scaling pressure calculation.
@@ -100,6 +102,105 @@ impl ScalingComponent {
             saturation,
         }
     }
+}
+
+/// serde default for `PressureExpr::enabled`.
+fn default_true() -> bool {
+    true
+}
+
+/// Configuration for the horizontal scaling-pressure ENGINE (CEL over local
+/// metrics).
+///
+/// Lives under the `scaling` cascade key alongside [`ScalingPressureConfig`];
+/// serde ignores each other's extra fields, so both can read the same section.
+/// Precedence for the produced pressure: config `pressures` (here) > app-plumbed
+/// default > rustlib's context-aware smart default (when `pressures` is empty).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScalingEngineConfig {
+    /// Master switch for the CEL pressure engine.
+    pub enabled: bool,
+    /// Evaluation period in seconds (periodic, off the data hot-path).
+    pub interval_secs: u64,
+    /// Tunable targets/constants referenced by expressions as `params.<key>`.
+    /// Transport-term defaults are filled by `PressureTargets::from_params`;
+    /// `cpu_target` defaults to 0.70 (see [`Self::cpu_target`]).
+    pub params: BTreeMap<String, f64>,
+    /// Named pressure expressions. EMPTY => rustlib composes the context-aware
+    /// smart default from the inbound transport kind.
+    pub pressures: Vec<PressureExpr>,
+    /// Optional explicit inbound/outbound transport kinds (else the runtime
+    /// auto-derives them from the transports it builds).
+    pub transport: ScalingTransportConfig,
+}
+
+impl Default for ScalingEngineConfig {
+    fn default() -> Self {
+        let mut params = BTreeMap::new();
+        params.insert("cpu_target".to_string(), 0.70);
+        Self {
+            enabled: true,
+            interval_secs: 15,
+            params,
+            pressures: Vec::new(),
+            transport: ScalingTransportConfig::default(),
+        }
+    }
+}
+
+impl ScalingEngineConfig {
+    /// Load from the config cascade under the `scaling` key.
+    ///
+    /// Non-registered read (the section is already registered by
+    /// [`ScalingPressureConfig::from_cascade`]); falls back to defaults when
+    /// config is absent.
+    #[must_use]
+    pub fn from_cascade() -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(engine) = cfg.unmarshal_key::<Self>("scaling")
+            {
+                return engine;
+            }
+        }
+        Self::default()
+    }
+
+    /// CPU utilisation target (0-1), defaulting to 0.70 when unset/invalid.
+    #[must_use]
+    pub fn cpu_target(&self) -> f64 {
+        self.params
+            .get("cpu_target")
+            .copied()
+            .filter(|v| *v > 0.0)
+            .unwrap_or(0.70)
+    }
+}
+
+/// A single named pressure expression -> one `{ns}_scaling_pressure{name=...}`
+/// gauge. The autoscaler scales to the MAX across all enabled pressures.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PressureExpr {
+    /// Output label (`name=...`) on the emitted gauge; must be unique.
+    pub name: String,
+    /// CEL expression evaluated over the metric/derived/params context.
+    pub expression: String,
+    /// Whether this pressure is evaluated/emitted.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+/// Optional explicit transport kinds for the compound pressure (`kafka`,
+/// `redis`, `http`, `grpc`, ...). `None` => auto-derived by the runtime.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScalingTransportConfig {
+    /// Inbound transport kind label, or `None` to auto-derive.
+    pub inbound: Option<String>,
+    /// Outbound transport kind label, or `None` to auto-derive.
+    pub outbound: Option<String>,
 }
 
 #[cfg(test)]

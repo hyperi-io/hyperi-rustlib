@@ -2,10 +2,22 @@
 
 KEDA (Kubernetes Event-driven Autoscaling) scales pods on triggers
 the standard HPA can't see -- Kafka consumer-group lag, Prometheus
-queries, cron schedules, queue depth. `KedaContract` is the
-deployment-side declaration; `ScalingPressure` is the runtime-side
-signal source. Together they make scale-out track pipeline pressure,
-not container CPU.
+queries, cron schedules, queue depth. rustlib is autoscaler-NEUTRAL in
+code; KEDA is the prime tool and the worked example here.
+
+Two layers:
+
+- `KedaContract` -- the deployment-side declaration (generated
+  `ScaledObject`).
+- The **horizontal scaling-pressure engine** (`ScalingEngine`, rustlib
+  2.8.10) -- the runtime-side signal source. It computes a **correlated
+  composite** pressure from the app's rich LOCAL context (CPU, transport
+  backlog, in-flight, domain signals) that a bare top-level KEDA trigger
+  cannot see together. That correlation is rustlib's edge.
+
+The older weighted `ScalingPressure` is retained (worker-pool feedback)
+but superseded by the engine for the scale-out signal -- see the legacy
+section below.
 
 ---
 
@@ -114,7 +126,122 @@ auth is bypassed via mesh mTLS.
 
 ---
 
-## `ScalingPressure` -- app-level signal
+## Horizontal scaling pressure -- the engine (correlated composite)
+
+> rustlib 2.8.10. Autoscaler-neutral in code; KEDA is the prime tool.
+
+An autoscaler scales on coarse, top-level, SINGLE metrics. An app has
+rich LOCAL context it can COMBINE and CORRELATE -- CPU, transport
+backlog, in-flight, domain signals -- into one **correlated composite**
+pressure. That correlated composite is rustlib's edge over a bare KEDA
+trigger, and the job of `ScalingEngine`.
+
+### What you get, by effort (tiered)
+
+- **Tier 0 -- raw signals (zero config):** rustlib emits the
+  per-transport scale signals it can know LOCALLY (Kafka consumer-group
+  lag over THIS pod's assigned partitions, http/grpc in-flight + shed).
+- **Tier 1 -- gratis compound (zero CEL):**
+  `{ns}_transport_inbound_pressure_ratio` (and `_outbound_`) -- a
+  normalised 0-1 signal that picks the right inbound metric by transport
+  kind. Point KEDA's Prometheus scaler straight at it.
+- **Tier 2 -- the smart default (zero app code):** the engine emits
+  `{ns}_scaling_pressure{name="default"}` = `max(CPU, inbound)` gated by
+  circuit-open, on a periodic tick.
+- **Tier 3 -- your correlated composite (config):** define CEL
+  expression(s) over the local context.
+
+### The smart default
+
+```text
+circuit_open ? 0 : 100 * min(1, max(cpu_utilisation_ratio / cpu_target,
+                                    transport_inbound_pressure_ratio))
+```
+
+`cpu_target` defaults to 0.70. Outbound pressure is EMITTED but not in
+the default (downstream-bound -- more pods rarely relieve a saturated
+sink; a dead sink is the circuit gate). Memory is excluded -- it is
+self-regulation's (vertical) job and reaches scale-out only indirectly
+via lag.
+
+### Config (cascade, `scaling` key)
+
+```yaml
+scaling:
+  enabled: true
+  interval_secs: 15
+  transport:
+    inbound: kafka          # picks the inbound compound signal
+    outbound: kafka
+  params:
+    cpu_target: 0.70
+    lag_target: 50000       # PER-POD (see sizing)
+  pressures: []             # empty => the smart default
+```
+
+CEL context: top-level `cpu_utilisation_ratio`, `circuit_open`,
+`transport_inbound_pressure_ratio`, `transport_outbound_pressure_ratio`,
+`memory_ratio`; `params.<key>`; `metrics.<signal>`
+(`kafka_assigned_lag`, `inflight`, `shed_rate`, ...). CEL has no `max()`
+-- use a ternary. Expressions are validated at LOAD (syntax + an
+unknown-identifier dry-run); a broken expression falls back to the smart
+default with a loud, operator-facing error rather than failing startup.
+
+### Multi-output
+
+`pressures` may list N expressions -> N `{ns}_scaling_pressure{name=...}`
+gauges. HPA/KEDA evaluate every trigger and scale to the MAX (a failed
+metric never forces scale-down). Emitting several is fine -- current
+best practice, not the old "one metric only".
+
+### Per-pod sizing + consumption (IMPORTANT)
+
+rustlib emits ONLY what a pod can know locally -- NO peer/replica count.
+Kafka lag is summed over THIS pod's ASSIGNED partitions, so it is
+inherently PER-POD and scale-invariant: as the group grows, each pod's
+lag falls. Size `lag_target` as "messages one pod tolerates" =
+`per_pod_throughput * tolerable_backlog_seconds` (KEDA `lagThreshold`
+semantics; the toy default of 10 is almost always wrong).
+
+Push the "divide by replicas" to the autoscaler:
+
+- raw lag (messages) -> `sum() + AverageValue`
+  (== `ceil(total / per-pod-target)`; immune to idle-pod dilution).
+- normalised ratios + the composite -> `avg() + Value` (or
+  AverageValue). NEVER `sum()` a ratio.
+
+Cap `maxReplicas` at the partition count -- beyond it pods sit idle and
+dilute an `avg()`.
+
+### Wiring (apps)
+
+`ServiceRuntime` builds the engine, runs its tick (CPU sampled
+internally), and exposes `scaling_signals` -- a lock-free cell. Push
+your per-pod signals from your receive/send loops:
+
+```rust
+runtime.scaling_signals.set_kafka_assigned_lag(lag as f64);
+runtime.scaling_signals.set_circuit_open(breaker.is_open());
+```
+
+If your inbound is NOT a rustlib transport (e.g. cloud-API polling), the
+compound inbound is 0 and the default reduces to CPU-only -- add a
+DOMAIN term (Tier 3) for your real backlog signal.
+
+### Emit your scaling signals as metrics
+
+The engine can only correlate what exists. If anything in YOUR app could
+factor into scaling -- a queue depth, an upstream rate-limit, a
+cache-miss storm -- emit it as a metric and reference it in a pressure
+expression. See [../core-pillars/METRICS.md](../core-pillars/METRICS.md)
+and [MIGRATIONS.md](../MIGRATIONS.md).
+
+---
+
+## `ScalingPressure` -- app-level signal (legacy weighted model)
+
+> Superseded by the engine above for the scale-out signal; retained for
+> worker-pool saturation feedback. New apps should use `ScalingEngine`.
 
 KEDA's built-in scalers see infrastructure metrics (Kafka lag, CPU),
 not *internal* pipeline state -- buffer depth, batch formation rate,

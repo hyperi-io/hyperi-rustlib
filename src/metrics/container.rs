@@ -132,6 +132,30 @@ impl ContainerMetrics {
     }
 }
 
+/// Read the container CPU limit in cores from cgroups (v1/v2), independent of a
+/// [`ContainerMetrics`] instance. `None` when unlimited or undetectable -- the
+/// scaling engine then falls back to `available_parallelism` for the CPU
+/// utilisation denominator.
+#[cfg(all(feature = "scaling", feature = "expression"))]
+pub(crate) fn cpu_limit_cores() -> Option<f64> {
+    match detect_cgroup_version() {
+        CgroupVersion::V2 => {
+            let content = fs::read_to_string("/sys/fs/cgroup/cpu.max").ok()?;
+            parse_cpu_max_v2(&content)
+        }
+        CgroupVersion::V1 => {
+            let quota = read_cgroup_value("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")?;
+            let period = read_cgroup_value("/sys/fs/cgroup/cpu/cpu.cfs_period_us")?;
+            if quota == u64::MAX || period == 0 {
+                None
+            } else {
+                Some(quota as f64 / period as f64)
+            }
+        }
+        CgroupVersion::Unknown => None,
+    }
+}
+
 /// Detect which cgroup version is in use.
 fn detect_cgroup_version() -> CgroupVersion {
     // cgroup v2 unified hierarchy

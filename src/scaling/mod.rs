@@ -63,9 +63,21 @@
 //! KEDA scales to the MAX of all triggers.
 
 mod config;
+#[cfg(feature = "expression")]
+mod engine;
 mod pressure;
 mod rate_window;
+mod transport_pressure;
 
-pub use config::{ScalingComponent, ScalingPressureConfig};
+pub use config::{
+    PressureExpr, ScalingComponent, ScalingEngineConfig, ScalingPressureConfig,
+    ScalingTransportConfig,
+};
+#[cfg(feature = "expression")]
+pub use engine::ScalingEngine;
 pub use pressure::{ComponentSnapshot, GateType, PressureSnapshot, ScalingPressure};
 pub use rate_window::RateWindow;
+pub use transport_pressure::{
+    PressureTargets, ScalingSignalsCell, ScalingTransport, TransportSignals, inbound_pressure,
+    outbound_pressure,
+};

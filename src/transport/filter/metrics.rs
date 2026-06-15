@@ -36,6 +36,10 @@ impl FilterMetrics {
         };
         metrics::counter!("transport_filtered_total", "direction" => dir, "action" => act)
             .increment(1);
+        // dual-emit: drop OLD in next release (MIGRATIONS) -- the `dfe_`
+        // prefix matches the other transport-family metric names.
+        metrics::counter!("dfe_transport_filtered_total", "direction" => dir, "action" => act)
+            .increment(1);
     }
 }
 

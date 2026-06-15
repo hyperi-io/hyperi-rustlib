@@ -238,6 +238,10 @@ impl ScalingController {
             .set(decision.target.saturating_sub(leased) as f64);
         metrics::gauge!("worker_pool_cpu_utilisation").set(cpu_util);
         metrics::gauge!("worker_pool_memory_utilisation").set(effective_memory_pressure);
+        // dual-emit: drop OLD in next release (MIGRATIONS) -- `_ratio` is the
+        // convention name for these 0-1 ratio gauges (pressure-CEL inputs).
+        metrics::gauge!("worker_pool_cpu_utilisation_ratio").set(cpu_util);
+        metrics::gauge!("worker_pool_memory_utilisation_ratio").set(effective_memory_pressure);
         // PSI memory stall (some avg10) -- the earliest memory-pressure signal,
         // surfaced for observability/alerting. Deliberately NOT folded into the
         // scale decision: the actionable stall-percent is workload-specific.
@@ -245,14 +249,17 @@ impl ScalingController {
         if let Some(stall) = crate::memory::detect_memory_stall() {
             metrics::gauge!("worker_pool_memory_psi_some").set(stall);
         }
-        metrics::gauge!("worker_pool_saturation")
-            .set(decision.target as f64 / cfg.max_threads.max(1) as f64);
+        let saturation_ratio = decision.target as f64 / cfg.max_threads.max(1) as f64;
+        metrics::gauge!("worker_pool_saturation").set(saturation_ratio);
+        // dual-emit: drop OLD in next release (MIGRATIONS) -- `_ratio` convention.
+        metrics::gauge!("worker_pool_saturation_ratio").set(saturation_ratio);
 
-        // Feed back into ScalingPressure if attached
+        // Feed back into ScalingPressure if attached. NOTE: the string
+        // "worker_pool_saturation" here is an internal ScalingPressure
+        // COMPONENT key, NOT a Prometheus metric name -- left unchanged.
         #[cfg(feature = "scaling")]
         if let Some(sp) = self.pool.scaling_pressure.lock().as_ref() {
-            let saturation = decision.target as f64 / cfg.max_threads.max(1) as f64;
-            sp.set_component("worker_pool_saturation", saturation);
+            sp.set_component("worker_pool_saturation", saturation_ratio);
         }
     }
 }

@@ -149,6 +149,8 @@ batching config.
 | `counter` / `gauge` / `histogram` | Construct + auto-register |
 | `*_with_labels(name, desc, labels, group)` | Same, with manifest label keys + group |
 | `histogram_with_buckets` | Custom bucket spec (captured in manifest) |
+| `histogram_with_unit(name, desc, unit)` | Histogram with an explicit unit (bytes/count/...) |
+| `histogram_count(name, desc)` | Dimensionless count-distribution histogram |
 | `set_readiness_check(fn)` / `mark_started()` | Wire `/readyz` / flip `/startupz` |
 | `set_scaling_pressure(Arc<ScalingPressure>)` / `set_memory_guard(Arc<MemoryGuard>)` | Add `/scaling/pressure` / `/memory/pressure` |
 | `set_build_info` / `set_use_cases` / `set_dashboard_hint` | Manifest metadata |
@@ -169,6 +171,43 @@ install but keeps the registry, descriptor push, and namespacing, and the macros
 become no-ops. Most tests verify descriptor registration and naming, not recorded
 values; end-to-end recording is verified in the integration suite where one
 fixture installs the recorder.
+
+---
+
+## Scaling signals -- emit what could drive scale-out
+
+The horizontal scaling-pressure engine (see
+[../deployment/KEDA.md](../deployment/KEDA.md)) can only correlate
+metrics that EXIST. **RULE:** if rustlib -- or your app -- can emit a
+meaningful, useful metric for something it owns, it SHOULD, by default.
+Anything that could factor into scaling (queue depth, upstream
+rate-limit, cache-miss storm, per-source throttle) belongs in the
+registry AND in a pressure expression. This is the deliberate
+config-metrics-scaling interdependency -- see
+[../ARCHITECTURE.md](../ARCHITECTURE.md).
+
+rustlib pre-supplies by default (2.8.10): per-pod Kafka consumer-group
+lag (`kafka_consumer_group_lag`, summed over THIS pod's ASSIGNED
+partitions), CPU as a proper cumulative counter
+(`{ns}_process_cpu_seconds_total`), http/grpc server in-flight + shed,
+and the engine's own `{ns}_scaling_pressure{name}`,
+`{ns}_transport_{inbound,outbound}_pressure_ratio`,
+`{ns}_scaling_circuit_open`. Push per-pod transport signals via
+`ServiceRuntime::scaling_signals`.
+
+Add yours the same way: emit the metric, then reference `metrics.<name>`
+in a `scaling.pressures` CEL expression.
+
+## Units + conventions
+
+Counters end `_total` and are monotonic; base units are `_seconds` /
+`_bytes` / `_ratio`; no bool type (use a 0/1 gauge documented as state).
+Histograms: `histogram()` is seconds (the latency common case); reach for
+`histogram_with_unit` / `histogram_count` for byte/size/count
+distributions -- never stamp a count as seconds. A metric RENAME has no
+native Prometheus path, so rustlib DUAL-EMITS (old + new) for one release
+then drops the old; see [../MIGRATIONS.md](../MIGRATIONS.md) for the
+current window.
 
 ---
 

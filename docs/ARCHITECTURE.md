@@ -186,6 +186,49 @@ auto-wired vs explicit.
 
 ---
 
+## Opinionated integrated core (config-metrics-scaling, and beyond)
+
+A first-class VALUE of rustlib, and a standing MAINTAINER principle:
+rustlib DELIBERATELY inter-wires its core functions so the integrated
+behaviour is FREE for the app developer -- instead of pushing the
+cross-cutting integration onto the infra/platform team per app (the usual
+outcome). The layering above says what depends on what; this says why some
+couplings are intentional, not accidental.
+
+config-metrics-scaling is the worked example (2.8.10): the cascade defines
+scaling-pressure expressions + params; every subsystem PRE-SUPPLIES metrics
+(the RULE below); the engine computes a **correlated composite** pressure
+from those metrics via config-defined CEL; the app exposes one
+`scaling_pressure` gauge the autoscaler reads. Autoscaling-readiness with
+ZERO hand-wiring of config -> metrics -> KEDA. The pattern recurs:
+
+- **memory-guard -> self-regulation governor -> inbound brake -> lag ->
+  scaling:** vertical (in-pod) coping coupled to horizontal scale-out via
+  the lag signal -- graceful degradation AND scale-out, free.
+- **transport -> WorkBatch engine -> DLQ -> commit tokens:** a
+  pre-integrated zero-copy, at-least-once, no-silent-drop data plane.
+- **config cascade -> every subsystem** (`unmarshal_key_registered`): one
+  8-layer model + redacted `/config`, not N bespoke ones.
+- **logging + metrics + tracing:** the three observability pillars
+  integrated (Prometheus+OTel fanout, W3C traceparent, secret redaction).
+- **secrets -> config -> TLS:** credential + cert provisioning integrated.
+- **shutdown + health -> every subsystem:** graceful drain + readiness
+  threaded by `ServiceRuntime`, the integrator that builds the whole stack.
+
+### Maintainer principle: pre-supply metrics by default
+
+If rustlib can emit a MEANINGFUL and USEFUL metric for something it owns,
+it SHOULD, by default. Consumers get observability + scaling signals for
+free, and the scaling engine can only correlate what exists. Applied
+pragmatically -- scaling-relevant + clearly-useful signals first, no vanity
+metrics. When you add a new core function, wire it into these couplings the
+SAME way (emit its metrics, honour the config cascade, thread
+shutdown/health) -- preserve the integration, don't regress to a bag of
+un-wired parts. See [core-pillars/METRICS.md](core-pillars/METRICS.md) and
+[deployment/KEDA.md](deployment/KEDA.md).
+
+---
+
 ## Project facts
 
 - **Edition:** 2024

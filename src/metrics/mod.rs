@@ -108,6 +108,14 @@ pub mod dfe_groups;
 pub use manifest::{ManifestResponse, MetricDescriptor, MetricRegistry, MetricType};
 pub use process::ProcessMetrics;
 
+// Internal samplers reused by the scaling-pressure engine tick (cgroup CPU
+// limit + this process's cumulative CPU seconds). Gated on `scaling` so they
+// are never dead code when the engine is absent.
+#[cfg(all(feature = "scaling", feature = "expression"))]
+pub(crate) use container::cpu_limit_cores;
+#[cfg(all(feature = "scaling", feature = "expression"))]
+pub(crate) use process::cumulative_cpu_seconds;
+
 #[cfg(feature = "otel-metrics")]
 pub use otel_types::{OtelMetricsConfig, OtelProtocol};
 
@@ -555,6 +563,42 @@ impl MetricsManager {
             dashboard_hint: None,
         });
         metrics::histogram!(key)
+    }
+
+    /// Create a histogram with an explicit unit.
+    ///
+    /// Use this for non-time distributions (byte sizes, item counts, ...) so the
+    /// recorded unit matches the metric name. The plain
+    /// [`histogram`](Self::histogram) defaults to seconds (the common latency
+    /// case); reaching for that on a count/size metric is the seconds-mislabel
+    /// the metrics audit flagged.
+    #[must_use]
+    pub fn histogram_with_unit(&self, name: &str, description: &str, unit: Unit) -> Histogram {
+        let key = self.prefixed_key(name);
+        let desc = description.to_string();
+        metrics::describe_histogram!(key.clone(), unit, desc.clone());
+        self.registry.push(MetricDescriptor {
+            name: key.clone(),
+            metric_type: MetricType::Histogram,
+            description: desc,
+            unit: unit_label(unit).to_string(),
+            labels: vec![],
+            group: "custom".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
+        metrics::histogram!(key)
+    }
+
+    /// Create a dimensionless count-distribution histogram (e.g. items per chunk).
+    ///
+    /// Convenience for [`histogram_with_unit`](Self::histogram_with_unit) with
+    /// [`Unit::Count`] -- avoids the seconds mislabel the plain
+    /// [`histogram`](Self::histogram) would apply.
+    #[must_use]
+    pub fn histogram_count(&self, name: &str, description: &str) -> Histogram {
+        self.histogram_with_unit(name, description, Unit::Count)
     }
 
     /// Get the Prometheus metrics output.
@@ -1202,6 +1246,20 @@ pub fn size_buckets() -> Vec<f64> {
         1_000_000.0,
         10_000_000.0,
     ]
+}
+
+/// Canonical unit label for a metric descriptor's `unit` field (manifest).
+///
+/// Maps the `metrics` crate [`Unit`] to the Prometheus-style base-unit string
+/// (`seconds`/`bytes`); counts are dimensionless. Only the units rustlib
+/// actually emits are mapped; anything else is left blank.
+fn unit_label(unit: Unit) -> &'static str {
+    match unit {
+        Unit::Count => "count",
+        Unit::Bytes => "bytes",
+        Unit::Seconds => "seconds",
+        _ => "",
+    }
 }
 
 #[cfg(test)]
