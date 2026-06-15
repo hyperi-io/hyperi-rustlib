@@ -216,6 +216,30 @@ pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
                 "starting service"
             );
 
+            // Populate the global config cascade BEFORE load_config + the
+            // ServiceRuntime build, so every `from_cascade()` subsystem
+            // (governor, worker pool, batch engine, scaling) reads the app's
+            // real config instead of silently defaulting. Guarded by the
+            // try_get() check so apps that already call config::setup()
+            // themselves (e.g. those needing setup_async for Postgres) are not
+            // double-initialised -- setup() returns Err(AlreadyInitialised)
+            // otherwise.
+            #[cfg(feature = "config")]
+            if crate::config::try_get().is_none() {
+                let opts = crate::config::ConfigOptions {
+                    env_prefix: app.env_prefix().to_string(),
+                    app_name: Some(app.name().to_string()),
+                    config_file: args.config.as_deref().map(std::path::PathBuf::from),
+                    ..Default::default()
+                };
+                if let Err(e) = crate::config::setup(opts) {
+                    tracing::warn!(
+                        error = %e,
+                        "config cascade setup failed; from_cascade subsystems will use defaults"
+                    );
+                }
+            }
+
             let config_path = args.config.as_deref();
             let config = app.load_config(config_path)?;
 

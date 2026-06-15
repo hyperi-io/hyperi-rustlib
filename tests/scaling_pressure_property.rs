@@ -142,6 +142,9 @@ fn property_user_expressions_never_panic_and_stay_finite() {
         "(cpu_utilisation_ratio / params.cpu_target) * 100.0",
         "memory_ratio * 100.0",
         "transport_outbound_pressure_ratio * 50.0 + cpu_utilisation_ratio * 50.0",
+        // Domain signal: present roughly half the ticks (else NoSuchKey -> guarded
+        // fallback). Either way the emitted value must be finite -- never panic.
+        "custom.ch_backlog / params.ch_target",
     ];
     let pressures: Vec<PressureExpr> = exprs
         .iter()
@@ -153,7 +156,11 @@ fn property_user_expressions_never_panic_and_stay_finite() {
         "prop",
         &cfg(
             pressures,
-            &[("cpu_target", 0.70), ("lag_target", 100_000.0)],
+            &[
+                ("cpu_target", 0.70),
+                ("lag_target", 100_000.0),
+                ("ch_target", 50_000.0),
+            ],
         ),
         ScalingTransport::Kafka,
         ScalingTransport::Kafka,
@@ -165,6 +172,12 @@ fn property_user_expressions_never_panic_and_stay_finite() {
 
     let mut rng = Rng::new(0x1234_5678);
     for _ in 0..20_000 {
+        let mut custom = std::collections::BTreeMap::new();
+        // Sometimes push the domain signal the custom expression reads, sometimes
+        // leave it absent (-> runtime NoSuchKey -> guarded fallback) to fuzz both.
+        if rng.bool() {
+            custom.insert("ch_backlog".to_string(), rng.f64_to(500_000.0));
+        }
         let signals = TransportSignals {
             kafka_assigned_lag: Some(rng.f64_to(5_000_000.0)),
             redis_pending: Some(rng.f64_to(1_000_000.0)),
@@ -174,6 +187,7 @@ fn property_user_expressions_never_panic_and_stay_finite() {
             refused_rate: Some(rng.f64_to(500.0)),
             produce_queue_depth: Some(rng.f64_to(100_000.0)),
             circuit_open: rng.bool(),
+            custom,
         };
         let out = engine.evaluate(&signals, rng.f64_to(3.0), rng.f64_to(1.0));
         assert_eq!(out.len(), n);
@@ -200,6 +214,7 @@ fn property_compound_pressure_finite_nonnegative() {
             refused_rate: Some(rng.f64_to(500.0)),
             produce_queue_depth: Some(rng.f64_to(100_000.0)),
             circuit_open: rng.bool(),
+            ..Default::default()
         };
         let mut params = std::collections::BTreeMap::new();
         if rng.bool() {
@@ -276,18 +291,84 @@ fn context_aware_default_ignores_lag_for_non_kafka_inbound() {
     assert!((engine_k.evaluate(&signals, 0.0, 0.0)[0].1 - 100.0).abs() < 1e-9);
 }
 
-// ── Matrix: a referenced-but-unseen metric is caught at LOAD (not first tick) ──
+// ── Matrix: a missing MAP key (metrics.*/custom.*) is warn-and-kept at load ──
+//
+// As of 2.8.11, custom domain signals are pushed at RUNTIME and so cannot be
+// pre-populated in the load-time dry-run; the cel error for a missing map key
+// (`NoSuchKey`) is identical whether it's `custom.<name>` or `metrics.<typo>`.
+// The contract is: DOWNGRADE a missing-map-key to a load warning + KEEP the
+// program; the runtime guard falls back to the smart default if it really
+// errors. Syntax errors and unknown TOP-LEVEL identifiers stay hard rejects.
 
 #[test]
-fn referenced_unknown_metric_field_caught_at_load() {
+fn missing_map_key_is_kept_then_falls_back_at_runtime() {
+    // metrics.does_not_exist is a NoSuchKey at the dry-run -> warn-and-keep,
+    // NOT a hard load error.
+    let (engine, errs) = ScalingEngine::new(
+        "t",
+        &cfg(
+            vec![expr("bad", "metrics.does_not_exist * 2.0")],
+            &[("cpu_target", 0.70)],
+        ),
+        ScalingTransport::File, // CPU-only smart default for the fallback
+        ScalingTransport::Kafka,
+    );
+    assert!(
+        errs.is_empty(),
+        "missing map key should be warn-and-kept, not a hard load error: {errs:?}"
+    );
+    // At runtime the key is still absent -> eval errors -> smart default (100 at
+    // CPU 0.70/0.70). The pressure is still emitted (no panic, finite).
+    let v = engine.evaluate(&TransportSignals::default(), 0.70, 0.0);
+    assert_eq!(v.len(), 1);
+    assert_eq!(v[0].0, "bad");
+    assert!(
+        (v[0].1 - 100.0).abs() < 1e-6,
+        "missing metric must fall back to the smart default, got {}",
+        v[0].1
+    );
+}
+
+// ── Matrix: an unknown TOP-LEVEL identifier is STILL caught hard at LOAD ──
+
+#[test]
+fn unknown_top_level_identifier_caught_at_load() {
     let (_engine, errs) = ScalingEngine::new(
         "t",
-        &cfg(vec![expr("bad", "metrics.does_not_exist * 2.0")], &[]),
+        &cfg(vec![expr("bad", "cpu_utilisation_ratoi * 2.0")], &[]),
         ScalingTransport::Kafka,
         ScalingTransport::Kafka,
     );
-    assert_eq!(errs.len(), 1, "unknown metrics.* field should fail at load");
+    assert_eq!(
+        errs.len(),
+        1,
+        "unknown top-level identifier should hard-fail at load"
+    );
     assert!(errs[0].contains("bad"));
+}
+
+// ── Matrix: a custom domain signal flows end-to-end via set_custom path ──
+
+#[test]
+fn custom_signal_scales_end_to_end() {
+    let (engine, errs) = ScalingEngine::new(
+        "t",
+        &cfg(
+            vec![expr("ch", "custom.clickhouse_backlog / params.ch_target")],
+            &[("ch_target", 2000.0)],
+        ),
+        ScalingTransport::File,
+        ScalingTransport::Kafka,
+    );
+    assert!(errs.is_empty(), "custom.* must not hard-reject: {errs:?}");
+    let mut signals = TransportSignals::default();
+    signals.custom.insert("clickhouse_backlog".into(), 5000.0);
+    let v = engine.evaluate(&signals, 0.0, 0.0);
+    assert!(
+        (v[0].1 - 2.5).abs() < 1e-9,
+        "custom 5000/2000 = 2.5, got {}",
+        v[0].1
+    );
 }
 
 // ── Matrix: disabled pressure is not evaluated/emitted ──

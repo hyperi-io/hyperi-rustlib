@@ -31,6 +31,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 /// Inbound/outbound transport kind, for scaling-signal selection.
@@ -107,6 +108,10 @@ pub struct TransportSignals {
     pub produce_queue_depth: Option<f64>,
     /// Outbound circuit breaker open (sink dead -> the composite gate).
     pub circuit_open: bool,
+    /// App-pushed DOMAIN signals, by name (e.g. cloud-API pending-fetch backlog,
+    /// ClickHouse insert backlog). Empty by default; exposed to CEL under the
+    /// `custom.<name>` map, SEPARATE from the fixed transport `metrics` map.
+    pub custom: std::collections::BTreeMap<String, f64>,
 }
 
 /// Per-pod normalisation targets (KEDA `lagThreshold`-style: "what ONE pod
@@ -215,6 +220,10 @@ pub struct ScalingSignalsCell {
     refused_rate: AtomicU64,
     produce_queue_depth: AtomicU64,
     circuit_open: AtomicBool,
+    /// App-pushed DOMAIN signals, keyed by name. A `BTreeMap` (not per-field
+    /// atomics) because the keys are open-ended and only set on the scaling
+    /// tick, not the data hot-path -- a short `parking_lot` lock is cheap here.
+    custom: Mutex<std::collections::BTreeMap<String, f64>>,
 }
 
 impl Default for ScalingSignalsCell {
@@ -229,6 +238,7 @@ impl Default for ScalingSignalsCell {
             refused_rate: absent(),
             produce_queue_depth: absent(),
             circuit_open: AtomicBool::new(false),
+            custom: Mutex::new(std::collections::BTreeMap::new()),
         }
     }
 }
@@ -276,6 +286,14 @@ impl ScalingSignalsCell {
         self.circuit_open.store(open, Ordering::Relaxed);
     }
 
+    /// Set (insert or overwrite) an app-pushed DOMAIN signal by name. These are
+    /// NOT known at config-load (apps push them at runtime) and are exposed to
+    /// CEL under the `custom.<name>` map -- e.g. `set_custom("ch_insert_backlog",
+    /// n)` then a pressure expression `custom.ch_insert_backlog / params.ch_target`.
+    pub fn set_custom(&self, name: &str, value: f64) {
+        self.custom.lock().insert(name.to_string(), value);
+    }
+
     /// Read a consistent-enough snapshot for this tick (Relaxed -- a tick is a
     /// periodic best-effort sample, not a linearisation point).
     #[must_use]
@@ -293,6 +311,7 @@ impl ScalingSignalsCell {
             refused_rate: read(&self.refused_rate),
             produce_queue_depth: read(&self.produce_queue_depth),
             circuit_open: self.circuit_open.load(Ordering::Relaxed),
+            custom: self.custom.lock().clone(),
         }
     }
 }
@@ -411,6 +430,20 @@ mod tests {
         let t = targets(&[("lag_target", 100.0), ("http_concurrency_target", 100.0)]);
         assert!(inbound_pressure(ScalingTransport::Kafka, &s, &t).abs() < f64::EPSILON);
         assert!(inbound_pressure(ScalingTransport::Http, &s, &t).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn set_custom_flows_into_snapshot() {
+        let cell = ScalingSignalsCell::new();
+        assert!(cell.snapshot().custom.is_empty());
+        cell.set_custom("clickhouse_backlog", 42.0);
+        cell.set_custom("api_throttle", 0.7);
+        let snap = cell.snapshot();
+        assert!((snap.custom["clickhouse_backlog"] - 42.0).abs() < 1e-9);
+        assert!((snap.custom["api_throttle"] - 0.7).abs() < 1e-9);
+        // Overwrite semantics.
+        cell.set_custom("clickhouse_backlog", 99.0);
+        assert!((cell.snapshot().custom["clickhouse_backlog"] - 99.0).abs() < 1e-9);
     }
 
     #[test]

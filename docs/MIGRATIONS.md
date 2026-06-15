@@ -10,6 +10,101 @@ six core DFE apps migrate in lockstep.
 
 ---
 
+## 2.8.11 -- config cascade ACTUALLY applies on the run_app path
+
+A `fix:`. Before this release, [`run_app`](../src/cli/app.rs) built the
+`ServiceRuntime` (governor, worker pool, batch engine, scaling) entirely
+from `*::from_cascade()` WITHOUT ever calling `config::setup()`, so the
+global config singleton was empty and every platform subsystem silently
+took its hard-coded defaults regardless of the app's config file. A
+`--config <file>` was also never ingested (the cascade discovers config
+in DIRECTORIES; a file path pushed into the directory list is never
+found). Both are now fixed.
+
+### Platform sections are now HONOURED (BEHAVIOUR CHANGE)
+
+Apps' platform sections in their config file -- `worker_pool`,
+`self_regulation`, `batch_processing`, `scaling`, `expression`, and any
+other `from_cascade()` section -- are now APPLIED. They were silently
+DEFAULTED before.
+
+- **Action required on the bump:** REVIEW these sections in every app's
+  config. Any stale or unintended value that was harmlessly ignored will
+  now take effect. e.g. a leftover `worker_pool: { min_threads: 64 }`
+  that previously did nothing will now actually size the pool.
+- No API removal, no signature change -- existing apps recompile
+  unchanged. The change is purely that config you set now does what it
+  says.
+
+### `run_app` populates the cascade (guarded)
+
+The `Run` arm of `run_app` now calls `config::setup()` with the app's
+`env_prefix`, `app_name`, and the `--config` file BEFORE `load_config()`
+and the `ServiceRuntime` build. Guarded by `config::try_get().is_none()`
+so apps that already call `setup()` / `setup_async()` themselves (e.g.
+for the Postgres config layer) are NOT double-initialised.
+
+### New `ConfigOptions.config_file` (additive)
+
+`ConfigOptions` gains `config_file: Option<PathBuf>` (default `None`).
+When set, the named YAML file merges ABOVE the discovered
+`defaults`/`settings`/`settings.{env}` files but BELOW the PostgreSQL
+layer (async path) and BELOW environment variables -- an explicit
+override that still yields to ENV. `CommonArgs::to_config_options` now
+sets this from `--config` instead of (wrongly) pushing it into
+`config_paths`.
+
+### Observable startup + deser WARN
+
+- `ServiceRuntime::build` now emits one startup `tracing::info!` line
+  summarising which platform sections were found in the cascade vs
+  defaulted (`cascade_initialised`, `self_regulation`, `worker_pool`,
+  `batch_processing`, `scaling`, `expression`). The previously-silent
+  "defaulted everything" failure is now visible.
+- New `Config::unmarshal_key_or_warn` /
+  `unmarshal_key_registered_or_warn`: a config section that is PRESENT
+  but malformed (typo / type mismatch) now logs a `tracing::warn!` and
+  falls back to the default, instead of silently swallowing the error.
+  Wired into the four `ServiceRuntime`-build readers: governor,
+  worker-pool, batch-engine, scaling. An ABSENT key is unchanged --
+  still silent default (the default-ON governor relies on this).
+  (`ScalingEngineConfig::from_cascade` shares the `scaling` key with
+  `ScalingPressureConfig`, which already warns for that section, so it
+  was left as-is to avoid a double WARN.)
+
+### Custom / domain scaling signals (additive)
+
+The scaling engine's CEL pressures could previously reference ONLY the
+8 FIXED transport signals. Apps can now push DOMAIN signals so a
+`scaling.pressures` expression can scale on them -- essential for
+non-rustlib-inbound apps (e.g. the fetcher, whose smart default is
+otherwise CPU-only).
+
+- **New `ScalingSignalsCell::set_custom(&self, name: &str, value: f64)`**
+  -- insert/overwrite a named domain signal (e.g. cloud-API pending
+  fetch backlog / API throttle, ClickHouse insert backlog). Pushed from
+  the app at runtime; no setter per signal.
+- **New `TransportSignals.custom: BTreeMap<String, f64>`** (default
+  empty), populated by `ScalingSignalsCell::snapshot()`. Existing
+  `TransportSignals { .. }` struct literals that enumerate all fields
+  without `..Default::default()` must add the `custom` field (or switch
+  to `..Default::default()`); all setters and the typed fields are
+  unchanged.
+- **CEL surface:** domain signals are exposed under a DEDICATED
+  `custom.<name>` map, SEPARATE from the strict fixed-signal `metrics`
+  map. Scale on them like `custom.clickhouse_backlog / params.ch_target`.
+- **Validation contract (no API change, behaviour note):** custom names
+  are unknown at config-load, so the load-time dry-run cannot
+  pre-populate them. Syntax errors and unknown TOP-LEVEL identifiers are
+  still HARD-rejected at load. A reference to a `custom.<name>` (or any
+  map key absent at load) is downgraded to a load `warn!` and KEPT; the
+  runtime guard falls back to last-good / smart-default if it errors at
+  tick time. Startup never fails for a `custom.*` reference.
+- No API removal, no signature change -- apps recompile unchanged unless
+  they hit the `TransportSignals` struct-literal note above.
+
+---
+
 ## 2.8.10 -- horizontal scaling pressure + metrics overhaul
 
 A `fix:` (the existing scaling was not fit for purpose). Adds the

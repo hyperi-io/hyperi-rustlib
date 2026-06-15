@@ -36,7 +36,7 @@
 
 use std::collections::HashMap;
 
-use cel::{Program, Value};
+use cel::{ExecutionError, Program, Value};
 use parking_lot::Mutex;
 use serde_json::json;
 
@@ -309,6 +309,17 @@ impl ScalingEngine {
             "metrics".into(),
             serde_json::Value::Object(signal_metrics(signals)),
         );
+
+        // App-pushed DOMAIN signals under a DEDICATED `custom` map (so
+        // expressions use `custom.<name>`), SEPARATE from the strict `metrics`
+        // map of fixed transport signals. Names are not known at config-load,
+        // so this map is whatever the app has pushed via `set_custom`.
+        let custom: serde_json::Map<String, serde_json::Value> = signals
+            .custom
+            .iter()
+            .map(|(k, v)| (k.clone(), json!(v)))
+            .collect();
+        m.insert("custom".into(), serde_json::Value::Object(custom));
         m
     }
 
@@ -320,7 +331,8 @@ impl ScalingEngine {
             "top-level: cpu_utilisation_ratio, circuit_open, \
              transport_inbound_pressure_ratio, transport_outbound_pressure_ratio, memory_ratio; \
              params.{{{}}}; metrics.{{kafka_assigned_lag, redis_pending, inflight, shed_rate, \
-             send_backpressure_rate, refused_rate, produce_queue_depth}}",
+             send_backpressure_rate, refused_rate, produce_queue_depth}}; \
+             custom.<app-pushed domain signals, validated at runtime not load>",
             params.join(", ")
         )
     }
@@ -347,7 +359,23 @@ fn signal_metrics(s: &TransportSignals) -> serde_json::Map<String, serde_json::V
 
 /// Compile a user expression and dry-run it against a representative context so
 /// unknown identifiers / type errors surface at LOAD, not first tick. Returns a
-/// friendly error string on failure.
+/// friendly error string on a HARD failure.
+///
+/// ## Validation contract (custom-signal aware)
+///
+/// `custom.<name>` domain signals are pushed by the app at RUNTIME and so are
+/// NOT present in the load-time dry-run context. We therefore distinguish (via
+/// the typed `cel::ExecutionError`):
+///
+/// - `Program::compile` failure (syntax) -> HARD reject.
+/// - dry-run `NoSuchKey` (a missing MAP key, e.g. `custom.<name>` not yet
+///   pushed, or any not-yet-present `metrics.*`/`params.*`) -> DOWNGRADE to a
+///   load `warn!` and KEEP the program. The runtime guard falls back to
+///   last-good / smart-default if it really is broken at tick time.
+/// - dry-run `UndeclaredReference` (an unknown TOP-LEVEL identifier -- a typo in
+///   a closed set) -> HARD reject.
+/// - any other eval error (type mismatch, bad overload, ...) or a non-numeric
+///   result -> HARD reject.
 fn compile_and_check(
     expr: &str,
     params: &std::collections::BTreeMap<String, f64>,
@@ -356,7 +384,8 @@ fn compile_and_check(
 
     // Representative zero-context: all derived vars present, every param key,
     // and the full metrics surface, so a reference to a KNOWN name succeeds and
-    // only genuine typos/type errors fail.
+    // only genuine typos/type errors fail. `custom.*` is deliberately NOT
+    // pre-populated -- it is runtime-validated (see the contract above).
     let mut m = serde_json::Map::new();
     m.insert("cpu_utilisation_ratio".into(), json!(0.0));
     m.insert("circuit_open".into(), json!(false));
@@ -379,20 +408,53 @@ fn compile_and_check(
         metrics.insert(k.to_string(), json!(0.0));
     }
     m.insert("metrics".into(), serde_json::Value::Object(metrics));
+    // An EMPTY custom map: a reference to `custom.<name>` produces a `NoSuchKey`,
+    // which we downgrade below (apps push the real keys at runtime).
+    m.insert(
+        "custom".into(),
+        serde_json::Value::Object(serde_json::Map::new()),
+    );
 
-    match eval_program_checked(&program, &m) {
+    let surface = || {
+        format!(
+            "Available -- top-level: cpu_utilisation_ratio, circuit_open, \
+             transport_inbound_pressure_ratio, transport_outbound_pressure_ratio, memory_ratio; \
+             params.{{{}}}; metrics.{{kafka_assigned_lag, redis_pending, inflight, shed_rate, \
+             send_backpressure_rate, refused_rate, produce_queue_depth}}; \
+             custom.<app-pushed at runtime>",
+            params.keys().cloned().collect::<Vec<_>>().join(", ")
+        )
+    };
+
+    // Build the dry-run context, then execute capturing the TYPED execution
+    // error so we can branch on `NoSuchKey` (a missing map key -- downgrade) vs
+    // everything else (hard reject). A `build_context` failure is itself a hard
+    // reject (it realistically never errs for these JSON maps).
+    let ctx = crate::expression::build_context(m.iter())
+        .map_err(|e| format!("context build error: {e}. {}", surface()))?;
+
+    match program.execute(&ctx) {
         Ok(Value::Float(_) | Value::Int(_) | Value::UInt(_)) => Ok(program),
         Ok(other) => Err(format!(
             "expression must evaluate to a number, got {other:?}"
         )),
-        Err(e) => Err(format!(
-            "evaluation error: {e}. Available -- top-level: cpu_utilisation_ratio, \
-             circuit_open, transport_inbound_pressure_ratio, \
-             transport_outbound_pressure_ratio, memory_ratio; params.{{{}}}; \
-             metrics.{{kafka_assigned_lag, redis_pending, inflight, shed_rate, \
-             send_backpressure_rate, refused_rate, produce_queue_depth}}",
-            params.keys().cloned().collect::<Vec<_>>().join(", ")
-        )),
+        // A missing MAP key -- almost always a `custom.<name>` the app pushes at
+        // runtime (or a not-yet-present metrics/params field). Do NOT hard-reject:
+        // warn and keep the program; the runtime guard is the safety net.
+        Err(ExecutionError::NoSuchKey(key)) => {
+            tracing::warn!(
+                missing_key = %key,
+                expression = expr,
+                "scaling pressure references a map key not present at load (likely a \
+                 custom.<name> domain signal pushed at runtime) -- keeping the expression; \
+                 it will be validated on each scaling tick and fall back to the smart \
+                 default if it errors."
+            );
+            Ok(program)
+        }
+        // Unknown TOP-LEVEL identifier (a typo in the closed set) -> hard reject;
+        // ditto any other eval error (type mismatch, bad overload, ...).
+        Err(e) => Err(format!("evaluation error: {e}. {}", surface())),
     }
 }
 
@@ -410,15 +472,6 @@ fn eval_program(
         Value::Bool(b) => Some(if b { 1.0 } else { 0.0 }),
         _ => None,
     }
-}
-
-/// Like [`eval_program`] but surfaces the error string (for load-time checking).
-fn eval_program_checked(
-    program: &Program,
-    map: &serde_json::Map<String, serde_json::Value>,
-) -> Result<Value, String> {
-    let ctx = crate::expression::build_context(map.iter()).map_err(|e| format!("{e}"))?;
-    program.execute(&ctx).map_err(|e| format!("{e}"))
 }
 
 #[cfg(test)]
@@ -525,6 +578,64 @@ mod tests {
             ..Default::default()
         };
         assert!((eng.evaluate(&s, 0.0, 0.0)[0].1 - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn custom_domain_signal_flows_end_to_end() {
+        // An app pushes a DOMAIN signal at runtime; a pressure expression scales
+        // on it under the dedicated `custom` map. The custom name is NOT known at
+        // config-load, so it must NOT be a hard load error (warn-and-keep), and
+        // it must evaluate to the expected value once the signal is present.
+        let p = PressureExpr {
+            name: "ch".into(),
+            expression: "custom.clickhouse_backlog / params.ch_target".into(),
+            enabled: true,
+        };
+        let (eng, errs) = ScalingEngine::new(
+            "t",
+            &cfg(vec![p], &[("ch_target", 1000.0)]),
+            ScalingTransport::File, // CPU-only smart default for the fallback
+            ScalingTransport::Kafka,
+        );
+        // custom.* is runtime-validated -> no hard load error.
+        assert!(errs.is_empty(), "custom.* must not hard-reject: {errs:?}");
+
+        // App pushes the signal: backlog 2500 / target 1000 = 2.5.
+        let mut signals = TransportSignals::default();
+        signals.custom.insert("clickhouse_backlog".into(), 2500.0);
+        let v = eng.evaluate(&signals, 0.0, 0.0);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].0, "ch");
+        assert!(
+            (v[0].1 - 2.5).abs() < 1e-9,
+            "custom signal should flow end-to-end, got {}",
+            v[0].1
+        );
+    }
+
+    #[test]
+    fn custom_signal_absent_at_runtime_falls_back() {
+        // Same expression, but the app never pushes the signal -> the runtime
+        // eval errors (NoSuchKey) -> fall back to the smart default (no last-good
+        // yet). With File inbound + CPU 0.70/0.70 the smart default is 100.
+        let p = PressureExpr {
+            name: "ch".into(),
+            expression: "custom.never_pushed / params.ch_target".into(),
+            enabled: true,
+        };
+        let (eng, errs) = ScalingEngine::new(
+            "t",
+            &cfg(vec![p], &[("ch_target", 1000.0), ("cpu_target", 0.70)]),
+            ScalingTransport::File,
+            ScalingTransport::Kafka,
+        );
+        assert!(errs.is_empty(), "errors: {errs:?}");
+        let v = eng.evaluate(&TransportSignals::default(), 0.70, 0.0);
+        assert!(
+            (v[0].1 - 100.0).abs() < 1e-6,
+            "absent custom signal must fall back to smart default, got {}",
+            v[0].1
+        );
     }
 
     #[test]

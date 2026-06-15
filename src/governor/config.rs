@@ -143,8 +143,11 @@ impl SelfRegulationConfig {
     pub fn from_cascade() -> Self {
         #[cfg(feature = "config")]
         {
+            // `or_warn`: absent `self_regulation` key -> default-ON (silent);
+            // present-but-malformed -> WARN + default (was silently swallowed
+            // pre-2.8.11). Absent-key default-ON behaviour is unchanged.
             if let Some(cfg) = crate::config::try_get()
-                && let Ok(value) = cfg.unmarshal_key_registered::<Self>("self_regulation")
+                && let Some(value) = cfg.unmarshal_key_registered_or_warn::<Self>("self_regulation")
             {
                 return value;
             }

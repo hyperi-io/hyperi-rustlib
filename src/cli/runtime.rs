@@ -281,6 +281,11 @@ impl ServiceRuntime {
             .check_on_startup();
         }
 
+        // Turns the previously-silent "from_cascade defaulted everything"
+        // failure into one observable startup line.
+        #[cfg(feature = "config")]
+        log_cascade_section_summary();
+
         // Log runtime context
         tracing::info!(
             environment = %ctx.environment,
@@ -355,6 +360,25 @@ impl ServiceRuntime {
             None => AnyReceiver::from_config(key).await,
         }
     }
+}
+
+/// Emit one startup line summarising which platform config sections were found
+/// in the cascade vs defaulted. Cheap (key-presence checks, no deserialisation).
+/// This is the observable counterpart to the silent pre-2.8.11 failure where
+/// `from_cascade` defaulted everything because the cascade was never populated.
+#[cfg(feature = "config")]
+fn log_cascade_section_summary() {
+    let cfg = crate::config::try_get();
+    let present = |key: &str| cfg.is_some_and(|c| c.contains(key));
+    tracing::info!(
+        cascade_initialised = cfg.is_some(),
+        self_regulation = present("self_regulation"),
+        worker_pool = present("worker_pool"),
+        batch_processing = present("batch_processing"),
+        scaling = present("scaling"),
+        expression = present("expression"),
+        "Config cascade sections (true = found in config, false = using defaults)"
+    );
 }
 
 /// Periodic scaling-pressure tick: sample CPU (rate of the cumulative counter

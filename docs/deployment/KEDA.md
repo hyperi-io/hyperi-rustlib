@@ -149,7 +149,9 @@ trigger, and the job of `ScalingEngine`.
   `{ns}_scaling_pressure{name="default"}` = `max(CPU, inbound)` gated by
   circuit-open, on a periodic tick.
 - **Tier 3 -- your correlated composite (config):** define CEL
-  expression(s) over the local context.
+  expression(s) over the local context, including app-pushed DOMAIN
+  signals (`custom.<name>`, see Wiring) -- e.g. a fetcher's cloud-API
+  pending-fetch backlog, a loader's ClickHouse insert backlog.
 
 ### The smart default
 
@@ -181,11 +183,21 @@ scaling:
 
 CEL context: top-level `cpu_utilisation_ratio`, `circuit_open`,
 `transport_inbound_pressure_ratio`, `transport_outbound_pressure_ratio`,
-`memory_ratio`; `params.<key>`; `metrics.<signal>`
-(`kafka_assigned_lag`, `inflight`, `shed_rate`, ...). CEL has no `max()`
--- use a ternary. Expressions are validated at LOAD (syntax + an
-unknown-identifier dry-run); a broken expression falls back to the smart
-default with a loud, operator-facing error rather than failing startup.
+`memory_ratio`; `params.<key>`; the FIXED transport `metrics.<signal>`
+(`kafka_assigned_lag`, `inflight`, `shed_rate`, ...); and app-pushed
+DOMAIN signals under a SEPARATE `custom.<name>` map (rustlib 2.8.11).
+CEL has no `max()` -- use a ternary.
+
+Validation at LOAD: the expression is COMPILED (syntax errors and
+unknown TOP-LEVEL identifiers are hard-rejected -> fall back to the
+smart default with a loud, operator-facing error). A reference to a
+`custom.<name>` (or any map key not present at load) is NOT a hard
+error -- those domain signals are pushed at RUNTIME, so a load-time
+dry-run cannot pre-populate them. Such a reference is kept with a load
+`warn!`; if it still errors at tick time (signal never pushed), that
+single pressure falls back to its last-good value, then to the smart
+default. The runtime guard is the safety net -- startup never fails for
+a `custom.*` reference.
 
 ### Multi-output
 
@@ -224,9 +236,36 @@ runtime.scaling_signals.set_kafka_assigned_lag(lag as f64);
 runtime.scaling_signals.set_circuit_open(breaker.is_open());
 ```
 
+For the 8 FIXED transport signals there is a typed setter (above). For a
+DOMAIN signal -- anything rustlib cannot know (a cloud-API backlog, an
+upstream throttle, a downstream insert backlog) -- push it by name with
+`set_custom` and reference it in a pressure as `custom.<name>`:
+
+```rust
+// fetcher: cloud-API pending-fetch backlog + provider throttle
+runtime.scaling_signals.set_custom("pending_fetch", queue.len() as f64);
+runtime.scaling_signals.set_custom("api_throttle", throttle_ratio);
+```
+
+```yaml
+scaling:
+  params:
+    fetch_target: 500        # PER-POD backlog one pod tolerates
+  pressures:
+    - name: fetch
+      # CEL has no max() -- ternary picks the worse of backlog vs throttle
+      expression: >
+        custom.pending_fetch / params.fetch_target > custom.api_throttle
+        ? custom.pending_fetch / params.fetch_target
+        : custom.api_throttle
+```
+
 If your inbound is NOT a rustlib transport (e.g. cloud-API polling), the
 compound inbound is 0 and the default reduces to CPU-only -- add a
-DOMAIN term (Tier 3) for your real backlog signal.
+DOMAIN term (Tier 3) via `set_custom` for your real backlog signal. A
+loader with a ClickHouse sink is the same story: push the insert backlog
+with `set_custom("clickhouse_backlog", n)` and scale on
+`custom.clickhouse_backlog / params.ch_target`.
 
 ### Emit your scaling signals as metrics
 

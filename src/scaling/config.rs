@@ -56,8 +56,10 @@ impl ScalingPressureConfig {
     pub fn from_cascade() -> Self {
         #[cfg(feature = "config")]
         {
+            // `or_warn`: absent `scaling` key -> default (silent); present-but-
+            // malformed -> WARN + default (was silently swallowed pre-2.8.11).
             if let Some(cfg) = crate::config::try_get()
-                && let Ok(scaling) = cfg.unmarshal_key_registered::<Self>("scaling")
+                && let Some(scaling) = cfg.unmarshal_key_registered_or_warn::<Self>("scaling")
             {
                 return scaling;
             }
