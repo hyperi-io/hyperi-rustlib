@@ -60,9 +60,10 @@ pub use admin::{KafkaAdmin, TopicInfo};
 #[allow(deprecated)]
 pub use config::{
     ConsumerKnobs, DEVTEST_PROFILE, HIGH_THROUGHPUT_CONSUMER_DEFAULTS, KafkaConfig, KafkaProfile,
-    KafkaSizingConfig, LOW_LATENCY_CONSUMER_DEFAULTS, PRODUCER_DEFAULTS, PRODUCER_DEVTEST,
-    PRODUCER_EXACTLY_ONCE, PRODUCER_HIGH_THROUGHPUT, PRODUCER_LOW_LATENCY, PRODUCTION_PROFILE,
-    ProducerKnobs, SelfRegulationProfile, SuppressionRule, merge_with_overrides,
+    KafkaRole, KafkaSizingConfig, LOW_LATENCY_CONSUMER_DEFAULTS, PRODUCER_DEFAULTS,
+    PRODUCER_DEVTEST, PRODUCER_EXACTLY_ONCE, PRODUCER_HIGH_THROUGHPUT, PRODUCER_LOW_LATENCY,
+    PRODUCTION_PROFILE, ProducerKnobs, SelfRegulationProfile, SuppressionRule,
+    merge_with_overrides,
 };
 pub use metrics::{
     BrokerMetrics, KafkaMetrics, StatsContext, healthy_broker_count, total_consumer_lag,
@@ -112,18 +113,28 @@ pub mod tuning {
 /// - Drains internal queue with zero-timeout polls
 /// - Minimizes allocations in hot path
 pub struct KafkaTransport {
-    /// librdkafka consumer.
+    /// librdkafka consumer -- `None` for a producer-only transport.
     ///
-    /// Behind an `Arc` so the optional [`KafkaGateActuator`] (G3, behind the
-    /// `governor` feature) can hold a clone and call `pause`/`resume` on the
-    /// ASSIGNED partitions without `unsafe` and without taking ownership away
-    /// from the recv poll loop. Every `Consumer` method we use (`poll`,
-    /// `subscribe`, `commit`, `assignment`, `pause`, `resume`,
+    /// `None` when `config.group` is empty: a client with no consumer group
+    /// cannot obtain a consumer queue (librdkafka returns NULL ->
+    /// "rdkafka consumer queue not available"), and a pure sink has no business
+    /// holding one. In that mode `recv*`/`commit*` error and the gate actuator
+    /// is a no-op; only `send()` is used. See #44.
+    ///
+    /// When present it is behind an `Arc` so the optional [`KafkaGateActuator`]
+    /// (G3, behind the `governor` feature) can hold a clone and call
+    /// `pause`/`resume` on the ASSIGNED partitions without `unsafe` and without
+    /// taking ownership away from the recv poll loop. Every `Consumer` method we
+    /// use (`poll`, `subscribe`, `commit`, `assignment`, `pause`, `resume`,
     /// `fetch_group_list`) takes `&self`, so a shared `Arc` serves both the
     /// transport's poll loop and the actuator's pause/resume with no lock --
     /// librdkafka is internally synchronised.
-    consumer: Arc<BaseConsumer<StatsContext>>,
-    producer: FutureProducer<StatsContext>,
+    consumer: Option<Arc<BaseConsumer<StatsContext>>>,
+    /// librdkafka producer -- `None` for a consumer-only transport
+    /// (`role == KafkaRole::Consumer`). In that mode `send()` errors; only the
+    /// recv/commit path is used. A producer has no consumer group, so building
+    /// it for a pure source is pure waste -- see #44.
+    producer: Option<FutureProducer<StatsContext>>,
     /// Persistent topic-string interner. Shared across `recv()` calls so a
     /// newly-discovered topic is interned once (not re-`Arc`'d every batch) --
     /// the previous per-recv clone discarded new entries. RwLock: reads
@@ -293,67 +304,109 @@ impl KafkaTransport {
         // rdkafka_* Prometheus metrics when a recorder is installed.
         // Consumer and producer each get their own context instance.
 
-        // Create consumer with StatsContext for metrics collection. Arc-wrapped
-        // so an optional gate actuator (governor feature) can share it for
-        // pause/resume without unsafe -- see the field doc.
-        let consumer: BaseConsumer<StatsContext> = client_config
-            .create_with_context(StatsContext::new())
-            .map_err(|e| TransportError::Connection(format!("Failed to create consumer: {e}")))?;
-        let consumer = Arc::new(consumer);
+        // Build ONLY the clients the role needs (#44): a producer-only sink
+        // drags no idle consumer; a consumer-only source drags no idle producer.
+        // An empty group.id forces producer-only regardless of role -- a client
+        // with no consumer group cannot obtain a consumer queue (librdkafka's
+        // rd_kafka_queue_get_consumer returns NULL -> "rdkafka consumer queue
+        // not available").
+        let want_consumer = config.role != KafkaRole::Producer && !config.group.trim().is_empty();
+        let want_producer = config.role != KafkaRole::Consumer;
+        if !want_consumer && !want_producer {
+            return Err(TransportError::Config(
+                "Kafka transport has neither a consumer nor a producer \
+                 (role=Consumer with an empty group?)"
+                    .into(),
+            ));
+        }
 
-        // Resolve effective topics:
-        // - Explicit list -> subscribe to those
-        // - Empty + auto_discover -> auto-discover from broker
-        // - Empty + !auto_discover -> no subscription (producer-only)
-        let (effective_topics, topic_refresh, shutdown_token) =
-            if config.topics.is_empty() && config.auto_discover {
-                tracing::info!("Topics empty -- auto-discovering from broker");
-                let resolver = topic_resolver::TopicResolver::new(config)?;
-                let discovered = resolver.resolve()?;
-                if discovered.is_empty() {
-                    return Err(TransportError::Config(
-                        "Auto-discovery found no matching topics".into(),
-                    ));
+        let (consumer, subscribed_topics, topic_refresh, shutdown_token, topic_cache) =
+            if want_consumer {
+                // Create consumer with StatsContext for metrics collection. Arc-wrapped
+                // so an optional gate actuator (governor feature) can share it for
+                // pause/resume without unsafe -- see the field doc.
+                let consumer: BaseConsumer<StatsContext> = client_config
+                    .create_with_context(StatsContext::new())
+                    .map_err(|e| {
+                        TransportError::Connection(format!("Failed to create consumer: {e}"))
+                    })?;
+                let consumer = Arc::new(consumer);
+
+                // Resolve effective topics:
+                // - Explicit list -> subscribe to those
+                // - Empty + auto_discover -> auto-discover from broker
+                // - Empty + !auto_discover -> no subscription
+                let (effective_topics, topic_refresh, shutdown_token) =
+                    if config.topics.is_empty() && config.auto_discover {
+                        tracing::info!("Topics empty -- auto-discovering from broker");
+                        let resolver = topic_resolver::TopicResolver::new(config)?;
+                        let discovered = resolver.resolve()?;
+                        if discovered.is_empty() {
+                            return Err(TransportError::Config(
+                                "Auto-discovery found no matching topics".into(),
+                            ));
+                        }
+
+                        let token = tokio_util::sync::CancellationToken::new();
+                        let refresh = if config.topic_refresh_secs > 0 {
+                            let refresh_resolver = topic_resolver::TopicResolver::new(config)?;
+                            let handle = refresh_resolver.start_refresh_loop(
+                                Duration::from_secs(config.topic_refresh_secs),
+                                token.clone(),
+                            );
+                            tracing::info!(
+                                interval_secs = config.topic_refresh_secs,
+                                "Started periodic topic refresh"
+                            );
+                            Some(parking_lot::Mutex::new(handle))
+                        } else {
+                            None
+                        };
+
+                        (discovered, refresh, token)
+                    } else {
+                        (
+                            config.topics.clone(),
+                            None,
+                            tokio_util::sync::CancellationToken::new(),
+                        )
+                    };
+
+                let subscribed_topics = effective_topics;
+                if !subscribed_topics.is_empty() {
+                    let topics: Vec<&str> = subscribed_topics.iter().map(String::as_str).collect();
+                    consumer.subscribe(&topics).map_err(|e| {
+                        TransportError::Connection(format!("Failed to subscribe: {e}"))
+                    })?;
                 }
 
-                let token = tokio_util::sync::CancellationToken::new();
-                let refresh = if config.topic_refresh_secs > 0 {
-                    let refresh_resolver = topic_resolver::TopicResolver::new(config)?;
-                    let handle = refresh_resolver.start_refresh_loop(
-                        Duration::from_secs(config.topic_refresh_secs),
-                        token.clone(),
-                    );
-                    tracing::info!(
-                        interval_secs = config.topic_refresh_secs,
-                        "Started periodic topic refresh"
-                    );
-                    Some(parking_lot::Mutex::new(handle))
-                } else {
-                    None
-                };
+                // Pre-populate topic cache -- eliminates locks in the hot path.
+                let mut topic_cache = HashMap::with_capacity(subscribed_topics.len());
+                for topic in &subscribed_topics {
+                    topic_cache.insert(topic.clone(), Arc::from(topic.as_str()));
+                }
 
-                (discovered, refresh, token)
-            } else {
                 (
-                    config.topics.clone(),
+                    Some(consumer),
+                    subscribed_topics,
+                    topic_refresh,
+                    shutdown_token,
+                    topic_cache,
+                )
+            } else {
+                tracing::debug!(
+                    client_id = %config.client_id,
+                    role = ?config.role,
+                    "Kafka transport has no consumer (producer-only / empty group.id)"
+                );
+                (
+                    None,
+                    Vec::new(),
                     None,
                     tokio_util::sync::CancellationToken::new(),
+                    HashMap::new(),
                 )
             };
-
-        let subscribed_topics = effective_topics;
-        if !subscribed_topics.is_empty() {
-            let topics: Vec<&str> = subscribed_topics.iter().map(String::as_str).collect();
-            consumer
-                .subscribe(&topics)
-                .map_err(|e| TransportError::Connection(format!("Failed to subscribe: {e}")))?;
-        }
-
-        // Pre-populate topic cache -- eliminates locks in the hot path.
-        let mut topic_cache = HashMap::with_capacity(subscribed_topics.len());
-        for topic in &subscribed_topics {
-            topic_cache.insert(topic.clone(), Arc::from(topic.as_str()));
-        }
 
         // Build a SEPARATE producer ClientConfig. Creating the producer from the
         // CONSUMER client_config (which carries group.id, fetch.*,
@@ -401,10 +454,21 @@ impl KafkaTransport {
             producer_config.set("statistics.interval.ms", "5000");
         }
 
-        // Create producer with StatsContext for metrics collection.
-        let producer: FutureProducer<StatsContext> = producer_config
-            .create_with_context(StatsContext::new())
-            .map_err(|e| TransportError::Connection(format!("Failed to create producer: {e}")))?;
+        // Create the producer ONLY when the role needs it (#44) -- a
+        // consumer-only source builds no producer. producer_config above is cheap
+        // to build either way (a settings map); only the client (background
+        // threads + lazy connection) is gated here.
+        let producer: Option<FutureProducer<StatsContext>> = if want_producer {
+            Some(
+                producer_config
+                    .create_with_context(StatsContext::new())
+                    .map_err(|e| {
+                        TransportError::Connection(format!("Failed to create producer: {e}"))
+                    })?,
+            )
+        } else {
+            None
+        };
 
         let healthy = Arc::new(AtomicBool::new(true));
 
@@ -520,7 +584,7 @@ impl KafkaTransport {
     #[must_use]
     pub fn gate_actuator(&self) -> Box<dyn crate::governor::GateActuator> {
         Box::new(KafkaGateActuator {
-            consumer: Arc::clone(&self.consumer),
+            consumer: self.consumer.clone(),
         })
     }
 
@@ -530,7 +594,12 @@ impl KafkaTransport {
     /// broker RTT, consumer lag, rebalance count, etc.
     #[must_use]
     pub fn stats(&self) -> KafkaMetrics {
-        self.consumer.context().get_metrics()
+        // Producer-only transports have no consumer -> no consumer-side metrics
+        // (lag etc.); the producer's own rdkafka_* gauges still auto-emit.
+        self.consumer
+            .as_ref()
+            .map(|c| c.context().get_metrics())
+            .unwrap_or_default()
     }
 
     /// Run the `kafka_partition_limited` DIAGNOSTIC against the live group
@@ -554,8 +623,13 @@ impl KafkaTransport {
     /// Returns an error if the broker metadata / group-list fetch fails.
     #[cfg(feature = "governor")]
     pub fn check_partition_limited(&self) -> TransportResult<bool> {
+        // Producer-only transports have no consumer group -- never limited.
+        let Some(consumer) = self.consumer.as_ref() else {
+            return Ok(false);
+        };
+
         // Total consumer lag across all assigned partitions.
-        let metrics = self.consumer.context().get_metrics();
+        let metrics = consumer.context().get_metrics();
         let lag = u64::try_from(total_consumer_lag(&metrics).max(0)).unwrap_or(0);
 
         // Partition count: the TOPIC's TOTAL partitions, summed over the
@@ -567,10 +641,7 @@ impl KafkaTransport {
         let topics = self.subscribed_topics.read().clone();
         let mut partitions = 0usize;
         for topic in &topics {
-            if let Ok(md) = self
-                .consumer
-                .fetch_metadata(Some(topic), Duration::from_secs(3))
-            {
+            if let Ok(md) = consumer.fetch_metadata(Some(topic), Duration::from_secs(3)) {
                 partitions += md
                     .topics()
                     .iter()
@@ -583,8 +654,7 @@ impl KafkaTransport {
         // (the old `None` read some other team's group on a shared cluster).
         // A transient/empty read is treated as a single member -- never a
         // false-positive "limited".
-        let members = self
-            .consumer
+        let members = consumer
             .fetch_group_list(Some(&self.group_id), Duration::from_secs(3))
             .ok()
             .and_then(|list| list.groups().iter().map(|g| g.members().len()).max())
@@ -687,6 +757,13 @@ impl TransportSender for KafkaTransport {
             return SendResult::Fatal(TransportError::Closed);
         }
 
+        // Consumer-only transports (role = Consumer) have no producer to send on.
+        let Some(producer) = self.producer.as_ref() else {
+            return SendResult::Fatal(TransportError::Send(
+                "send on a consumer-only Kafka transport (no producer)".into(),
+            ));
+        };
+
         if self.filter_engine.has_outbound_filters() {
             match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
@@ -712,8 +789,7 @@ impl TransportSender for KafkaTransport {
         #[cfg(feature = "metrics")]
         let start = std::time::Instant::now();
 
-        let result = match self
-            .producer
+        let result = match producer
             .send(record, Timeout::After(Duration::from_secs(5)))
             .await
         {
@@ -815,11 +891,17 @@ impl TransportReceiver for KafkaTransport {
             return Ok(());
         }
 
+        let Some(consumer) = self.consumer.as_ref() else {
+            return Err(TransportError::Commit(
+                "commit on a producer-only Kafka transport (no consumer group)".into(),
+            ));
+        };
+
         let tpl = build_commit_tpl(tokens)?;
 
         // OBSERVABLE commit: block until the broker acks so a commit failure is
         // visible to the driver (the ack barrier depends on this).
-        self.consumer
+        consumer
             .commit(&tpl, CommitMode::Sync)
             .map_err(|e| TransportError::Commit(e.to_string()))?;
 
@@ -854,6 +936,13 @@ impl KafkaTransport {
             return Err(TransportError::Closed);
         }
 
+        // Producer-only transports (empty group.id) have no consumer to poll.
+        let Some(consumer) = self.consumer.as_ref() else {
+            return Err(TransportError::Recv(
+                "recv on a producer-only Kafka transport (no consumer group)".into(),
+            ));
+        };
+
         // G3 inbound gate (governor feature, opt-in). Evaluate the gate so it
         // drives the actuator on pause/resume EDGES (pausing/resuming the
         // assigned partitions). We do NOT branch on the result: the poll below
@@ -874,9 +963,9 @@ impl KafkaTransport {
             // resumes the current assignment, so nothing is stranded paused.
             // Off the per-record path -- once per recv, only while held.
             if gate.is_held()
-                && let Ok(tpl) = self.consumer.assignment()
+                && let Ok(tpl) = consumer.assignment()
                 && tpl.count() > 0
-                && let Err(e) = self.consumer.pause(&tpl)
+                && let Err(e) = consumer.pause(&tpl)
             {
                 tracing::debug!(error = %e, "kafka gate: re-pause under hold failed");
             }
@@ -887,7 +976,7 @@ impl KafkaTransport {
             && let Some(new_topics) = refresh.lock().check_changed()
         {
             let topics: Vec<&str> = new_topics.iter().map(String::as_str).collect();
-            match self.consumer.subscribe(&topics) {
+            match consumer.subscribe(&topics) {
                 Ok(()) => {
                     tracing::info!(?new_topics, "Re-subscribed after topic refresh");
                     *self.subscribed_topics.write() = new_topics;
@@ -942,7 +1031,7 @@ impl KafkaTransport {
 
         // Phase 1: Initial poll (drains librdkafka's queue; blocks <= timeout
         // only when the queue is empty).
-        if let Some(result) = self.consumer.poll(timeout) {
+        if let Some(result) = consumer.poll(timeout) {
             match result {
                 Ok(msg) => {
                     // Extract W3C traceparent from Kafka headers (first message only,
@@ -1025,7 +1114,7 @@ impl KafkaTransport {
                 break;
             }
 
-            match self.consumer.poll(Duration::ZERO) {
+            match consumer.poll(Duration::ZERO) {
                 Some(Ok(msg)) => {
                     let topic_str = msg.topic();
                     let topic: Arc<str> = get_or_insert_topic(&self.topic_cache, topic_str);
@@ -1104,8 +1193,13 @@ impl KafkaTransport {
         if tokens.is_empty() {
             return Ok(());
         }
+        let Some(consumer) = self.consumer.as_ref() else {
+            return Err(TransportError::Commit(
+                "commit on a producer-only Kafka transport (no consumer group)".into(),
+            ));
+        };
         let tpl = build_commit_tpl(tokens)?;
-        self.consumer
+        consumer
             .commit(&tpl, CommitMode::Async)
             .map_err(|e| TransportError::Commit(e.to_string()))?;
         Ok(())
@@ -1249,15 +1343,20 @@ fn get_or_insert_topic(
 /// and a missed pause degrades to "kept ingesting", never a deadlock.
 #[cfg(feature = "governor")]
 struct KafkaGateActuator {
-    consumer: Arc<BaseConsumer<StatsContext>>,
+    /// `None` when the transport is producer-only -- pause/resume are no-ops
+    /// (there is no consumer assignment to gate).
+    consumer: Option<Arc<BaseConsumer<StatsContext>>>,
 }
 
 #[cfg(feature = "governor")]
 impl crate::governor::GateActuator for KafkaGateActuator {
     fn pause(&self) {
-        match self.consumer.assignment() {
+        let Some(consumer) = self.consumer.as_ref() else {
+            return;
+        };
+        match consumer.assignment() {
             Ok(tpl) => {
-                if let Err(e) = self.consumer.pause(&tpl) {
+                if let Err(e) = consumer.pause(&tpl) {
                     tracing::warn!(error = %e, "kafka gate: pause(assignment) failed");
                     gate_actuator_error("pause");
                 }
@@ -1270,9 +1369,12 @@ impl crate::governor::GateActuator for KafkaGateActuator {
     }
 
     fn resume(&self) {
-        match self.consumer.assignment() {
+        let Some(consumer) = self.consumer.as_ref() else {
+            return;
+        };
+        match consumer.assignment() {
             Ok(tpl) => {
-                if let Err(e) = self.consumer.resume(&tpl) {
+                if let Err(e) = consumer.resume(&tpl) {
                     tracing::warn!(error = %e, "kafka gate: resume(assignment) failed");
                     gate_actuator_error("resume");
                 }
@@ -1417,6 +1519,93 @@ mod tests {
         let config = KafkaConfig::default();
         assert_eq!(config.fetch_max_bytes, 52_428_800); // 50MB
         assert!(!config.enable_auto_commit); // Manual commit
+    }
+
+    /// Producer-only transport (empty group.id) must BUILD broker-free with NO
+    /// consumer. The #44 bug made this impossible: the eager `BaseConsumer` at
+    /// construction failed with "rdkafka consumer queue not available" (an empty
+    /// group has no consumer queue), so a sink with `group=""` could never start.
+    /// recv/commit on it now error (no consumer); stats() is default; send() is
+    /// the only valid path.
+    #[tokio::test]
+    async fn test_producer_only_transport_builds_without_consumer() {
+        let config = KafkaConfig {
+            group: String::new(), // producer-only
+            brokers: vec!["localhost:9092".to_string()],
+            ..KafkaConfig::default()
+        };
+
+        // Builds broker-free: the producer client connects lazily and NO
+        // consumer is created (an empty group has no consumer queue).
+        let transport = match KafkaTransport::new(&config).await {
+            Ok(t) => t,
+            Err(e) => panic!("producer-only transport must build with an empty group: {e}"),
+        };
+
+        // recv must error -- there is no consumer to poll.
+        assert!(
+            transport.recv(10).await.is_err(),
+            "recv on a producer-only transport must error"
+        );
+
+        // commit must error too -- no consumer group to commit against.
+        let token = KafkaToken::new(Arc::from("out"), 0, 0);
+        assert!(
+            transport.commit(&[token]).await.is_err(),
+            "commit on a producer-only transport must error"
+        );
+
+        // stats() falls back to default (no consumer-side metrics).
+        let _ = transport.stats();
+
+        assert!(transport.is_healthy());
+        assert_eq!(transport.name(), "kafka");
+    }
+
+    /// Consumer-only transport (role = Consumer) must BUILD broker-free with NO
+    /// producer -- the symmetric half of #44: a pure source drags no idle
+    /// producer. send() errors; the consumer serves recv/commit.
+    #[tokio::test]
+    async fn test_consumer_only_transport_builds_without_producer() {
+        let config = KafkaConfig {
+            role: KafkaRole::Consumer,
+            group: "test-consumer-only".to_string(),
+            topics: vec!["in".to_string()],
+            brokers: vec!["localhost:9092".to_string()],
+            ..KafkaConfig::default()
+        };
+
+        // Builds broker-free: the consumer connects lazily; NO producer is built.
+        let transport = match KafkaTransport::new(&config).await {
+            Ok(t) => t,
+            Err(e) => panic!("consumer-only transport must build: {e}"),
+        };
+
+        // send must be fatal -- there is no producer.
+        let result = transport.send("out", bytes::Bytes::from_static(b"x")).await;
+        assert!(
+            matches!(result, SendResult::Fatal(_)),
+            "send on a consumer-only transport must be fatal (no producer)"
+        );
+
+        assert!(transport.is_healthy());
+        assert_eq!(transport.name(), "kafka");
+    }
+
+    /// role = Consumer with an empty group is a misconfig: neither client can be
+    /// built, so construction must error rather than yield a dead transport.
+    #[tokio::test]
+    async fn test_consumer_role_with_empty_group_errors() {
+        let config = KafkaConfig {
+            role: KafkaRole::Consumer,
+            group: String::new(),
+            brokers: vec!["localhost:9092".to_string()],
+            ..KafkaConfig::default()
+        };
+        assert!(
+            KafkaTransport::new(&config).await.is_err(),
+            "role=Consumer + empty group must error (no consumer, no producer)"
+        );
     }
 
     #[tokio::test]

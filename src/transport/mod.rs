@@ -103,7 +103,7 @@ pub use types::{Message, SendResult, TransportConfig, TransportType};
 pub use work_batch::{FramingError, Record, RecordMeta, WorkBatch};
 
 #[cfg(feature = "transport-kafka")]
-pub use kafka::{KafkaConfig, KafkaToken, KafkaTransport};
+pub use kafka::{KafkaConfig, KafkaRole, KafkaToken, KafkaTransport};
 
 #[cfg(feature = "transport-grpc")]
 pub use grpc::{GrpcConfig, GrpcToken, GrpcTransport};

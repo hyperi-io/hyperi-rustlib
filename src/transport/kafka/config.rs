@@ -526,6 +526,27 @@ pub enum KafkaProfile {
     DevTest,
 }
 
+/// Which Kafka clients a [`KafkaTransport`](crate::transport::kafka::KafkaTransport)
+/// instantiates.
+///
+/// A transport builds ONLY the clients its role needs -- a producer-only sink
+/// drags no idle consumer, a consumer-only source drags no idle producer (#44).
+/// This is a CODE-level decision set by the app when it builds the config (not
+/// an operator knob), so it is not (de)serialised.
+///
+/// An empty `group` forces producer-only regardless of role: a client with no
+/// consumer group cannot consume.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum KafkaRole {
+    /// Consume AND produce (the default -- backward-compatible).
+    #[default]
+    Duplex,
+    /// Consume only -- no producer is built; `send()` errors.
+    Consumer,
+    /// Produce only -- no consumer is built; `recv()`/`commit()` error.
+    Producer,
+}
+
 impl FromStr for KafkaProfile {
     type Err = String;
 
@@ -774,6 +795,12 @@ pub struct KafkaConfig {
     /// Use `librdkafka_overrides` to customize specific settings.
     #[serde(default)]
     pub profile: KafkaProfile,
+
+    /// Which clients to instantiate (producer / consumer / both). Set in CODE
+    /// by the app that builds this config, NOT from YAML -- see [`KafkaRole`].
+    /// Default `Duplex`. An empty `group` forces producer-only regardless.
+    #[serde(skip)]
+    pub role: KafkaRole,
 
     /// Kafka broker addresses.
     #[serde(default = "default_brokers")]
@@ -1046,6 +1073,7 @@ impl Default for KafkaConfig {
         #[allow(deprecated)]
         Self {
             profile: KafkaProfile::default(),
+            role: KafkaRole::default(),
             brokers: default_brokers(),
             group: default_group(),
             client_id: default_client_id(),

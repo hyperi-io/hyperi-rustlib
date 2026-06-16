@@ -222,8 +222,10 @@ impl HttpTransportConfig {
 /// Supports send (POST to endpoint) and receive (embedded axum server).
 /// The receive side requires the `http-server` feature for axum.
 pub struct HttpTransport {
-    /// reqwest client for sending (always available when transport-http is enabled).
-    client: reqwest::Client,
+    /// reqwest client for sending -- `None` for a receive-only transport
+    /// (no `endpoint`). A pure source instantiates no send client (#44 role
+    /// rule: build only what the direction needs).
+    client: Option<reqwest::Client>,
 
     /// Base URL for sending (None = send disabled).
     endpoint: Option<String>,
@@ -300,38 +302,45 @@ impl HttpTransport {
         config: &HttpTransportConfig,
         #[cfg(feature = "governor")] pressure: Option<Arc<crate::governor::UnifiedPressure>>,
     ) -> TransportResult<Self> {
-        // `mut` is only used on the TLS path; harmless without the feature.
-        #[cfg_attr(not(feature = "tls"), allow(unused_mut))]
-        let mut client_builder = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_millis(config.connect_timeout_ms))
-            .timeout(std::time::Duration::from_millis(config.send_timeout_ms));
+        // Build the send-side client ONLY in send mode (endpoint set). A
+        // receive-only transport (listen, no endpoint) instantiates no client
+        // -- the #44 role rule: build only what the direction needs.
+        let client = if config.endpoint.is_some() {
+            // `mut` is only used on the TLS path; harmless without the feature.
+            #[cfg_attr(not(feature = "tls"), allow(unused_mut))]
+            let mut client_builder = reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_millis(config.connect_timeout_ms))
+                .timeout(std::time::Duration::from_millis(config.send_timeout_ms));
 
-        // Private-CA trust via the unified TLS module (augments native roots).
-        #[cfg(feature = "tls")]
-        if let Some(ref ca) = config.tls_ca_path {
-            let trust = crate::tls::TlsTrust {
-                native_roots: true,
-                webpki_roots: false,
-                extra_roots: vec![ca.into()],
-                extra_intermediates: Vec::new(),
-                exclusive: false,
-            };
-            let tls_cfg =
-                crate::tls::build_client_config(crate::tls::TlsConfigSource::Trust(trust))
-                    .map_err(|e| TransportError::Config(format!("HTTP client TLS: {e}")))?;
-            client_builder = client_builder.use_preconfigured_tls((*tls_cfg).clone());
-        }
-        #[cfg(not(feature = "tls"))]
-        if config.tls_ca_path.is_some() {
-            tracing::warn!(
-                "http transport tls_ca_path is set but the `tls` feature is disabled -- \
-                 ignoring (using reqwest default roots)"
-            );
-        }
+            // Private-CA trust via the unified TLS module (augments native roots).
+            #[cfg(feature = "tls")]
+            if let Some(ref ca) = config.tls_ca_path {
+                let trust = crate::tls::TlsTrust {
+                    native_roots: true,
+                    webpki_roots: false,
+                    extra_roots: vec![ca.into()],
+                    extra_intermediates: Vec::new(),
+                    exclusive: false,
+                };
+                let tls_cfg =
+                    crate::tls::build_client_config(crate::tls::TlsConfigSource::Trust(trust))
+                        .map_err(|e| TransportError::Config(format!("HTTP client TLS: {e}")))?;
+                client_builder = client_builder.use_preconfigured_tls((*tls_cfg).clone());
+            }
+            #[cfg(not(feature = "tls"))]
+            if config.tls_ca_path.is_some() {
+                tracing::warn!(
+                    "http transport tls_ca_path is set but the `tls` feature is disabled -- \
+                     ignoring (using reqwest default roots)"
+                );
+            }
 
-        let client = client_builder
-            .build()
-            .map_err(|e| TransportError::Config(format!("failed to create HTTP client: {e}")))?;
+            Some(client_builder.build().map_err(|e| {
+                TransportError::Config(format!("failed to create HTTP client: {e}"))
+            })?)
+        } else {
+            None
+        };
 
         #[cfg(feature = "http-server")]
         let (receiver, shutdown_tx, server_handle) = if let Some(listen) = &config.listen {
@@ -597,6 +606,14 @@ impl TransportSender for HttpTransport {
             ));
         };
 
+        // Receive-only transports build no send client (set in tandem with
+        // endpoint, so this is Some whenever endpoint is Some).
+        let Some(client) = &self.client else {
+            return SendResult::Fatal(TransportError::Config(
+                "no send client (receive-only HTTP transport)".into(),
+            ));
+        };
+
         // Build URL: {base_url}/{key} if key is non-empty, otherwise just {base_url}
         let url = if key.is_empty() {
             base_url.clone()
@@ -610,8 +627,7 @@ impl TransportSender for HttpTransport {
         let start = std::time::Instant::now();
 
         // Build request with optional W3C traceparent header for distributed tracing
-        let request_builder = self
-            .client
+        let request_builder = client
             .post(&url)
             .header("content-type", "application/octet-stream");
 
@@ -997,6 +1013,42 @@ mod tests {
 
         let result = transport.recv(10).await;
         assert!(result.is_err());
+    }
+
+    /// #44 role rule: a sender-mode transport (endpoint, no listen) builds a
+    /// send client.
+    #[tokio::test]
+    async fn sender_mode_builds_a_client() {
+        let transport = HttpTransport::new(&HttpTransportConfig::sender("http://localhost:9999"))
+            .await
+            .unwrap();
+        assert!(
+            transport.client.is_some(),
+            "sender mode must build a client"
+        );
+    }
+
+    /// #44 role rule: a receive-only transport (listen, no endpoint) builds NO
+    /// send client, and send() is fatal.
+    #[cfg(feature = "http-server")]
+    #[tokio::test]
+    async fn receiver_mode_builds_no_client_and_send_errors() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener); // free the port for the transport to bind
+        let transport = HttpTransport::new(&HttpTransportConfig::receiver(&addr.to_string()))
+            .await
+            .unwrap();
+        assert!(
+            transport.client.is_none(),
+            "receive-only must build no send client"
+        );
+        let result = transport.send("k", bytes::Bytes::from_static(b"x")).await;
+        assert!(
+            matches!(result, SendResult::Fatal(_)),
+            "send on a receive-only transport must be fatal"
+        );
+        transport.close().await.unwrap();
     }
 
     /// G3: with a pressure governor pinned HIGH, the ingest handler sheds with
