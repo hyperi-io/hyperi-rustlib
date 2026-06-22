@@ -3,7 +3,7 @@
 // Purpose:   Kafka topic auto-discovery with configurable suppression rules and regex filters
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Kafka topic resolver for auto-discovery with filter and suppression support.
@@ -39,10 +39,6 @@ use crate::transport::error::{TransportError, TransportResult};
 // ============================================================================
 
 /// Resolves Kafka topics from the broker with filtering and suppression.
-///
-/// Fetches all topics from the broker, applies suppression rules to eliminate
-/// redundant topics (e.g. `_load` over `_land`), then filters the result with
-/// include/exclude regex patterns.
 pub struct TopicResolver {
     admin: KafkaAdmin,
     suppression_rules: Vec<SuppressionRule>,
@@ -141,11 +137,9 @@ impl std::fmt::Debug for TopicResolver {
 /// For each rule: collect base names that have a `preferred_suffix` topic,
 /// then remove any topic with `suppressed_suffix` whose base name is in the set.
 ///
-/// ## Example
-///
 /// With the default rule (`_load` suppresses `_land`):
-/// - `auth_load` + `auth_land` → keeps `auth_load`, drops `auth_land`
-/// - `events_land` (no `events_load`) → kept
+/// - `auth_load` + `auth_land` -> keeps `auth_load`, drops `auth_land`
+/// - `events_land` (no `events_load`) -> kept
 #[must_use]
 pub fn apply_suppression_rules(topics: Vec<String>, rules: &[SuppressionRule]) -> Vec<String> {
     if rules.is_empty() {
@@ -299,7 +293,7 @@ impl TopicResolver {
                         match self.resolve() {
                             Ok(new_topics) => {
                                 if tx.send(new_topics).is_err() {
-                                    break; // receiver dropped — no point continuing
+                                    break; // receiver dropped -- no point continuing
                                 }
                             }
                             Err(e) => {
@@ -444,7 +438,7 @@ mod tests {
             preferred_suffix: "_load".into(),
             suppressed_suffix: "_land".into(),
         }];
-        // No _load topics present — nothing should be suppressed
+        // No _load topics present -- nothing should be suppressed
         let topics = vec!["auth_land".into(), "events_land".into()];
         let result = apply_suppression_rules(topics.clone(), &rules);
         assert_eq!(result, topics);

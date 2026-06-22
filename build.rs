@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: FSL-1.1-ALv2
+// SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 HYPERI PTY LIMITED
 //
 // Protobuf code generation for gRPC transport.
@@ -12,6 +12,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tonic_prost_build::configure()
             .build_server(true)
             .build_client(true)
+            // Decode proto `bytes` fields ZERO-COPY into `bytes::Bytes` rather
+            // than the default `Vec<u8>`. This is the serde-less property of the
+            // native batch transport: `Record.payload` arrives as a refcounted
+            // view, never copied or parsed. `"."` matches every bytes field in
+            // the file (Record.payload, Header.value, PushRequest.payload). Per
+            // prost-build docs, the zero-copy path only fires when the decode
+            // source is itself a `bytes::Bytes`, which tonic's ProstCodec uses.
+            .bytes(".")
             .compile_protos(&["proto/dfe/transport/v1/dfe_transport.proto"], &["proto"])?;
     }
 

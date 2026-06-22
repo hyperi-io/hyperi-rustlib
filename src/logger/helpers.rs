@@ -3,7 +3,7 @@
 // Purpose:   Log spam protection helpers
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Log spam protection helpers.
@@ -37,7 +37,7 @@ pub fn log_state_change(flag: &AtomicBool, new_state: bool) -> bool {
 /// Log every Nth occurrence. Returns true on first call and every `sample_rate`-th call.
 ///
 /// Use for per-message errors in hot paths: send failures, validation errors.
-/// Always increment metrics separately — this only controls log emission.
+/// Always increment metrics separately -- this only controls log emission.
 ///
 /// # Example
 /// ```

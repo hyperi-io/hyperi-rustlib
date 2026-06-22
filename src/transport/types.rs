@@ -3,11 +3,12 @@
 // Purpose:   Transport data types and configuration
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use super::error::TransportError;
 use super::traits::CommitToken;
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -60,15 +61,14 @@ pub enum PayloadFormat {
 }
 
 impl PayloadFormat {
-    /// Detect format from payload bytes.
+    /// Detect format from the first payload byte.
     ///
-    /// MsgPack maps start with 0x80-0x8f (fixmap) or 0xde/0xdf (map16/map32).
-    /// JSON objects start with '{' (0x7b).
-    /// JSON arrays start with '[' (0x5b).
+    /// MsgPack map/array lead bytes (0x80-0x9f, 0xdc-0xdf) -> MsgPack;
+    /// everything else (incl. empty) -> JSON.
     #[must_use]
     pub fn detect(payload: &[u8]) -> Self {
         if payload.is_empty() {
-            return Self::Json; // Default to JSON for empty
+            return Self::Json;
         }
 
         // MsgPack: fixmap (0x80-0x8f), map16/32 (0xde/0xdf), fixarray (0x90-0x9f), array16/32 (0xdc/0xdd)
@@ -87,8 +87,8 @@ pub struct Message<T: CommitToken> {
     /// Routing key (Kafka topic, gRPC metadata topic).
     pub key: Option<Arc<str>>,
 
-    /// Raw payload bytes - JSON or MsgPack, unchanged.
-    pub payload: Vec<u8>,
+    /// Raw payload bytes -- zero-copy / refcounted. JSON or MsgPack, unchanged.
+    pub payload: Bytes,
 
     /// Transport-specific commit token.
     pub token: T,
@@ -102,13 +102,17 @@ pub struct Message<T: CommitToken> {
 
 impl<T: CommitToken> Message<T> {
     /// Create a new message with auto-detected format.
+    ///
+    /// `payload` accepts any `impl Into<Bytes>` -- pass a `Vec<u8>` and it is
+    /// moved (zero copy); pass a `Bytes` slice and the refcount is bumped.
     #[must_use]
     pub fn new(
         key: Option<Arc<str>>,
-        payload: Vec<u8>,
+        payload: impl Into<Bytes>,
         token: T,
         timestamp_ms: Option<i64>,
     ) -> Self {
+        let payload = payload.into();
         let format = PayloadFormat::detect(&payload);
         Self {
             key,
@@ -175,7 +179,7 @@ impl SendResult {
 /// Top-level transport configuration.
 ///
 /// Used by the transport factory to create the right backend from config.
-/// Each transport type has its own optional config section — only the one
+/// Each transport type has its own optional config section -- only the one
 /// matching `transport_type` is read.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TransportConfig {

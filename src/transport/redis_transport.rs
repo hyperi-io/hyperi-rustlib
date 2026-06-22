@@ -3,7 +3,7 @@
 // Purpose:   Redis/Valkey Streams transport
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Redis Streams Transport
@@ -36,12 +36,13 @@
 //!     ..Default::default()
 //! };
 //! let transport = RedisTransport::new(&config).await?;
-//! transport.send("events", b"{\"msg\":\"hello\"}").await;
+//! transport.send("events", bytes::Bytes::from_static(b"{\"msg\":\"hello\"}")).await;
 //! ```
 
 use super::error::{TransportError, TransportResult};
-use super::traits::{CommitToken, TransportBase, TransportReceiver, TransportSender};
+use super::traits::{CommitToken, RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
+use super::work_batch::WorkBatch;
 use redis::AsyncCommands;
 use redis::streams::{StreamMaxlen, StreamReadOptions, StreamReadReply};
 use serde::{Deserialize, Serialize};
@@ -146,15 +147,7 @@ impl RedisTransportConfig {
     /// Load from the config cascade under the `transport.redis` key.
     #[must_use]
     pub fn from_cascade() -> Self {
-        #[cfg(feature = "config")]
-        {
-            if let Some(cfg) = crate::config::try_get()
-                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.redis")
-            {
-                return tc;
-            }
-        }
-        Self::default()
+        <Self as super::traits::FromCascade>::from_cascade_key("transport.redis")
     }
 }
 
@@ -170,9 +163,6 @@ pub struct RedisTransport {
     group_created: Mutex<std::collections::HashSet<String>>,
     /// Transport-level message filter engine.
     filter_engine: super::filter::TransportFilterEngine,
-    /// Buffer for messages staged to DLQ by inbound filters.
-    /// Drained by `take_filtered_dlq_entries()`.
-    filtered_dlq_buffer: parking_lot::Mutex<Vec<super::filter::FilteredDlqEntry>>,
 }
 
 impl RedisTransport {
@@ -233,7 +223,6 @@ impl RedisTransport {
             closed,
             group_created: Mutex::new(std::collections::HashSet::new()),
             filter_engine,
-            filtered_dlq_buffer: parking_lot::Mutex::new(Vec::new()),
         })
     }
 
@@ -302,14 +291,14 @@ impl TransportBase for RedisTransport {
 }
 
 impl TransportSender for RedisTransport {
-    async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
@@ -328,11 +317,12 @@ impl TransportSender for RedisTransport {
                 &stream,
                 StreamMaxlen::Approx(max_len),
                 "*",
-                &[("payload", payload)],
+                &[("payload", payload.as_ref())],
             )
             .await
         } else {
-            conn.xadd(&stream, "*", &[("payload", payload)]).await
+            conn.xadd(&stream, "*", &[("payload", payload.as_ref())])
+                .await
         };
 
         match result {
@@ -360,7 +350,7 @@ impl TransportSender for RedisTransport {
 impl TransportReceiver for RedisTransport {
     type Token = RedisToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
+    async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -403,7 +393,7 @@ impl TransportReceiver for RedisTransport {
                     .get("payload")
                     .and_then(|v| redis::from_redis_value(v.clone()).ok());
 
-                let payload = payload_bytes.unwrap_or_default();
+                let payload: bytes::Bytes = payload_bytes.unwrap_or_default().into();
                 let format = PayloadFormat::detect(&payload);
                 let timestamp_ms = parse_entry_timestamp(&stream_id.id);
 
@@ -420,25 +410,17 @@ impl TransportReceiver for RedisTransport {
             }
         }
 
-        // Apply inbound filters: drop messages, stage DLQ entries
-        if self.filter_engine.has_inbound_filters() {
-            let mut staged_dlq: Vec<super::filter::FilteredDlqEntry> = Vec::new();
-            messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
-                super::filter::FilterDisposition::Pass => true,
-                super::filter::FilterDisposition::Drop => false,
-                super::filter::FilterDisposition::Dlq => {
-                    staged_dlq.push(super::filter::FilteredDlqEntry {
-                        payload: msg.payload.clone(),
-                        key: msg.key.clone(),
-                        reason: "transport filter".to_string(),
-                    });
-                    false
-                }
-            });
-            if !staged_dlq.is_empty() {
-                self.filtered_dlq_buffer.lock().extend(staged_dlq);
-            }
-        }
+        // Apply inbound filters via the shared partition helper; DLQ entries
+        // are returned in the RecvBatch for the caller to route onward.
+        let batch = self.filter_engine.partition_batch(
+            messages,
+            |m| m.payload.as_ref(),
+            |m| m.key.clone(),
+            |m| m.token.clone(),
+        );
+        let messages = batch.messages;
+        let dlq_entries = batch.dlq_entries;
+        let filtered_tokens = batch.filtered_tokens;
 
         #[cfg(feature = "logger")]
         if !messages.is_empty() {
@@ -454,11 +436,12 @@ impl TransportReceiver for RedisTransport {
                 .increment(messages.len() as u64);
         }
 
-        Ok(messages)
-    }
-
-    fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
-        std::mem::take(&mut *self.filtered_dlq_buffer.lock())
+        Ok(RecvBatch {
+            messages,
+            dlq_entries,
+            filtered_tokens,
+        }
+        .into())
     }
 
     async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
@@ -506,6 +489,8 @@ fn parse_entry_timestamp(entry_id: &str) -> Option<i64> {
         .split_once('-')
         .and_then(|(ms_str, _)| ms_str.parse::<i64>().ok())
 }
+
+impl super::traits::FromCascade for RedisTransportConfig {}
 
 #[cfg(test)]
 mod tests {
@@ -646,24 +631,27 @@ block_ms: 2000
         let transport = RedisTransport::new(&config).await.unwrap();
 
         // Send two messages
-        let r1 = transport.send("", b"{\"n\":1}").await;
+        let r1 = transport
+            .send("", bytes::Bytes::from_static(b"{\"n\":1}"))
+            .await;
         assert!(r1.is_ok(), "first send should succeed");
 
-        let r2 = transport.send("", b"{\"n\":2}").await;
+        let r2 = transport
+            .send("", bytes::Bytes::from_static(b"{\"n\":2}"))
+            .await;
         assert!(r2.is_ok(), "second send should succeed");
 
         // Receive messages
-        let messages = transport.recv(10).await.unwrap();
-        assert_eq!(messages.len(), 2, "should receive 2 messages");
-        assert_eq!(messages[0].payload, b"{\"n\":1}");
-        assert_eq!(messages[1].payload, b"{\"n\":2}");
+        let batch = transport.recv(10).await.unwrap();
+        assert_eq!(batch.records.len(), 2, "should receive 2 records");
+        assert_eq!(batch.records[0].payload.as_ref(), b"{\"n\":1}");
+        assert_eq!(batch.records[1].payload.as_ref(), b"{\"n\":2}");
 
-        // Commit (XACK)
-        let tokens: Vec<_> = messages.iter().map(|m| m.token.clone()).collect();
-        transport.commit(&tokens).await.unwrap();
+        // Commit (XACK) via the batch's commit tokens.
+        transport.commit(&batch.commit_tokens).await.unwrap();
 
         // After commit, no new messages should be available
-        let more = transport.recv(10).await.unwrap();
+        let more = transport.recv(10).await.unwrap().records;
         assert!(more.is_empty(), "no more messages after commit");
 
         // Clean up: delete the test stream

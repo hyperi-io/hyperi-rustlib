@@ -3,7 +3,7 @@
 // Purpose:   Standard CLI subcommands for DFE services
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Standard subcommands shared across all DFE services.

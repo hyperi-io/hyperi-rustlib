@@ -3,7 +3,7 @@
 // Purpose:   HTTP/HTTPS transport (send via POST, receive via embedded server)
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # HTTP Transport
@@ -31,14 +31,19 @@
 //!     ..Default::default()
 //! };
 //! let transport = HttpTransport::new(&config).await?;
-//! transport.send("events", b"{\"msg\":\"hello\"}").await;
+//! transport.send("events", bytes::Bytes::from_static(b"{\"msg\":\"hello\"}")).await;
 //! ```
 
 use super::error::{TransportError, TransportResult};
+#[cfg(feature = "http-server")]
+use super::traits::RecvBatch;
 use super::traits::{CommitToken, TransportBase, TransportReceiver, TransportSender};
 #[cfg(feature = "http-server")]
+use super::types::Message;
+#[cfg(feature = "http-server")]
 use super::types::PayloadFormat;
-use super::types::{Message, SendResult};
+use super::types::SendResult;
+use super::work_batch::WorkBatch;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 #[cfg(feature = "http-server")]
@@ -102,6 +107,18 @@ fn default_recv_timeout_ms() -> u64 {
     100
 }
 
+fn default_connect_timeout_ms() -> u64 {
+    5_000
+}
+
+fn default_send_timeout_ms() -> u64 {
+    30_000
+}
+
+fn default_max_body_bytes() -> usize {
+    16 * 1024 * 1024
+}
+
 /// Configuration for HTTP transport.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpTransportConfig {
@@ -133,6 +150,27 @@ pub struct HttpTransportConfig {
     /// Outbound message filters (applied on send before transport dispatches).
     #[serde(default)]
     pub filters_out: Vec<super::filter::FilterRule>,
+
+    /// Connect timeout (ms) for the send-side HTTP client. Default 5000.
+    #[serde(default = "default_connect_timeout_ms")]
+    pub connect_timeout_ms: u64,
+
+    /// Total request timeout (ms) per send. Default 30000. Prevents a hung
+    /// send from consuming worker capacity indefinitely.
+    #[serde(default = "default_send_timeout_ms")]
+    pub send_timeout_ms: u64,
+
+    /// Maximum accepted request body size in bytes (receive side). Default
+    /// 16 MiB. Oversized POSTs are rejected with 413 before buffering.
+    #[serde(default = "default_max_body_bytes")]
+    pub max_body_bytes: usize,
+
+    /// Private-CA PEM path for the send-side HTTPS client (needs the `tls`
+    /// feature). Trusts this CA *in addition to* the OS native roots. None =
+    /// native roots only (reqwest default). Maps to `TlsTrust { native_roots:
+    /// true, extra_roots: [ca] }`.
+    #[serde(default)]
+    pub tls_ca_path: Option<String>,
 }
 
 impl Default for HttpTransportConfig {
@@ -145,6 +183,10 @@ impl Default for HttpTransportConfig {
             recv_timeout_ms: default_recv_timeout_ms(),
             filters_in: Vec::new(),
             filters_out: Vec::new(),
+            connect_timeout_ms: default_connect_timeout_ms(),
+            send_timeout_ms: default_send_timeout_ms(),
+            max_body_bytes: default_max_body_bytes(),
+            tls_ca_path: None,
         }
     }
 }
@@ -153,15 +195,7 @@ impl HttpTransportConfig {
     /// Load from the config cascade under the `transport.http` key.
     #[must_use]
     pub fn from_cascade() -> Self {
-        #[cfg(feature = "config")]
-        {
-            if let Some(cfg) = crate::config::try_get()
-                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.http")
-            {
-                return tc;
-            }
-        }
-        Self::default()
+        <Self as super::traits::FromCascade>::from_cascade_key("transport.http")
     }
 
     /// Create a send-only config pointing at the given endpoint URL.
@@ -188,8 +222,10 @@ impl HttpTransportConfig {
 /// Supports send (POST to endpoint) and receive (embedded axum server).
 /// The receive side requires the `http-server` feature for axum.
 pub struct HttpTransport {
-    /// reqwest client for sending (always available when transport-http is enabled).
-    client: reqwest::Client,
+    /// reqwest client for sending -- `None` for a receive-only transport
+    /// (no `endpoint`). A pure source instantiates no send client (#44 role
+    /// rule: build only what the direction needs).
+    client: Option<reqwest::Client>,
 
     /// Base URL for sending (None = send disabled).
     endpoint: Option<String>,
@@ -200,8 +236,12 @@ pub struct HttpTransport {
     receiver: Option<tokio::sync::Mutex<tokio::sync::mpsc::Receiver<Message<HttpToken>>>>,
 
     /// Shutdown signal for the server task.
+    ///
+    /// Behind a `parking_lot::Mutex` for interior mutability: `close(&self)`
+    /// fires it to stop the embedded server promptly (graceful shutdown),
+    /// rather than waiting for `Drop`. `take()` makes both paths idempotent.
     #[cfg(feature = "http-server")]
-    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    shutdown_tx: parking_lot::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
 
     /// Server background task handle.
     #[cfg(feature = "http-server")]
@@ -216,10 +256,6 @@ pub struct HttpTransport {
 
     /// Transport-level message filter engine.
     filter_engine: super::filter::TransportFilterEngine,
-
-    /// Buffer for messages staged to DLQ by inbound filters.
-    /// Drained by `take_filtered_dlq_entries()`.
-    filtered_dlq_buffer: parking_lot::Mutex<Vec<super::filter::FilteredDlqEntry>>,
 }
 
 impl HttpTransport {
@@ -232,9 +268,79 @@ impl HttpTransport {
     ///
     /// Returns error if the listen address is invalid or the server fails to bind.
     pub async fn new(config: &HttpTransportConfig) -> TransportResult<Self> {
-        let client = reqwest::Client::builder()
-            .build()
-            .map_err(|e| TransportError::Config(format!("failed to create HTTP client: {e}")))?;
+        // Default path: no pressure governor -> byte-identical to before.
+        Self::new_inner(
+            config,
+            #[cfg(feature = "governor")]
+            None,
+        )
+        .await
+    }
+
+    /// Create an HTTP transport bound to a pressure governor (G3, `governor`
+    /// feature).
+    ///
+    /// Identical to [`new`](Self::new) except the embedded receive server
+    /// consults `pressure` BEFORE enqueuing each request: while
+    /// [`UnifiedPressure::should_hold`](crate::governor::UnifiedPressure::should_hold)
+    /// holds, the handler returns 503 (SERVICE_UNAVAILABLE) -- the same status
+    /// the existing channel-full backpressure path uses. Passing `None` is
+    /// exactly equivalent to [`new`](Self::new).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`new`](Self::new).
+    #[cfg(feature = "governor")]
+    pub async fn with_pressure(
+        config: &HttpTransportConfig,
+        pressure: Option<Arc<crate::governor::UnifiedPressure>>,
+    ) -> TransportResult<Self> {
+        Self::new_inner(config, pressure).await
+    }
+
+    async fn new_inner(
+        config: &HttpTransportConfig,
+        #[cfg(feature = "governor")] pressure: Option<Arc<crate::governor::UnifiedPressure>>,
+    ) -> TransportResult<Self> {
+        // Build the send-side client ONLY in send mode (endpoint set). A
+        // receive-only transport (listen, no endpoint) instantiates no client
+        // -- the #44 role rule: build only what the direction needs.
+        let client = if config.endpoint.is_some() {
+            // `mut` is only used on the TLS path; harmless without the feature.
+            #[cfg_attr(not(feature = "tls"), allow(unused_mut))]
+            let mut client_builder = reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_millis(config.connect_timeout_ms))
+                .timeout(std::time::Duration::from_millis(config.send_timeout_ms));
+
+            // Private-CA trust via the unified TLS module (augments native roots).
+            #[cfg(feature = "tls")]
+            if let Some(ref ca) = config.tls_ca_path {
+                let trust = crate::tls::TlsTrust {
+                    native_roots: true,
+                    webpki_roots: false,
+                    extra_roots: vec![ca.into()],
+                    extra_intermediates: Vec::new(),
+                    exclusive: false,
+                };
+                let tls_cfg =
+                    crate::tls::build_client_config(crate::tls::TlsConfigSource::Trust(trust))
+                        .map_err(|e| TransportError::Config(format!("HTTP client TLS: {e}")))?;
+                client_builder = client_builder.use_preconfigured_tls((*tls_cfg).clone());
+            }
+            #[cfg(not(feature = "tls"))]
+            if config.tls_ca_path.is_some() {
+                tracing::warn!(
+                    "http transport tls_ca_path is set but the `tls` feature is disabled -- \
+                     ignoring (using reqwest default roots)"
+                );
+            }
+
+            Some(client_builder.build().map_err(|e| {
+                TransportError::Config(format!("failed to create HTTP client: {e}"))
+            })?)
+        } else {
+            None
+        };
 
         #[cfg(feature = "http-server")]
         let (receiver, shutdown_tx, server_handle) = if let Some(listen) = &config.listen {
@@ -248,7 +354,14 @@ impl HttpTransport {
             let sequence = Arc::new(AtomicU64::new(0));
             let recv_path = config.recv_path.clone();
 
-            let app = build_receiver_router(tx, sequence, &recv_path);
+            let app = build_receiver_router(
+                tx,
+                sequence,
+                &recv_path,
+                config.max_body_bytes,
+                #[cfg(feature = "governor")]
+                pressure.clone(),
+            );
 
             let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
                 TransportError::Connection(format!("failed to bind to {addr}: {e}"))
@@ -271,6 +384,12 @@ impl HttpTransport {
             (None, None, None)
         };
 
+        // When the governor feature is on but http-server is off there is no
+        // receive server to attach the pressure governor to; consume it so the
+        // signature stays uniform without an unused-variable warning.
+        #[cfg(all(feature = "governor", not(feature = "http-server")))]
+        let _ = pressure;
+
         #[cfg(feature = "logger")]
         tracing::info!(
             endpoint = ?config.endpoint,
@@ -278,15 +397,13 @@ impl HttpTransport {
             "HTTP transport opened"
         );
 
+        // Fail loud on bad filter config -- silently disabling filters
+        // turns a misconfigured `drop` / `dlq` rule into a permanent pass.
         let filter_engine = super::filter::TransportFilterEngine::new(
             &config.filters_in,
             &config.filters_out,
-            &crate::transport::filter::TransportFilterTierConfig::default(),
-        )
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Failed to compile transport filters, filtering disabled");
-            super::filter::TransportFilterEngine::empty()
-        });
+            &crate::transport::filter::TransportFilterTierConfig::from_cascade(),
+        )?;
 
         let closed = Arc::new(AtomicBool::new(false));
 
@@ -308,14 +425,13 @@ impl HttpTransport {
             #[cfg(feature = "http-server")]
             receiver,
             #[cfg(feature = "http-server")]
-            shutdown_tx,
+            shutdown_tx: parking_lot::Mutex::new(shutdown_tx),
             #[cfg(feature = "http-server")]
             _server_handle: server_handle,
             closed,
             #[cfg(feature = "http-server")]
             recv_timeout_ms: config.recv_timeout_ms,
             filter_engine,
-            filtered_dlq_buffer: parking_lot::Mutex::new(Vec::new()),
         })
     }
 }
@@ -326,13 +442,22 @@ fn build_receiver_router(
     sender: tokio::sync::mpsc::Sender<Message<HttpToken>>,
     sequence: Arc<AtomicU64>,
     recv_path: &str,
+    max_body_bytes: usize,
+    #[cfg(feature = "governor")] pressure: Option<Arc<crate::governor::UnifiedPressure>>,
 ) -> axum::Router {
     use axum::routing::post;
 
-    let state = ReceiverState { sender, sequence };
+    let state = ReceiverState {
+        sender,
+        sequence,
+        #[cfg(feature = "governor")]
+        pressure,
+    };
 
     axum::Router::new()
         .route(recv_path, post(ingest_handler))
+        // Reject oversized bodies with 413 before the handler buffers them.
+        .layer(axum::extract::DefaultBodyLimit::max(max_body_bytes))
         .with_state(state)
 }
 
@@ -342,6 +467,13 @@ fn build_receiver_router(
 struct ReceiverState {
     sender: tokio::sync::mpsc::Sender<Message<HttpToken>>,
     sequence: Arc<AtomicU64>,
+    /// Optional pressure governor (G3, `governor` feature). `None` by default
+    /// -> the handler never consults it and behaviour is byte-identical. When
+    /// `Some`, the handler rejects with 503 while [`UnifiedPressure::should_hold`]
+    /// holds -- pressure-driven shedding ON TOP of the existing channel-full
+    /// 503, never replacing it.
+    #[cfg(feature = "governor")]
+    pressure: Option<Arc<crate::governor::UnifiedPressure>>,
 }
 
 /// POST handler that accepts raw bytes and queues them into the mpsc channel.
@@ -351,13 +483,29 @@ async fn ingest_handler(
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
     body: axum::body::Bytes,
-) -> axum::http::StatusCode {
+) -> axum::response::Response {
+    use axum::response::IntoResponse as _;
+
     if body.is_empty() {
-        return axum::http::StatusCode::BAD_REQUEST;
+        return axum::http::StatusCode::BAD_REQUEST.into_response();
+    }
+
+    // G3 pressure-driven shedding (governor feature, opt-in). BEFORE enqueuing,
+    // if a governor is wired and it says hold, shed the request with 503 --
+    // consistent with the existing channel-full 503 below (NOT 429). Default
+    // `None` -> this is skipped and behaviour is byte-identical.
+    #[cfg(feature = "governor")]
+    if let Some(pressure) = &state.pressure
+        && pressure.should_hold()
+    {
+        #[cfg(feature = "metrics")]
+        metrics::counter!("dfe_transport_backpressured_total", "transport" => "http", "reason" => "pressure")
+            .increment(1);
+        return shed_503();
     }
 
     // Extract W3C traceparent from incoming HTTP headers for distributed tracing
-    #[cfg(feature = "otel")]
+    #[cfg(feature = "transport-trace")]
     if let Some(tp) = headers
         .get(super::propagation::TRACEPARENT_HEADER)
         .and_then(|v| v.to_str().ok())
@@ -374,9 +522,11 @@ async fn ingest_handler(
     let format = PayloadFormat::detect(&body);
     let timestamp_ms = chrono::Utc::now().timestamp_millis();
 
+    // `body` is `axum::body::Bytes` (= `bytes::Bytes`) -- move it directly,
+    // no copy needed.
     let msg = Message {
         key: None,
-        payload: body.to_vec(),
+        payload: body,
         token: HttpToken::with_source(seq, addr.to_string()),
         timestamp_ms: Some(timestamp_ms),
         format,
@@ -386,25 +536,43 @@ async fn ingest_handler(
         Ok(()) => {
             #[cfg(feature = "metrics")]
             metrics::counter!("dfe_transport_sent_total", "transport" => "http").increment(1);
-            axum::http::StatusCode::OK
+            axum::http::StatusCode::OK.into_response()
         }
         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
             #[cfg(feature = "metrics")]
             metrics::counter!("dfe_transport_backpressured_total", "transport" => "http")
                 .increment(1);
-            axum::http::StatusCode::SERVICE_UNAVAILABLE
+            shed_503()
         }
         Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
             #[cfg(feature = "metrics")]
             metrics::counter!("dfe_transport_refused_total", "transport" => "http").increment(1);
-            axum::http::StatusCode::GONE
+            axum::http::StatusCode::GONE.into_response()
         }
     }
+}
+
+/// 503 shed response with a `Retry-After: 1` hint, so a well-behaved sender
+/// backs off briefly instead of hot-retrying into a pod that is already holding.
+#[cfg(feature = "http-server")]
+fn shed_503() -> axum::response::Response {
+    use axum::response::IntoResponse as _;
+    (
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        [(axum::http::header::RETRY_AFTER, "1")],
+    )
+        .into_response()
 }
 
 impl TransportBase for HttpTransport {
     async fn close(&self) -> TransportResult<()> {
         self.closed.store(true, Ordering::Relaxed);
+        // Stop the embedded server now (graceful shutdown) rather than on Drop.
+        // take() => idempotent: a later close()/drop() is a no-op.
+        #[cfg(feature = "http-server")]
+        if let Some(tx) = self.shutdown_tx.lock().take() {
+            let _ = tx.send(());
+        }
         Ok(())
     }
 
@@ -418,14 +586,14 @@ impl TransportBase for HttpTransport {
 }
 
 impl TransportSender for HttpTransport {
-    async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
@@ -435,6 +603,14 @@ impl TransportSender for HttpTransport {
         let Some(base_url) = &self.endpoint else {
             return SendResult::Fatal(TransportError::Config(
                 "no endpoint configured for sending".into(),
+            ));
+        };
+
+        // Receive-only transports build no send client (set in tandem with
+        // endpoint, so this is Some whenever endpoint is Some).
+        let Some(client) = &self.client else {
+            return SendResult::Fatal(TransportError::Config(
+                "no send client (receive-only HTTP transport)".into(),
             ));
         };
 
@@ -451,22 +627,23 @@ impl TransportSender for HttpTransport {
         let start = std::time::Instant::now();
 
         // Build request with optional W3C traceparent header for distributed tracing
-        let request_builder = self
-            .client
+        let request_builder = client
             .post(&url)
             .header("content-type", "application/octet-stream");
 
-        #[cfg(feature = "otel")]
+        #[cfg(feature = "transport-trace")]
         let request_builder = if let Some(tp) = super::propagation::current_traceparent() {
             request_builder.header(super::propagation::TRACEPARENT_HEADER, tp)
         } else {
             request_builder
         };
 
-        let result = match request_builder.body(payload.to_vec()).send().await {
+        #[cfg(feature = "logger")]
+        let payload_len = payload.len();
+        let result = match request_builder.body(payload).send().await {
             Ok(resp) if resp.status().is_success() => {
                 #[cfg(feature = "logger")]
-                tracing::debug!(url = %url, bytes = payload.len(), "HTTP transport: POST sent");
+                tracing::debug!(url = %url, bytes = payload_len, "HTTP transport: POST sent");
 
                 #[cfg(feature = "metrics")]
                 metrics::counter!("dfe_transport_sent_total", "transport" => "http").increment(1);
@@ -519,7 +696,7 @@ impl TransportSender for HttpTransport {
 impl TransportReceiver for HttpTransport {
     type Token = HttpToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
+    async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -569,32 +746,37 @@ impl TransportReceiver for HttpTransport {
                 }
             }
 
-            // Apply inbound filters: drop messages, stage DLQ entries
-            if self.filter_engine.has_inbound_filters() {
-                let mut staged_dlq: Vec<super::filter::FilteredDlqEntry> = Vec::new();
-                messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
-                    super::filter::FilterDisposition::Pass => true,
-                    super::filter::FilterDisposition::Drop => false,
-                    super::filter::FilterDisposition::Dlq => {
-                        staged_dlq.push(super::filter::FilteredDlqEntry {
-                            payload: msg.payload.clone(),
-                            key: msg.key.clone(),
-                            reason: "transport filter".to_string(),
-                        });
-                        false
-                    }
-                });
-                if !staged_dlq.is_empty() {
-                    self.filtered_dlq_buffer.lock().extend(staged_dlq);
-                }
-            }
+            // Apply inbound filters via the shared partition helper; DLQ
+            // entries are returned in the RecvBatch for the caller to route.
+            let batch = self.filter_engine.partition_batch(
+                messages,
+                |m| m.payload.as_ref(),
+                |m| m.key.clone(),
+                |m| m.token.clone(),
+            );
+            let messages = batch.messages;
+            let dlq_entries = batch.dlq_entries;
+            let filtered_tokens = batch.filtered_tokens;
 
             #[cfg(feature = "logger")]
             if !messages.is_empty() {
                 tracing::debug!(messages = messages.len(), "HTTP transport: batch received");
             }
 
-            Ok(messages)
+            // New default (metrics audit): inbound throughput (was only emitted
+            // by file/pipe/redis). Counts post-filter delivered messages.
+            #[cfg(feature = "metrics")]
+            if !messages.is_empty() {
+                metrics::counter!("dfe_transport_received_total", "transport" => "http")
+                    .increment(messages.len() as u64);
+            }
+
+            Ok(RecvBatch {
+                messages,
+                dlq_entries,
+                filtered_tokens,
+            }
+            .into())
         }
 
         #[cfg(not(feature = "http-server"))]
@@ -606,12 +788,8 @@ impl TransportReceiver for HttpTransport {
         }
     }
 
-    fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
-        std::mem::take(&mut *self.filtered_dlq_buffer.lock())
-    }
-
     async fn commit(&self, _tokens: &[Self::Token]) -> TransportResult<()> {
-        // HTTP is fire-and-forget — commit is a no-op.
+        // HTTP is fire-and-forget -- commit is a no-op.
         Ok(())
     }
 }
@@ -619,11 +797,13 @@ impl TransportReceiver for HttpTransport {
 impl Drop for HttpTransport {
     fn drop(&mut self) {
         #[cfg(feature = "http-server")]
-        if let Some(tx) = self.shutdown_tx.take() {
+        if let Some(tx) = self.shutdown_tx.lock().take() {
             let _ = tx.send(());
         }
     }
 }
+
+impl super::traits::FromCascade for HttpTransportConfig {}
 
 #[cfg(test)]
 mod tests {
@@ -678,7 +858,9 @@ mod tests {
         assert_eq!(transport.name(), "http");
 
         // Send without endpoint should fail
-        let result = transport.send("test", b"payload").await;
+        let result = transport
+            .send("test", bytes::Bytes::from_static(b"payload"))
+            .await;
         assert!(result.is_fatal());
 
         // Commit is always ok
@@ -693,7 +875,9 @@ mod tests {
         transport.close().await.unwrap();
         assert!(!transport.is_healthy());
 
-        let result = transport.send("test", b"data").await;
+        let result = transport
+            .send("test", bytes::Bytes::from_static(b"data"))
+            .await;
         assert!(result.is_fatal());
     }
 
@@ -734,14 +918,17 @@ mod tests {
             HttpTransportConfig::sender(&format!("http://127.0.0.1:{}/ingest", addr.port()));
         let sender = HttpTransport::new(&send_config).await.unwrap();
 
-        let result = sender.send("", b"{\"msg\":\"hello\"}").await;
+        let result = sender
+            .send("", bytes::Bytes::from_static(b"{\"msg\":\"hello\"}"))
+            .await;
         assert!(result.is_ok(), "send failed: {result:?}");
 
         // Receive it
-        let messages = receiver.recv(10).await.unwrap();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].payload, b"{\"msg\":\"hello\"}");
-        assert!(messages[0].token.source_addr.is_some());
+        let batch = receiver.recv(10).await.unwrap();
+        assert_eq!(batch.records.len(), 1);
+        assert_eq!(batch.records[0].payload.as_ref(), b"{\"msg\":\"hello\"}");
+        // The source address rides on the batch commit token, not the record.
+        assert!(batch.commit_tokens[0].source_addr.is_some());
 
         // Cleanup
         sender.close().await.unwrap();
@@ -776,8 +963,43 @@ mod tests {
         assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
 
         // recv should timeout with no messages
-        let messages = receiver.recv(10).await.unwrap();
-        assert!(messages.is_empty());
+        let records = receiver.recv(10).await.unwrap().records;
+        assert!(records.is_empty());
+
+        receiver.close().await.unwrap();
+    }
+
+    /// Oversized bodies are rejected with 413 before the handler buffers them.
+    #[cfg(feature = "http-server")]
+    #[tokio::test]
+    async fn receive_rejects_oversized_body() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+
+        let recv_config = HttpTransportConfig {
+            listen: Some(addr.to_string()),
+            recv_timeout_ms: 200,
+            max_body_bytes: 1024, // 1 KiB cap
+            ..Default::default()
+        };
+        let receiver = HttpTransport::new(&recv_config).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // POST 8 KiB -- over the 1 KiB cap.
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("http://127.0.0.1:{}/ingest", addr.port()))
+            .body(vec![b'x'; 8 * 1024])
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), reqwest::StatusCode::PAYLOAD_TOO_LARGE);
+
+        // The oversized POST never reached the queue.
+        let records = receiver.recv(10).await.unwrap().records;
+        assert!(records.is_empty(), "oversized body must not be queued");
 
         receiver.close().await.unwrap();
     }
@@ -791,6 +1013,137 @@ mod tests {
 
         let result = transport.recv(10).await;
         assert!(result.is_err());
+    }
+
+    /// #44 role rule: a sender-mode transport (endpoint, no listen) builds a
+    /// send client.
+    #[tokio::test]
+    async fn sender_mode_builds_a_client() {
+        let transport = HttpTransport::new(&HttpTransportConfig::sender("http://localhost:9999"))
+            .await
+            .unwrap();
+        assert!(
+            transport.client.is_some(),
+            "sender mode must build a client"
+        );
+    }
+
+    /// #44 role rule: a receive-only transport (listen, no endpoint) builds NO
+    /// send client, and send() is fatal.
+    #[cfg(feature = "http-server")]
+    #[tokio::test]
+    async fn receiver_mode_builds_no_client_and_send_errors() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener); // free the port for the transport to bind
+        let transport = HttpTransport::new(&HttpTransportConfig::receiver(&addr.to_string()))
+            .await
+            .unwrap();
+        assert!(
+            transport.client.is_none(),
+            "receive-only must build no send client"
+        );
+        let result = transport.send("k", bytes::Bytes::from_static(b"x")).await;
+        assert!(
+            matches!(result, SendResult::Fatal(_)),
+            "send on a receive-only transport must be fatal"
+        );
+        transport.close().await.unwrap();
+    }
+
+    /// G3: with a pressure governor pinned HIGH, the ingest handler sheds with
+    /// 503 (SERVICE_UNAVAILABLE) -- the same status as the channel-full path.
+    /// With `None` (the default `new`), POST is accepted (200) as before.
+    #[cfg(all(feature = "http-server", feature = "governor"))]
+    #[tokio::test]
+    async fn pressure_high_sheds_with_503_and_none_is_normal() {
+        use crate::governor::{Hysteresis, MemoryPressureSource, PressureSource, UnifiedPressure};
+        use crate::memory::{MemoryGuard, MemoryGuardConfig};
+
+        // --- None default: POST accepted (200) ---
+        {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            drop(listener);
+            let cfg = HttpTransportConfig {
+                listen: Some(addr.to_string()),
+                recv_timeout_ms: 200,
+                ..Default::default()
+            };
+            let receiver = HttpTransport::new(&cfg).await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+            let client = reqwest::Client::new();
+            let resp = client
+                .post(format!("http://127.0.0.1:{}/ingest", addr.port()))
+                .body(b"{\"msg\":\"ok\"}".to_vec())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                reqwest::StatusCode::OK,
+                "no governor -> accepted"
+            );
+            receiver.close().await.unwrap();
+        }
+
+        // --- Governor pinned HIGH (HARD memory source at 95%): 503 ---
+        {
+            let guard = Arc::new(MemoryGuard::new(MemoryGuardConfig {
+                limit_bytes: 1000,
+                pressure_threshold: 0.80,
+                ..Default::default()
+            }));
+            guard.add_bytes(950); // 95% -> well above pause_above
+            let src = MemoryPressureSource::new(Arc::clone(&guard));
+            let pressure = Arc::new(UnifiedPressure::new(
+                vec![Arc::new(src) as Arc<dyn PressureSource>],
+                Hysteresis::new(0.80, 0.65).expect("valid band"),
+            ));
+            // Sanity: the latch is armed.
+            assert!(pressure.should_hold(), "pinned-high governor must hold");
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            drop(listener);
+            let cfg = HttpTransportConfig {
+                listen: Some(addr.to_string()),
+                recv_timeout_ms: 200,
+                ..Default::default()
+            };
+            let receiver = HttpTransport::with_pressure(&cfg, Some(Arc::clone(&pressure)))
+                .await
+                .unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+            let client = reqwest::Client::new();
+            let resp = client
+                .post(format!("http://127.0.0.1:{}/ingest", addr.port()))
+                .body(b"{\"msg\":\"shed\"}".to_vec())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                reqwest::StatusCode::SERVICE_UNAVAILABLE,
+                "pinned-high governor must shed with 503"
+            );
+            // The 503 carries a Retry-After hint so a well-behaved sender backs
+            // off instead of hot-retrying into a holding pod.
+            assert_eq!(
+                resp.headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|v| v.to_str().ok()),
+                Some("1"),
+                "503 shed must carry Retry-After"
+            );
+
+            // The shed POST never reached the queue.
+            let records = receiver.recv(10).await.unwrap().records;
+            assert!(records.is_empty(), "shed request must not be queued");
+            receiver.close().await.unwrap();
+        }
     }
 
     #[test]

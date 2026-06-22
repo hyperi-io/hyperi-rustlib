@@ -3,7 +3,7 @@
 # Purpose:   Spell checking configuration for typos-cli
 # Language:  TOML
 #
-# License:   FSL-1.1-ALv2
+# License:   BUSL-1.1
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 #
 # Reference: https://github.com/crate-ci/typos
@@ -325,6 +325,6 @@ extend-exclude = [
     "ci/",
     "ai/",
 
-    # FSL licence text — uses deliberate Australian spelling
+    # BUSL licence text -- uses deliberate Australian spelling
     "LICENSE",
 ]

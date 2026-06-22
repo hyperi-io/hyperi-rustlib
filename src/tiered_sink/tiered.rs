@@ -3,7 +3,7 @@
 // Purpose:   TieredSink implementation
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! TieredSink implementation.
@@ -41,6 +41,9 @@ pub struct TieredSink<S: Sink> {
     #[allow(dead_code)]
     disk_poller_handle: Option<JoinHandle<()>>,
 
+    /// Serialises send + drain in `StrictFifo`. `None` otherwise.
+    fifo_gate: Option<Arc<Mutex<()>>>,
+
     // Metrics
     hot_path_count: AtomicU64,
     cold_path_count: AtomicU64,
@@ -63,8 +66,14 @@ impl<S: Sink> TieredSink<S> {
         let spool_sender = Arc::new(Mutex::new(sender));
         let spool_receiver = Arc::new(Mutex::new(receiver));
 
-        // Initialise spool counters from existing queue contents
-        let (initial_count, initial_bytes) = spool_item_count_and_bytes(&config.spool_path);
+        // Recover counters in spawn_blocking -- segment
+        // files can be GB-sized after a crash; walking them on the
+        // async runtime pins a tokio worker.
+        let spool_path_for_scan = config.spool_path.clone();
+        let (initial_count, initial_bytes) =
+            tokio::task::spawn_blocking(move || spool_item_count_and_bytes(&spool_path_for_scan))
+                .await
+                .unwrap_or((0, 0));
         let spool_count = Arc::new(AtomicU64::new(initial_count));
         let spool_bytes = Arc::new(AtomicU64::new(initial_bytes));
 
@@ -75,6 +84,11 @@ impl<S: Sink> TieredSink<S> {
         let shutdown = Arc::new(Notify::new());
         let codec = config.compression;
         let disk_available = Arc::new(std::sync::atomic::AtomicBool::new(true));
+
+        // Shared by senders + drainer in StrictFifo to enforce
+        // total ordering at the sink.
+        let fifo_gate =
+            matches!(config.ordering, OrderingMode::StrictFifo).then(|| Arc::new(Mutex::new(())));
 
         // Start disk-aware capacity poller if configured
         let disk_poller_handle = config.disk_aware.as_ref().map(|disk_cfg| {
@@ -104,6 +118,7 @@ impl<S: Sink> TieredSink<S> {
             config.drain_strategy,
             config.drain_interval(),
             Arc::clone(&shutdown),
+            fifo_gate.as_ref().map(Arc::clone),
         ));
 
         Ok(Self {
@@ -119,6 +134,7 @@ impl<S: Sink> TieredSink<S> {
             drain_handle: Some(drain_handle),
             disk_available,
             disk_poller_handle,
+            fifo_gate,
             hot_path_count: AtomicU64::new(0),
             cold_path_count: AtomicU64::new(0),
         })
@@ -139,7 +155,13 @@ impl<S: Sink> TieredSink<S> {
     /// - The spool is full
     /// - Compression fails
     pub async fn send(&self, data: &[u8]) -> Result<()> {
-        // Check if we should use hot path
+        // StrictFifo: serialise decision + send + enqueue against
+        // other senders and the drainer. Interleaved: no gate.
+        let _gate = match &self.fifo_gate {
+            Some(gate) => Some(gate.lock().await),
+            None => None,
+        };
+
         let use_hot_path = self.should_use_hot_path().await;
 
         if use_hot_path {
@@ -223,7 +245,9 @@ impl<S: Sink> TieredSink<S> {
         }
     }
 
-    /// Spool a message to disk.
+    /// Reserve capacity (`fetch_update`) before enqueue; roll back
+    /// on failure. Atomic reservation prevents two concurrent
+    /// callers from both passing the cap check and overshooting.
     async fn spool_message(&self, data: &[u8]) -> Result<()> {
         // Check disk availability first
         if !self.disk_available.load(AtomicOrdering::Relaxed) {
@@ -233,37 +257,55 @@ impl<S: Sink> TieredSink<S> {
         let compressed = self.codec.compress(data)?;
         let compressed_len = compressed.len() as u64;
 
-        // Check item count limit
+        // Reserve item slot.
         if let Some(max_items) = self.config.max_spool_items {
-            #[allow(clippy::cast_possible_truncation)]
-            let current = self.spool_count.load(AtomicOrdering::Relaxed) as usize;
-            if current >= max_items {
-                return Err(TieredSinkError::SpoolFull(format!(
-                    "max items {max_items} reached"
-                )));
-            }
+            let max_items_u64 = max_items as u64;
+            self.spool_count
+                .fetch_update(AtomicOrdering::AcqRel, AtomicOrdering::Acquire, |cur| {
+                    if cur < max_items_u64 {
+                        Some(cur + 1)
+                    } else {
+                        None
+                    }
+                })
+                .map_err(|_| {
+                    TieredSinkError::SpoolFull(format!("max items {max_items} reached"))
+                })?;
+        } else {
+            self.spool_count.fetch_add(1, AtomicOrdering::AcqRel);
         }
 
-        // Check byte size limit
+        // Reserve byte budget; roll back item slot on failure.
         if let Some(max_bytes) = self.config.max_spool_bytes {
-            let current_bytes = self.spool_bytes.load(AtomicOrdering::Relaxed);
-            if current_bytes + compressed_len > max_bytes {
+            if let Err(current_bytes) = self.spool_bytes.fetch_update(
+                AtomicOrdering::AcqRel,
+                AtomicOrdering::Acquire,
+                |cur| {
+                    cur.checked_add(compressed_len)
+                        .filter(|new| *new <= max_bytes)
+                },
+            ) {
+                self.spool_count.fetch_sub(1, AtomicOrdering::AcqRel);
                 return Err(TieredSinkError::SpoolFull(format!(
                     "max spool bytes {max_bytes} reached (current: {current_bytes}, \
                      new message: {compressed_len})"
                 )));
             }
+        } else {
+            self.spool_bytes
+                .fetch_add(compressed_len, AtomicOrdering::AcqRel);
         }
 
+        // Enqueue; roll back both reservations on failure.
         let mut sender = self.spool_sender.lock().await;
-        sender
-            .send(compressed)
-            .await
-            .map_err(|e| TieredSinkError::Spool(e.to_string()))?;
-
-        self.spool_count.fetch_add(1, AtomicOrdering::Relaxed);
-        self.spool_bytes
-            .fetch_add(compressed_len, AtomicOrdering::Relaxed);
+        if let Err(e) = sender.send(compressed).await {
+            drop(sender);
+            self.spool_count.fetch_sub(1, AtomicOrdering::AcqRel);
+            self.spool_bytes
+                .fetch_sub(compressed_len, AtomicOrdering::AcqRel);
+            return Err(TieredSinkError::Spool(e.to_string()));
+        }
+        drop(sender);
 
         #[cfg(feature = "metrics")]
         {
@@ -271,6 +313,8 @@ impl<S: Sink> TieredSink<S> {
                 .set(self.spool_count.load(AtomicOrdering::Relaxed) as f64);
             ::metrics::gauge!("dfe_spool_bytes")
                 .set(self.spool_bytes.load(AtomicOrdering::Relaxed) as f64);
+            // New default (metrics audit): spill RATE. drain < enqueue => backlog.
+            ::metrics::counter!("dfe_spool_enqueue_total").increment(1);
         }
 
         #[cfg(feature = "tracing")]
@@ -453,11 +497,12 @@ fn check_disk_space(path: &std::path::Path) -> Option<(u64, u64)> {
     };
 
     // Portability: libc::statvfs field widths differ across platforms.
-    // Linux: f_blocks/f_bavail/f_frsize are u64. aarch64-apple-darwin: u32.
-    // Cast on macOS to bridge the type difference; no-op on Linux. Fixes #39.
+    // Linux: f_blocks/f_bavail/f_frsize are all u64. macOS (aarch64): f_frsize
+    // is c_ulong (u64) but f_blocks/f_bavail are fsblkcnt_t (u32), so only those
+    // two need the widening cast here; f_frsize is already u64. Fixes #39.
     #[cfg(target_os = "macos")]
     {
-        let block_size: u64 = u64::from(stat.f_frsize);
+        let block_size: u64 = stat.f_frsize;
         let total: u64 = u64::from(stat.f_blocks) * block_size;
         let available: u64 = u64::from(stat.f_bavail) * block_size;
         Some((total, available))
@@ -495,6 +540,12 @@ async fn disk_capacity_poller(
         if let Some((total, avail)) = disk_space {
             ::metrics::gauge!("dfe_spool_disk_available_bytes").set(avail as f64);
             ::metrics::gauge!("dfe_spool_disk_total_bytes").set(total as f64);
+            // New default (metrics audit): disk fill fraction (0.0-1.0). Disk
+            // total is known here, so emit the ratio directly.
+            if total > 0 {
+                ::metrics::gauge!("dfe_spool_disk_usage_ratio")
+                    .set(1.0 - (avail as f64 / total as f64));
+            }
         }
 
         let available = disk_space.is_none_or(|(total, avail)| {
@@ -520,6 +571,21 @@ async fn disk_capacity_poller(
 
 impl<S: Sink> Drop for TieredSink<S> {
     fn drop(&mut self) {
+        // Durability requires explicit `shutdown().await`.
+        // Drop can only notify the background drainer -- it can't
+        // await it. If anything's still spooled at drop time, the
+        // caller has skipped the explicit shutdown and risks losing
+        // that data. Warn + count so this shows up in dashboards.
+        let pending = self.spool_count.load(AtomicOrdering::Relaxed);
+        if pending > 0 {
+            #[cfg(feature = "metrics")]
+            ::metrics::counter!("dfe_spool_dropped_without_shutdown_total").increment(1);
+            #[cfg(feature = "tracing")]
+            tracing::warn!(
+                pending,
+                "TieredSink dropped with spooled work pending -- call shutdown().await for durability"
+            );
+        }
         self.shutdown.notify_one();
     }
 }
@@ -800,7 +866,7 @@ mod tests {
             tiered.shutdown().await;
         }
 
-        // Phase 2: Re-open — spool_count should reflect existing items
+        // Phase 2: Re-open -- spool_count should reflect existing items
         {
             let sink = TestSink::new();
             let config = TieredSinkConfig::new(&spool_path);
@@ -835,6 +901,49 @@ mod tests {
         let result = tiered.send(b"should fail").await;
         assert!(matches!(result, Err(TieredSinkError::DiskUnavailable)));
 
+        tiered.shutdown().await;
+    }
+
+    /// C15 regression: N concurrent senders against a small cap.
+    /// Pre-fix overshot; atomic reservation keeps total exact.
+    #[tokio::test]
+    async fn test_max_spool_items_not_overshooting_under_concurrency() {
+        let dir = tempdir().unwrap();
+        let spool_path = dir.path().join("test-toctou-items");
+
+        let sink = TestSink::new();
+        sink.set_available(false);
+
+        let mut config = TieredSinkConfig::new(&spool_path);
+        config.circuit_failure_threshold = 1;
+        config.max_spool_items = Some(10);
+
+        let tiered = Arc::new(TieredSink::new(sink, config).await.unwrap());
+
+        // Fan out 100 concurrent senders against a cap of 10.
+        let mut joins = Vec::new();
+        for _ in 0..100 {
+            let t = Arc::clone(&tiered);
+            joins.push(tokio::spawn(async move { t.send(b"contention").await }));
+        }
+
+        let mut accepted = 0usize;
+        let mut rejected = 0usize;
+        for j in joins {
+            match j.await.unwrap() {
+                Ok(()) => accepted += 1,
+                Err(TieredSinkError::SpoolFull(_)) => rejected += 1,
+                Err(e) => panic!("unexpected error: {e}"),
+            }
+        }
+
+        assert_eq!(accepted, 10, "cap must not overshoot (got {accepted})");
+        assert_eq!(rejected, 90);
+        assert_eq!(tiered.spool_len().await, 10);
+
+        let tiered = Arc::try_unwrap(tiered)
+            .map_err(|_| "outstanding Arc refs")
+            .unwrap();
         tiered.shutdown().await;
     }
 }

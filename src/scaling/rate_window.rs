@@ -3,7 +3,7 @@
 // Purpose:   Sliding window rate calculator
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Sliding window rate calculator for scaling components.
@@ -12,7 +12,7 @@
 //! the rate of change per second. Useful for request rate, message rate,
 //! error rate, and similar signals.
 //!
-//! Thread-safe via `parking_lot::RwLock` — reads are fast and non-blocking.
+//! Thread-safe via `parking_lot::RwLock` -- reads are fast and non-blocking.
 
 use std::time::{Duration, Instant};
 

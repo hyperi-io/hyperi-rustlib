@@ -1,9 +1,9 @@
 // Project:   hyperi-rustlib
 // File:      src/concurrency/actor.rs
-// Purpose:   ActorHandle — stateful command-queue actor
+// Purpose:   ActorHandle -- stateful command-queue actor
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Stateful command-queue actor.
@@ -12,7 +12,7 @@
 //! state and processes commands from a channel" pattern documented in
 //! `hyperi-ai/standards/languages/RUST.md` "Long-Lived Background
 //! Actors". Used when a single task should serialise mutations to
-//! shared state — DLQ orchestrator routing, state machines, etc.
+//! shared state -- DLQ orchestrator routing, state machines, etc.
 //!
 //! # Shape
 //!
@@ -25,7 +25,7 @@
 //! ```
 //!
 //! Replies are conveyed via `oneshot::Sender<Reply>` fields embedded
-//! in the `Command` variant — see the canonical recipe in RUST.md.
+//! in the `Command` variant -- see the canonical recipe in RUST.md.
 
 use std::future::Future;
 use std::time::Duration;
@@ -86,7 +86,7 @@ pub trait Actor: Send + 'static {
 
 /// Cloneable handle for sending commands.
 ///
-/// Clone freely across tasks — `mpsc::Sender` clone is cheap.
+/// Clone freely across tasks -- `mpsc::Sender` clone is cheap.
 #[derive(Debug, Clone)]
 pub struct ActorHandle<Cmd: Send + 'static> {
     tx: mpsc::Sender<Cmd>,
@@ -155,7 +155,7 @@ async fn actor_loop<A: Actor>(
             cmd = rx.recv() => if let Some(c) = cmd {
                 actor.handle(c).await;
             } else {
-                // All senders dropped — graceful exit.
+                // All senders dropped -- graceful exit.
                 actor.on_shutdown().await;
                 return;
             },
@@ -302,7 +302,7 @@ mod tests {
             ActorConfig::default(),
             shutdown.clone(),
         );
-        // Drop the only handle — actor should see Closed and exit.
+        // Drop the only handle -- actor should see Closed and exit.
         drop(handle);
         join.join().await.expect("clean exit");
         assert_eq!(called.load(Ordering::SeqCst), 1);

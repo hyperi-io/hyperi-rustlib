@@ -1,6 +1,6 @@
 # Directory config
 
-A YAML directory-backed config store — distinct from the [8-layer
+A YAML directory-backed config store -- distinct from the [8-layer
 config cascade](../core-pillars/CONFIG.md). Use this for ops-managed
 config that changes between deploys without a code change: detection
 rules, scrub patterns, routing tables, allow/deny lists, any artefact
@@ -17,7 +17,7 @@ written via tooling or git push).
 | Need | Use |
 |------|-----|
 | App config (Kafka brokers, ports, log level) | [Config cascade](../core-pillars/CONFIG.md) |
-| Per-environment overrides of app config | Cascade — `settings.{env}.yaml` |
+| Per-environment overrides of app config | Cascade -- `settings.{env}.yaml` |
 | One YAML per logical object, ops adds/removes them | This module |
 | File-system-shaped data store ops can edit by hand | This module |
 | Git as the audit trail for changes | This module with `directory-config-git` |
@@ -56,7 +56,7 @@ let v = store.get_key("routing_rules", "kafka.events.high").await?;
 ```
 
 `start()` opens any required watch handles. `stop()` cleans them up.
-The store stays usable through reloads — readers see the latest version
+The store stays usable through reloads -- readers see the latest version
 once a successful refresh completes.
 
 ---
@@ -71,11 +71,11 @@ store.delete_key("routing_rules", "kafka.events.low").await?;
 ```
 
 File-level locking via `std::fs::File::{lock,unlock}` (stable since
-Rust 1.89) — no third-party lock crate. Concurrent writes from the
+Rust 1.89) -- no third-party lock crate. Concurrent writes from the
 same process serialise; cross-process writes are also safe.
 
 `ReadOnly` mode rejects writes at the API. Use this in services that
-should never mutate the store (typical case — most consumers read,
+should never mutate the store (typical case -- most consumers read,
 only an admin tool writes).
 
 ---
@@ -144,7 +144,7 @@ directory_config:
 
 | Item | Purpose |
 |------|---------|
-| `DirectoryConfigStore::new(config)` | Build a store (async — opens the directory) |
+| `DirectoryConfigStore::new(config)` | Build a store (async -- opens the directory) |
 | `.start()` | Open watches and start refresh loop |
 | `.stop()` | Shut down watches |
 | `.list_tables() -> Vec<String>` | Every YAML file name in the directory |
@@ -162,6 +162,6 @@ directory_config:
 
 ## Related
 
-- [../core-pillars/CONFIG.md](../core-pillars/CONFIG.md) — app config cascade
-- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) — `directory-config`, `directory-config-git`
+- [../core-pillars/CONFIG.md](../core-pillars/CONFIG.md) -- app config cascade
+- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) -- `directory-config`, `directory-config-git`
 - Source: [../../src/directory_config/](../../src/directory_config/)

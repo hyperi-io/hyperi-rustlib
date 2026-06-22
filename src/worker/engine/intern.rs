@@ -3,14 +3,14 @@
 // Purpose:   Concurrent field name interning for the batch processing engine
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Field name interning for the batch processing engine.
 //!
 //! Deduplicates field name strings across an entire batch. The first occurrence
 //! of a field name allocates an `Arc<str>`; all subsequent occurrences get a
-//! cheap `Arc::clone` (~2 ns). Thread-safe via `DashMap` — safe for concurrent
+//! cheap `Arc::clone` (~2 ns). Thread-safe via `DashMap` -- safe for concurrent
 //! access from rayon worker threads.
 
 use std::collections::HashMap;
@@ -56,22 +56,19 @@ impl FieldInterner {
 
     /// Intern a field name and return a shared `Arc<str>`.
     ///
-    /// # Cost model
-    ///
-    /// - Fast path (already interned): one DashMap read-lock shard + `Arc::clone` → ~20 ns
-    /// - Slow path (first occurrence): one write to DashMap + `Arc::from` allocation → ~100 ns
-    ///
-    /// The slow path is taken at most once per unique field name per `FieldInterner` instance.
+    /// Fast path (already interned): DashMap shard read + `Arc::clone`, ~20 ns.
+    /// Slow path (first occurrence): DashMap write + `Arc::from` allocation,
+    /// ~100 ns -- taken at most once per unique field name per instance.
     #[inline]
     #[must_use]
     pub fn intern(&self, name: &str) -> Arc<str> {
-        // Fast path: field already interned — borrow the existing Arc.
+        // Fast path: field already interned -- borrow the existing Arc.
         // Arc<str>: Borrow<str> is in std, so DashMap::get accepts &str directly.
         if let Some(entry) = self.table.get(name) {
             return Arc::clone(entry.key());
         }
 
-        // Slow path: first occurrence — allocate and insert.
+        // Slow path: first occurrence -- allocate and insert.
         let key: Arc<str> = Arc::from(name);
         self.table.entry(Arc::clone(&key)).or_insert(());
 
@@ -91,8 +88,8 @@ impl FieldInterner {
     /// Extract known (pre-interned) fields from a parsed `sonic_rs::Value`.
     ///
     /// Iterates the top-level object keys and returns only those that are
-    /// already interned. O(known_fields × object_keys) — typically
-    /// 6 known × 15 keys = 90 string comparisons per message.
+    /// already interned. O(known_fields x object_keys) -- typically
+    /// 6 known x 15 keys = 90 string comparisons per message.
     ///
     /// Returns an empty map if `value` is not a JSON object.
     #[must_use]

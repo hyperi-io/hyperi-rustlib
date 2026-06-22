@@ -3,7 +3,7 @@
 // Purpose:   DFE consumer metrics group
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Kafka consumer metrics for DFE apps.
@@ -31,7 +31,7 @@ impl ConsumerMetrics {
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
 
-        // consumer_lag — label-based, register descriptor manually
+        // consumer_lag -- label-based, register descriptor manually
         let lag_key = if ns.is_empty() {
             "consumer_lag".to_string()
         } else {

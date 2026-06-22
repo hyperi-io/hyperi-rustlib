@@ -3,7 +3,7 @@
 // Purpose:   Configuration types for transport-level message filtering
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Filter configuration types for transport-level message filtering.
@@ -14,7 +14,9 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A single filter rule — CEL expression + disposition action.
+use super::budget::FilterBudget;
+
+/// A single filter rule -- CEL expression + disposition action.
 ///
 /// Written in CEL syntax regardless of execution tier. The engine determines
 /// the optimal execution strategy at construction time.
@@ -85,7 +87,7 @@ impl std::fmt::Display for FilterDirection {
     }
 }
 
-/// Tier gate configuration — controls which filter tiers are enabled.
+/// Tier gate configuration -- controls which filter tiers are enabled.
 ///
 /// Lives under the `expression` config cascade key alongside `ProfileConfig`.
 /// Separate struct because it serves a different purpose (transport-level
@@ -110,6 +112,10 @@ pub struct TransportFilterTierConfig {
     /// Implies `allow_cel_filters_out`.
     #[serde(default)]
     pub allow_complex_filters_out: bool,
+
+    /// Static + runtime budget for Tier 2/3 evaluation.
+    #[serde(default)]
+    pub budget: FilterBudget,
 }
 
 impl TransportFilterTierConfig {
@@ -127,6 +133,27 @@ impl TransportFilterTierConfig {
             (FilterTier::Tier3, FilterDirection::In) => self.allow_complex_filters_in,
             (FilterTier::Tier3, FilterDirection::Out) => self.allow_complex_filters_out,
         }
+    }
+
+    /// Load tier-gate configuration from the config cascade under the
+    /// `transport.filter_tiers` key.
+    ///
+    /// Falls back to `Self::default()` (all Tier 2/3 gates closed) when
+    /// the cascade is not initialised or the section is missing. This is
+    /// the secure default -- operators must explicitly opt in to higher
+    /// tiers per the [transport filter design](crate::transport::filter).
+    #[must_use]
+    pub fn from_cascade() -> Self {
+        #[cfg(feature = "config")]
+        {
+            if let Some(cfg) = crate::config::try_get()
+                && let Ok(tier_config) =
+                    cfg.unmarshal_key_registered::<Self>("transport.filter_tiers")
+            {
+                return tier_config;
+            }
+        }
+        Self::default()
     }
 }
 

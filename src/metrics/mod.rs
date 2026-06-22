@@ -3,28 +3,19 @@
 // Purpose:   Prometheus metrics with process and container awareness
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Metrics with Prometheus and/or OpenTelemetry backends.
 //!
-//! Provides production-ready metrics collection with support for:
+//! - **`metrics` only:** Prometheus scrape endpoint via `/metrics`
+//! - **`otel-metrics` only:** OTLP push to OTel-compatible backends
+//! - **Both:** Fanout recorder sends to both Prometheus AND OTel
 //!
-//! - **`metrics` feature only:** Prometheus scrape endpoint via `/metrics`
-//! - **`otel-metrics` feature only:** OTLP push to OTel-compatible backends
-//! - **Both features:** Fanout recorder sends to both Prometheus AND OTel
-//!
-//! ## Features
-//!
-//! - Counter, Gauge, Histogram metric types
-//! - Automatic process metrics (CPU, memory, file descriptors)
-//! - Container metrics from cgroups (memory limit, CPU limit)
-//! - Built-in HTTP server for `/metrics` endpoint (Prometheus)
-//! - OTLP push to HyperDX, Jaeger, Grafana, etc. (OTel)
-//! - Readiness callback for `/health/ready` endpoints
-//! - Optional scaling pressure endpoint (`/scaling/pressure`)
-//! - Optional memory guard endpoint (`/memory/pressure`)
-//! - Custom route support via [`start_server_with_routes`](MetricsManager::start_server_with_routes)
+//! Counter/Gauge/Histogram types, automatic process + cgroup container metrics,
+//! built-in HTTP server, readiness/startup probes, optional scaling-pressure and
+//! memory-guard endpoints, custom routes via
+//! `MetricsManager::start_server_with_routes` (`http-server` feature).
 //!
 //! ## Basic Example
 //!
@@ -40,7 +31,7 @@
 //!     let active = manager.gauge("active_connections", "Active connections");
 //!     let latency = manager.histogram("request_duration_seconds", "Request latency");
 //!
-//!     // Start metrics server (simple — built-in endpoints only)
+//!     // Start metrics server (simple -- built-in endpoints only)
 //!     manager.start_server("0.0.0.0:9090").await.unwrap();
 //!
 //!     // Record metrics
@@ -84,8 +75,11 @@
 
 mod container;
 pub mod dfe;
+pub mod labels;
 pub mod manifest;
 mod process;
+
+pub use labels::{AuthFailureReason, FlushTrigger, TransportKind, ValidationFailureReason};
 
 #[cfg(feature = "otel-metrics")]
 pub(crate) mod otel;
@@ -113,6 +107,14 @@ pub use dfe::DfeMetrics;
 pub mod dfe_groups;
 pub use manifest::{ManifestResponse, MetricDescriptor, MetricRegistry, MetricType};
 pub use process::ProcessMetrics;
+
+// Internal samplers reused by the scaling-pressure engine tick (cgroup CPU
+// limit + this process's cumulative CPU seconds). Gated on `scaling` so they
+// are never dead code when the engine is absent.
+#[cfg(all(feature = "scaling", feature = "expression"))]
+pub(crate) use container::cpu_limit_cores;
+#[cfg(all(feature = "scaling", feature = "expression"))]
+pub(crate) use process::cumulative_cpu_seconds;
 
 #[cfg(feature = "otel-metrics")]
 pub use otel_types::{OtelMetricsConfig, OtelProtocol};
@@ -191,11 +193,9 @@ struct RecorderSetup {
     otel_provider: Option<opentelemetry_sdk::metrics::SdkMeterProvider>,
 }
 
-/// Install the metrics recorder(s) based on enabled features.
-///
-/// Returns setup results containing handles/providers. When both
-/// `metrics` and `otel-metrics` features are enabled, uses `metrics-util`
-/// `FanoutBuilder` to compose both recorders into a single global recorder.
+/// Install the metrics recorder(s) for the enabled features. When both
+/// `metrics` and `otel-metrics` are on, composes both into one global
+/// recorder via `metrics-util` `FanoutBuilder`.
 #[allow(unused_variables)]
 fn install_recorders(config: &MetricsConfig) -> RecorderSetup {
     // --- Prometheus only (no OTel) ---
@@ -304,16 +304,13 @@ impl MetricsManager {
         })
     }
 
-    /// Create a metrics manager for tests without installing a global recorder.
+    /// Test constructor that skips the global recorder install.
     ///
-    /// The global Prometheus recorder can only be installed once per process.
-    /// Tests that call `MetricsManager::new()` in parallel all race to install
-    /// it and all but the first panic with `SetRecorderError`.
-    ///
-    /// This constructor skips recorder installation entirely. `metrics!` macros
-    /// become no-ops (the crate's documented behaviour when no recorder is set),
-    /// but manifest registry tracking, descriptor push, and namespace logic all
-    /// work normally — which is what the tests actually verify.
+    /// The global recorder installs once per process; parallel `new()` calls
+    /// race and all but the first panic with `SetRecorderError`. Skipping it
+    /// makes `metrics!` macros no-ops (documented behaviour with no recorder)
+    /// while registry tracking, descriptor push, and namespace logic -- what
+    /// tests actually verify -- still work.
     #[cfg(test)]
     pub(crate) fn new_for_test(namespace: &str) -> Self {
         let config = MetricsConfig {
@@ -413,7 +410,7 @@ impl MetricsManager {
     /// Create a counter with label keys and group metadata for the manifest.
     ///
     /// The `labels` parameter declares label **key names** for the manifest.
-    /// The returned `Counter` is label-free — apply label values at recording
+    /// The returned `Counter` is label-free -- apply label values at recording
     /// time via `metrics::counter!(key, "label" => value)`.
     #[must_use]
     pub fn counter_with_labels(
@@ -568,6 +565,42 @@ impl MetricsManager {
         metrics::histogram!(key)
     }
 
+    /// Create a histogram with an explicit unit.
+    ///
+    /// Use this for non-time distributions (byte sizes, item counts, ...) so the
+    /// recorded unit matches the metric name. The plain
+    /// [`histogram`](Self::histogram) defaults to seconds (the common latency
+    /// case); reaching for that on a count/size metric is the seconds-mislabel
+    /// the metrics audit flagged.
+    #[must_use]
+    pub fn histogram_with_unit(&self, name: &str, description: &str, unit: Unit) -> Histogram {
+        let key = self.prefixed_key(name);
+        let desc = description.to_string();
+        metrics::describe_histogram!(key.clone(), unit, desc.clone());
+        self.registry.push(MetricDescriptor {
+            name: key.clone(),
+            metric_type: MetricType::Histogram,
+            description: desc,
+            unit: unit_label(unit).to_string(),
+            labels: vec![],
+            group: "custom".into(),
+            buckets: None,
+            use_cases: vec![],
+            dashboard_hint: None,
+        });
+        metrics::histogram!(key)
+    }
+
+    /// Create a dimensionless count-distribution histogram (e.g. items per chunk).
+    ///
+    /// Convenience for [`histogram_with_unit`](Self::histogram_with_unit) with
+    /// [`Unit::Count`] -- avoids the seconds mislabel the plain
+    /// [`histogram`](Self::histogram) would apply.
+    #[must_use]
+    pub fn histogram_count(&self, name: &str, description: &str) -> Histogram {
+        self.histogram_with_unit(name, description, Unit::Count)
+    }
+
     /// Get the Prometheus metrics output.
     ///
     /// Returns the rendered Prometheus text format. Only available when
@@ -580,11 +613,8 @@ impl MetricsManager {
             .map_or_else(String::new, PrometheusHandle::render)
     }
 
-    /// Get a cloneable render handle for use in route handlers.
-    ///
-    /// Returns a closure that renders the current Prometheus metrics text.
-    /// The closure is `Send + Sync + Clone`, making it safe to move into
-    /// `axum` route handlers or share across tasks via `Arc`.
+    /// Cloneable render handle for route handlers. `Send + Sync + Clone` --
+    /// safe to move into `axum` handlers or share across tasks.
     ///
     /// Returns `None` if no Prometheus recorder is installed.
     ///
@@ -621,7 +651,7 @@ impl MetricsManager {
     ///
     /// Call this once init is complete. K8s `startupProbe` hits `/startupz`
     /// which returns 503 until this is called, then 200 thereafter.
-    /// Separate from readiness — startup has a longer timeout for slow starters.
+    /// Separate from readiness -- startup has a longer timeout for slow starters.
     pub fn mark_started(&self) {
         self.started
             .store(true, std::sync::atomic::Ordering::Release);
@@ -692,7 +722,7 @@ impl MetricsManager {
             .as_ref()
             .ok_or_else(|| {
                 MetricsError::ServerError(
-                    "Prometheus handle not configured — MetricsManager was created without a recorder".into(),
+                    "Prometheus handle not configured -- MetricsManager was created without a recorder".into(),
                 )
             })?
             .clone();
@@ -765,7 +795,7 @@ impl MetricsManager {
             .as_ref()
             .ok_or_else(|| {
                 MetricsError::ServerError(
-                    "Prometheus handle not configured — MetricsManager was created without a recorder".into(),
+                    "Prometheus handle not configured -- MetricsManager was created without a recorder".into(),
                 )
             })?
             .clone();
@@ -938,7 +968,7 @@ impl MetricsManager {
     ///
     /// Uses interior mutability (writes through the registry's `Arc<RwLock>`),
     /// so only `&self` is needed. Called automatically by
-    /// [`dfe_groups::AppMetrics::new()`] if the `metrics-dfe` feature is enabled.
+    /// `dfe_groups::AppMetrics::new()` if the `metrics-dfe` feature is enabled.
     pub fn set_build_info(&self, version: &str, commit: &str) {
         self.registry.set_build_info(version, commit);
     }
@@ -968,7 +998,8 @@ impl MetricsManager {
 
     /// Get the namespace prefix (e.g. `dfe_loader`).
     ///
-    /// Used by [`dfe_groups`] metric structs to build labelled metric keys.
+    /// Used by `dfe_groups` metric structs (`metrics-dfe` feature) to build
+    /// labelled metric keys.
     #[must_use]
     pub fn namespace(&self) -> &str {
         &self.config.namespace
@@ -1215,6 +1246,20 @@ pub fn size_buckets() -> Vec<f64> {
         1_000_000.0,
         10_000_000.0,
     ]
+}
+
+/// Canonical unit label for a metric descriptor's `unit` field (manifest).
+///
+/// Maps the `metrics` crate [`Unit`] to the Prometheus-style base-unit string
+/// (`seconds`/`bytes`); counts are dimensionless. Only the units rustlib
+/// actually emits are mapped; anything else is left blank.
+fn unit_label(unit: Unit) -> &'static str {
+    match unit {
+        Unit::Count => "count",
+        Unit::Bytes => "bytes",
+        Unit::Seconds => "seconds",
+        _ => "",
+    }
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@
 // Purpose:   File-based DLQ backend using AsyncNdjsonWriter
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! File-based DLQ backend.
@@ -31,7 +31,7 @@ use super::config::FileDlqConfig;
 use super::entry::DlqEntry;
 use super::error::DlqError;
 
-/// File backend — internal variant carried by [`super::DlqBackend::File`].
+/// File backend -- internal variant carried by [`super::DlqBackend::File`].
 pub struct FileDlqInner {
     writer: AsyncNdjsonWriter,
     service_name: String,
@@ -105,6 +105,23 @@ impl FileDlqInner {
         Ok(())
     }
 
+    /// Flush buffered bytes to the kernel page cache.
+    ///
+    /// See [`crate::io::NdjsonWriter::flush`] for the durability
+    /// caveat -- currently best-effort through the kernel page cache
+    /// only.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DlqError::File` if the underlying writer reports an
+    /// I/O error.
+    pub async fn flush_durable(&mut self) -> Result<(), DlqError> {
+        self.writer
+            .flush()
+            .await
+            .map_err(|e| DlqError::File(format!("DLQ file flush: {e}")))
+    }
+
     /// Number of entries successfully written.
     #[must_use]
     pub fn entries_written(&self) -> u64 {
@@ -166,7 +183,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn file_backend_does_not_block_runtime() {
-        // Concurrent backends + ticker on the same runtime — ticker must
+        // Concurrent backends + ticker on the same runtime -- ticker must
         // keep firing while writes are happening.
         let dir = tempfile::tempdir().expect("tempdir");
         let ticks = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -192,7 +209,7 @@ mod tests {
         let t = ticks.load(std::sync::atomic::Ordering::SeqCst);
         assert!(
             t >= 8,
-            "ticker fired only {t} times — file backend starved runtime",
+            "ticker fired only {t} times -- file backend starved runtime",
         );
     }
 }

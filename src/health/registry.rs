@@ -3,7 +3,7 @@
 // Purpose:   Global health registry singleton for component health tracking
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Global health registry for unified service health state.
@@ -46,7 +46,7 @@ impl HealthStatus {
     }
 }
 
-/// Health check callback — returns current component status.
+/// Health check callback -- returns current component status.
 type HealthCheck = Arc<dyn Fn() -> HealthStatus + Send + Sync>;
 
 /// A registered health check entry.
@@ -94,7 +94,7 @@ impl HealthRegistry {
     /// # Duplicate Names
     ///
     /// Multiple components may register with the same name. Each
-    /// registration is independent — the registry does not deduplicate.
+    /// registration is independent -- the registry does not deduplicate.
     pub fn register(
         name: impl Into<String>,
         check: impl Fn() -> HealthStatus + Send + Sync + 'static,
@@ -108,37 +108,45 @@ impl HealthRegistry {
         }
     }
 
+    /// Snapshot every registered check, drop the registry lock, then run
+    /// the checks. A check callback that re-enters
+    /// [`HealthRegistry::register`] (or any other path that takes the
+    /// registry mutex) would otherwise deadlock against itself; this
+    /// keeps the lock critical-section to a clone of the `Arc<dyn Fn>`
+    /// handles.
+    fn snapshot_checks() -> Vec<HealthCheck> {
+        let registry = Self::global();
+        registry
+            .components
+            .lock()
+            .ok()
+            .map(|components| components.iter().map(|c| Arc::clone(&c.check)).collect())
+            .unwrap_or_default()
+    }
+
     /// Check if ALL components are healthy.
     ///
     /// Returns `true` if the registry is empty (vacuously true) or
     /// every registered component reports [`HealthStatus::Healthy`].
     #[must_use]
     pub fn is_healthy() -> bool {
-        let registry = Self::global();
-        let Ok(components) = registry.components.lock() else {
-            return false;
-        };
-        components
+        Self::snapshot_checks()
             .iter()
-            .all(|c| (c.check)() == HealthStatus::Healthy)
+            .all(|check| check() == HealthStatus::Healthy)
     }
 
     /// Check if the service is ready to receive traffic.
     ///
     /// Ready means no component is [`HealthStatus::Unhealthy`]. Degraded
-    /// components are acceptable — the service can still serve requests,
+    /// components are acceptable -- the service can still serve requests,
     /// just with reduced capability.
     ///
     /// Returns `true` if the registry is empty (vacuously true).
     #[must_use]
     pub fn is_ready() -> bool {
-        let registry = Self::global();
-        let Ok(components) = registry.components.lock() else {
-            return false;
-        };
-        components
+        Self::snapshot_checks()
             .iter()
-            .all(|c| (c.check)() != HealthStatus::Unhealthy)
+            .all(|check| check() != HealthStatus::Unhealthy)
     }
 
     /// Get per-component health status.
@@ -147,13 +155,21 @@ impl HealthRegistry {
     /// status. Useful for detailed health endpoints.
     #[must_use]
     pub fn components() -> Vec<(String, HealthStatus)> {
-        let registry = Self::global();
-        let Ok(components) = registry.components.lock() else {
-            return Vec::new();
+        // Snapshot (name, check) pairs under the lock; run checks after
+        // releasing it. See `snapshot_checks` for the reentrancy rationale.
+        let snapshot: Vec<(String, HealthCheck)> = {
+            let registry = Self::global();
+            let Ok(components) = registry.components.lock() else {
+                return Vec::new();
+            };
+            components
+                .iter()
+                .map(|c| (c.name.clone(), Arc::clone(&c.check)))
+                .collect()
         };
-        components
-            .iter()
-            .map(|c| (c.name.clone(), (c.check)()))
+        snapshot
+            .into_iter()
+            .map(|(name, check)| (name, check()))
             .collect()
     }
 
@@ -199,19 +215,20 @@ mod tests {
 
     use super::*;
 
-    /// Tests share global statics — serialise them.
+    /// Tests share global statics -- serialise them.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    macro_rules! serial_test {
-        () => {
-            let _guard = TEST_LOCK.lock().unwrap();
-            HealthRegistry::reset();
-        };
+    /// Acquire the shared test lock and reset global registry state.
+    /// Returned guard holds the lock for the caller's test body.
+    fn serial_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        HealthRegistry::reset();
+        guard
     }
 
     #[test]
     fn empty_registry_is_healthy() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         assert!(HealthRegistry::is_healthy());
         assert!(HealthRegistry::is_ready());
@@ -220,7 +237,7 @@ mod tests {
 
     #[test]
     fn register_and_check_healthy() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         HealthRegistry::register("transport", || HealthStatus::Healthy);
         HealthRegistry::register("database", || HealthStatus::Healthy);
@@ -238,7 +255,7 @@ mod tests {
 
     #[test]
     fn unhealthy_component_fails_check() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         HealthRegistry::register("transport", || HealthStatus::Healthy);
         HealthRegistry::register("database", || HealthStatus::Unhealthy);
@@ -249,7 +266,7 @@ mod tests {
 
     #[test]
     fn degraded_is_ready_but_not_healthy() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         HealthRegistry::register("transport", || HealthStatus::Healthy);
         HealthRegistry::register("circuit_breaker", || HealthStatus::Degraded);
@@ -260,7 +277,7 @@ mod tests {
 
     #[test]
     fn dynamic_health_check_reflects_state_changes() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         // Simulate a component whose health changes at runtime
         let state = Arc::new(AtomicU8::new(0)); // 0=healthy, 1=degraded, 2=unhealthy
@@ -304,7 +321,7 @@ mod tests {
     #[test]
     #[cfg(feature = "serde_json")]
     fn to_json_includes_all_components() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         HealthRegistry::register("kafka", || HealthStatus::Healthy);
         HealthRegistry::register("clickhouse", || HealthStatus::Degraded);
@@ -326,7 +343,7 @@ mod tests {
     #[test]
     #[cfg(feature = "serde_json")]
     fn to_json_empty_registry() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let json = HealthRegistry::to_json();
         assert_eq!(json["status"], "healthy");
@@ -336,7 +353,7 @@ mod tests {
     #[test]
     #[cfg(feature = "serde_json")]
     fn to_json_unhealthy_status() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         HealthRegistry::register("broken", || HealthStatus::Unhealthy);
 

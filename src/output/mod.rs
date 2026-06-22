@@ -3,12 +3,12 @@
 // Purpose:   File output sink module
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! File output sink for local NDJSON event writing.
 //!
-//! Provides a simple file-based output for DFE services — useful for testing,
+//! Provides a simple file-based output for DFE services -- useful for testing,
 //! bare-metal deployments, and debugging where Kafka is not available.
 //!
 //! ## Example

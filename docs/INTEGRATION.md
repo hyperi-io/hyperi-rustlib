@@ -22,7 +22,7 @@ KEDA, and ships container artefacts, the `Cargo.toml` reads:
 
 ```toml
 [dependencies.hyperi-rustlib]
-version = ">=2.7, <3"
+version = "2"
 features = [
     "cli-service",          # DfeApp trait, run_app, ServiceRuntime
     "config-reload",        # Hot-reload of the config cascade
@@ -205,9 +205,9 @@ In your app repo:
 
 ```
 config/
-├── defaults.yaml          # Safe fallback baseline (always loaded last)
-├── settings.yaml          # Team defaults (committed)
-└── settings.production.yaml   # Per-env overrides (committed)
+|-- defaults.yaml          # Safe fallback baseline (always loaded last)
+|-- settings.yaml          # Team defaults (committed)
+`-- settings.production.yaml   # Per-env overrides (committed)
 .env                       # Local-dev secrets (gitignored)
 ```
 
@@ -245,14 +245,14 @@ ends up there.
 
 ## 7. What you didn't have to write
 
-For the dfe-loader-shaped app above, the lines you wrote total roughly:
+For the dfe-loader-shaped app above, the code you actually write is:
 
-- ~30 lines of `Cargo.toml`
-- ~20 lines of config struct definitions
-- ~60 lines of `DfeApp` impl
-- ~5 lines of `main.rs`
-- ~50 lines of `deployment_contract()` builder
-- ~200 lines of actual pipeline business logic in `run_service`
+- a `Cargo.toml` dependency block
+- your config struct definitions
+- the `DfeApp` impl
+- a near-trivial `main.rs`
+- the `deployment_contract()` builder
+- your actual pipeline business logic in `run_service` — the bulk of it
 
 What you skipped:
 

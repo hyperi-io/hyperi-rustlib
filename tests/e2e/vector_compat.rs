@@ -3,7 +3,7 @@
 // Purpose:   Integration tests for Vector wire protocol compatibility
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Integration tests for Vector compat gRPC transport.
@@ -204,12 +204,11 @@ async fn test_vector_grpc_sink_to_transport() {
     server_config.recv_timeout_ms = 5000;
     let server_config = server_config.with_vector_compat();
 
+    // GrpcTransport::new binds the listener synchronously, so the server
+    // is accepting connections on return -- no post-construction wait.
     let server = GrpcTransport::new(&server_config)
         .await
         .expect("failed to create vector-compat server");
-
-    // Give server time to bind
-    tokio::time::sleep(Duration::from_millis(200)).await;
 
     let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let config_path = tmp_dir.path().join("vector.yaml");
@@ -250,7 +249,7 @@ sinks:
     assert_no_vector_errors(&stderr);
 
     // Receive events from the server
-    let messages = server.recv(100).await.expect("recv should succeed");
+    let messages = server.recv(100).await.expect("recv should succeed").records;
 
     assert!(
         !messages.is_empty(),
@@ -285,8 +284,6 @@ async fn test_vector_grpc_multiple_events() {
     let server = GrpcTransport::new(&server_config)
         .await
         .expect("failed to create vector-compat server");
-
-    tokio::time::sleep(Duration::from_millis(200)).await;
 
     let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
     let config_path = tmp_dir.path().join("vector.yaml");
@@ -329,7 +326,7 @@ sinks:
     // Collect all messages (may need multiple recv calls)
     let mut all_messages = Vec::new();
     loop {
-        let messages = server.recv(100).await.expect("recv should succeed");
+        let messages = server.recv(100).await.expect("recv should succeed").records;
         if messages.is_empty() {
             break;
         }
@@ -367,8 +364,6 @@ async fn test_vector_and_native_coexist() {
         .await
         .expect("failed to create vector-compat server");
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
     // Send native DFE messages
     let client_config = GrpcConfig::client(&format!("http://127.0.0.1:{port}"));
     let client = GrpcTransport::new(&client_config)
@@ -377,7 +372,7 @@ async fn test_vector_and_native_coexist() {
 
     for i in 0..3u32 {
         let payload = format!("native-{i}");
-        let result = client.send("topic", payload.as_bytes()).await;
+        let result = client.send("topic", bytes::Bytes::from(payload)).await;
         assert!(
             matches!(result, SendResult::Ok),
             "native send {i} should succeed: {result:?}"
@@ -426,7 +421,7 @@ sinks:
     // Collect all messages
     let mut all_messages = Vec::new();
     loop {
-        let messages = server.recv(100).await.expect("recv should succeed");
+        let messages = server.recv(100).await.expect("recv should succeed").records;
         if messages.is_empty() {
             break;
         }
@@ -461,8 +456,6 @@ async fn test_vector_compat_client_send() {
         .await
         .expect("failed to create vector-compat server");
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
     let client = VectorCompatClient::connect_lazy(&format!("http://127.0.0.1:{port}"))
         .expect("failed to create VectorCompatClient");
 
@@ -484,7 +477,7 @@ async fn test_vector_compat_client_send() {
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    let messages = server.recv(100).await.expect("recv should succeed");
+    let messages = server.recv(100).await.expect("recv should succeed").records;
 
     assert_eq!(messages.len(), 5, "should receive all 5 events");
 
@@ -640,8 +633,6 @@ async fn test_vector_compat_client_health_check() {
     let server = GrpcTransport::new(&server_config)
         .await
         .expect("failed to create vector-compat server");
-
-    tokio::time::sleep(Duration::from_millis(200)).await;
 
     let client = VectorCompatClient::connect_lazy(&format!("http://127.0.0.1:{port}"))
         .expect("failed to create VectorCompatClient");

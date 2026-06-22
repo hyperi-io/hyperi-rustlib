@@ -3,7 +3,7 @@
 // Purpose:   Auto-registering config registry for reflection and admin endpoints
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Reflectable configuration registry.
@@ -32,15 +32,21 @@
 //! ```
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde_json::Value as JsonValue;
 
 /// Global config registry singleton.
 static REGISTRY: Mutex<Option<Registry>> = Mutex::new(None);
 
-/// A boxed change listener callback.
-type ChangeCallback = Box<dyn Fn(&JsonValue) + Send>;
+/// A change listener callback.
+///
+/// `Arc<dyn ...>` not `Box<dyn ...>`: callbacks are snapshotted into a local
+/// Vec under the listener lock, then invoked after the lock drops. Holding the
+/// mutex during invocation deadlocked re-entrant callers (a callback that
+/// registers a new listener) and pulled callback work into the critical section.
+type ChangeCallback = Arc<dyn Fn(&JsonValue) + Send + Sync>;
+type ListenerCallback = ChangeCallback;
 
 /// Change listener storage.
 static LISTENERS: Mutex<Option<BTreeMap<String, Vec<ChangeCallback>>>> = Mutex::new(None);
@@ -58,7 +64,7 @@ pub struct ConfigSection {
     pub effective: JsonValue,
 }
 
-/// The config registry — stores all registered sections.
+/// The config registry -- stores all registered sections.
 #[derive(Debug, Clone, Default)]
 struct Registry {
     sections: BTreeMap<String, ConfigSection>,
@@ -107,7 +113,7 @@ pub fn sections() -> Vec<ConfigSection> {
 /// Applies heuristic redaction to fields whose names contain sensitive
 /// patterns (password, secret, token, key, credential, auth, private,
 /// cert, encryption). Fields with `#[serde(skip_serializing)]` are
-/// already excluded at serialisation time — this is the safety net for
+/// already excluded at serialisation time -- this is the safety net for
 /// fields that weren't annotated.
 #[must_use]
 pub fn dump_effective() -> JsonValue {
@@ -123,9 +129,12 @@ pub fn dump_effective() -> JsonValue {
     JsonValue::Object(map)
 }
 
-/// Dump effective config WITHOUT redaction (for internal/debug use only).
-///
-/// Do NOT expose this on any endpoint. Use `dump_effective()` for safe output.
+/// Dump effective config WITHOUT redaction. **Compile-time gated**
+/// behind the `dangerous-diagnostics` feature; not in `full`. Off
+/// in every shipping build. One-off operator-driven diagnostics
+/// only -- never wire to a network endpoint.
+#[cfg(feature = "dangerous-diagnostics")]
+#[cfg_attr(docsrs, doc(cfg(feature = "dangerous-diagnostics")))]
 #[must_use]
 pub fn dump_effective_unredacted() -> JsonValue {
     let map: serde_json::Map<String, JsonValue> = sections()
@@ -154,12 +163,8 @@ pub fn dump_defaults() -> JsonValue {
 ///
 /// Any JSON field whose name (lowercased) contains one of these
 /// substrings will have its value replaced with `"***REDACTED***"`.
-/// Field name patterns that trigger automatic redaction.
 ///
-/// Any JSON field whose name (lowercased) contains one of these
-/// substrings will have its value replaced with `"***REDACTED***"`.
-///
-/// This is a safety net — the primary protection is [`SensitiveString`]
+/// Safety net only -- the primary protection is [`SensitiveString`]
 /// on the field type (compile-time safe). This heuristic catches fields
 /// that developers forgot to mark as sensitive.
 const SENSITIVE_PATTERNS: &[&str] = &[
@@ -226,13 +231,13 @@ pub fn get_section(key: &str) -> Option<ConfigSection> {
 /// simply use the `OnceLock` pattern and ignore change events.
 ///
 /// The callback receives the new effective value as JSON.
-pub fn on_change(key: &str, callback: impl Fn(&JsonValue) + Send + 'static) {
+pub fn on_change(key: &str, callback: impl Fn(&JsonValue) + Send + Sync + 'static) {
     if let Ok(mut guard) = LISTENERS.lock() {
         let listeners = guard.get_or_insert_with(BTreeMap::new);
         listeners
             .entry(key.to_string())
             .or_default()
-            .push(Box::new(callback));
+            .push(Arc::new(callback));
     }
 }
 
@@ -260,11 +265,16 @@ where
         registry.sections.insert(key.to_string(), section);
     }
 
-    // Notify listeners
-    if let Ok(guard) = LISTENERS.lock()
-        && let Some(listeners) = &*guard
-        && let Some(callbacks) = listeners.get(key)
-    {
+    // Snapshot callbacks under the lock, drop the guard, then invoke. A
+    // callback that re-registers a listener would deadlock the mutex
+    // otherwise; callback work (alloc, I/O) also shouldn't run under a
+    // global lock.
+    let snapshot: Option<Vec<ListenerCallback>> = LISTENERS.lock().ok().and_then(|guard| {
+        guard
+            .as_ref()
+            .and_then(|listeners| listeners.get(key).map(|cbs| cbs.iter().cloned().collect()))
+    });
+    if let Some(callbacks) = snapshot {
         for cb in callbacks {
             cb(&effective_json);
         }
@@ -289,14 +299,15 @@ mod tests {
 
     use super::*;
 
-    /// Tests share global statics — serialise them.
+    /// Tests share global statics -- serialise them.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    macro_rules! serial_test {
-        () => {
-            let _guard = TEST_LOCK.lock().unwrap();
-            clear();
-        };
+    /// Acquire the shared test lock and reset global registry state.
+    /// Returned guard holds the lock for the caller's test body.
+    fn serial_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear();
+        guard
     }
 
     #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default, PartialEq)]
@@ -325,7 +336,7 @@ mod tests {
 
     #[test]
     fn register_and_retrieve() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = TestConfig {
             enabled: true,
@@ -352,7 +363,7 @@ mod tests {
 
     #[test]
     fn sections_returns_sorted() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         register::<TestConfig>("zebra", &TestConfig::default());
         register::<TestConfig>("alpha", &TestConfig::default());
@@ -364,7 +375,7 @@ mod tests {
 
     #[test]
     fn dump_effective_redacts_sensitive_fields() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = SensitiveConfig {
             host: "db.example.com".into(),
@@ -392,9 +403,10 @@ mod tests {
         assert_eq!(dump["db"]["nested"]["db_password"], REDACTED);
     }
 
+    #[cfg(feature = "dangerous-diagnostics")]
     #[test]
     fn dump_unredacted_preserves_all_fields() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = SensitiveConfig {
             password: "visible".into(),
@@ -408,7 +420,7 @@ mod tests {
 
     #[test]
     fn dump_defaults_returns_default_values() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         register::<TestConfig>(
             "my_module",
@@ -426,7 +438,7 @@ mod tests {
 
     #[test]
     fn re_register_overwrites() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let v1 = TestConfig {
             threshold: 0.5,
@@ -445,7 +457,7 @@ mod tests {
 
     #[test]
     fn empty_registry() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         assert!(sections().is_empty());
         assert_eq!(dump_effective(), JsonValue::Object(serde_json::Map::new()));
@@ -458,7 +470,7 @@ mod tests {
 
     #[test]
     fn on_change_fires_on_update() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
@@ -482,7 +494,7 @@ mod tests {
 
     #[test]
     fn on_change_receives_new_value() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let captured = Arc::new(Mutex::new(JsonValue::Null));
         let captured_clone = captured.clone();
@@ -507,7 +519,7 @@ mod tests {
 
     #[test]
     fn on_change_only_fires_for_subscribed_key() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
@@ -516,18 +528,18 @@ mod tests {
             counter_clone.fetch_add(1, Ordering::Relaxed);
         });
 
-        // Update a different key — listener should NOT fire
+        // Update a different key -- listener should NOT fire
         update::<TestConfig>("key_b", &TestConfig::default());
         assert_eq!(counter.load(Ordering::Relaxed), 0);
 
-        // Update the subscribed key — listener fires
+        // Update the subscribed key -- listener fires
         update::<TestConfig>("key_a", &TestConfig::default());
         assert_eq!(counter.load(Ordering::Relaxed), 1);
     }
 
     #[test]
     fn update_also_registers() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         assert!(!is_registered("fresh"));
         update::<TestConfig>(
@@ -625,7 +637,7 @@ mod tests {
 
     #[test]
     fn redaction_covers_all_sensitive_patterns() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = AllSensitivePatterns {
             my_password: "pass123".into(),
@@ -668,7 +680,7 @@ mod tests {
 
     #[test]
     fn redaction_is_case_insensitive() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = MixedCase {
             password_upper: "visible_if_broken".into(),
@@ -687,7 +699,7 @@ mod tests {
 
     #[test]
     fn redaction_handles_deeply_nested_secrets() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = DeepNested {
             level1: Level1 {
@@ -710,7 +722,7 @@ mod tests {
 
     #[test]
     fn redaction_handles_arrays_with_sensitive_objects() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = WithArray {
             items: vec![
@@ -736,7 +748,7 @@ mod tests {
 
     #[test]
     fn no_secret_values_in_redacted_dump_string() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let secrets = [
             "hunter2",
@@ -768,7 +780,7 @@ mod tests {
 
     #[test]
     fn defaults_dump_also_redacted() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         register::<WithDefaultSecret>("default_secrets", &WithDefaultSecret::default());
 
@@ -779,7 +791,7 @@ mod tests {
 
     #[test]
     fn skip_serializing_plus_heuristic_double_protection() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let config = DoubleProtected {
             hidden_secret: "should_not_appear".into(),
@@ -808,7 +820,7 @@ mod tests {
 
     #[test]
     fn multiple_listeners_on_same_key() {
-        serial_test!();
+        let _guard = serial_test_guard();
 
         let c1 = Arc::new(AtomicU32::new(0));
         let c2 = Arc::new(AtomicU32::new(0));

@@ -1,39 +1,37 @@
 # Contract
 
-`DeploymentContract` is the single struct every HyperI service fills
-in once. From it, rustlib derives every deployment artefact the
-service needs — Dockerfile, Helm chart, Compose fragment, ArgoCD
-`Application`, container manifest, runtime-stage fragment — without
-the app touching a YAML template.
+`DeploymentContract` is the one struct each HyperI service fills in.
+From it, rustlib derives every deployment artefact -- Dockerfile, Helm
+chart, Compose fragment, ArgoCD `Application`, container manifest,
+runtime-stage fragment -- with no YAML templates in the app.
 
-The pitch: **fill in the 20% that's app-specific, get the 80% that's
-boilerplate for free**. Drift between the contract and the generated
-artefacts is caught by `validate_*` in CI.
+Fill in the 20% that's app-specific, get the 80% boilerplate for free.
+`validate_*` catches contract-vs-artefact drift in CI.
 
 ---
 
 ## Why a contract
 
-Hand-maintained Dockerfiles and Helm charts rot. Ports get added to
-the binary but never the chart; healthcheck paths change; new secrets
-land in code but the K8s `Secret` template still references the old
-key names. The contract makes the binary the source of truth — the
-app declares its surface, generation produces matching artefacts,
-validation guards the boundary.
+Hand-maintained Dockerfiles and Helm charts rot: ports added to the
+binary but never the chart, healthcheck paths change, new secrets land
+in code while the `Secret` template references old key names. The
+contract makes the binary the source of truth -- the app declares its
+surface, generation produces matching artefacts, validation guards the
+boundary.
 
 ---
 
 ## Schema versioning
 
-`DeploymentContract::schema_version` is checked by CI. The current
-version is **2**. Bumps happen when the struct shape changes in a
-way that breaks downstream consumers — the version field gives CI a
+`DeploymentContract::schema_version` is checked by CI, giving a
 fail-fast hook before generation runs against a stale contract.
+Current version is **2** (the field defaults to 2). Bump it when the
+struct shape changes in a way that breaks downstream consumers.
 
 | Version | Notes |
 |---------|-------|
-| 1 | Initial shape — no `image_profile`, no `oci_labels` |
-| 2 | Current — `ImageProfile`, `OciLabels`, restructured secrets (`SecretGroupContract`) |
+| 1 | Initial shape -- no `image_profile`, no `oci_labels` |
+| 2 | Current -- `ImageProfile`, `OciLabels`, `SecretGroupContract` |
 
 ---
 
@@ -53,14 +51,14 @@ flowchart LR
 
 | Tier | Producer | Status |
 |------|----------|--------|
-| 1 | rustlib (this crate) — Rust services emit the contract from their config struct | **Shipped** |
-| 2 | pylib — Python services emit the same contract shape | **Roadmap** |
-| 3 | hyperi-ci templater — bash/TS/Go services emit the contract via templating | **Roadmap** |
+| 1 | rustlib (this crate) -- Rust services emit the contract from their config struct | **Shipped** |
+| 2 | pylib -- Python services emit the same contract shape | **Roadmap** |
+| 3 | hyperi-ci templater -- bash/TS/Go services emit the contract via templating | **Roadmap** |
 
-Tier 2/3 are aspirational — the contract is JSON-serialisable and
+Tier 2/3 are aspirational. The contract is JSON-serialisable and
 language-neutral by design, but only the Rust producer exists today.
-Cross-language consumers should read `deployment-contract.json` (the
-serialised form), not import this crate.
+Cross-language consumers read `deployment-contract.json` (the
+serialised form), not this crate.
 
 ---
 
@@ -112,10 +110,10 @@ let contract = DeploymentContract {
 };
 ```
 
-The shape that bites people most often is `secrets` — it's `Vec<SecretGroupContract>`,
-not flat. Each group bundles env vars sharing the same K8s `Secret`
-(e.g. one Secret per backend: Kafka credentials, ClickHouse password,
-Vault token).
+The field that bites people is `secrets`: it's `Vec<SecretGroupContract>`,
+not flat. Each group bundles env vars sharing one K8s `Secret` (one
+Secret per backend -- Kafka credentials, ClickHouse password, Vault
+token).
 
 | Field | Purpose |
 |-------|---------|
@@ -128,38 +126,36 @@ Vault token).
 
 ## Dev profile derivation
 
-`ImageProfile::Development` is a one-line variant — same binary,
-same linking, plus diagnostic tools (`bash`, `strace`, `tcpdump`,
-`procps`, `dnsutils`, `net-tools`, `less`, `jq`) and a `-dev` image
-tag suffix.
+`ImageProfile::Development` is a one-line variant: same binary, same
+linking, plus diagnostic tools (`bash`, `strace`, `tcpdump`, `procps`,
+`dnsutils`, `net-tools`, `less`, `jq`) and a `-dev` image tag suffix.
 
 ```rust
 let prod = build_contract();
 let dev  = prod.with_dev_profile();   // ImageProfile::Development
 
-generate_dockerfile(&prod);    // ubuntu:24.04 + runtime libs only
-generate_dockerfile(&dev);     // + strace, tcpdump, ...
+generate_dockerfile(&prod, None);    // ubuntu:24.04 + runtime libs only
+generate_dockerfile(&dev, None);     // + strace, tcpdump, ...
 ```
 
-CI typically produces both: `:1.15.0` (prod) and `:1.15.0-dev` (dev).
-Operators pull the dev image into a debug pod for forensic work
-without rebuilding.
+CI produces both: `:1.15.0` (prod) and `:1.15.0-dev` (dev). Operators
+pull the dev image into a debug pod for forensic work without
+rebuilding.
 
 ---
 
 ## Cascade-driven defaults
 
 Three fields read from the config cascade so ops can change them
-org-wide without rebuilding each app:
+org-wide without rebuilding each app. Wire them into the contract
+builder to pull registry and base image from `settings.yaml` rather
+than baking them into source.
 
 | Function | Cascade key | Default |
 |----------|-------------|---------|
 | `image_registry_from_cascade()` | `deployment.image_registry` | `ghcr.io/hyperi-io` |
 | `base_image_from_cascade()` | `deployment.base_image` | `ubuntu:24.04` |
 | `argocd_repo_url_from_cascade(app)` | `deployment.argocd.repo_url` | `https://github.com/hyperi-io/<app>` |
-
-Apps wire these into their contract builder so the registry and base
-image are pulled from `settings.yaml` rather than baked into source.
 
 ---
 
@@ -178,8 +174,8 @@ image are pulled from `settings.yaml` rather than baked into source.
 | `SecretGroupContract` | One K8s Secret's worth of env vars |
 | `SecretEnvContract` | Single env var sourced from a Secret key |
 | `OciLabels` | Static OCI labels (`title`, `description`, `vendor`, `licenses`) |
-| `NativeDepsContract` | Runtime APT packages — see [NATIVE-DEPS.md](NATIVE-DEPS.md) |
-| `KedaContract` | Autoscaling thresholds — see [KEDA.md](KEDA.md) |
+| `NativeDepsContract` | Runtime APT packages -- see [NATIVE-DEPS.md](NATIVE-DEPS.md) |
+| `KedaContract` | Autoscaling thresholds -- see [KEDA.md](KEDA.md) |
 | `ArgocdConfig` | ArgoCD `Application` repo / path / namespace |
 | `DEFAULT_IMAGE_REGISTRY` / `DEFAULT_BASE_IMAGE` | Defaults used when cascade is silent |
 | `image_registry_from_cascade()` / `base_image_from_cascade()` / `argocd_repo_url_from_cascade()` | Cascade readers |
@@ -188,10 +184,9 @@ image are pulled from `settings.yaml` rather than baked into source.
 
 ## CI integration
 
-The contract is emitted by `<app> generate-artefacts --output-dir ci/`,
-a standard subcommand from the `cli` feature. CI then runs `validate_*`
-to confirm the chart/Dockerfile in the repo still match what the
-contract describes.
+`<app> generate-artefacts --output-dir ci/` (a `cli`-feature
+subcommand) emits the contract. CI then runs `validate_*` to confirm
+the repo's chart/Dockerfile still match the contract.
 
 See [ARTEFACTS.md](ARTEFACTS.md) for what generation writes and
 [../INTEGRATION.md](../INTEGRATION.md) for the `DfeApp::deployment_contract`
@@ -201,10 +196,10 @@ hook that exposes the contract to the CLI.
 
 ## Related
 
-- [ARTEFACTS.md](ARTEFACTS.md) — what `generate-artefacts` writes
-- [NATIVE-DEPS.md](NATIVE-DEPS.md) — auto-detected APT packages
-- [KEDA.md](KEDA.md) — autoscaling contract
-- [../AUTO-WIRING.md](../AUTO-WIRING.md) — singleton pattern
-- [../INTEGRATION.md](../INTEGRATION.md) — `DfeApp` trait
-- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) — `deployment`, `cli`
+- [ARTEFACTS.md](ARTEFACTS.md) -- what `generate-artefacts` writes
+- [NATIVE-DEPS.md](NATIVE-DEPS.md) -- auto-detected APT packages
+- [KEDA.md](KEDA.md) -- autoscaling contract
+- [../AUTO-WIRING.md](../AUTO-WIRING.md) -- singleton pattern
+- [../INTEGRATION.md](../INTEGRATION.md) -- `DfeApp` trait
+- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) -- `deployment`, `cli`
 - Source: [../../src/deployment/contract.rs](../../src/deployment/contract.rs)

@@ -22,7 +22,7 @@ that costs.
 
 ```toml
 [dependencies.hyperi-rustlib]
-version = ">=2.7, <3"
+version = "2"
 # default = ["config", "logger"]
 ```
 

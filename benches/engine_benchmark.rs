@@ -3,7 +3,7 @@
 // Purpose:   Criterion benchmarks for BatchEngine throughput and overhead
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use std::sync::Arc;
@@ -11,21 +11,20 @@ use std::sync::Arc;
 use bytes::Bytes;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
-use hyperi_rustlib::worker::engine::types::{MessageMetadata, PayloadFormat, RawMessage};
+use hyperi_rustlib::transport::{PayloadFormat, Record, RecordMeta};
 use hyperi_rustlib::worker::engine::{BatchEngine, BatchProcessingConfig};
 
-fn make_messages(n: usize) -> Vec<RawMessage> {
+fn make_messages(n: usize) -> Vec<Record> {
     (0..n)
-        .map(|i| RawMessage {
+        .map(|i| Record {
             payload: Bytes::from(format!(
                 r#"{{"_table":"events","host":"web-{i}","source_type":"syslog","id":{i},"timestamp":"2026-04-02T12:00:00Z","message":"Event number {i} with some padding data to make it realistic"}}"#
             )),
             key: Some(Arc::from("partition-key")),
             headers: vec![],
-            metadata: MessageMetadata {
+            metadata: RecordMeta {
                 timestamp_ms: Some(1_743_580_800_000),
                 format: PayloadFormat::Json,
-                commit_token: None,
             },
         })
         .collect()

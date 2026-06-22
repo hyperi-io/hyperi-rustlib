@@ -3,66 +3,57 @@
 // Purpose:   Transport error types
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-use std::fmt;
+use thiserror::Error;
 
 /// Result type for transport operations.
 pub type TransportResult<T> = Result<T, TransportError>;
 
 /// Errors that can occur during transport operations.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum TransportError {
     /// Configuration error (missing or invalid config).
+    #[error("transport config error: {0}")]
     Config(String),
 
     /// Connection error (network, auth, etc.).
+    #[error("transport connection error: {0}")]
     Connection(String),
 
     /// Send operation failed.
+    #[error("transport send error: {0}")]
     Send(String),
 
     /// Receive operation failed.
+    #[error("transport receive error: {0}")]
     Recv(String),
 
     /// Commit/acknowledge operation failed.
+    #[error("transport commit error: {0}")]
     Commit(String),
 
     /// Transport is closed or shutting down.
+    #[error("transport closed")]
     Closed,
 
     /// Timeout waiting for operation.
+    #[error("transport operation timed out")]
     Timeout,
 
-    /// Backpressure - transport cannot accept more messages.
+    /// Backpressure -- transport cannot accept more messages.
+    #[error("transport backpressure")]
     Backpressure,
 
     /// Internal transport error.
+    #[error("transport internal error: {0}")]
     Internal(String),
 
     /// Admin operation error (topic/partition management).
+    #[error("transport admin error: {0}")]
     Admin(String),
 }
-
-impl fmt::Display for TransportError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Config(msg) => write!(f, "transport config error: {msg}"),
-            Self::Connection(msg) => write!(f, "transport connection error: {msg}"),
-            Self::Send(msg) => write!(f, "transport send error: {msg}"),
-            Self::Recv(msg) => write!(f, "transport receive error: {msg}"),
-            Self::Commit(msg) => write!(f, "transport commit error: {msg}"),
-            Self::Closed => write!(f, "transport closed"),
-            Self::Timeout => write!(f, "transport operation timed out"),
-            Self::Backpressure => write!(f, "transport backpressure"),
-            Self::Internal(msg) => write!(f, "transport internal error: {msg}"),
-            Self::Admin(msg) => write!(f, "transport admin error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for TransportError {}
 
 impl TransportError {
     /// Returns true if this error is recoverable (retry may succeed).

@@ -3,7 +3,7 @@
 // Purpose:   Sensitive data masking for log output
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Sensitive data masking for tracing log output.
@@ -257,7 +257,7 @@ fn inject_and_redact_json_line(
                 );
             }
 
-            // Inject K8s context fields (no-op on bare metal — fields are None)
+            // Inject K8s context fields (no-op on bare metal -- fields are None)
             let ctx = crate::env::runtime_context();
             if let Some(ref pod) = ctx.pod_name {
                 map.insert(
@@ -344,7 +344,7 @@ fn redact_text_line(line: &str, sensitive: &HashSet<String>) -> String {
                     result.push_str(REDACTED);
                     pos = value_end;
                 } else {
-                    // Not sensitive — copy through the '=' and continue
+                    // Not sensitive -- copy through the '=' and continue
                     result.push_str(&line[pos..=eq_pos]);
                     pos = eq_pos + 1;
                 }
@@ -361,7 +361,7 @@ fn skip_field_value(line: &str, start: usize) -> usize {
         return start;
     }
     if line.as_bytes()[start] == b'"' {
-        // Quoted value — find closing quote (handle escaped quotes)
+        // Quoted value -- find closing quote (handle escaped quotes)
         let mut i = start + 1;
         while i < line.len() {
             if line.as_bytes()[i] == b'"' && line.as_bytes()[i - 1] != b'\\' {
@@ -371,7 +371,7 @@ fn skip_field_value(line: &str, start: usize) -> usize {
         }
         line.len()
     } else {
-        // Unquoted value — ends at next whitespace
+        // Unquoted value -- ends at next whitespace
         line[start..]
             .find(char::is_whitespace)
             .map_or(line.len(), |wp| start + wp)
@@ -383,32 +383,71 @@ fn skip_field_value(line: &str, start: usize) -> usize {
 /// Replaces values that look like tokens, keys, or passwords with `[REDACTED]`.
 #[must_use]
 pub fn mask_sensitive_string(input: &str, patterns: &[&str]) -> String {
-    let mut result = input.to_string();
-
+    // Build a flat list of search needles. We sweep the input once per
+    // needle, replacing every occurrence -- not just the first -- so a
+    // `Debug` dump of a config with several secret-shaped fields gets
+    // every value redacted, not only the leftmost one.
+    let mut needles: Vec<String> = Vec::with_capacity(patterns.len() * 3);
     for pattern in patterns {
-        // Simple pattern matching for key=value or "key": "value"
-        let search_patterns = [
-            format!("{pattern}="),
-            format!("{pattern}:"),
-            format!("\"{pattern}\""),
-        ];
+        let p_lower = pattern.to_lowercase();
+        needles.push(format!("{p_lower}="));
+        needles.push(format!("{p_lower}:"));
+        needles.push(format!("\"{p_lower}\""));
+    }
 
-        for search in &search_patterns {
-            if let Some(start) = result.to_lowercase().find(&search.to_lowercase()) {
-                // Find the value after the pattern
-                let value_start = start + search.len();
-                if let Some(rest) = result.get(value_start..) {
-                    // Find end of value (space, comma, quote, or end of string)
-                    let value_end = rest
-                        .find(|c: char| c.is_whitespace() || c == ',' || c == '"' || c == '}')
-                        .unwrap_or(rest.len());
+    // Operate on a lowercased view for case-insensitive matching but keep
+    // the original casing in the output (Rust `Debug` and YAML both vary).
+    let lower = input.to_lowercase();
+    let mut result = String::with_capacity(input.len());
+    let mut cursor = 0usize;
 
-                    let before = &result[..value_start];
-                    let after = &rest[value_end..];
-                    result = format!("{before}{REDACTED}{after}");
-                }
-            }
+    while cursor < lower.len() {
+        // Find the earliest occurrence of any needle from `cursor` onwards.
+        let next_hit = needles
+            .iter()
+            .filter_map(|n| {
+                lower[cursor..]
+                    .find(n.as_str())
+                    .map(|off| (cursor + off, n.len()))
+            })
+            .min_by_key(|(start, _len)| *start);
+        let Some((match_start, needle_len)) = next_hit else {
+            // No more matches -- copy the rest verbatim.
+            result.push_str(&input[cursor..]);
+            break;
+        };
+        // Copy bytes up to AND INCLUDING the needle (e.g. `password=`).
+        let value_start = match_start + needle_len;
+        result.push_str(&input[cursor..value_start]);
+        // Determine where the value ends. JSON/YAML/Rust-Debug all use
+        // similar value delimiters. For quoted values (`"key": "..."`)
+        // the opening quote is part of the needle ("\"key\""); the
+        // closing delimiter is the matching `"`. For unquoted values
+        // (`key=val` / `key: val`) the value ends at whitespace or a
+        // structural character.
+        let rest = &input[value_start..];
+        let value_end = if rest.starts_with(": ") || rest.starts_with(':') || rest.starts_with('=')
+        {
+            // Skip the separator(s) themselves so the redaction replaces
+            // ONLY the value, not the colon/equals.
+            let sep_skip = rest
+                .find(|c: char| !matches!(c, ' ' | ':' | '='))
+                .unwrap_or(rest.len());
+            sep_skip
+                + rest[sep_skip..]
+                    .find([',', '\n', '}', ')', ';'])
+                    .unwrap_or(rest.len() - sep_skip)
+        } else {
+            rest.find(|c: char| c.is_whitespace() || c == ',' || c == '"' || c == '}')
+                .unwrap_or(rest.len())
+        };
+        // Re-emit the separator (if any) before the REDACTED placeholder.
+        let value_bytes = &rest[..value_end];
+        if let Some(sep_end) = value_bytes.find(|c: char| !matches!(c, ' ' | ':' | '=')) {
+            result.push_str(&value_bytes[..sep_end]);
         }
+        result.push_str(REDACTED);
+        cursor = value_start + value_end;
     }
 
     result

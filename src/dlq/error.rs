@@ -3,7 +3,7 @@
 // Purpose:   DLQ error types
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Error types for the DLQ module.
@@ -47,7 +47,7 @@ pub enum DlqError {
     #[error("DLQ queue is full")]
     QueueFull,
 
-    /// DLQ has been shut down — no further entries accepted.
+    /// DLQ has been shut down -- no further entries accepted.
     #[error("DLQ has shut down")]
     Closed,
 }

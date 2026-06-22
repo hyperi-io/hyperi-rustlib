@@ -3,13 +3,14 @@
 // Purpose:   HTTP server implementation
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! HTTP server implementation using axum.
 
 use crate::http_server::{HttpServerConfig, HttpServerError, Result};
 use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
+use std::future::IntoFuture;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,6 +18,7 @@ use tokio::net::TcpListener;
 #[cfg(not(feature = "shutdown"))]
 use tokio::signal;
 use tokio::sync::watch;
+use tower::limit::ConcurrencyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
@@ -72,13 +74,7 @@ impl HttpServer {
         Arc::clone(&self.ready)
     }
 
-    /// Serve the given router until a shutdown signal is received.
-    ///
-    /// This method will:
-    /// 1. Bind to the configured address
-    /// 2. Optionally add health check endpoints
-    /// 3. Run until SIGTERM or SIGINT is received
-    /// 4. Perform graceful shutdown
+    /// Serve the given router until SIGTERM/SIGINT, then drain gracefully.
     ///
     /// # Errors
     ///
@@ -106,6 +102,11 @@ impl HttpServer {
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
+        // Enforce config validity before binding: a
+        // config requesting unsupported in-process TLS must fail loudly here,
+        // not bind cleartext while is_tls_enabled() reports true.
+        self.config.validate().map_err(HttpServerError::TlsConfig)?;
+        let shutdown_timeout = self.config.shutdown_timeout();
         let app = self.build_router(app);
 
         let addr: SocketAddr =
@@ -127,10 +128,43 @@ impl HttpServer {
         #[cfg(feature = "logger")]
         tracing::info!(address = %addr, "HTTP server listening");
 
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown)
-            .await
-            .map_err(HttpServerError::Io)?;
+        // Two-phase: unbounded wait for shutdown, then bounded drain.
+        // If drain exceeds shutdown_timeout, drop the serve future
+        // so K8s terminationGracePeriodSeconds isn't blown.
+        //
+        // F12: flip ready -> false BEFORE notifying drain start so
+        // /health/ready returns 503 the moment shutdown is signalled.
+        // K8s endpoint controller catches the 503 and stops routing
+        // before in-flight requests finish draining.
+        let (drain_started_tx, drain_started_rx) = tokio::sync::oneshot::channel();
+        let drain_started_tx = std::sync::Mutex::new(Some(drain_started_tx));
+        let ready_for_signal = Arc::clone(&self.ready);
+        let signal = async move {
+            shutdown.await;
+            ready_for_signal.store(false, Ordering::SeqCst);
+            if let Some(tx) = drain_started_tx.lock().ok().and_then(|mut g| g.take()) {
+                let _ = tx.send(());
+            }
+        };
+        // WithGracefulShutdown is IntoFuture, not Future.
+        let serve = axum::serve(listener, app)
+            .with_graceful_shutdown(signal)
+            .into_future();
+        tokio::pin!(serve);
+
+        tokio::select! {
+            result = &mut serve => result.map_err(HttpServerError::Io)?,
+            () = async {
+                let _ = drain_started_rx.await;
+                tokio::time::sleep(shutdown_timeout).await;
+            } => {
+                #[cfg(feature = "logger")]
+                tracing::warn!(
+                    timeout_ms = u64::try_from(shutdown_timeout.as_millis()).unwrap_or(u64::MAX),
+                    "HTTP server graceful drain timed out -- forcing exit"
+                );
+            }
+        }
 
         #[cfg(feature = "logger")]
         tracing::info!("HTTP server shut down gracefully");
@@ -146,13 +180,12 @@ impl HttpServer {
     ///
     /// Returns an error if binding fails.
     pub async fn serve_with_handle(self, app: Router) -> Result<(ShutdownHandle, ServerFuture)> {
+        // Same validation gate as serve_with_shutdown.
+        self.config.validate().map_err(HttpServerError::TlsConfig)?;
         let (tx, rx) = watch::channel(());
         let handle = ShutdownHandle { sender: tx };
 
-        let shutdown = async move {
-            let _ = rx.clone().changed().await;
-        };
-
+        let shutdown_timeout = self.config.shutdown_timeout();
         let app = self.build_router(app);
 
         let addr: SocketAddr =
@@ -174,12 +207,41 @@ impl HttpServer {
         #[cfg(feature = "logger")]
         tracing::info!(address = %addr, "HTTP server listening");
 
+        // Two-phase shutdown, matching `serve_with_shutdown`.
+        // F12: flip ready -> false before notifying drain start.
+        let (drain_started_tx, drain_started_rx) = tokio::sync::oneshot::channel();
+        let drain_started_tx = std::sync::Mutex::new(Some(drain_started_tx));
+        let ready_for_signal = Arc::clone(&self.ready);
+        let signal = async move {
+            let _ = rx.clone().changed().await;
+            ready_for_signal.store(false, Ordering::SeqCst);
+            if let Some(tx) = drain_started_tx.lock().ok().and_then(|mut g| g.take()) {
+                let _ = tx.send(());
+            }
+        };
+
         let future = ServerFuture {
             inner: Box::pin(async move {
-                axum::serve(listener, app)
-                    .with_graceful_shutdown(shutdown)
-                    .await
-                    .map_err(HttpServerError::Io)
+                let serve = axum::serve(listener, app)
+                    .with_graceful_shutdown(signal)
+                    .into_future();
+                tokio::pin!(serve);
+
+                tokio::select! {
+                    result = &mut serve => result.map_err(HttpServerError::Io)?,
+                    () = async {
+                        let _ = drain_started_rx.await;
+                        tokio::time::sleep(shutdown_timeout).await;
+                    } => {
+                        #[cfg(feature = "logger")]
+                        tracing::warn!(
+                            timeout_ms = u64::try_from(shutdown_timeout.as_millis()).unwrap_or(u64::MAX),
+                            "HTTP server graceful drain timed out -- forcing exit"
+                        );
+                    }
+                }
+
+                Ok(())
             }),
         };
 
@@ -198,10 +260,17 @@ impl HttpServer {
 
         if self.config.enable_health_endpoints {
             let ready = Arc::clone(&self.ready);
-            router = router.route("/health/live", get(health_live)).route(
-                "/health/ready",
-                get(move || health_ready(Arc::clone(&ready))),
-            );
+            // K8s-standard paths are /healthz and /readyz; the
+            // /health/live and /health/ready aliases stay for
+            // backward compat with existing consumer probes.
+            // Kaz #38: docs claim /readyz, code only had /health/ready.
+            let r1 = Arc::clone(&ready);
+            let r2 = Arc::clone(&ready);
+            router = router
+                .route("/health/live", get(health_live))
+                .route("/health/ready", get(move || health_ready(Arc::clone(&r1))))
+                .route("/healthz", get(health_live))
+                .route("/readyz", get(move || health_ready(Arc::clone(&r2))));
         }
 
         #[cfg(all(feature = "health", feature = "serde_json"))]
@@ -214,13 +283,83 @@ impl HttpServer {
             router = router.route("/config", get(config_dump));
         }
 
+        // New default (metrics audit): http-server emits ZERO today. Add the
+        // originator scale signals (spec 5b) -- in-flight gauge + shed counter
+        // + requests counter + duration histogram -- via a thin axum middleware.
+        // Route label is OMITTED deliberately (only method + status): a clean
+        // templated route is not reachable from this `from_fn` seam, and the raw
+        // path is a cardinality bomb. The `metrics` crate is not part of the
+        // `http-server` feature, so the whole layer is `metrics`-gated.
+        #[cfg(feature = "metrics")]
+        let router = router.layer(axum::middleware::from_fn(http_server_metrics));
+
         router
             .layer(TraceLayer::new_for_http())
             .layer(TimeoutLayer::with_status_code(
                 StatusCode::REQUEST_TIMEOUT,
                 self.config.request_timeout(),
             ))
+            // Cap in-flight requests. Queue fills under load;
+            // upstream should see backpressure via send-timeout.
+            .layer(ConcurrencyLimitLayer::new(self.config.max_connections))
     }
+}
+
+/// Axum middleware that records the built-in HTTP-server metrics.
+///
+/// - `dfe_http_server_inflight_requests` gauge: maintained directly (inc on
+///   arrival, dec on completion) -- the primary push-originator scale signal.
+/// - `dfe_http_server_requests_total{method,status}` counter: RPS by outcome.
+/// - `dfe_http_server_request_duration_seconds` histogram.
+/// - `dfe_http_server_shed_total` counter: 503s (self-regulation shedding).
+///
+/// No route label (bounded cardinality -- see `build_router`). Named `dfe_`
+/// to sit alongside the other transport-family metrics (no MetricsManager
+/// namespace is threaded into the HTTP server).
+#[cfg(feature = "metrics")]
+async fn http_server_metrics(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    // RAII so the in-flight gauge is balanced even if the request future is
+    // DROPPED at the await (timeout / client disconnect / handler panic) --
+    // a bare inc/dec pair leaks the gauge upward on every such request and
+    // poisons the exact push-originator scale signal this metric exists for.
+    struct InflightGuard;
+    impl InflightGuard {
+        fn new() -> Self {
+            metrics::gauge!("dfe_http_server_inflight_requests").increment(1.0);
+            Self
+        }
+    }
+    impl Drop for InflightGuard {
+        fn drop(&mut self) {
+            metrics::gauge!("dfe_http_server_inflight_requests").decrement(1.0);
+        }
+    }
+
+    let method = req.method().as_str().to_owned();
+    let start = std::time::Instant::now();
+    let _inflight = InflightGuard::new();
+
+    // If this await is cancelled, `_inflight` drops -> the gauge is decremented;
+    // the completion counters below are correctly skipped (no completed status).
+    let response = next.run(req).await;
+
+    let status = response.status();
+    metrics::counter!(
+        "dfe_http_server_requests_total",
+        "method" => method,
+        "status" => status.as_u16().to_string()
+    )
+    .increment(1);
+    metrics::histogram!("dfe_http_server_request_duration_seconds")
+        .record(start.elapsed().as_secs_f64());
+    if status == StatusCode::SERVICE_UNAVAILABLE {
+        metrics::counter!("dfe_http_server_shed_total").increment(1);
+    }
+
+    response
 }
 
 /// Handle for triggering server shutdown.
@@ -428,6 +567,59 @@ mod tests {
 
         // Wait for server to finish
         future.await.unwrap();
+    }
+
+    /// Kaz #38: K8s-standard `/healthz` and `/readyz` paths must
+    /// be live alongside the legacy `/health/live` and
+    /// `/health/ready` aliases.
+    #[tokio::test]
+    async fn k8s_standard_health_paths_are_mounted() {
+        let config = HttpServerConfig::default();
+        let server = HttpServer::new(config);
+        let app = server.build_router(Router::new());
+
+        for path in &["/healthz", "/readyz"] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(*path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "path={path}");
+        }
+    }
+
+    /// Regression: shutdown signal flips the readiness
+    /// flag so /health/ready returns 503 before the drain window
+    /// completes. K8s endpoint controller stops routing on the 503.
+    #[tokio::test]
+    async fn shutdown_signal_flips_ready_before_drain() {
+        let config = HttpServerConfig::new("127.0.0.1:18081");
+        let server = HttpServer::new(config);
+        let ready = server.ready_flag();
+        assert!(ready.load(Ordering::SeqCst), "ready starts true");
+
+        let app = Router::new().route(
+            "/slow",
+            get(|| async {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                "done"
+            }),
+        );
+
+        let (handle, future) = server.serve_with_handle(app).await.unwrap();
+        let server_task = tokio::spawn(future);
+
+        // Trigger shutdown -- handle.shutdown() drops the watch sender.
+        handle.shutdown();
+
+        // Allow the signal future to observe + flip readiness.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            !ready.load(Ordering::SeqCst),
+            "ready must flip to false post-shutdown",
+        );
+
+        let _ = server_task.await;
     }
 
     #[test]

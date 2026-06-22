@@ -32,11 +32,11 @@ Inside the configured `path`:
 
 ```
 spool.queue/
-├── 0.q                # segment file — [4-byte Hamming header][payload] ...
-├── 1.q
-├── ...
-├── recv-metadata      # 16 bytes: (segment u64 BE, position u64 BE)
-└── send-metadata
+|-- 0.q                # segment file — [4-byte Hamming header][payload] ...
+|-- 1.q
+|-- ...
+|-- recv-metadata      # 16 bytes: (segment u64 BE, position u64 BE)
+`-- send-metadata
 ```
 
 Segments roll over as they fill. The receiver position is two

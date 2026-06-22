@@ -3,7 +3,7 @@
 // Purpose:   Metric registration and threshold gauge emission for BatchEngine
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use crate::metrics::MetricsManager;
@@ -31,10 +31,6 @@ pub fn register(manager: &MetricsManager, config: &BatchProcessingConfig) {
     );
     let _ = manager.counter("batch_engine_messages_dlq_total", "Messages routed to DLQ");
     let _ = manager.counter("batch_engine_parse_errors_total", "Parse failures");
-    let _ = manager.counter(
-        "batch_engine_memory_pressure_pauses_total",
-        "MemoryGuard pause events between chunks",
-    );
 
     // Histograms
     let _ = manager.histogram(
@@ -45,7 +41,7 @@ pub fn register(manager: &MetricsManager, config: &BatchProcessingConfig) {
         "batch_engine_transform_duration_seconds",
         "App transform time per chunk",
     );
-    let _ = manager.histogram("batch_engine_chunk_size", "Actual items per chunk");
+    let _ = manager.histogram_count("batch_engine_chunk_size", "Actual items per chunk");
     let _ = manager.histogram(
         "batch_engine_pre_route_duration_seconds",
         "Pre-route extraction time per chunk",
@@ -56,6 +52,46 @@ pub fn register(manager: &MetricsManager, config: &BatchProcessingConfig) {
         "batch_engine_intern_table_size",
         "Interned field name count",
     );
+
+    // Self-regulation governor observability (governor feature). Registered so
+    // the metrics manifest advertises them even before the first throttle.
+    #[cfg(feature = "governor")]
+    {
+        // Names MUST match the emit sites (gate.rs / driver.rs): all carry the
+        // `self_regulation_` domain prefix so the manifest advertises the same
+        // series that actually carry data (a bare `pressure_ratio` would also
+        // collide with MemoryGuard/ScalingPressure on the registry).
+        let _ = manager.gauge(
+            "self_regulation_byte_budget",
+            "Current AIMD byte budget (inbound block size lever)",
+        );
+        // dual-emit: drop OLD in next release (MIGRATIONS) -- `_bytes` suffix
+        // matches the Prometheus/OTel base-unit convention.
+        let _ = manager.gauge(
+            "self_regulation_byte_budget_bytes",
+            "Current AIMD byte budget in bytes (inbound block size lever)",
+        );
+        let _ = manager.gauge(
+            "self_regulation_recv_block_bytes",
+            "Bytes in the most recent received block (vs the byte budget)",
+        );
+        let _ = manager.gauge(
+            "self_regulation_pressure_ratio",
+            "Combined self-regulation pressure level (0.0-1.0)",
+        );
+        let _ = manager.gauge(
+            "self_regulation_inbound_paused",
+            "1 while the inbound gate is holding under pressure, else 0 (per source)",
+        );
+        let _ = manager.counter(
+            "self_regulation_inbound_pauses_total",
+            "Inbound gate pause (rising-edge) events (per source)",
+        );
+        let _ = manager.counter(
+            "self_regulation_kafka_gate_errors_total",
+            "Kafka pause/resume actuator failures (brake degraded)",
+        );
+    }
 
     // Config thresholds as gauges (emitted immediately).
     emit_thresholds(config);
@@ -68,8 +104,6 @@ pub fn register(manager: &MetricsManager, config: &BatchProcessingConfig) {
 /// Grafana dashboards can overlay config changes on operational graphs.
 pub fn emit_thresholds(config: &BatchProcessingConfig) {
     metrics::gauge!("batch_engine_max_chunk_size").set(config.max_chunk_size as f64);
-    metrics::gauge!("batch_engine_memory_pressure_pause_ms")
-        .set(config.memory_pressure_pause_ms as f64);
 }
 
 #[cfg(test)]

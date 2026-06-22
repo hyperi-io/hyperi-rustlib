@@ -3,17 +3,16 @@
 // Purpose:   Metric manifest types and registry for /metrics/manifest endpoint
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Metric manifest types for the `/metrics/manifest` endpoint.
+//! Machine-readable metric metadata for the `/metrics/manifest` endpoint:
+//! [`MetricDescriptor`], [`MetricRegistry`], [`ManifestResponse`].
 //!
-//! Provides [`MetricDescriptor`], [`MetricRegistry`], and [`ManifestResponse`]
-//! for exposing machine-readable metric metadata. Field semantics align with
+//! Field semantics align with
 //! [OpenMetrics](https://prometheus.io/docs/specs/om/open_metrics_spec/) (type,
 //! description, unit) and [OTel Advisory Parameters](https://opentelemetry.io/docs/specs/otel/metrics/api/)
-//! (labels, buckets). Novel fields (`group`, `use_cases`, `dashboard_hint`)
-//! are HyperI extensions.
+//! (labels, buckets). `group`, `use_cases`, `dashboard_hint` are HyperI extensions.
 //!
 //! ## Standards Alignment
 //!
@@ -59,8 +58,6 @@ pub struct MetricDescriptor {
 }
 
 /// Metric type discriminator (aligns with OpenMetrics TYPE).
-///
-/// Derives `Copy` for efficient pattern matching and comparison.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricType {
@@ -172,11 +169,7 @@ impl MetricRegistry {
     }
 }
 
-/// Format current UTC time as RFC 3339 with second precision (no sub-seconds).
-///
-/// Output: `2026-03-31T02:00:00Z`
-///
-/// Pure function, no global state, trivially thread-safe.
+/// Current UTC time as RFC 3339, second precision. Output: `2026-03-31T02:00:00Z`.
 pub(crate) fn now_rfc3339() -> String {
     let d = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

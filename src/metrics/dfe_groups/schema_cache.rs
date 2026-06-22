@@ -3,7 +3,7 @@
 // Purpose:   DFE schema cache metrics group
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Schema cache metrics for apps with dynamic schema reflection.
@@ -29,7 +29,7 @@ impl SchemaCacheMetrics {
     pub fn new(manager: &MetricsManager) -> Self {
         let ns = manager.namespace();
 
-        // schema_recovery_total — label-based, register descriptor manually
+        // schema_recovery_total -- label-based, register descriptor manually
         let recovery_key = if ns.is_empty() {
             "schema_recovery_total".to_string()
         } else {

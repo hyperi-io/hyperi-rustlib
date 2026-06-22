@@ -114,20 +114,17 @@ dlq:
 
 ---
 
-## Migration note (v2.7.1+)
+## Upgrading from the older DLQ API
 
-The API changed in v2.7.1. The old `Dlq::file_only` / `Dlq::with_kafka`
-constructors are gone — every backend mix now goes through `Dlq::spawn`
-with the `DlqMode` selecting routing. `DlqBackend` was a trait object
-and is now an enum (static dispatch). New methods on the orchestrator:
+Earlier releases exposed `Dlq::file_only` / `Dlq::with_kafka` constructors
+and a `DlqBackend` trait object. Both are gone — every backend mix now goes
+through `Dlq::spawn` with `DlqMode` selecting routing, and `DlqBackend` is an
+enum (static dispatch). The orchestrator gained `try_send` (non-blocking,
+`QueueFull` on overflow), `flush` (durable-write barrier), and `shutdown`
+(drain + join). `send` semantics changed from "wait for durable write" to
+queue-admission — see [Queue-admission semantics](#queue-admission-semantics).
 
-- `try_send` — non-blocking, returns `QueueFull` on overflow
-- `flush` — barrier for durable-write
-- `shutdown` — drain + join
-
-`send` semantics changed from "wait for durable write" to
-"queue-admission" — see above. All six core DFE apps migrated
-2026-05-14.
+The version-keyed upgrade path lives in [MIGRATIONS.md](../MIGRATIONS.md).
 
 ---
 

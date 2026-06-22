@@ -3,12 +3,12 @@
 // Purpose:   Scaling pressure calculation for KEDA autoscaling
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Scaling pressure calculation for autoscaler integration.
 //!
-//! Produces a 0.0–100.0 composite metric based on weighted application
+//! Produces a 0.0-100.0 composite metric based on weighted application
 //! signals with two hard gates (circuit breaker, memory pressure).
 //! Designed for KEDA but works with any autoscaler that reads Prometheus
 //! gauges.
@@ -19,7 +19,7 @@
 //! App signals ──→ ScalingPressure ──→ {prefix}_scaling_pressure gauge
 //!                  ├─ Gate: circuit breaker open → 0.0
 //!                  ├─ Gate: memory ≥ threshold → 100.0
-//!                  └─ Weighted composite → 0.0–100.0
+//!                  └─ Weighted composite → 0.0-100.0
 //! ```
 //!
 //! ## Usage
@@ -63,9 +63,21 @@
 //! KEDA scales to the MAX of all triggers.
 
 mod config;
+#[cfg(feature = "expression")]
+mod engine;
 mod pressure;
 mod rate_window;
+mod transport_pressure;
 
-pub use config::{ScalingComponent, ScalingPressureConfig};
+pub use config::{
+    PressureExpr, ScalingComponent, ScalingEngineConfig, ScalingPressureConfig,
+    ScalingTransportConfig,
+};
+#[cfg(feature = "expression")]
+pub use engine::ScalingEngine;
 pub use pressure::{ComponentSnapshot, GateType, PressureSnapshot, ScalingPressure};
 pub use rate_window::RateWindow;
+pub use transport_pressure::{
+    PressureTargets, ScalingSignalsCell, ScalingTransport, TransportSignals, inbound_pressure,
+    outbound_pressure,
+};

@@ -97,6 +97,12 @@ sub-components (filter engine lives inside every transport).
 - [AUTO-WIRING.md](AUTO-WIRING.md) — what's wired into what, and why
 - [FEATURE-FLAGS.md](FEATURE-FLAGS.md) — feature tree, native deps, recommended bundles
 
+### Data plane (WorkBatch + self-regulation)
+
+- [SELF-REGULATION.md](SELF-REGULATION.md) -- ON by default; the three brains (MemoryGuard / ScalingPressure / UnifiedPressure), observe + tune
+- [BACKPRESSURE.md](BACKPRESSURE.md) -- gate the source never the sink; the per-stage brake/commit-token table; streaming sub-blocks
+- [KAFKA-PATH.md](KAFKA-PATH.md) -- the three batch sizes, sizing profiles + librdkafka names, rho~0.7 loop, partition-limited diagnostic
+
 ### Core pillars (always-on, auto-wired)
 
 - [core-pillars/CONFIG.md](core-pillars/CONFIG.md) — 8-layer cascade, hot-reload, registry, `/config` endpoint
@@ -133,6 +139,7 @@ sub-components (filter engine lives inside every transport).
 - [pipeline/TIERED-SINK.md](pipeline/TIERED-SINK.md) — resilient delivery, disk spillover, circuit breaker
 - [pipeline/DLQ.md](pipeline/DLQ.md) — file, Kafka, HTTP, Redis backends
 - [pipeline/SPOOL.md](pipeline/SPOOL.md) — disk-backed async FIFO (yaque)
+- [pipeline/STRMATCH.md](pipeline/STRMATCH.md) — 4-tier regex→fast-path matcher (Byte / Literal / LiteralSet / Regex)
 - [pipeline/SCALING.md](pipeline/SCALING.md) — `ScalingPressure`, KEDA external scaler signal
 
 ### Less-common subsystems
@@ -146,20 +153,16 @@ sub-components (filter engine lives inside every transport).
 
 ### Planned (not in current release)
 
-These docs describe modules that are designed and largely written but
-have not yet landed on `main` / `crates.io`. Treat as design previews,
-not as functionality you can `cargo add`.
-
-- [pipeline/STRMATCH.md](pipeline/STRMATCH.md) — 4-tier regex→fast-path
-  matcher (Byte / Literal / LiteralSet / Regex).
-- **Content-based log scrubbing** (gitleaks rules + PII validators).
-  v2.7.4 ships field-name masking via `MaskingWriter` only — see
+- **Content-based log scrubbing** (gitleaks rules + PII validators
+  composed via `strmatch`). The current release ships field-name
+  masking via `MaskingWriter` only — see
   [core-pillars/LOGGING.md](core-pillars/LOGGING.md) for what's
   shipped.
 
 ### Workflow artefacts (not user docs)
 
 - [superpowers/](superpowers/) — design specs and execution plans for in-flight work
+- [MIGRATIONS.md](MIGRATIONS.md) — API surface changes by rustlib version; consumer-rebuild playbook
 
 ---
 
@@ -167,6 +170,6 @@ not as functionality you can `cargo add`.
 
 - **Crate:** [hyperi-rustlib](https://crates.io/crates/hyperi-rustlib) (crates.io)
 - **Edition:** 2024
-- **MSRV:** 1.95
+- **MSRV:** see `rust-version` in `Cargo.toml`
 - **Used by:** [dfe-loader](https://github.com/hyperi-io/dfe-loader), [dfe-receiver](https://github.com/hyperi-io/dfe-receiver), [dfe-fetcher](https://github.com/hyperi-io/dfe-fetcher), [dfe-archiver](https://github.com/hyperi-io/dfe-archiver), [dfe-transform-vrl](https://github.com/hyperi-io/dfe-transform-vrl), [dfe-transform-vector](https://github.com/hyperi-io/dfe-transform-vector)
 - **Sibling libs:** [hyperi-pylib](https://github.com/hyperi-io/hyperi-pylib) (Python equivalent)

@@ -3,7 +3,7 @@
 // Purpose:   Disk-backed async FIFO queue implementation using yaque
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Disk-backed async FIFO queue implementation.
@@ -12,13 +12,10 @@ use crate::spool::{Result, SpoolConfig, SpoolError};
 use std::path::Path;
 use yaque::{Receiver, Sender};
 
-/// A disk-backed async FIFO queue with optional compression.
+/// Disk-backed async FIFO queue with optional compression.
 ///
-/// Provides persistent storage for binary data with crash-safe writes.
-/// Items are stored in FIFO order and survive application restarts.
-///
-/// Built on [yaque](https://crates.io/crates/yaque), a fast, async,
-/// persistent queue with transactional semantics.
+/// Crash-safe writes, survives restarts. Built on
+/// [yaque](https://crates.io/crates/yaque) (transactional persistent queue).
 pub struct Spool {
     sender: Sender,
     receiver: Receiver,
@@ -27,10 +24,7 @@ pub struct Spool {
 }
 
 impl Spool {
-    /// Open or create a spool at the configured path.
-    ///
-    /// If the directory exists, opens the existing queue.
-    /// If the directory doesn't exist, creates a new queue.
+    /// Open the queue at the configured path, creating it if absent.
     ///
     /// # Errors
     ///
@@ -41,9 +35,8 @@ impl Spool {
             message: e.to_string(),
         })?;
 
-        // Count existing items by walking the queue directory.
-        // yaque doesn't expose a count API, so we parse segment files to
-        // count messages between the receiver position and sender position.
+        // yaque exposes no count API -- parse segment files to count items
+        // between the receiver position and the end.
         let len = count_existing_items(&config.path).unwrap_or(0);
 
         Ok(Self {
@@ -72,25 +65,19 @@ impl Spool {
         Self::open(SpoolConfig::with_compression(path.as_ref())).await
     }
 
-    /// Push data onto the queue.
-    ///
-    /// If compression is enabled, the data is compressed before storage.
+    /// Push data onto the queue, compressing first if enabled.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - The queue has reached its maximum item count
-    /// - Compression fails
-    /// - I/O error occurs
+    /// Errors on size/item-count cap, compression failure, or I/O.
     pub async fn push(&mut self, data: &[u8]) -> Result<()> {
-        // Check item limit
         if let Some(max) = self.config.max_items
             && self.len >= max
         {
             return Err(SpoolError::MaxItemsReached { max });
         }
 
-        // Check size limit (approximate - check before write)
+        // Approximate -- checked before write.
         if let Some(max_bytes) = self.config.max_size_bytes
             && self.file_size()? >= max_bytes
         {
@@ -110,14 +97,18 @@ impl Spool {
 
         self.len += 1;
         #[cfg(feature = "metrics")]
-        ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+        {
+            ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+            // New default (metrics audit): spill RATE. drain < enqueue => backlog.
+            ::metrics::counter!("dfe_spool_enqueue_total").increment(1);
+        }
         Ok(())
     }
 
-    /// Peek at the first item in the queue without removing it.
+    /// Peek at the first item without removing it.
     ///
-    /// Note: In yaque, there's no direct peek. This uses try_recv and
-    /// lets the guard rollback on drop.
+    /// yaque has no direct peek -- `try_recv` then let the guard roll back
+    /// on drop to leave the item in the queue.
     ///
     /// # Errors
     ///
@@ -125,7 +116,6 @@ impl Spool {
     pub async fn peek(&mut self) -> Result<Option<Vec<u8>>> {
         match self.receiver.try_recv() {
             Ok(guard) => {
-                // Copy data before any operations
                 let raw_data = guard.to_vec();
                 let data = if self.config.compress {
                     zstd::decode_all(raw_data.as_slice())
@@ -133,7 +123,7 @@ impl Spool {
                 } else {
                     raw_data
                 };
-                // Don't commit - guard drops and rolls back, keeping item in queue
+                // No commit -- guard rollback on drop keeps the item.
                 drop(guard);
                 Ok(Some(data))
             }
@@ -161,9 +151,7 @@ impl Spool {
         }
     }
 
-    /// Pop and return the first item from the queue.
-    ///
-    /// This atomically receives and removes the item.
+    /// Pop and return the first item, atomically receiving and removing it.
     ///
     /// # Errors
     ///
@@ -171,7 +159,6 @@ impl Spool {
     pub async fn pop_front(&mut self) -> Result<Option<Vec<u8>>> {
         match self.receiver.try_recv() {
             Ok(guard) => {
-                // Copy data before any operations
                 let raw_data = guard.to_vec();
                 let data = if self.config.compress {
                     zstd::decode_all(raw_data.as_slice())
@@ -184,7 +171,11 @@ impl Spool {
                     .map_err(|e| SpoolError::Queue(e.to_string()))?;
                 self.len = self.len.saturating_sub(1);
                 #[cfg(feature = "metrics")]
-                ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+                {
+                    ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+                    // New default (metrics audit): drain RATE.
+                    ::metrics::counter!("dfe_spool_dequeue_total").increment(1);
+                }
                 Ok(Some(data))
             }
             Err(yaque::TryRecvError::Io(e)) => Err(SpoolError::Io(e)),
@@ -192,9 +183,7 @@ impl Spool {
         }
     }
 
-    /// Receive an item asynchronously, waiting if the queue is empty.
-    ///
-    /// This is the preferred async method for consuming items.
+    /// Receive an item, awaiting if the queue is empty. Preferred consumer API.
     ///
     /// # Errors
     ///
@@ -206,7 +195,6 @@ impl Spool {
             .await
             .map_err(|e| SpoolError::Queue(e.to_string()))?;
 
-        // Copy data before any operations
         let raw_data = guard.to_vec();
         let data = if self.config.compress {
             zstd::decode_all(raw_data.as_slice())
@@ -220,14 +208,15 @@ impl Spool {
             .map_err(|e| SpoolError::Queue(e.to_string()))?;
         self.len = self.len.saturating_sub(1);
         #[cfg(feature = "metrics")]
-        ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+        {
+            ::metrics::gauge!("dfe_spool_queue_depth").set(self.len as f64);
+            // New default (metrics audit): drain RATE.
+            ::metrics::counter!("dfe_spool_dequeue_total").increment(1);
+        }
         Ok(data)
     }
 
-    /// Get the approximate number of items in the queue.
-    ///
-    /// Note: This is tracked internally and may not be accurate
-    /// if the queue was opened with existing data.
+    /// Approximate item count, tracked internally.
     #[must_use]
     pub fn len(&self) -> usize {
         self.len
@@ -239,16 +228,13 @@ impl Spool {
         self.len == 0
     }
 
-    /// Clear all items from the queue.
-    ///
-    /// This removes all files in the queue directory and recreates it.
+    /// Drain all items from the queue.
     ///
     /// # Errors
     ///
     /// Returns an error if an I/O error occurs.
     pub fn clear(&mut self) -> Result<()> {
-        // yaque doesn't have a built-in clear, so we manually clear by
-        // removing all items
+        // yaque has no built-in clear -- drain by committing every item.
         loop {
             match self.receiver.try_recv() {
                 Ok(guard) => {
@@ -297,11 +283,11 @@ impl Spool {
     }
 }
 
-/// Count existing items in a yaque queue directory by walking segment files.
+/// Count items in a yaque queue dir by walking segment files.
 ///
-/// yaque stores messages as `[4-byte Hamming header][payload]` in segment files
-/// named `<n>.q`. The receiver position is persisted in `recv-metadata`.
-/// We count items from the receiver position to the end of the highest segment.
+/// yaque stores messages as `[4-byte Hamming header][payload]` in `<n>.q`
+/// segments; receiver position lives in `recv-metadata`. Count from the
+/// receiver position to the end of the highest segment.
 fn count_existing_items(path: &std::path::Path) -> std::io::Result<usize> {
     if !path.is_dir() {
         return Ok(0);
@@ -481,7 +467,7 @@ mod tests {
             assert_eq!(spool.len(), 3);
         }
 
-        // Reopen — len should reflect existing items
+        // Reopen -- len should reflect existing items
         {
             let spool = Spool::create(&path).await.unwrap();
             assert_eq!(spool.len(), 3);
@@ -505,7 +491,7 @@ mod tests {
             assert_eq!(spool.len(), 3);
         }
 
-        // Reopen — should show 3 remaining
+        // Reopen -- should show 3 remaining
         {
             let spool = Spool::create(&path).await.unwrap();
             assert_eq!(spool.len(), 3);

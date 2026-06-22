@@ -3,7 +3,7 @@
 // Purpose:   Version information types
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Version information for DFE services.

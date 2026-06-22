@@ -1,13 +1,5 @@
 # Strmatch
 
-> **Status: Planned — not in v2.7.4.** The module is designed and
-> largely written but has not landed on `main` or `crates.io`. This
-> page is the API reference the module *will* expose when it ships —
-> treat it as a design preview, not as functionality you can
-> `cargo add` today.
-
----
-
 `strmatch` is the official answer to "don't use regex on the hot
 path". Operators write a regex (the pattern language everyone knows);
 the matcher classifies it into one of four tiers and dispatches via
@@ -15,8 +7,8 @@ the cheapest engine that's correct. Most hot-path patterns —
 field-presence checks, prefix tests, alternation over a fixed token
 list — never invoke the regex engine at all.
 
-When shipped, replaces casual `Regex::new(...)` calls in routers,
-scrubbers, classifiers, and field filters across the DFE stack.
+Replaces casual `Regex::new(...)` calls in routers, scrubbers,
+classifiers, and field filters across the DFE stack.
 
 ---
 

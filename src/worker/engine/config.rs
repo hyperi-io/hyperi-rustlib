@@ -3,7 +3,7 @@
 // Purpose:   Configuration for the SIMD-optimised batch processing engine
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use serde::{Deserialize, Serialize};
@@ -69,19 +69,15 @@ pub struct BatchProcessingConfig {
 
     /// Pre-route filters applied before routing decisions.
     ///
-    /// Evaluated in order — first match wins.
+    /// Evaluated in order -- first match wins.
     #[serde(default)]
     pub pre_route_filters: Vec<PreRouteFilterConfig>,
-
-    /// Milliseconds to pause between batches when memory pressure is high.
-    #[serde(default = "default_memory_pressure_pause_ms")]
-    pub memory_pressure_pause_ms: u64,
 
     /// Action to take when a message fails JSON parsing.
     #[serde(default = "default_parse_error_action")]
     pub parse_error_action: ParseErrorAction,
 
-    /// Fields to pre-extract into [`super::types::ParsedMessage::Parsed::extracted`]
+    /// Fields to pre-extract into [`super::types::ParsedMessage::extracted`]
     /// for fast routing lookups.
     ///
     /// Extracting these at parse time avoids repeated `value.get()` traversals
@@ -92,10 +88,6 @@ pub struct BatchProcessingConfig {
 
 fn default_max_chunk_size() -> usize {
     10_000
-}
-
-fn default_memory_pressure_pause_ms() -> u64 {
-    50
 }
 
 fn default_parse_error_action() -> ParseErrorAction {
@@ -120,7 +112,6 @@ impl Default for BatchProcessingConfig {
             format: PayloadFormat::default(),
             routing_field: None,
             pre_route_filters: vec![],
-            memory_pressure_pause_ms: default_memory_pressure_pause_ms(),
             parse_error_action: default_parse_error_action(),
             known_fields: default_known_fields(),
         }
@@ -139,7 +130,9 @@ impl BatchProcessingConfig {
     /// contains data that cannot be deserialised into `BatchProcessingConfig`.
     pub fn from_cascade(key: &str) -> Result<Self, crate::config::ConfigError> {
         let config: Self = if let Some(cfg) = crate::config::try_get() {
-            cfg.unmarshal_key(key).unwrap_or_default()
+            // `or_warn`: absent key -> default (silent); present-but-malformed
+            // -> WARN + default (was silently swallowed pre-2.8.11).
+            cfg.unmarshal_key_or_warn(key).unwrap_or_default()
         } else {
             tracing::debug!("Config cascade not initialised, using default BatchProcessingConfig");
             Self::default()
@@ -157,7 +150,6 @@ mod tests {
         let config = BatchProcessingConfig::default();
         assert_eq!(config.max_chunk_size, 10_000);
         assert!(config.routing_field.is_none());
-        assert_eq!(config.memory_pressure_pause_ms, 50);
         assert_eq!(config.known_fields.len(), 6);
         assert!(config.known_fields.contains(&"_table".to_string()));
     }

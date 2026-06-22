@@ -1,91 +1,306 @@
-# Functional Source License, Version 1.1, ALv2 Future License
+Business Source License 1.1
 
-Copyright 2026 HYPERI PTY LIMITED (ABN 31 622 581 748)
+Parameters
 
-## License
+Licensor:             HYPERI PTY LIMITED (ABN 31 622 581 748)
+Licensed Work:        The software, source code, documentation, and associated
+                      materials in this repository. The Licensed Work is (c)
+                      2026 HYPERI PTY LIMITED.
+Additional Use Grant: You may make use of the Licensed Work, provided that
+                      you may not use the Licensed Work for a Hosted
+                      Service.
 
-This software is licensed under the Functional Source License, Version 1.1,
-ALv2 Future License (FSL-1.1-ALv2).
+                      A "Hosted Service" is a commercial offering that
+                      allows third parties (other than your employees and
+                      contractors) to access the functionality of the
+                      Licensed Work as a hosted or managed service, where
+                      the service provides those third parties with access
+                      to a substantial set of the features or functionality
+                      of the Licensed Work.
 
-You may obtain a copy of the License at:
+Change Date:          The third anniversary of the first publicly available
+                      distribution of the specific version of the Licensed Work
+                      under this License.
 
-https://fsl.software/FSL-1.1-ALv2.template.md
+Change License:       Apache License, Version 2.0
 
-SPDX License Identifier: FSL-1.1-ALv2
+Notice
 
-## Summary
+The Business Source License (this document, or the "License") is not an Open
+Source license. However, the Licensed Work will eventually be made available
+under an Open Source License, as stated in this License.
 
-Unless required by applicable law or agreed to in writing, software distributed
-under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-CONDITIONS OF ANY KIND, either express or implied. See the License for the
-specific language governing permissions and limitations under the License.
+License text copyright (c) 2017 MariaDB Corporation Ab, All Rights Reserved.
+"Business Source License" is a trademark of MariaDB Corporation Ab.
 
-### Permitted Uses
+-----------------------------------------------------------------------------
 
-- Internal use within your organisation
-- Non-commercial education and research
-- Professional services for licensees using this software
+Business Source License 1.1
 
-### Competing Use Requires Commercial Licence
+Terms
 
-Making this software available to others in a commercial product or service
-that substitutes for or competes with this software requires a commercial
-licence from HyperI. See [COMMERCIAL.md](COMMERCIAL.md) for details.
+The Licensor hereby grants you the right to copy, modify, create derivative
+works, redistribute, and make non-production use of the Licensed Work. The
+Licensor may make an Additional Use Grant, above, permitting limited
+production use.
 
-### Apache 2.0 Conversion
+Effective on the Change Date, or the fourth anniversary of the first publicly
+available distribution of a specific version of the Licensed Work under this
+License, whichever comes first, the Licensor hereby grants you rights under
+the terms of the Change License, and the rights granted in the paragraph
+above terminate.
 
-Each version of this software becomes available under the Apache License,
-Version 2.0 on the second anniversary of its release date. Release dates are
-recorded in the GitHub release history.
+If your use of the Licensed Work does not comply with the requirements
+currently in effect as described in this License, you must purchase a
+commercial license from the Licensor, its affiliated entities, or authorized
+resellers, or you must refrain from using the Licensed Work.
 
-You may obtain a copy of the Apache License at:
+All copies of the original and modified Licensed Work, and derivative works
+of the Licensed Work, are subject to this License. This License applies
+separately for each version of the Licensed Work and the Change Date may vary
+for each version of the Licensed Work released by Licensor.
 
-https://www.apache.org/licenses/LICENSE-2.0
+You must conspicuously display this License on each original or modified copy
+of the Licensed Work. If you receive the Licensed Work in original or
+modified form from a third party, the terms and conditions set forth in this
+License apply to your use of that work.
 
-## AI / Machine Learning Restriction
+Any use of the Licensed Work in violation of this License will automatically
+terminate your rights under this License for the current and all other
+versions of the Licensed Work.
 
-The Software and any modifications made to it may not be used for the
-purpose of training or improving machine learning algorithms, including but
-not limited to artificial intelligence systems, large language models,
-natural language processing, data mining, or automated content generation —
-whether for commercial or non-commercial purposes — without the prior
-written consent of HYPERI PTY LIMITED.
+This License does not grant you any right in any trademark or logo of
+Licensor or its affiliates (provided that you may use a trademark or logo of
+Licensor as expressly required by this License).
 
-The Software may not be included in any dataset used for training or
-improving machine learning algorithms, including but not limited to
-artificial intelligence, natural language processing, or data mining. This
-prohibition includes but is not limited to:
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSED WORK IS PROVIDED ON
+AN "AS IS" BASIS. LICENSOR HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS,
+EXPRESS OR IMPLIED, INCLUDING (WITHOUT LIMITATION) WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, AND
+TITLE.
 
-- Direct training of models on the source code, documentation, or metadata
-- Fine-tuning or transfer learning using any part of the Software
-- Retrieval-augmented generation (RAG) systems that index or retrieve from
-  the Software
-- Inclusion in any corpus, dataset, or data pipeline intended for machine
-  learning purposes
-- Reverse engineering, decompilation, or analysis of the Software for the
-  purpose of replicating its functionality through AI-generated code
+MariaDB hereby grants you permission to use this License's text to license
+your works, and to refer to it using the trademark "Business Source License",
+as long as you comply with the Covenants of Licensor below.
 
-This restriction applies regardless of the format in which the materials are
-accessed (including but not limited to source code, compiled binaries,
-documentation, and metadata) and survives the Apache 2.0 conversion described
-above only to the extent permitted by the Apache License, Version 2.0.
+Covenants of Licensor
 
-Any person or organisation found to be in violation of these restrictions may
-be subject to legal action and may be held liable for any resulting damages.
+In consideration of the right to use this License's text and the "Business
+Source License" name and trademark, Licensor covenants to MariaDB, and to all
+other recipients of the licensed work to be provided by Licensor:
 
-See [AI-TRAINING-POLICY.md](AI-TRAINING-POLICY.md) for full details.
+1. To specify as the Change License the GPL Version 2.0 or any later version,
+   or a license that is compatible with GPL Version 2.0 or a later version,
+   where "compatible" means that software provided under the Change License can
+   be included in a program with software provided under GPL Version 2.0 or a
+   later version. Licensor may specify additional Change Licenses without
+   limitation.
 
-## Australian Law Notice
+2. To either: (a) specify an additional grant of rights to use that does not
+   impose any additional restriction on the right granted in this License, as
+   the Additional Use Grant; or (b) insert the text "None".
 
-For users in Australia: To the extent this License is governed by Australian
-law, the laws of the Australian Capital Territory apply. Nothing in this
-License excludes, restricts or modifies any consumer guarantee, right or remedy
-conferred by the Competition and Consumer Act 2010 (Cth) or any other
-applicable Australian law that cannot be excluded, restricted or modified by
-agreement.
+3. To specify a Change Date.
 
-Where the Australian Consumer Law (Schedule 2 of the Competition and Consumer
-Act 2010 (Cth)) implies guarantees that cannot be excluded, our liability for
-breach of such guarantees is limited, to the extent permitted by law, to the
-re-supply of the software or the payment of the cost of having the software
-re-supplied.
+4. Not to modify this License in any other way.
+
+=============================================================================
+SUPPLEMENTARY INSTRUMENTS (operate alongside the Business Source License above)
+
+The following Annexures are separate instruments that operate alongside, and do
+not amend or form part of, the Business Source License 1.1 text above. Each is
+independently severable: if any Annexure (or any provision of it) is held invalid
+or unenforceable, the Business Source License above and the other Annexures
+continue in full force. A separate AI training policy (AI-TRAINING-POLICY.md)
+applies as its own independent instrument.
+
+-----------------------------------------------------------------------------
+
+# License Annexure -- Affiliate
+
+**Licensor: HYPERI PTY LIMITED (ABN 31 622 581 748).**
+
+This Annexure supplements the Business Source License 1.1 (the "License") under
+which the Licensed Work is made available, and in particular clarifies the
+scope of the words "third parties" and "your employees and contractors" in the
+Additional Use Grant. This Annexure does not amend, and is not incorporated
+into, the text of the License. It is a separate instrument that operates
+alongside the License and any other Annexure. It does not impose any additional
+restriction on the rights granted by the License; it only clarifies and, where
+stated, extends who may exercise those rights.
+
+---
+
+## 1. Definitions
+
+In this Annexure:
+
+**"Affiliate"** of an entity means any other entity that, directly or
+indirectly, Controls, is Controlled by, or is under common Control with that
+entity, for so long as that Control subsists.
+
+**"Control"** means holding, directly or indirectly, more than fifty percent
+(50%) of the voting securities, voting equity interests, or other voting
+ownership of an entity, or otherwise having the power to direct or cause the
+direction of the management and policies of that entity, whether by contract
+or otherwise.
+
+---
+
+## 2. Contractors and agents acting on your behalf
+
+For the purposes of the Additional Use Grant, a contractor or agent that
+accesses the functionality of the Licensed Work solely on your behalf and for
+your own internal purposes, and not on its own account or for the benefit of
+any third party, is treated as one of "your employees and contractors" and is
+not a third party to whom a Hosted Service is provided.
+
+---
+
+## 3. Independent use by Affiliates is internal use
+
+Where two or more entities that are Affiliates of one another each deploy and
+operate their own instance of the Licensed Work, each for that entity's own
+internal business purposes, each such entity's use is internal use and is not
+the provision of a Hosted Service to a third party. Each such entity exercises
+the rights granted by the License in its own right.
+
+---
+
+## 4. One Affiliate operating the software for others is a Hosted Service
+
+For the avoidance of doubt, where one entity operates the Licensed Work and
+provides access to its functionality to one or more of its Affiliates as a
+shared or centralised hosted or managed service (rather than each Affiliate
+operating its own instance for its own internal purposes), that operation is
+the provision of a Hosted Service within the meaning of the Additional Use
+Grant, and falls outside that Grant. A commercial license is required for that
+use. See COMMERCIAL.md. (An Affiliate is a separate legal entity; the line
+HyperI draws is operate-versus-benefit, not corporate relationship.)
+
+---
+
+## 5. Hosted-service rights are available by commercial license
+
+Rights to operate the Licensed Work as a shared or centralised service for the
+benefit of your Affiliates (intra-group hosting), and rights to operate it as a
+hosted or managed service for persons or entities outside your corporate group,
+are available under a commercial license from the Licensor. See COMMERCIAL.md
+and contact sales@hyperi.io.
+
+---
+
+## 6. Relationship to the License and other Annexures
+
+This Annexure applies alongside the License. Except for the clarifications in
+clauses 2 to 5 about the internal group-use boundary and the commercial path for
+hosted services, it does not otherwise enlarge, reduce or alter the rights
+granted under the License (including the Additional Use Grant, the Change Date,
+and conversion to the Change License). The License continues to govern the grant of rights in the
+Licensed Work. Nothing in this Annexure is to be construed as a modification of
+the text of the License.
+
+---
+
+## 7. Severability of this Annexure
+
+If any provision of this Annexure is held to be invalid, void or unenforceable by
+a court or tribunal of competent jurisdiction, that provision is severed to
+the minimum extent necessary, and the remainder of this Annexure, the License,
+the Additional Use Grant, and any other Annexure continue in full force and
+effect. The invalidity of any provision of this Annexure does not affect the
+validity or enforceability of the License, the Additional Use Grant, or any
+other Annexure.
+
+-----------------------------------------------------------------------------
+
+# License Annexure -- Australia
+
+**Licensor: HYPERI PTY LIMITED (ABN 31 622 581 748).**
+
+This is a jurisdiction-specific Australian-law overlay. It applies only as
+between the Licensor and a recipient to whom Australian law applies. It does not
+amend, and is not incorporated into, the Business Source License 1.1 (the
+"License") under which the Licensed Work is made available. It is not a
+condition of the grant under the License or the Additional Use Grant. For
+recipients to whom Australian law does not apply, the License remains the
+complete default public license grant, subject only to its own terms and any
+other separate instrument that applies independently.
+
+In the event of a conflict between this Annexure and the License on a matter of
+Australian law, this Annexure prevails to the extent of that conflict and only
+as between the Licensor and a recipient to whom Australian law applies.
+
+---
+
+## 1. Australian Consumer Law -- non-excludable guarantees
+
+Nothing in the License or this Annexure excludes, restricts or modifies any
+consumer guarantee, right or remedy conferred on you by the Competition and
+Consumer Act 2010 (Cth), including the Australian Consumer Law in Schedule 2
+to that Act (the "ACL"), or by any other applicable law, where to do so would
+contravene that law or cause any term to be void.
+
+---
+
+## 2. Limitation of liability where the ACL permits
+
+To the extent the ACL applies to the supply of the Licensed Work and the
+Licensed Work is not of a kind ordinarily acquired for personal, domestic or
+household use or consumption, the Licensor's liability for failure to comply
+with a consumer guarantee that cannot lawfully be excluded is limited, at the
+Licensor's option, to:
+
+  (a) for goods: replacing the goods or supplying equivalent goods, repairing
+      the goods, paying the cost of replacing the goods or of acquiring
+      equivalent goods, or paying the cost of having the goods repaired; and
+
+  (b) for services: supplying the services again, or paying the cost of having
+      the services supplied again,
+
+as permitted by section 64A of the ACL. This limitation does not apply if you
+establish that it is not fair or reasonable for the Licensor to rely on it.
+
+---
+
+## 3. Mandatory consumer notice (where required)
+
+Where the Licensed Work is supplied to a consumer within the meaning of the ACL
+and a consumer-guarantee notice is required by the ACL or the Competition and
+Consumer Regulations 2010, the applicable prescribed notice for the relevant
+supply (goods, services, or goods and services) must be used.
+
+---
+
+## 4. Governing law and jurisdiction
+
+This Annexure is governed by the laws of the Australian Capital Territory,
+Australia. Each party submits to the non-exclusive jurisdiction of the courts
+of the Australian Capital Territory and the courts entitled to hear appeals
+from those courts.
+
+Before commencing proceedings (other than for urgent interlocutory relief),
+the parties will attempt in good faith to resolve any dispute by negotiation
+for a period of 30 days from written notice of the dispute.
+
+---
+
+## 5. Relationship to the License and other Annexures
+
+This Annexure applies only as between the Licensor and a recipient to whom
+Australian law applies. It does not enlarge, reduce or alter the rights
+granted under the License (including the Additional Use Grant, the Change
+Date, and conversion to the Change License) for any recipient. The License
+continues to govern the grant of rights in the Licensed Work.
+
+---
+
+## 6. Severability of this Annexure
+
+If any provision of this Annexure is held to be invalid, void or unenforceable by
+a court or tribunal of competent jurisdiction, that provision is severed to
+the minimum extent necessary, and the remainder of this Annexure, the License,
+the Additional Use Grant, and any other Annexure continue in full force and
+effect. The invalidity of any provision of this Annexure does not affect the
+validity or enforceability of the License, the Additional Use Grant, or of any
+other Annexure.

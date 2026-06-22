@@ -3,10 +3,10 @@
 // Purpose:   Metrics for transport-level message filtering
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Filter metrics — counters per direction and action.
+//! Filter metrics -- counters per direction and action.
 //!
 //! Uses the `metrics` crate (no-op if no recorder installed).
 
@@ -35,6 +35,10 @@ impl FilterMetrics {
             FilterAction::Dlq => "dlq",
         };
         metrics::counter!("transport_filtered_total", "direction" => dir, "action" => act)
+            .increment(1);
+        // dual-emit: drop OLD in next release (MIGRATIONS) -- the `dfe_`
+        // prefix matches the other transport-family metric names.
+        metrics::counter!("dfe_transport_filtered_total", "direction" => dir, "action" => act)
             .increment(1);
     }
 }

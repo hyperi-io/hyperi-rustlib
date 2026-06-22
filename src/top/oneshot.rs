@@ -3,7 +3,7 @@
 // Purpose:   Non-interactive single-scrape output for top command
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Single-scrape output modes for `top --once` and `top --json`.
@@ -49,7 +49,7 @@ pub fn run_oneshot(config: &TopConfig) -> Result<(), TopError> {
     Ok(())
 }
 
-/// Filter samples by regex pattern on metric name.
+/// Filter samples by metric-name pattern (substring or `.*` wildcard).
 fn filter_samples<'a>(samples: &'a [MetricSample], filter: Option<&str>) -> Vec<&'a MetricSample> {
     match filter {
         Some(pattern) => samples
@@ -60,14 +60,13 @@ fn filter_samples<'a>(samples: &'a [MetricSample], filter: Option<&str>) -> Vec<
     }
 }
 
-/// Simple pattern matching — supports basic regex-like patterns.
-/// Uses contains for plain strings, or regex for patterns with metacharacters.
+/// Plain strings match by `contains`; patterns with metacharacters go
+/// through the lightweight `.*`/anchor matcher (not the `regex` crate).
 fn match_filter(name: &str, pattern: &str) -> bool {
     // If pattern has no regex metacharacters, do simple contains match
     if !has_regex_chars(pattern) {
         return name.contains(pattern);
     }
-    // Compile regex (fallback to contains on invalid pattern)
     regex_match(name, pattern)
 }
 
@@ -98,7 +97,7 @@ fn regex_match(name: &str, pattern: &str) -> bool {
     let parts: Vec<&str> = pattern.split(".*").collect();
 
     if parts.len() == 1 {
-        // No wildcards — substring match (respecting anchors)
+        // No wildcards -- substring match (respecting anchors)
         if anchored_start && anchored_end {
             return name == pattern;
         }
@@ -181,7 +180,7 @@ fn print_table(samples: &[&MetricSample], url: &str) {
 }
 
 /// Format labels as comma-separated `key=value` pairs for TSV output.
-/// No braces, no quotes — clean for awk/grep.
+/// No braces, no quotes -- clean for awk/grep.
 fn format_labels_tsv(labels: &HashMap<String, String>) -> String {
     if labels.is_empty() {
         return String::new();
@@ -406,7 +405,7 @@ mod tests {
             vec![("topic", "events"), ("partition", "0")],
         );
         let samples = vec![&sample];
-        // Just verify it doesn't panic — TSV output goes to stdout
+        // Just verify it doesn't panic -- TSV output goes to stdout
         print_table(&samples, "http://localhost:9090/metrics");
     }
 

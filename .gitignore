@@ -47,3 +47,66 @@ STATE.md
 
 # Git worktrees
 .worktrees/
+
+# Local working files (not committed)
+hyperi-ai/
+.mcp.json
+TODO.md
+.ai-version
+
+# OS junk (never useful in repo)
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Editor / IDE local state
+.idea/
+.vscode/
+
+# Local environment files (never commit -- contain secrets)
+.env
+.env.*
+!.env.example
+!.env.example.*
+
+# here.
+docs/superpowers/
+.mcp.json
+TODO.md
+.ai-version
+
+# Git worktrees (local dev convenience)
+.worktrees/
+
+# Rust build artefacts
+target/
+**/*.rs.bk
+*.pdb
+*.profraw
+*.profdata
+coverage-html/
+coverage.lcov
+tarpaulin-report.json
+cobertura.xml
+
+# cargo
+.cargo/
+!.cargo/config.toml
+
+# them alone if already present.
+docs/superpowers/
+.mcp.json
+.ai-version
+
+# committed -- mirrored in .git/info/exclude.
+CLAUDE.md
+TODO.md
+AGENTS.md
+GEMINI.md
+.claude/
+.codex/
+.cursor/
+.gemini/
+.cursorrules

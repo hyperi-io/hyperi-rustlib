@@ -3,14 +3,70 @@
 // Purpose:   Memory guard with backpressure signals
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Memory guard with backpressure signals.
 
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use super::cgroup;
+
+/// Process-wide total-heap byte source, set once at startup.
+///
+/// See [`set_heap_source`] for the rationale. Allocator-agnostic: any
+/// `fn() -> usize` returning live heap bytes (e.g. `cap::Cap::allocated`,
+/// jemalloc `stats.allocated`).
+static HEAP_SOURCE: OnceLock<fn() -> usize> = OnceLock::new();
+
+/// Register a process-wide source of total live-heap bytes.
+///
+/// When set, every [`MemoryGuard`] switches its read path
+/// ([`current_bytes`](MemoryGuard::current_bytes), pressure checks, and
+/// [`try_reserve`](MemoryGuard::try_reserve) admission) from the per-batch
+/// reservation counter to this source -- a cheap, accurate, *total-process*
+/// heap figure that also catches growth the per-batch reservations never see
+/// (e.g. a transform ballooning a `Vec`).
+///
+/// **Why a global hook and not a dependency:** a tracking allocator must be
+/// the binary's single `#[global_allocator]`, which is the *application's*
+/// choice, not a library's -- and rustlib is `#![forbid(unsafe_code)]`, so it
+/// cannot implement one anyway. The application installs its allocator and
+/// wires it here in a few lines. This keeps rustlib allocator-agnostic with no
+/// allocator dependency in its graph.
+///
+/// The first call wins and returns `true`; later calls are a no-op and return
+/// `false` (the existing source is kept). Call once at startup, before
+/// constructing guards.
+///
+/// The application picks a tracking allocator -- prefer an actively-maintained
+/// one such as `tikv-jemalloc-ctl` (`stats.allocated`); the `cap` crate also
+/// works but is effectively unmaintained (last release 2023).
+///
+/// ```ignore
+/// // In the application binary, using jemalloc:
+/// #[global_allocator]
+/// static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+///
+/// fn main() {
+///     hyperi_rustlib::memory::set_heap_source(|| {
+///         tikv_jemalloc_ctl::epoch::advance().ok();
+///         tikv_jemalloc_ctl::stats::allocated::read().unwrap_or(0)
+///     });
+///     // ... build ServiceRuntime / MemoryGuard ...
+/// }
+/// ```
+#[must_use]
+pub fn set_heap_source(source: fn() -> usize) -> bool {
+    HEAP_SOURCE.set(source).is_ok()
+}
+
+/// Read the registered total-heap source, if any.
+#[inline]
+fn heap_bytes() -> Option<u64> {
+    HEAP_SOURCE.get().map(|f| f() as u64)
+}
 
 /// Read an env var `{PREFIX}_{SUFFIX}` and parse it.
 fn env_parsed<T: std::str::FromStr>(prefix: &str, suffix: &str) -> Option<T> {
@@ -26,7 +82,7 @@ pub enum MemoryPressure {
     Low,
     /// Usage between 50% and pressure_threshold.
     Medium,
-    /// Usage above pressure_threshold — apply backpressure.
+    /// Usage above pressure_threshold -- apply backpressure.
     High,
 }
 
@@ -61,6 +117,47 @@ fn default_pressure_threshold() -> f64 {
 
 fn default_cgroup_headroom() -> f64 {
     DEFAULT_CGROUP_HEADROOM
+}
+
+/// A fraction is valid iff it is finite and within `(0.0, 1.0]`.
+fn check_fraction(v: f64, name: &str) -> Result<(), String> {
+    if !v.is_finite() || v <= 0.0 || v > 1.0 {
+        return Err(format!(
+            "memory.{name} must be a finite fraction in (0.0, 1.0], got {v}"
+        ));
+    }
+    Ok(())
+}
+
+/// Return `v` if it is a valid fraction, else log an error and substitute
+/// `default`. Defensive guard so a bad config cannot produce a zero/`NaN`
+/// limit and a divide-by-zero pressure ratio.
+fn sane_fraction(v: f64, default: f64, name: &str) -> f64 {
+    if check_fraction(v, name).is_err() {
+        tracing::error!(
+            value = v,
+            "invalid memory.{name} (need finite fraction in (0,1]); using default {default}"
+        );
+        default
+    } else {
+        v
+    }
+}
+
+/// Effective auto-detected limit: cgroup limit * headroom, capped at the soft
+/// throttle (`memory.high`) when that is set lower.
+///
+/// The kernel reclaims hard and throttles allocations at `memory.high` (before
+/// the `memory.max` OOM-kill), so admitting past it courts a latency cliff.
+/// Pure, so the cap logic is unit-testable without touching the real cgroup
+/// files.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn effective_auto_limit(detected: u64, headroom: f64, high: Option<u64>) -> u64 {
+    let headroom_limit = (detected as f64 * headroom) as u64;
+    match high {
+        Some(h) => headroom_limit.min(h),
+        None => headroom_limit,
+    }
 }
 
 /// Default cgroup headroom: use 85% of cgroup limit.
@@ -107,9 +204,9 @@ impl MemoryGuardConfig {
     /// Create config from environment variables with a prefix.
     ///
     /// Reads standard env vars for memory configuration:
-    /// - `{PREFIX}_MEMORY_LIMIT_BYTES` — explicit limit (0 or unset = auto-detect from cgroup)
-    /// - `{PREFIX}_MEMORY_PRESSURE_THRESHOLD` — backpressure trigger (default 0.80)
-    /// - `{PREFIX}_MEMORY_CGROUP_HEADROOM` — fraction of cgroup limit to use (default 0.85)
+    /// - `{PREFIX}_MEMORY_LIMIT_BYTES` -- explicit limit (0 or unset = auto-detect from cgroup)
+    /// - `{PREFIX}_MEMORY_PRESSURE_THRESHOLD` -- backpressure trigger (default 0.80)
+    /// - `{PREFIX}_MEMORY_CGROUP_HEADROOM` -- fraction of cgroup limit to use (default 0.85)
     ///
     /// # Example
     ///
@@ -126,20 +223,48 @@ impl MemoryGuardConfig {
     #[must_use]
     #[cfg(feature = "config")]
     pub fn from_env(prefix: &str) -> Self {
+        let mut config = Self::default();
+        config.apply_flat_env(prefix);
+        config
+    }
+
+    /// Overlay the flat `{PREFIX}_MEMORY_*` env vars onto this config in place.
+    ///
+    /// This is the legacy DFE single-underscore convention
+    /// (`DFE_MEMORY_LIMIT_BYTES`), distinct from the config cascade's nested
+    /// `__` env layer (`{APP}__MEMORY__LIMIT_BYTES`). A present var wins; an
+    /// absent var leaves the field untouched.
+    #[cfg(feature = "config")]
+    fn apply_flat_env(&mut self, prefix: &str) {
         use crate::config::flat_env::flat_env_parsed;
 
-        let mut config = Self::default();
-
         if let Some(v) = flat_env_parsed::<u64>(prefix, "MEMORY_LIMIT_BYTES") {
-            config.limit_bytes = v;
+            self.limit_bytes = v;
         }
         if let Some(v) = flat_env_parsed::<f64>(prefix, "MEMORY_PRESSURE_THRESHOLD") {
-            config.pressure_threshold = v;
+            self.pressure_threshold = v;
         }
         if let Some(v) = flat_env_parsed::<f64>(prefix, "MEMORY_CGROUP_HEADROOM") {
-            config.cgroup_headroom = v;
+            self.cgroup_headroom = v;
         }
+    }
 
+    /// Cascade-honouring resolution: the config cascade `memory:` section
+    /// (`defaults.yaml` < `settings.yaml` < `settings.{env}.yaml` < nested `__`
+    /// env) is the BASE, with the legacy flat `{PREFIX}_MEMORY_*` env vars
+    /// overlaid as the most-specific operator override.
+    ///
+    /// This is what the live guard should use. [`from_env`](Self::from_env)
+    /// alone ignores the cascade `memory:` section entirely -- setting it in
+    /// YAML did nothing for the guard before 2.8.12 (the recurring
+    /// "set a cascade value, nothing happens" footgun). Requires
+    /// `config::setup()` to have populated the cascade (which `run_app` now
+    /// does, since 2.8.11).
+    #[must_use]
+    #[cfg(feature = "config")]
+    pub fn from_cascade_with_env(prefix: &str) -> Self {
+        let mut config = Self::from_cascade();
+        config.apply_flat_env(prefix);
         config
     }
 
@@ -162,6 +287,21 @@ impl MemoryGuardConfig {
 
         config
     }
+
+    /// Validate the config, returning an error describing the first invalid
+    /// field. `pressure_threshold` and `cgroup_headroom` must each be a finite
+    /// fraction in `(0.0, 1.0]`. Call this at startup to fail fast on bad
+    /// config rather than relying on [`MemoryGuard::new`]'s defensive clamping.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` with a human-readable message if a fraction field is
+    /// non-finite, `<= 0.0`, or `> 1.0`.
+    pub fn validate(&self) -> Result<(), String> {
+        check_fraction(self.pressure_threshold, "pressure_threshold")?;
+        check_fraction(self.cgroup_headroom, "cgroup_headroom")?;
+        Ok(())
+    }
 }
 
 /// Cgroup-aware memory tracking with backpressure signals.
@@ -178,10 +318,10 @@ impl MemoryGuardConfig {
 ///
 /// let guard = MemoryGuard::new(MemoryGuardConfig::default());
 ///
-/// // On data arrival — check before accepting
+/// // On data arrival -- check before accepting
 /// let payload_len = 1024u64;
 /// if !guard.try_reserve(payload_len) {
-///     // return 503 — backpressure
+///     // return 503 -- backpressure
 /// }
 ///
 /// // After data is flushed/sent
@@ -211,37 +351,60 @@ impl MemoryGuard {
     #[must_use]
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn new(config: MemoryGuardConfig) -> Self {
+        // Defensive: a non-finite / out-of-range threshold or headroom would
+        // produce a zero/NaN limit and a divide-by-zero pressure ratio. Clamp
+        // to the safe default and log loudly. Callers wanting hard rejection
+        // should call `config.validate()` at startup.
+        let pressure_threshold = sane_fraction(
+            config.pressure_threshold,
+            DEFAULT_PRESSURE_THRESHOLD,
+            "pressure_threshold",
+        );
+        let cgroup_headroom = sane_fraction(
+            config.cgroup_headroom,
+            DEFAULT_CGROUP_HEADROOM,
+            "cgroup_headroom",
+        );
+
         let raw_limit = if config.limit_bytes > 0 {
             config.limit_bytes
         } else {
-            let detected = cgroup::detect_memory_limit();
-            // Apply headroom — don't use 100% of cgroup limit
-            (detected as f64 * config.cgroup_headroom) as u64
+            effective_auto_limit(
+                cgroup::detect_memory_limit(),
+                cgroup_headroom,
+                cgroup::detect_memory_high(),
+            )
         };
+        // Never permit a zero effective limit: every pressure calculation
+        // divides by it.
+        let limit_bytes = raw_limit.max(1);
 
-        tracing::info!(
-            limit_bytes = raw_limit,
-            pressure_threshold = config.pressure_threshold,
-            "memory guard initialised"
-        );
+        tracing::info!(limit_bytes, pressure_threshold, "memory guard initialised");
 
         Self {
             current_bytes: AtomicU64::new(0),
-            limit_bytes: raw_limit,
-            pressure_threshold: config.pressure_threshold,
+            limit_bytes,
+            pressure_threshold,
             under_pressure: AtomicBool::new(false),
         }
     }
 
     /// Try to reserve bytes. Returns false if over the limit (backpressure).
     ///
-    /// This is an atomic check-and-add. If the reservation would exceed
-    /// the limit, the bytes are NOT added and false is returned.
+    /// With a registered [`set_heap_source`], this is a projected-admission
+    /// check against the *true total heap* (`heap() + bytes <= limit`) and does
+    /// NOT mutate the reservation counter -- the allocator already accounts the
+    /// bytes once they are allocated, and frees them on drop, so no `release`
+    /// is needed. Without a source it is the classic atomic check-and-add on
+    /// the per-batch counter (rolled back if it would exceed the limit).
     #[inline]
     pub fn try_reserve(&self, bytes: u64) -> bool {
+        if let Some(heap) = heap_bytes() {
+            return heap + bytes <= self.limit_bytes;
+        }
         let current = self.current_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes;
         if current > self.limit_bytes {
-            // Over limit — roll back
+            // Over limit -- roll back
             self.current_bytes.fetch_sub(bytes, Ordering::Relaxed);
             self.under_pressure.store(true, Ordering::Relaxed);
             return false;
@@ -273,9 +436,16 @@ impl MemoryGuard {
         self.update_pressure(prev.saturating_sub(bytes));
     }
 
-    /// Fast hot-path pressure check (single atomic load).
+    /// Fast hot-path pressure check.
+    ///
+    /// With a registered [`set_heap_source`], computes live from the true heap
+    /// (one atomic load + compare); otherwise reads the cached flag maintained
+    /// by `try_reserve`/`add_bytes`/`release`.
     #[inline]
     pub fn under_pressure(&self) -> bool {
+        if heap_bytes().is_some() {
+            return self.pressure_ratio() >= self.pressure_threshold;
+        }
         self.under_pressure.load(Ordering::Relaxed)
     }
 
@@ -295,13 +465,16 @@ impl MemoryGuard {
     /// Current usage as fraction of limit (0.0 - 1.0+).
     #[inline]
     pub fn pressure_ratio(&self) -> f64 {
-        self.current_bytes.load(Ordering::Relaxed) as f64 / self.limit_bytes as f64
+        self.current_bytes() as f64 / self.limit_bytes as f64
     }
 
-    /// Current tracked bytes.
+    /// Current memory usage in bytes.
+    ///
+    /// Returns the true total live heap when a [`set_heap_source`] is
+    /// registered, otherwise the sum of outstanding per-batch reservations.
     #[inline]
     pub fn current_bytes(&self) -> u64 {
-        self.current_bytes.load(Ordering::Relaxed)
+        heap_bytes().unwrap_or_else(|| self.current_bytes.load(Ordering::Relaxed))
     }
 
     /// Configured memory limit in bytes.
@@ -364,7 +537,7 @@ mod tests {
             pressure_threshold: 0.8,
             ..Default::default()
         });
-        guard.add_bytes(900); // 90% — over threshold
+        guard.add_bytes(900); // 90% -- over threshold
         assert!(guard.under_pressure());
         assert_eq!(guard.pressure(), MemoryPressure::High);
 
@@ -412,7 +585,7 @@ mod tests {
             ..Default::default()
         });
         guard.add_bytes(100);
-        guard.release(200); // release more than added — saturates to 0
+        guard.release(200); // release more than added -- saturates to 0
         assert_eq!(
             guard.current_bytes(),
             0,
@@ -450,7 +623,7 @@ mod tests {
         for h in handles {
             h.join().unwrap();
         }
-        // All bytes should be released — may not be exactly 0 due to ordering
+        // All bytes should be released -- may not be exactly 0 due to ordering
         // but should be close (within one thread's batch)
         assert!(
             guard.current_bytes() < 1000,
@@ -470,6 +643,67 @@ mod tests {
         assert_eq!(guard.current_bytes(), 90); // not 110
         assert!(guard.try_reserve(10)); // exactly at limit
         assert_eq!(guard.current_bytes(), 100);
+    }
+
+    // Process-global heap source for the switch test. nextest isolates each
+    // test in its own process, so registering it here is contained to this
+    // test and does not leak into the per-batch-counter tests above. (This is
+    // the single test in this module that touches the global hook.)
+    static TEST_HEAP: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    fn test_heap_source() -> usize {
+        TEST_HEAP.load(Ordering::Relaxed)
+    }
+
+    #[test]
+    fn heap_source_overrides_read_path_and_admission() {
+        assert!(set_heap_source(test_heap_source), "first set wins");
+        assert!(
+            !set_heap_source(test_heap_source),
+            "second set is a no-op (first-wins)"
+        );
+
+        let guard = MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 1_000,
+            pressure_threshold: 0.8,
+            ..Default::default()
+        });
+
+        // Reads come from the heap source, not the reservation counter.
+        TEST_HEAP.store(250, Ordering::Relaxed);
+        assert_eq!(guard.current_bytes(), 250);
+        assert!((guard.pressure_ratio() - 0.25).abs() < 0.001);
+        assert!(!guard.under_pressure());
+
+        // Pressure tracks the live heap -- including growth never reserved,
+        // which the per-batch counter would have been blind to.
+        TEST_HEAP.store(850, Ordering::Relaxed);
+        assert!(
+            guard.under_pressure(),
+            "85% live heap is over the 80% threshold"
+        );
+        assert_eq!(guard.pressure(), MemoryPressure::High);
+
+        // try_reserve is a projected-admission check against the true heap and
+        // does NOT mutate the reservation counter.
+        TEST_HEAP.store(900, Ordering::Relaxed);
+        assert!(guard.try_reserve(100), "900 + 100 == limit, admitted");
+        assert!(!guard.try_reserve(200), "900 + 200 > limit, rejected");
+        assert_eq!(
+            guard.current_bytes(),
+            900,
+            "counter untouched by try_reserve"
+        );
+    }
+
+    #[test]
+    fn effective_auto_limit_caps_at_memory_high() {
+        // headroom 0.85 of 1000 = 850; high 600 is lower -> cap at the soft
+        // throttle so we shed before the kernel does.
+        assert_eq!(effective_auto_limit(1000, 0.85, Some(600)), 600);
+        // high above the headroom limit -> headroom wins (no change).
+        assert_eq!(effective_auto_limit(1000, 0.85, Some(900)), 850);
+        // no memory.high in force -> headroom limit.
+        assert_eq!(effective_auto_limit(1000, 0.85, None), 850);
     }
 
     #[test]
@@ -519,6 +753,61 @@ mod tests {
         let guard = MemoryGuard::new(config);
         // Auto-detected, so limit should be 85% of system/cgroup memory
         assert!(guard.limit_bytes() > 0);
+    }
+
+    #[test]
+    fn test_validate_accepts_defaults_and_rejects_bad_fractions() {
+        assert!(MemoryGuardConfig::default().validate().is_ok());
+
+        for bad in [0.0, -0.1, 1.5, f64::NAN, f64::INFINITY] {
+            let cfg = MemoryGuardConfig {
+                pressure_threshold: bad,
+                ..Default::default()
+            };
+            assert!(
+                cfg.validate().is_err(),
+                "pressure_threshold={bad} must be rejected"
+            );
+            let cfg = MemoryGuardConfig {
+                cgroup_headroom: bad,
+                ..Default::default()
+            };
+            assert!(
+                cfg.validate().is_err(),
+                "cgroup_headroom={bad} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_new_clamps_invalid_config_no_divide_by_zero() {
+        // A zero/NaN headroom with auto-detect could yield a zero limit ->
+        // divide-by-zero. A zero pressure_threshold would make every ratio
+        // "over". new() must clamp to safe defaults and keep ratios finite.
+        let guard = MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 0,
+            pressure_threshold: 0.0,
+            cgroup_headroom: 0.0,
+        });
+        assert!(guard.limit_bytes() >= 1, "limit floored at >=1");
+        guard.add_bytes(10);
+        assert!(
+            guard.pressure_ratio().is_finite(),
+            "pressure ratio must be finite, not div-by-zero"
+        );
+    }
+
+    #[test]
+    fn test_new_with_nan_threshold_is_finite() {
+        let guard = MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 1000,
+            pressure_threshold: f64::NAN,
+            cgroup_headroom: f64::NAN,
+        });
+        assert_eq!(guard.limit_bytes(), 1000);
+        guard.add_bytes(900);
+        // Clamped threshold (0.8 default) -> 90% is over -> under pressure.
+        assert!(guard.under_pressure());
     }
 
     #[test]

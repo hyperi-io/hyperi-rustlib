@@ -3,7 +3,7 @@
 // Purpose:   Process-level metrics collection
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Process-level metrics collection.
@@ -51,9 +51,10 @@ impl ProcessMetrics {
     fn register_metrics(&self) {
         let ns = &self.namespace;
 
-        metrics::describe_gauge!(
+        metrics::describe_counter!(
             format!("{ns}_process_cpu_seconds_total"),
-            "Total user and system CPU time spent in seconds".to_string()
+            metrics::Unit::Seconds,
+            "Total user + system CPU time consumed, in seconds (cumulative counter)".to_string()
         );
         metrics::describe_gauge!(
             format!("{ns}_process_resident_memory_bytes"),
@@ -75,7 +76,10 @@ impl ProcessMetrics {
 
     /// Update process metrics.
     pub fn update(&self) {
-        let mut system = self.system.lock().expect("lock poisoned");
+        // Recover from a poisoned lock rather than panicking: a panic in a
+        // prior update must not turn metrics collection into a repeat-panic.
+        // Observability degrades, it does not crash.
+        let mut system = self.system.lock().unwrap_or_else(|e| e.into_inner());
         system.refresh_processes_specifics(
             ProcessesToUpdate::Some(&[self.pid]),
             true,
@@ -85,9 +89,20 @@ impl ProcessMetrics {
         if let Some(process) = system.process(self.pid) {
             let ns = &self.namespace;
 
-            // CPU time (approximate - sysinfo gives percentage, not total time)
-            let cpu_usage = f64::from(process.cpu_usage());
-            metrics::gauge!(format!("{ns}_process_cpu_seconds_total")).set(cpu_usage);
+            // Cumulative CPU seconds as a proper monotonic COUNTER (Prometheus
+            // convention). sysinfo's cpu_usage() is an instantaneous percentage,
+            // NOT cumulative time -- on Linux read utime+stime from
+            // /proc/self/stat instead. Utilisation is derived downstream as
+            // rate(this) / container_cpu_limit_cores (in the pressure CEL / a
+            // recording rule), not baked in here.
+            #[cfg(target_os = "linux")]
+            if let Some(cpu_secs) = cumulative_cpu_seconds() {
+                // Monotonic, non-negative cumulative seconds -> whole-second
+                // truncation into the u64 counter is intentional.
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let secs = cpu_secs as u64;
+                metrics::counter!(format!("{ns}_process_cpu_seconds_total")).absolute(secs);
+            }
 
             // Memory
             let rss = process.memory();
@@ -114,6 +129,34 @@ impl ProcessMetrics {
 fn count_open_fds() -> std::io::Result<usize> {
     let fd_dir = format!("/proc/{}/fd", std::process::id());
     std::fs::read_dir(fd_dir).map(|entries| entries.count())
+}
+
+/// Cumulative process CPU time (user + system) in seconds, from
+/// `/proc/self/stat` (Linux). Returns `None` if it cannot be read/parsed.
+///
+/// USER_HZ (clock ticks per second) is hard-coded to 100 -- the Linux default,
+/// and not queryable via `sysconf` under `#![forbid(unsafe_code)]`. The u64
+/// counter truncates to whole seconds; that is ample for the `rate()`-derived
+/// CPU utilisation the pressure engine consumes.
+#[cfg(target_os = "linux")]
+pub(crate) fn cumulative_cpu_seconds() -> Option<f64> {
+    const USER_HZ: f64 = 100.0;
+    let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+    // "pid (comm) state ..." -- comm may contain spaces/parens, so split on the
+    // LAST ')' to skip it safely.
+    let rest = stat.rsplit_once(')')?.1;
+    let fields: Vec<&str> = rest.split_whitespace().collect();
+    // Fields after comm (0-based): [0]=state ... [11]=utime [12]=stime (ticks).
+    let utime: u64 = fields.get(11)?.parse().ok()?;
+    let stime: u64 = fields.get(12)?.parse().ok()?;
+    Some((utime + stime) as f64 / USER_HZ)
+}
+
+/// Non-Linux fallback: cumulative CPU seconds is unavailable (the scaling engine
+/// then derives no CPU term on those platforms). Production targets are Linux.
+#[cfg(all(not(target_os = "linux"), feature = "scaling", feature = "expression"))]
+pub(crate) fn cumulative_cpu_seconds() -> Option<f64> {
+    None
 }
 
 #[cfg(test)]

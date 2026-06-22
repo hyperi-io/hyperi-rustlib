@@ -3,7 +3,7 @@
 // Purpose:   Dlq orchestrator over BackgroundSink<DlqEntry>
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Dlq orchestrator.
@@ -15,15 +15,15 @@
 //! ## Hot path
 //!
 //! `try_send` / `send` queue an entry onto the in-memory mpsc and
-//! return. The drain task — the only place that touches backends —
+//! return. The drain task -- the only place that touches backends --
 //! coalesces queued entries into batches and writes to backends. The
 //! caller never blocks on disk, Kafka, HTTP, or Redis I/O.
 //!
 //! ## Modes
 //!
-//! - `Cascade` / `FileOnly` / `KafkaOnly` — try backends in order,
+//! - `Cascade` / `FileOnly` / `KafkaOnly` -- try backends in order,
 //!   stop on first success.
-//! - `FanOut` — send to all backends, succeed if any succeed.
+//! - `FanOut` -- send to all backends, succeed if any succeed.
 //!
 //! ## Shutdown
 //!
@@ -61,6 +61,13 @@ pub struct Dlq {
     join: Arc<AsyncMutex<Option<BackgroundSinkHandle>>>,
     enabled: bool,
     mode: DlqMode,
+    /// Child of the user-supplied shutdown token. The drain task runs
+    /// on this child, so [`Dlq::shutdown`] can cancel only the DLQ
+    /// without affecting the caller's broader shutdown plan. When the
+    /// caller cancels their own token, the child fires too (normal
+    /// child-token semantics), so the drain still exits on global
+    /// shutdown.
+    cancel: CancellationToken,
 }
 
 impl std::fmt::Debug for Dlq {
@@ -90,6 +97,7 @@ impl Dlq {
             join: Arc::new(AsyncMutex::new(None)),
             enabled: false,
             mode: DlqMode::default(),
+            cancel: CancellationToken::new(),
         }
     }
 
@@ -97,7 +105,7 @@ impl Dlq {
     ///
     /// `kafka_config` is required if the config has `kafka.enabled =
     /// true` (or the mode demands Kafka). Pass `None` if the service
-    /// has no Kafka transport — Kafka mode/enabled flags are honoured
+    /// has no Kafka transport -- Kafka mode/enabled flags are honoured
     /// where possible and a clear `Err(DlqError::NotConfigured)` is
     /// returned if Kafka is required but unavailable.
     ///
@@ -123,7 +131,7 @@ impl Dlq {
         )?;
 
         if backends.is_empty() {
-            warn!("DLQ enabled but no backends configured — entries will be dropped");
+            warn!("DLQ enabled but no backends configured -- entries will be dropped");
             return Ok(Self::disabled());
         }
 
@@ -143,13 +151,19 @@ impl Dlq {
             metric_prefix: Some("dfe_dlq"),
         };
 
-        let (sink, handle) = BackgroundSink::spawn(drain, sink_config, shutdown);
+        // Derive a child token so `Dlq::shutdown` can stop the drain
+        // without forcing the caller to cancel their broader shutdown
+        // plan. The child fires automatically when the parent fires,
+        // so global shutdown still drains the DLQ.
+        let cancel = shutdown.child_token();
+        let (sink, handle) = BackgroundSink::spawn(drain, sink_config, cancel.clone());
 
         Ok(Self {
             sink: Some(sink),
             join: Arc::new(AsyncMutex::new(Some(handle))),
             enabled: true,
             mode: config.mode,
+            cancel,
         })
     }
 
@@ -179,7 +193,7 @@ impl Dlq {
 
     /// Sync-shaped queue submission. Returns immediately. On a full
     /// queue, returns `Err(DlqError::QueueFull)` and increments the
-    /// drop counter — caller decides whether to log, escalate, or
+    /// drop counter -- caller decides whether to log, escalate, or
     /// proceed.
     ///
     /// # Errors
@@ -190,7 +204,20 @@ impl Dlq {
         let Some(sink) = self.sink.as_ref() else {
             return Ok(());
         };
-        sink.try_push(entry).map_err(map_sink_err)
+        // `let_and_return` is allowed because the binding IS consumed by the
+        // metrics block below when the `metrics` feature is on.
+        #[cfg_attr(not(feature = "metrics"), allow(clippy::let_and_return))]
+        let res = sink.try_push(entry).map_err(map_sink_err);
+        // New default (metrics audit): admission + queue depth. The drop path
+        // is already counted as `dfe_dlq_dropped_total` by the BackgroundSink.
+        // `dfe_dlq_queue_depth` is a clear-named alias of the sink's
+        // `dfe_dlq_pending` gauge -- rising depth = downstream failing.
+        #[cfg(feature = "metrics")]
+        if res.is_ok() {
+            metrics::counter!("dfe_dlq_admitted_total").increment(1);
+            metrics::gauge!("dfe_dlq_queue_depth").set(sink.pending() as f64);
+        }
+        res
     }
 
     /// Async submission that awaits queue space.
@@ -205,7 +232,15 @@ impl Dlq {
         let Some(sink) = self.sink.as_ref() else {
             return Ok(());
         };
-        sink.push_blocking(entry).await.map_err(map_sink_err)
+        #[cfg_attr(not(feature = "metrics"), allow(clippy::let_and_return))]
+        let res = sink.push_blocking(entry).await.map_err(map_sink_err);
+        // New default (metrics audit): admission + queue depth (see `try_send`).
+        #[cfg(feature = "metrics")]
+        if res.is_ok() {
+            metrics::counter!("dfe_dlq_admitted_total").increment(1);
+            metrics::gauge!("dfe_dlq_queue_depth").set(sink.pending() as f64);
+        }
+        res
     }
 
     /// Async batch submission. Each entry is queued individually; the
@@ -220,7 +255,13 @@ impl Dlq {
         };
         for entry in entries {
             sink.push_blocking(entry).await.map_err(map_sink_err)?;
+            // Count each admitted entry (matches try_send/send). A mid-batch
+            // error counts the prefix already pushed -- at-least-once.
+            #[cfg(feature = "metrics")]
+            metrics::counter!("dfe_dlq_admitted_total").increment(1);
         }
+        #[cfg(feature = "metrics")]
+        metrics::gauge!("dfe_dlq_queue_depth").set(sink.pending() as f64);
         Ok(())
     }
 
@@ -238,18 +279,19 @@ impl Dlq {
         sink.flush().await.map_err(map_sink_err)
     }
 
-    /// Cancel the drain (assumes the caller already cancelled the
-    /// `CancellationToken` passed to `spawn`, OR all clones of this
-    /// `Dlq` have been dropped — either triggers shutdown) and await
-    /// graceful exit.
+    /// Cancel the internal child token (drain flushes its batch and
+    /// exits), then await the drain. Cancelling here rather than only
+    /// awaiting the join is what stops `shutdown` hanging when the
+    /// caller has not separately cancelled the token passed to `spawn`.
     ///
-    /// Idempotent: safe to call from many clones; the join happens
-    /// once.
+    /// Idempotent across clones: the join happens once; later calls see
+    /// an empty join slot and return Ok.
     ///
     /// # Errors
     ///
     /// Returns `Err(DlqError::Closed)` if the drain task panicked.
     pub async fn shutdown(&self) -> Result<(), DlqError> {
+        self.cancel.cancel();
         let mut guard = self.join.lock().await;
         let Some(handle) = guard.take() else {
             return Ok(());
@@ -278,7 +320,7 @@ fn build_backends(
     let mut backends: Vec<DlqBackend> = Vec::new();
     let mode = config.mode;
 
-    // Kafka first (primary in cascade) — feature-gated.
+    // Kafka first (primary in cascade) -- feature-gated.
     #[cfg(feature = "dlq-kafka")]
     {
         let want_kafka = matches!(
@@ -298,7 +340,7 @@ fn build_backends(
         }
     }
 
-    // File second (fallback in cascade) — always available.
+    // File second (fallback in cascade) -- always available.
     let want_file = matches!(mode, DlqMode::Cascade | DlqMode::FanOut | DlqMode::FileOnly);
     if want_file && config.file.enabled {
         backends.push(DlqBackend::File(FileDlqInner::new(
@@ -307,7 +349,7 @@ fn build_backends(
         )?));
     }
 
-    // HTTP — feature-gated, added when explicitly enabled.
+    // HTTP -- feature-gated, added when explicitly enabled.
     #[cfg(feature = "dlq-http")]
     {
         if config.http.enabled {
@@ -317,7 +359,7 @@ fn build_backends(
         }
     }
 
-    // Redis — feature-gated. Requires async constructor; we build a
+    // Redis -- feature-gated. Requires async constructor; we build a
     // tokio runtime handle inline. Spawn() must run inside a tokio
     // runtime (true for every HyperI service).
     #[cfg(feature = "dlq-redis")]
@@ -335,7 +377,7 @@ fn build_backends(
     Ok(backends)
 }
 
-/// Drain task — owns the backends and implements cascade / fan-out
+/// Drain task -- owns the backends and implements cascade / fan-out
 /// dispatch. Lives inside the actor task spawned by `BackgroundSink`.
 struct DlqDrain {
     mode: DlqMode,
@@ -361,6 +403,14 @@ impl SinkDrain<DlqEntry> for DlqDrain {
                                 count = batch.len(),
                                 "DLQ backend failed in cascade, trying next"
                             );
+                            // New default (metrics audit): a cascade fall-through
+                            // to the next backend is a retry attempt.
+                            #[cfg(feature = "metrics")]
+                            metrics::counter!(
+                                "dfe_dlq_retried_total",
+                                "backend" => backend.name()
+                            )
+                            .increment(1);
                             last_err = Some(e);
                         }
                     }

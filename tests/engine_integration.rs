@@ -1,18 +1,17 @@
 // Project:   hyperi-rustlib
 // File:      tests/engine_integration.rs
-// Purpose:   Integration tests for BatchEngine transport-wired run loop
+// Purpose:   Integration tests for BatchEngine WorkBatch driver run loop
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 #![cfg(all(feature = "worker", feature = "transport-memory"))]
 
 use std::sync::{Arc, Mutex};
 
-use bytes::Bytes;
-use hyperi_rustlib::transport::{MemoryConfig, MemoryTransport};
-use hyperi_rustlib::worker::{BatchEngine, BatchProcessingConfig, EngineError};
+use hyperi_rustlib::transport::{MemoryConfig, MemoryTransport, WorkBatch};
+use hyperi_rustlib::worker::{BatchEngine, BatchProcessingConfig, CommitMode, EngineError};
 use tokio_util::sync::CancellationToken;
 
 /// Build a default engine.
@@ -27,6 +26,7 @@ fn make_transport() -> MemoryTransport {
         recv_timeout_ms: 0,
         ..Default::default()
     })
+    .expect("memory transport with valid config must construct")
 }
 
 /// Inject JSON messages into the transport.
@@ -37,10 +37,19 @@ async fn inject_json(transport: &MemoryTransport, n: usize) {
     }
 }
 
-// --- run() tests ---
+/// No-ticker placeholder for the driver's `ticker` argument.
+#[allow(clippy::type_complexity)]
+fn no_ticker() -> Option<(
+    std::time::Duration,
+    fn() -> std::future::Ready<Result<(), EngineError>>,
+)> {
+    None
+}
+
+// --- run_workbatch() tests (the WorkBatch driver replaced the legacy loops) ---
 
 #[tokio::test]
-async fn run_processes_injected_messages_then_shuts_down() {
+async fn run_workbatch_processes_injected_records_then_shuts_down() {
     let engine = make_engine();
     let transport = make_transport();
 
@@ -59,37 +68,46 @@ async fn run_processes_injected_messages_then_shuts_down() {
     });
 
     let result = engine
-        .run(
+        .run_workbatch(
             &transport,
             shutdown,
-            |pm| -> Result<String, String> {
-                Ok(pm
-                    .field("_table")
-                    .and_then(|v| sonic_rs::JsonValueTrait::as_str(v))
-                    .unwrap_or("?")
-                    .to_string())
+            // On-demand process: parse each record's payload to read `_table`.
+            |batch| Ok(batch),
+            |out: &WorkBatch<_>| {
+                let collected = Arc::clone(&collected_clone);
+                let tables: Vec<String> = out
+                    .records
+                    .iter()
+                    .map(|r| {
+                        let parsed =
+                            hyperi_rustlib::transport::codec::parse(&r.payload, r.metadata.format)
+                                .expect("valid json");
+                        parsed.field_str("_table").unwrap_or("?").to_string()
+                    })
+                    .collect();
+                async move {
+                    collected.lock().unwrap().extend(tables);
+                    Ok(())
+                }
             },
-            |results| {
-                let mut guard = collected_clone.lock().unwrap();
-                guard.extend(results.into_iter().flatten());
-                Ok(())
-            },
+            CommitMode::Auto,
+            no_ticker(),
         )
         .await;
 
-    // run() exits cleanly on shutdown.
+    // run_workbatch() exits cleanly on shutdown.
     assert!(
         result.is_ok(),
-        "run() should return Ok on shutdown: {result:?}"
+        "run_workbatch() should return Ok on shutdown: {result:?}"
     );
-    // At least some messages were processed (exact count depends on scheduling).
+    // At least some records were processed (exact count depends on scheduling).
     let guard = collected.lock().unwrap();
-    assert!(!guard.is_empty(), "Expected at least one processed message");
+    assert!(!guard.is_empty(), "Expected at least one processed record");
     assert!(guard.iter().all(|s| s == "events"));
 }
 
 #[tokio::test]
-async fn run_shuts_down_immediately_when_empty() {
+async fn run_workbatch_shuts_down_immediately_when_empty() {
     let engine = make_engine();
     let transport = make_transport();
 
@@ -98,11 +116,13 @@ async fn run_shuts_down_immediately_when_empty() {
     shutdown.cancel();
 
     let result = engine
-        .run(
+        .run_workbatch(
             &transport,
             shutdown,
-            |_pm| -> Result<(), String> { Ok(()) },
-            |_results| Ok(()),
+            |batch| Ok(batch),
+            |_out: &WorkBatch<_>| async { Ok(()) },
+            CommitMode::Auto,
+            no_ticker(),
         )
         .await;
 
@@ -110,7 +130,7 @@ async fn run_shuts_down_immediately_when_empty() {
 }
 
 #[tokio::test]
-async fn run_sink_error_skips_commit() {
+async fn run_workbatch_sink_error_skips_commit() {
     let engine = make_engine();
     let transport = make_transport();
 
@@ -123,19 +143,24 @@ async fn run_sink_error_skips_commit() {
         token.cancel();
     });
 
-    // Sink always returns an error — committed_sequence should remain 0.
+    // Sink always returns an error. The sink error is now a TERMINAL ack-barrier
+    // error (Remediation Phase 1): the run stops and the commit is skipped, so
+    // the ORDERED/cumulative source commit can never advance past the unsent
+    // block. committed_sequence must remain 0.
     let result = engine
-        .run(
+        .run_workbatch(
             &transport,
             shutdown,
-            |_pm| -> Result<(), String> { Ok(()) },
-            |_results| Err(EngineError::Sink("intentional".into())),
+            |batch| Ok(batch),
+            |_out: &WorkBatch<_>| async { Err(EngineError::Sink("intentional".into())) },
+            CommitMode::Auto,
+            no_ticker(),
         )
         .await;
 
     assert!(
-        result.is_ok(),
-        "run() should still exit cleanly: {result:?}"
+        matches!(result, Err(EngineError::Sink(_))),
+        "sink error must be a terminal ack-barrier error: {result:?}"
     );
     // Commit was skipped because sink errored.
     assert_eq!(
@@ -145,10 +170,10 @@ async fn run_sink_error_skips_commit() {
     );
 }
 
-// --- run_raw() tests ---
+// --- raw byte processing via the on-demand driver (no parse) ---
 
 #[tokio::test]
-async fn run_raw_processes_messages_as_bytes() {
+async fn run_workbatch_processes_records_as_bytes() {
     let engine = make_engine();
     let transport = make_transport();
 
@@ -165,17 +190,21 @@ async fn run_raw_processes_messages_as_bytes() {
     });
 
     let result = engine
-        .run_raw(
+        .run_workbatch(
             &transport,
             shutdown,
-            |raw| -> Result<usize, String> { Ok(raw.payload.len()) },
-            |results| {
-                let mut guard = lengths_clone.lock().unwrap();
-                for r in results {
-                    guard.push(r.unwrap());
+            // Pass-through process pays no parse cost (raw byte handling).
+            |batch| Ok(batch),
+            |out: &WorkBatch<_>| {
+                let lengths = Arc::clone(&lengths_clone);
+                let lens: Vec<usize> = out.records.iter().map(|r| r.payload.len()).collect();
+                async move {
+                    lengths.lock().unwrap().extend(lens);
+                    Ok(())
                 }
-                Ok(())
             },
+            CommitMode::Auto,
+            no_ticker(),
         )
         .await;
 
@@ -183,13 +212,13 @@ async fn run_raw_processes_messages_as_bytes() {
     let guard = lengths.lock().unwrap();
     assert!(
         !guard.is_empty(),
-        "Expected at least one raw message processed"
+        "Expected at least one raw record processed"
     );
     assert!(guard.iter().all(|&n| n > 0));
 }
 
 #[tokio::test]
-async fn run_raw_shuts_down_immediately_when_empty() {
+async fn run_workbatch_raw_shuts_down_immediately_when_empty() {
     let engine = make_engine();
     let transport = make_transport();
 
@@ -197,11 +226,13 @@ async fn run_raw_shuts_down_immediately_when_empty() {
     shutdown.cancel();
 
     let result = engine
-        .run_raw(
+        .run_workbatch(
             &transport,
             shutdown,
-            |_raw| -> Result<(), String> { Ok(()) },
-            |_results| Ok(()),
+            |batch| Ok(batch),
+            |_out: &WorkBatch<_>| async { Ok(()) },
+            CommitMode::Auto,
+            no_ticker(),
         )
         .await;
 
@@ -228,32 +259,14 @@ fn engine_error_debug_display() {
     let _ = format!("{e:?}");
 }
 
-/// Verify raw message bytes roundtrip through transport inject → recv.
+/// Verify record bytes roundtrip through transport inject -> recv (WorkBatch).
 #[tokio::test]
 async fn transport_inject_recv_roundtrip() {
     let transport = make_transport();
     transport.inject(None, b"hello".to_vec()).await.unwrap();
 
     use hyperi_rustlib::transport::TransportReceiver;
-    let messages = transport.recv(1).await.unwrap();
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].payload, b"hello");
-}
-
-/// Verify RawMessage::from works for transport messages.
-#[tokio::test]
-async fn raw_message_from_transport_message() {
-    use hyperi_rustlib::transport::TransportReceiver;
-    use hyperi_rustlib::worker::RawMessage;
-
-    let transport = make_transport();
-    transport
-        .inject(None, br#"{"x":1}"#.to_vec())
-        .await
-        .unwrap();
-
-    let messages = transport.recv(1).await.unwrap();
-    let raw: Vec<RawMessage> = messages.into_iter().map(RawMessage::from).collect();
-    assert_eq!(raw.len(), 1);
-    assert_eq!(raw[0].payload, Bytes::from(br#"{"x":1}"#.to_vec()));
+    let records = transport.recv(1).await.unwrap().records;
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].payload.as_ref(), b"hello");
 }

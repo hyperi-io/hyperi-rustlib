@@ -3,7 +3,7 @@
 // Purpose:   Mechanical lint enforcing the "no blocking I/O in async" rule
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Grep-based lint: scan every `.rs` file under `src/` for `async fn`

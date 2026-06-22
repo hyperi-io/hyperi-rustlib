@@ -33,14 +33,13 @@ socket, then fans messages out to per-tenant Kafka topics (durability)
 while a small set of audit events go to a dedicated gRPC archiver
 for low-latency capture.
 
-```text
-              ┌─────────────────────────────────────────┐
-gRPC ingress  │  RoutedSender                            │
-─────────────►│   "events.land" → Kafka topic events.land│
-              │   "events.load" → Kafka topic events.load│
-              │   "audit.land"  → gRPC archiver:6000     │
-              │   default       → Kafka (catch-all)      │
-              └─────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    Ingress["gRPC ingress"] --> RS{"RoutedSender<br/>dispatch by key"}
+    RS -->|"events.land"| K1["Kafka topic events.land"]
+    RS -->|"events.load"| K2["Kafka topic events.load"]
+    RS -->|"audit.land"| G["gRPC archiver:6000"]
+    RS -->|default| KC["Kafka catch-all"]
 ```
 
 ---

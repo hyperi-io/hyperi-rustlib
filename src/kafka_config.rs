@@ -3,7 +3,7 @@
 // Purpose:   Shared Kafka librdkafka defaults, profiles, and file config loader
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Shared Kafka librdkafka configuration profiles, merge helper, and file loader.
@@ -146,7 +146,7 @@ fn parse_yaml(content: &str, path: String) -> KafkaConfigResult<HashMap<String, 
     {
         let _ = (content, path);
         Err(KafkaConfigError::UnsupportedFormat {
-            ext: "yaml — enable the `directory-config` feature".to_string(),
+            ext: "yaml -- enable the `directory-config` feature".to_string(),
         })
     }
 }
@@ -163,7 +163,7 @@ fn parse_json(content: &str, path: String) -> KafkaConfigResult<HashMap<String, 
     {
         let _ = (content, path);
         Err(KafkaConfigError::UnsupportedFormat {
-            ext: "json — enable the `config` feature".to_string(),
+            ext: "json -- enable the `config` feature".to_string(),
         })
     }
 }
@@ -197,7 +197,7 @@ pub fn merge_with_overrides<S: std::hash::BuildHasher>(
 // Consumer Profiles
 // ============================================================================
 
-/// Production consumer baseline — lean, only non-defaults.
+/// Production consumer baseline -- lean, only non-defaults.
 ///
 /// | Setting | Value | librdkafka Default | Why |
 /// |---|---|---|---|
@@ -216,7 +216,7 @@ pub const CONSUMER_PRODUCTION: &[(&str, &str)] = &[
     ("statistics.interval.ms", "1000"),
 ];
 
-/// Development/test consumer baseline — fast iteration, low memory.
+/// Development/test consumer baseline -- fast iteration, low memory.
 ///
 /// | Setting | Value | librdkafka Default | Why |
 /// |---|---|---|---|
@@ -237,7 +237,7 @@ pub const CONSUMER_DEVTEST: &[(&str, &str)] = &[
     ("statistics.interval.ms", "1000"),
 ];
 
-/// Low-latency consumer — minimal fetch delay.
+/// Low-latency consumer -- minimal fetch delay.
 ///
 /// | Setting | Value | librdkafka Default | Why |
 /// |---|---|---|---|
@@ -262,7 +262,7 @@ pub const CONSUMER_LOW_LATENCY: &[(&str, &str)] = &[
 // Producer Profiles
 // ============================================================================
 
-/// Production producer baseline — high throughput, zstd compression.
+/// Production producer baseline -- high throughput, zstd compression.
 ///
 /// | Setting | Value | librdkafka Default | Why |
 /// |---|---|---|---|
@@ -277,7 +277,7 @@ pub const PRODUCER_PRODUCTION: &[(&str, &str)] = &[
     ("statistics.interval.ms", "1000"),
 ];
 
-/// Exactly-once producer — idempotence + ordering.
+/// Exactly-once producer -- idempotence + ordering.
 ///
 /// | Setting | Value | librdkafka Default | Why |
 /// |---|---|---|---|
@@ -298,7 +298,7 @@ pub const PRODUCER_EXACTLY_ONCE: &[(&str, &str)] = &[
     ("statistics.interval.ms", "1000"),
 ];
 
-/// Low-latency producer — minimal delay, leader-ack only.
+/// Low-latency producer -- minimal delay, leader-ack only.
 ///
 /// | Setting | Value | librdkafka Default | Why |
 /// |---|---|---|---|
@@ -315,7 +315,7 @@ pub const PRODUCER_LOW_LATENCY: &[(&str, &str)] = &[
     ("statistics.interval.ms", "1000"),
 ];
 
-/// DevTest producer — fast acks, no compression.
+/// DevTest producer -- fast acks, no compression.
 ///
 /// | Setting | Value | librdkafka Default | Why |
 /// |---|---|---|---|
@@ -338,7 +338,7 @@ pub const TOPIC_SUFFIX_LAND: &str = "_land";
 /// Default topic suffix for load-ready data (post-transform).
 pub const TOPIC_SUFFIX_LOAD: &str = "_load";
 
-/// DFE service role — determines consumer group naming convention.
+/// DFE service role -- determines consumer group naming convention.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServiceRole {
     /// Transform services (middleware): CG = `dfe-{service}-{source}`.
@@ -366,7 +366,7 @@ pub enum ServiceRole {
 /// `_land` and `_load`. It derives input/output topic names and source-scoped
 /// consumer group IDs from a source name.
 ///
-/// Terminal consumers (loader, archiver) do not use `DfeSource` — they
+/// Terminal consumers (loader, archiver) do not use `DfeSource` -- they
 /// consume from whatever topics are configured or auto-discovered, and their
 /// consumer group is simply `dfe-{service}` without a source component.
 ///
@@ -453,7 +453,7 @@ impl DfeSource {
 
     /// Consumer group ID following DFE naming conventions.
     ///
-    /// The `cg_override` takes precedence when set — use it when the operator
+    /// The `cg_override` takes precedence when set -- use it when the operator
     /// explicitly configures a consumer group in YAML/env.
     ///
     /// When `cg_override` is `None`, the default pattern depends on the
@@ -466,7 +466,7 @@ impl DfeSource {
     ///
     /// For transforms, `pipeline` overrides the source component in the CG
     /// (e.g. `syslog-enriched` instead of `syslog`). Either the `DfeSource`
-    /// name or `pipeline` must be non-empty — a bare service name is never
+    /// name or `pipeline` must be non-empty -- a bare service name is never
     /// valid for transforms because multiple pipelines would compete.
     ///
     /// # Errors
@@ -492,7 +492,7 @@ impl DfeSource {
                         path: String::new(),
                         message: format!(
                             "transform service '{service}' requires a source or pipeline \
-                             name for its consumer group — a bare 'dfe-{service}' CG would \
+                             name for its consumer group -- a bare 'dfe-{service}' CG would \
                              cause multiple pipelines to compete for messages"
                         ),
                     });

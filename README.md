@@ -4,21 +4,14 @@
 [![Build Status](https://github.com/hyperi-io/hyperi-rustlib/actions/workflows/ci.yml/badge.svg)](https://github.com/hyperi-io/hyperi-rustlib/actions)
 [![Crates.io](https://img.shields.io/crates/v/hyperi-rustlib?logo=rust)](https://crates.io/crates/hyperi-rustlib)
 [![docs.rs](https://img.shields.io/docsrs/hyperi-rustlib?logo=rust)](https://docs.rs/hyperi-rustlib)
-[![License](https://img.shields.io/badge/license-FSL--1.1--ALv2-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
 <!-- BADGES:END -->
 
-> **There's plenty of sage advice out there about how to run Rust services
-> in production at scale — config cascades, structured logging, masking
-> secrets, multi-backend secrets management, Prometheus, OpenTelemetry,
-> Kafka transports, tiered disk-spillover sinks, adaptive worker pools,
-> graceful shutdown — but almost none of it as code you can just install
-> and use.**
->
-> **This is that code.**
->
-> Opinionated, drop-in, working out of the box. The patterns from blog
-> posts as actual library — not a framework you assemble from twenty
-> crates and a weekend.
+There's plenty of sage advice out there about how to run Rust services in production at scale — config cascades, structured logging, masking secrets, multi-backend secrets management, Prometheus, OpenTelemetry, Kafka transports, tiered disk-spillover sinks, adaptive worker pools, graceful shutdown — but almost none of it as code you can just install and use.
+
+This is that code.
+
+Opinionated, drop-in, working out of the box. The patterns from blog posts, watercooler chats and beers with your Google mates as actual library — not a framework you assemble from twenty crates and 8 weeks of munging.
 
 Built as the foundation for HyperI's PB/hr data services. Generic enough
 that you don't need to be at HyperI to use it.
@@ -139,7 +132,7 @@ determine which runtime packages are needed.
 
 ```dockerfile
 # Build stage
-FROM rust:1.94 AS builder
+FROM rust:1 AS builder
 RUN apt-get update && apt-get install -y \
     pkg-config libssl-dev librdkafka-dev libgit2-dev libzstd-dev
 COPY . .
@@ -170,16 +163,28 @@ Liveness MUST NEVER check downstream dependencies (a DB outage shouldn't
 restart your replicas). Readiness checks dependencies AND requires an
 explicit `set_ready()` call — cleared during graceful shutdown.
 
+## Self-regulation (default vertical scaling)
+
+A rustlib data-plane app regulates its own intake. Sized for steady state, a
+pod slows down or speeds up WITHIN itself first -- the default, fast, local
+response to a burst, a stalled upstream, or a transform that balloons memory.
+Only when that vertical headroom is exhausted does it escalate to horizontal
+scale (KEDA adding pods), driven by the same pressure signal. Memory is the
+hard, never-OOM authority; CPU is left to the kernel scheduler (CFS), which
+the byte-budget loop reads through longer process times. It is ON by default
+and opt-out via `self_regulation.enabled = false`. See
+[docs/SELF-REGULATION.md](docs/SELF-REGULATION.md).
+
 ## Architecture
 
-See [docs/DESIGN.md](docs/DESIGN.md) for full architecture documentation
-and [docs/CONFIG-CASCADE.md](docs/CONFIG-CASCADE.md) for the 8-layer config
-cascade reference.
+See [docs/](docs/README.md) for the full documentation index —
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module map and layering,
+and [docs/core-pillars/CONFIG.md](docs/core-pillars/CONFIG.md) for the 8-layer
+config cascade reference.
 
 ## License
 
-[FSL-1.1-ALv2](LICENSE) — Functional Source License, transitions to Apache 2.0
-after 2 years.
+[BUSL-1.1](LICENSE) — Business Source License 1.1, transitions to Apache 2.0 after 3 years.
 
 ## Related
 

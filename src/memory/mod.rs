@@ -3,7 +3,7 @@
 // Purpose:   Memory management and OOM prevention
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Memory management and OOM prevention.
@@ -15,12 +15,14 @@
 //! # Architecture
 //!
 //! ```text
-//! Layer 1 (opt-in): Cap allocator — hard limit, last-resort crash instead of OOM-kill
-//! Layer 2 (default): MemoryGuard — cgroup-aware tracking, backpressure signals
+//! Layer 1 (opt-in): Cap allocator -- hard limit, last-resort crash instead of OOM-kill
+//! Layer 2 (default): MemoryGuard -- cgroup-aware tracking, backpressure signals
 //! ```
 
 pub mod cgroup;
 pub mod guard;
 
-pub use cgroup::detect_memory_limit;
-pub use guard::{MemoryGuard, MemoryGuardConfig, MemoryPressure};
+pub use cgroup::{
+    detect_memory_high, detect_memory_limit, detect_memory_pressure, detect_memory_stall,
+};
+pub use guard::{MemoryGuard, MemoryGuardConfig, MemoryPressure, set_heap_source};

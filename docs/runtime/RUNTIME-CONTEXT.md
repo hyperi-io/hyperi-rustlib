@@ -1,14 +1,12 @@
 # Runtime Context
 
 `RuntimeContext` is the per-process metadata bundle detected once at
-startup, cached in a `OnceLock`, and read by every module that needs
-to know about its deployment environment. Pod name, namespace, node
-name, cgroup memory limit, CPU quota — all of it sits behind one
-`runtime_context()` call.
+startup, cached in a `OnceLock`, read by every module that needs its
+deployment environment. Pod name, namespace, node name, cgroup memory
+limit, CPU quota -- all behind one `runtime_context()` call.
 
-The point is to stop modules each rolling their own env-var probes
-and cgroup file reads. Detection happens once. Everything else is a
-`&'static` borrow.
+Stops modules each rolling their own env-var probes and cgroup file
+reads. Detection happens once; everything else is a `&'static` borrow.
 
 ---
 
@@ -26,7 +24,7 @@ pub struct RuntimeContext {
 }
 ```
 
-The `Environment` enum is the four-way classifier — anything that
+The `Environment` enum is the four-way classifier -- anything that
 isn't K8s, Docker, or a generic container is bare metal.
 
 | Variant | Detected by |
@@ -36,7 +34,7 @@ isn't K8s, Docker, or a generic container is bare metal.
 | `Container` | `/proc/1/cgroup` or `/proc/1/mountinfo` mention `/docker/`, `/kubepods/`, `/lxc/`, `/containerd/` |
 | `BareMetal` | none of the above |
 
-Detection priority runs highest-confidence first — a K8s pod is
+Detection priority runs highest-confidence first -- a K8s pod is
 also a container, but you want to know it's K8s.
 
 ---
@@ -50,14 +48,14 @@ also a container, but you want to know it's K8s.
 | `namespace` | `POD_NAMESPACE` env, falling back to `/var/run/secrets/kubernetes.io/serviceaccount/namespace` |
 | `node_name` | `NODE_NAME` env |
 | `container_id` | `HOSTNAME` env when in any container |
-| `memory_limit_bytes` | `/sys/fs/cgroup/memory.max` (cgroup v2) — `None` if value is `"max"` |
-| `cpu_quota_cores` | `/sys/fs/cgroup/cpu.max` (cgroup v2) — parsed as `quota / period`, `None` if `"max"` |
+| `memory_limit_bytes` | `/sys/fs/cgroup/memory.max` (cgroup v2) -- `None` if value is `"max"` |
+| `cpu_quota_cores` | `/sys/fs/cgroup/cpu.max` (cgroup v2) -- parsed as `quota / period`, `None` if `"max"` |
 
-Bare metal short-circuits container-only reads — no cgroup probes
+Bare metal short-circuits container-only reads -- no cgroup probes
 fire, all container-only fields stay `None`.
 
 The cgroup v1 fallback for the memory limit lives in
-[`memory/cgroup.rs`](../../src/memory/cgroup.rs) — the
+[`memory/cgroup.rs`](../../src/memory/cgroup.rs) -- the
 `RuntimeContext` path only reads cgroup v2. Apps that need v1
 compatibility for the limit value itself go through `MemoryGuard`,
 which checks v2 then v1 then total system memory.
@@ -84,7 +82,7 @@ OnceLock<RuntimeContext>`. Subsequent calls are a single atomic
 load.
 
 Modules read pod metadata, container ID, and cgroup limits through
-this — no env-var probes scattered across the codebase, no
+this -- no env-var probes scattered across the codebase, no
 duplicated cgroup file reads.
 
 ---
@@ -103,11 +101,13 @@ pub fn get_app_env() -> String {
 }
 ```
 
-Precedence: `APP_ENV` → `ENVIRONMENT` → `ENV` → `"development"`.
-The config cascade uses this to resolve `settings.{env}.yaml` — see
-[CONFIG.md](../core-pillars/CONFIG.md).
+Precedence: `APP_ENV` -> `ENVIRONMENT` -> `ENV` -> `"development"`.
+The config cascade uses this to resolve `settings.{env}.yaml` -- see
+[CONFIG.md](../core-pillars/CONFIG.md). `is_production()` is the
+related predicate: true when `get_app_env()` resolves to `production`
+or `prod` (case-insensitive), used by config `validate` methods.
 
-`is_helm()` is the other helper in `env.rs` — returns true if
+`is_helm()` is the other helper in `env.rs` -- returns true if
 `HELM_RELEASE_NAME` is set or `/etc/podinfo/labels` contains
 `helm.sh/chart` / `app.kubernetes.io/managed-by="Helm"`. Used by
 the deployment-contract generator to decide which Argo CD or
@@ -118,7 +118,7 @@ Helm-specific labels to emit.
 ## XDG / container-aware paths
 
 `RuntimePaths` in [`runtime.rs`](../../src/runtime.rs) is the path
-resolver — it returns the right directory for config, secrets,
+resolver -- it returns the right directory for config, secrets,
 data, temp, logs, cache, and runtime files for the current
 environment.
 
@@ -144,7 +144,7 @@ paths.ensure_dirs()?;              // mkdir -p all of them
 let cfg_path = paths.config_dir.join("settings.yaml");
 ```
 
-`discover_for(env)` is the test seam — feed in a specific
+`discover_for(env)` is the test seam -- feed in a specific
 `Environment` and bypass detection.
 
 ---
@@ -159,8 +159,9 @@ let cfg_path = paths.config_dir.join("settings.yaml");
 | `RuntimeContext` | The rich metadata struct |
 | `RuntimeContext::detect()` | Build a fresh context (used internally by the global) |
 | `RuntimeContext::is_kubernetes()` / `is_container()` / `is_bare_metal()` | Delegate to the embedded `Environment` |
-| `runtime_context() -> &'static RuntimeContext` | The pillar reader — cached singleton |
+| `runtime_context() -> &'static RuntimeContext` | The pillar reader -- cached singleton |
 | `get_app_env()` | Deployment environment name for cascade resolution |
+| `is_production()` | True when app env resolves to `production` / `prod` |
 | `is_helm()` | Helm-deployment predicate |
 | `RuntimePaths` | Resolved config / data / cache / run paths |
 | `RuntimePaths::discover()` | Auto-detect environment and build paths |
@@ -170,7 +171,7 @@ let cfg_path = paths.config_dir.join("settings.yaml");
 
 ## Testing
 
-`RuntimeContext::detect()` reads env vars and the filesystem — for
+`RuntimeContext::detect()` reads env vars and the filesystem -- for
 tests, use the `temp-env` crate to scope env-var changes and assert
 on the returned struct. Don't call `runtime_context()` in tests
 that mutate env, because the global caches the first detection.
@@ -180,17 +181,17 @@ sidesteps detection and lets you assert against a known
 environment.
 
 `std::env::set_var` is `unsafe` in edition 2024 and forbidden in
-this crate — see the `temp-env` pattern in
+this crate -- see the `temp-env` pattern in
 [tests/common](../../tests/common/).
 
 ---
 
 ## Related
 
-- [SERVICE-RUNTIME.md](SERVICE-RUNTIME.md) — `ServiceRuntime` stores `&'static RuntimeContext`
-- [MEMORY.md](MEMORY.md) — `MemoryGuard` reads the cgroup limit
-- [../core-pillars/CONFIG.md](../core-pillars/CONFIG.md) — `get_app_env()` drives `settings.{env}.yaml` resolution
-- [../ARCHITECTURE.md](../ARCHITECTURE.md) — pillar overview
-- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) — `env`, `runtime`
+- [SERVICE-RUNTIME.md](SERVICE-RUNTIME.md) -- `ServiceRuntime` stores `&'static RuntimeContext`
+- [MEMORY.md](MEMORY.md) -- `MemoryGuard` reads the cgroup limit
+- [../core-pillars/CONFIG.md](../core-pillars/CONFIG.md) -- `get_app_env()` drives `settings.{env}.yaml` resolution
+- [../ARCHITECTURE.md](../ARCHITECTURE.md) -- pillar overview
+- [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) -- `env`, `runtime`
 - Source: [../../src/env.rs](../../src/env.rs),
   [../../src/runtime.rs](../../src/runtime.rs)

@@ -3,10 +3,12 @@
 // Purpose:   SIMD-optimised batch processing engine for DFE pipelines
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 pub mod config;
+#[cfg(feature = "transport")]
+pub mod driver;
 pub mod intern;
 pub mod metrics;
 pub mod parse;
@@ -14,10 +16,14 @@ pub mod pre_route;
 pub mod types;
 
 pub use config::{BatchProcessingConfig, ParseErrorAction, PreRouteFilterConfig};
+#[cfg(feature = "transport")]
+pub use driver::{CommitMode, ParsedBatch};
 pub use intern::FieldInterner;
-pub use types::{MessageMetadata, ParsedMessage, PreRouteResult, RawMessage};
+pub use types::{MessageMetadata, ParsedMessage, PreRouteResult};
 
-/// Errors returned by [`BatchEngine::run`] and [`BatchEngine::run_raw`].
+/// Errors returned by the [`BatchEngine`] `WorkBatch` drivers
+/// ([`run_workbatch`](BatchEngine::run_workbatch) /
+/// [`run_workbatch_parsed`](BatchEngine::run_workbatch_parsed)).
 ///
 /// Only available when the `transport` feature is enabled.
 #[cfg(feature = "transport")]
@@ -32,33 +38,120 @@ pub enum EngineError {
     /// Shutdown was requested via cancellation token.
     #[error("shutdown")]
     Shutdown,
+    /// Inbound-filter DLQ entries appeared but no routing policy was configured
+    /// (the default [`FilterDlqPolicy::Reject`]). Metrics are not delivery, so
+    /// the engine fails fast rather than silently dropping dead-letters.
+    #[error(
+        "{0} inbound-filter DLQ entries were produced but no FilterDlqPolicy is \
+         configured -- set a policy via BatchEngine::with_filter_dlq_policy \
+         (Route to forward, or DiscardWithMetric to deliberately drop)"
+    )]
+    FilterDlqUnrouted(usize),
+    /// A [`FilterDlqPolicy::Route`] sink failed to deliver DLQ entries. This is
+    /// a TERMINAL ack-barrier failure: the source commit is skipped so the whole
+    /// block is re-delivered -- a DLQ-route failure must NOT let a later ordered
+    /// commit advance past these undelivered dead-letters. Silent discard is
+    /// OPT-IN only, via [`FilterDlqPolicy::DiscardWithMetric`].
+    #[error("DLQ route failed: {0}")]
+    DlqRouteFailed(String),
+    /// A parse failure occurred under [`ParseErrorAction::FailBatch`]. TERMINAL:
+    /// the whole block fails its commit (consistent with the ack barrier) so it
+    /// is re-delivered rather than partially committed.
+    #[error("parse failed (fail_batch): {0}")]
+    ParseBatchFailed(String),
+    /// [`CommitMode::SinkManaged`] on the streaming/governed driver: sub-blocks
+    /// carry no tokens, so the sink can't own the commit. Use
+    /// [`CommitMode::Auto`], or `run_workbatch` for sink-managed commits.
+    #[error(
+        "CommitMode::SinkManaged unsupported on the streaming/governed driver; \
+         use CommitMode::Auto, or run_workbatch for sink-managed commits"
+    )]
+    SinkManagedUnsupported,
+}
+
+/// What a [`BatchEngine`] run loop does with inbound-filter DLQ entries
+/// ([`RecvBatch::dlq_entries`](crate::transport::RecvBatch)).
+///
+/// Inbound `action: dlq` filters remove messages from the normal batch; those
+/// entries must go somewhere. The default is [`Reject`](Self::Reject) so a
+/// data-loss-shaped config never passes silently.
+#[cfg(feature = "transport")]
+#[derive(Clone, Default)]
+pub enum FilterDlqPolicy {
+    /// Fail the run loop ([`EngineError::FilterDlqUnrouted`]) if any DLQ entries
+    /// appear. The safe default -- forces a deliberate choice.
+    #[default]
+    Reject,
+    /// Deliberately discard DLQ entries, counting them in the
+    /// `dfe_engine_filter_dlq_discarded_total` metric. Explicit opt-in.
+    DiscardWithMetric,
+    /// Hand each batch's DLQ entries to a sink (e.g. enqueue onto a DLQ
+    /// transport, or `tokio::spawn` an async send). Called on the run loop, so
+    /// keep it cheap -- offload slow work.
+    ///
+    /// The sink is FALLIBLE: returning `Err` raises
+    /// [`EngineError::DlqRouteFailed`], which is a terminal ack-barrier failure
+    /// (the source commit is skipped, the whole block re-delivered). A sink that
+    /// deliberately tolerates loss should return `Ok` after counting the drop;
+    /// to discard ALL entries by policy use
+    /// [`DiscardWithMetric`](Self::DiscardWithMetric) instead.
+    Route(
+        Arc<
+            dyn Fn(Vec<crate::transport::filter::FilteredDlqEntry>) -> Result<(), EngineError>
+                + Send
+                + Sync,
+        >,
+    ),
+}
+
+#[cfg(feature = "transport")]
+impl std::fmt::Debug for FilterDlqPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Reject => f.write_str("Reject"),
+            Self::DiscardWithMetric => f.write_str("DiscardWithMetric"),
+            Self::Route(_) => f.write_str("Route(..)"),
+        }
+    }
 }
 
 use std::sync::Arc;
 
-use rayon::prelude::*;
-
 use super::pool::AdaptiveWorkerPool;
 use super::stats::PipelineStats;
 
-use self::pre_route::{PreRouteOutcome, apply_filters, extract_routing_field, filters_from_config};
+use self::pre_route::filters_from_config;
+// Pre-route + parse helpers are used only by the in-process process_* methods,
+// which take the canonical transport Record and so are transport-gated.
+#[cfg(feature = "transport")]
+use self::pre_route::{PreRouteOutcome, apply_filters, extract_routing_field};
+#[cfg(feature = "transport")]
 use self::types::PayloadFormat;
 use super::config::WorkerPoolConfig;
 
 /// Core batch processing engine for DFE pipelines.
 ///
-/// Provides two processing modes:
+/// Provides two in-process processing modes (the run-loop drivers live in the
+/// `driver` module, gated on the `transport` feature):
 ///
-/// - [`process_mid_tier`](Self::process_mid_tier) — parse JSON via SIMD, extract
+/// - [`process_mid_tier`](Self::process_mid_tier) -- parse JSON via SIMD, extract
 ///   known fields, apply pre-route filters, then parallel transform via rayon.
 ///   The standard path for most DFE apps (loader, archiver, transforms).
 ///
-/// - [`process_raw`](Self::process_raw) — skip parsing, apply pre-route on raw
+/// - [`process_raw`](Self::process_raw) -- skip parsing, apply pre-route on raw
 ///   bytes, then parallel transform via rayon. For apps that handle raw bytes
 ///   (receiver, binary protocols).
 ///
-/// Both modes chunk large batches, track stats atomically, and pause between
-/// chunks when memory pressure is detected.
+/// Both take the canonical [`Record`](crate::transport::Record) slice (the same
+/// currency the [`WorkBatch`](crate::transport::WorkBatch) carries), chunk large
+/// batches, and track stats atomically.
+///
+/// Inbound braking under memory pressure is no longer a blocking pause between
+/// chunks (the retired `check_memory_pressure` proto-actuator). It is now the
+/// self-regulation governor's job: the inbound GATE pauses the source transport
+/// and the streaming byte-budget lever bounds peak in-flight memory. See
+/// `run_governed` (`transport` + `governor` features). With the governor OFF,
+/// there is no active brake -- that is the deliberate opt-out.
 pub struct BatchEngine {
     config: BatchProcessingConfig,
     pool: Arc<AdaptiveWorkerPool>,
@@ -67,6 +160,18 @@ pub struct BatchEngine {
     filters: Vec<pre_route::PreRouteFilter>,
     #[cfg(feature = "memory")]
     memory_guard: Option<Arc<crate::memory::MemoryGuard>>,
+    /// What the run loops do with inbound-filter DLQ entries. Default
+    /// [`FilterDlqPolicy::Reject`] (no silent data loss).
+    #[cfg(feature = "transport")]
+    filter_dlq_policy: FilterDlqPolicy,
+    /// Self-regulation byte-budget lever (`governor` feature). `None` (the
+    /// default, and whenever self-regulation is OFF) keeps the engine on the
+    /// whole-batch [`run_workbatch`](Self::run_workbatch) loop -- byte-identical
+    /// to pre-governor behaviour. When wired (by `ServiceRuntime` when the
+    /// governor is enabled), `run_governed` streams in
+    /// budget-sized sub-blocks and feeds the AIMD loop per block.
+    #[cfg(feature = "governor")]
+    byte_budget: Option<Arc<crate::governor::ByteBudgetController>>,
 }
 
 impl BatchEngine {
@@ -97,7 +202,43 @@ impl BatchEngine {
             filters,
             #[cfg(feature = "memory")]
             memory_guard: None,
+            #[cfg(feature = "transport")]
+            filter_dlq_policy: FilterDlqPolicy::default(),
+            #[cfg(feature = "governor")]
+            byte_budget: None,
         }
+    }
+
+    /// Wire the self-regulation byte-budget lever (`governor` feature).
+    ///
+    /// Called by `ServiceRuntime::build()` when the governor is enabled. Once
+    /// wired, `run_governed` streams the input in
+    /// budget-sized sub-blocks and drives the AIMD loop per block. Without it
+    /// (governor off), `run_governed` falls back to the whole-batch loop.
+    #[cfg(feature = "governor")]
+    pub fn set_byte_budget(&mut self, budget: Arc<crate::governor::ByteBudgetController>) {
+        self.byte_budget = Some(budget);
+    }
+
+    /// Whether the self-regulation byte-budget lever is wired (`governor`
+    /// feature). When `false`, `run_governed` is the
+    /// whole-batch loop.
+    #[cfg(feature = "governor")]
+    #[must_use]
+    pub fn is_self_regulated(&self) -> bool {
+        self.byte_budget.is_some()
+    }
+
+    /// Set the policy for inbound-filter DLQ entries in the run loops.
+    ///
+    /// Default is [`FilterDlqPolicy::Reject`] -- the run loop errors if an
+    /// inbound `action: dlq` filter produces entries and no routing is set, so
+    /// dead-letters are never silently dropped.
+    #[cfg(feature = "transport")]
+    #[must_use]
+    pub fn with_filter_dlq_policy(mut self, policy: FilterDlqPolicy) -> Self {
+        self.filter_dlq_policy = policy;
+        self
     }
 
     /// Load configuration from the cascade and create a standalone engine.
@@ -144,19 +285,27 @@ impl BatchEngine {
         }
     }
 
+    /// Test-only: wire a `MemoryGuard` directly so memory-lease behaviour can be
+    /// exercised without a full `auto_wire`.
+    #[cfg(all(test, feature = "memory"))]
+    pub(crate) fn set_memory_guard_for_test(&mut self, guard: Arc<crate::memory::MemoryGuard>) {
+        self.memory_guard = Some(guard);
+    }
+
     /// Parse, filter, and transform a batch of raw messages.
     ///
     /// Pipeline phases per chunk:
-    /// 1. **Pre-route** — SIMD field extraction + filter evaluation (sequential, ~100 ns/msg)
-    /// 2. **Parse** — `sonic_rs::from_slice` + known-field extraction (sequential, ~1-5 µs/msg)
-    /// 3. **Transform** — user closure via rayon `par_iter_mut` (parallel)
+    /// 1. **Pre-route** -- SIMD field extraction + filter evaluation (sequential, ~100 ns/msg)
+    /// 2. **Parse** -- `sonic_rs::from_slice` + known-field extraction (sequential, ~1-5 µs/msg)
+    /// 3. **Transform** -- user closure via rayon `par_iter_mut` (parallel)
     ///
     /// Results contain one entry per non-filtered message. Filtered messages are
     /// silently removed (their commit tokens remain accessible via the original
     /// slice). DLQ'd and parse-error messages produce `Err` entries.
+    #[cfg(feature = "transport")]
     pub fn process_mid_tier<O, E, F>(
         &self,
-        messages: &[RawMessage],
+        messages: &[crate::transport::Record],
         transform: F,
     ) -> Vec<Result<O, E>>
     where
@@ -211,8 +360,9 @@ impl BatchEngine {
                     }
                 }
 
-                // Phase 2: Parse
-                let format = match msg.metadata.format {
+                // Phase 2: Parse. The Record carries the transport PayloadFormat;
+                // convert it to the engine's local enum, resolving Auto.
+                let format: PayloadFormat = match PayloadFormat::from(msg.metadata.format) {
                     PayloadFormat::Auto => PayloadFormat::detect(&msg.payload),
                     other => other,
                 };
@@ -220,13 +370,19 @@ impl BatchEngine {
                 match parse::parse_payload(&msg.payload, format) {
                     Ok(value) => {
                         let extracted = self.interner.extract_known(&value);
-                        parsed_msgs.push(Ok(ParsedMessage::Parsed {
+                        // Rebuild a MessageMetadata for ParsedMessage. Commit
+                        // tokens live on the WorkBatch, not on individual records.
+                        let metadata = MessageMetadata {
+                            timestamp_ms: msg.metadata.timestamp_ms,
+                            format,
+                        };
+                        parsed_msgs.push(Ok(ParsedMessage {
                             value,
                             raw: msg.payload.clone(),
                             format,
                             key: msg.key.clone(),
                             headers: msg.headers.clone(),
-                            metadata: msg.metadata.clone(),
+                            metadata,
                             extracted,
                         }));
                     }
@@ -277,16 +433,14 @@ impl BatchEngine {
                 }
             }
 
-            // Parallel transform
-            let transformed: Vec<(usize, Result<O, E>)> = self.pool.install(|| {
-                to_transform
-                    .into_par_iter()
-                    .map(|(idx, mut pm)| {
-                        let result = transform(&mut pm);
-                        (idx, result)
-                    })
-                    .collect()
-            });
+            // Parallel transform, throttled by the scaler target (map_owned
+            // applies the semaphore per item -- unlike the old install() path,
+            // which bypassed it and let the parsed path ignore the CPU cap).
+            let transformed: Vec<(usize, Result<O, E>)> =
+                self.pool.map_owned(to_transform, |(idx, mut pm)| {
+                    let result = transform(&mut pm);
+                    (idx, result)
+                });
 
             chunk_results.extend(transformed);
 
@@ -298,23 +452,26 @@ impl BatchEngine {
             self.stats.add_processed(ok_count as u64);
 
             all_results.extend(chunk_results.into_iter().map(|(_, r)| r));
-
-            // Memory pressure check between chunks
-            self.check_memory_pressure();
         }
 
         all_results
     }
 
-    /// Pre-route and transform a batch of raw messages without parsing.
+    /// Pre-route and transform a batch of records without parsing.
     ///
-    /// The transform closure receives immutable `&RawMessage` references.
-    /// Use this for apps that handle raw bytes directly (e.g. receiver forwarding).
-    pub fn process_raw<O, E, F>(&self, messages: &[RawMessage], transform: F) -> Vec<Result<O, E>>
+    /// The transform closure receives immutable [`Record`](crate::transport::Record)
+    /// references. Use this for apps that handle raw bytes directly (e.g. receiver
+    /// forwarding).
+    #[cfg(feature = "transport")]
+    pub fn process_raw<O, E, F>(
+        &self,
+        messages: &[crate::transport::Record],
+        transform: F,
+    ) -> Vec<Result<O, E>>
     where
         O: Send,
         E: Send + From<String>,
-        F: Fn(&RawMessage) -> Result<O, E> + Sync,
+        F: Fn(&crate::transport::Record) -> Result<O, E> + Sync,
     {
         if messages.is_empty() {
             return Vec::new();
@@ -336,7 +493,7 @@ impl BatchEngine {
             self.stats.add_bytes_received(chunk_bytes);
 
             // Phase 1: Pre-route filter
-            let to_process: Vec<&RawMessage> = if has_routing {
+            let to_process: Vec<&crate::transport::Record> = if has_routing {
                 let field_name = self.config.routing_field.as_ref().expect("checked above");
                 let mut passed = Vec::with_capacity(chunk.len());
                 for msg in chunk {
@@ -366,361 +523,106 @@ impl BatchEngine {
             self.stats.add_processed(ok_count as u64);
 
             all_results.extend(results);
-
-            self.check_memory_pressure();
         }
 
         all_results
     }
 
-    /// Transport-wired async run loop for mid-tier (parsed JSON) processing.
+    /// Apply the [`FilterDlqPolicy`] to a received [`WorkBatch`](crate::transport::WorkBatch),
+    /// routing/discarding/rejecting its inline-DLQ entries per the policy and
+    /// returning the batch with `dlq_entries` consumed.
     ///
-    /// Receives up to `config.max_chunk_size` messages per iteration, converts them
-    /// to `RawMessage`, runs [`process_mid_tier`](Self::process_mid_tier), calls the
-    /// sink, then commits transport tokens only on sink success.
-    ///
-    /// Stops cleanly when `shutdown` is cancelled.
-    ///
-    /// # Errors
-    ///
-    /// Returns `EngineError::Transport` if recv or commit fails fatally.
-    /// Returns `EngineError::Sink` if the sink callback errors (commit skipped).
-    #[cfg(feature = "transport")]
-    pub async fn run<R, O, E, Transform, Sink>(
-        &self,
-        receiver: &R,
-        shutdown: tokio_util::sync::CancellationToken,
-        transform: Transform,
-        mut sink: Sink,
-    ) -> Result<(), EngineError>
-    where
-        R: crate::transport::TransportReceiver,
-        O: Send + 'static,
-        E: Send + From<String> + std::fmt::Display + 'static,
-        Transform: Fn(&mut ParsedMessage) -> Result<O, E> + Sync,
-        Sink: FnMut(Vec<Result<O, E>>) -> Result<(), EngineError>,
-    {
-        tracing::info!(
-            chunk_size = self.config.max_chunk_size,
-            routing_field = ?self.config.routing_field,
-            "BatchEngine starting"
-        );
-
-        loop {
-            tokio::select! {
-                biased;
-                () = shutdown.cancelled() => {
-                    tracing::info!("BatchEngine shutting down");
-                    return Ok(());
-                }
-                recv_result = receiver.recv(self.config.max_chunk_size) => {
-                    let messages = recv_result.map_err(EngineError::Transport)?;
-                    if messages.is_empty() {
-                        continue;
-                    }
-
-                    // Collect commit tokens before converting (move happens below).
-                    let tokens: Vec<R::Token> = messages.iter()
-                        .map(|m| m.token.clone())
-                        .collect();
-
-                    // Convert to RawMessage (type-erased).
-                    let raw: Vec<RawMessage> = messages.into_iter()
-                        .map(RawMessage::from)
-                        .collect();
-
-                    // Process: pre-route + parse + parallel transform.
-                    let results = self.process_mid_tier(&raw, &transform);
-
-                    // Sink: commit only on success.
-                    if let Err(e) = sink(results) {
-                        tracing::error!(error = %e, "Sink failed, skipping commit");
-                        continue;
-                    }
-
-                    if let Err(e) = receiver.commit(&tokens).await {
-                        tracing::error!(error = %e, "Commit failed");
-                    }
-                }
-            }
-        }
-    }
-
-    /// Transport-wired async run loop for raw byte processing.
-    ///
-    /// Like [`run`](Self::run) but uses [`process_raw`](Self::process_raw): the
-    /// transform closure receives `&RawMessage` bytes without JSON parsing.
+    /// Now that `recv` yields a `WorkBatch` directly (Task 0.7b), the
+    /// inbound-filter DLQ entries arrive on
+    /// [`WorkBatch::dlq_entries`](crate::transport::WorkBatch) rather than on a
+    /// `RecvBatch`. Records are never touched -- only the DLQ entries are routed
+    /// -- so dead-letters are never silently dropped.
     ///
     /// # Errors
     ///
-    /// Returns `EngineError::Transport` if recv or commit fails fatally.
-    /// Returns `EngineError::Sink` if the sink callback errors (commit skipped).
+    /// [`EngineError::FilterDlqUnrouted`] when entries appear under
+    /// [`FilterDlqPolicy::Reject`].
     #[cfg(feature = "transport")]
-    pub async fn run_raw<R, O, E, Transform, Sink>(
+    fn apply_workbatch_dlq_policy<T: crate::transport::CommitToken>(
         &self,
-        receiver: &R,
-        shutdown: tokio_util::sync::CancellationToken,
-        transform: Transform,
-        mut sink: Sink,
-    ) -> Result<(), EngineError>
-    where
-        R: crate::transport::TransportReceiver,
-        O: Send + 'static,
-        E: Send + From<String> + std::fmt::Display + 'static,
-        Transform: Fn(&RawMessage) -> Result<O, E> + Sync,
-        Sink: FnMut(Vec<Result<O, E>>) -> Result<(), EngineError>,
-    {
-        tracing::info!(
-            chunk_size = self.config.max_chunk_size,
-            "BatchEngine (raw) starting"
-        );
-
-        loop {
-            tokio::select! {
-                biased;
-                () = shutdown.cancelled() => {
-                    tracing::info!("BatchEngine (raw) shutting down");
-                    return Ok(());
-                }
-                recv_result = receiver.recv(self.config.max_chunk_size) => {
-                    let messages = recv_result.map_err(EngineError::Transport)?;
-                    if messages.is_empty() {
-                        continue;
-                    }
-
-                    let tokens: Vec<R::Token> = messages.iter()
-                        .map(|m| m.token.clone())
-                        .collect();
-
-                    let raw: Vec<RawMessage> = messages.into_iter()
-                        .map(RawMessage::from)
-                        .collect();
-
-                    let results = self.process_raw(&raw, &transform);
-
-                    if let Err(e) = sink(results) {
-                        tracing::error!(error = %e, "Sink failed (raw), skipping commit");
-                        continue;
-                    }
-
-                    if let Err(e) = receiver.commit(&tokens).await {
-                        tracing::error!(error = %e, "Commit failed (raw)");
-                    }
-                }
-            }
+        mut batch: crate::transport::WorkBatch<T>,
+    ) -> Result<crate::transport::WorkBatch<T>, EngineError> {
+        if !batch.dlq_entries.is_empty() {
+            let entries = std::mem::take(&mut batch.dlq_entries);
+            self.route_dlq_entries(entries)?;
         }
+        Ok(batch)
     }
 
-    /// Transport-wired async run loop with full control over commit semantics.
+    /// Route a set of DLQ entries through the configured [`FilterDlqPolicy`].
     ///
-    /// Like [`run`](Self::run) but with two key differences:
-    ///
-    /// 1. **Async sink** — the sink is an async closure, enabling async I/O
-    ///    (ClickHouse inserts, Kafka produce, storage writes) inside the sink.
-    ///
-    /// 2. **Sink-managed commits** — the sink receives commit tokens and decides
-    ///    when to commit. The engine does NOT auto-commit. This enables deferred
-    ///    commit patterns (e.g., commit after ClickHouse flush, not after buffer push).
-    ///
-    /// An optional ticker fires on a fixed interval within the select! loop,
-    /// enabling flush timers and periodic maintenance without breaking out of
-    /// the engine loop.
+    /// THE single DLQ route point: both the inbound-filter entries (routed
+    /// before `process` by
+    /// [`apply_workbatch_dlq_policy`](Self::apply_workbatch_dlq_policy)) AND the
+    /// parse/process-generated entries (routed after `process`, before commit,
+    /// inline in the driver's `drive_block` / `drive_block_streaming`) flow
+    /// through here, so the two paths share ONE policy and ONE behaviour. There
+    /// is no
+    /// silent-drop default: `Reject` fails fast, `DiscardWithMetric` is the only
+    /// deliberate opt-in to drop, and `Route` is fallible (a delivery failure is
+    /// a terminal ack-barrier error, never a silent loss).
     ///
     /// # Errors
     ///
-    /// Returns `EngineError::Transport` if recv fails fatally.
-    /// Returns `EngineError::Sink` if the sink callback errors.
+    /// - [`EngineError::FilterDlqUnrouted`] under [`FilterDlqPolicy::Reject`].
+    /// - [`EngineError::DlqRouteFailed`] when a [`FilterDlqPolicy::Route`] sink
+    ///   returns `Err`.
     #[cfg(feature = "transport")]
-    pub async fn run_async<R, O, E, Transform, Sink, SinkFut, Ticker, TickerFut>(
+    pub(crate) fn route_dlq_entries(
         &self,
-        receiver: &R,
-        shutdown: tokio_util::sync::CancellationToken,
-        transform: Transform,
-        mut sink: Sink,
-        ticker: Option<(std::time::Duration, Ticker)>,
-    ) -> Result<(), EngineError>
-    where
-        R: crate::transport::TransportReceiver,
-        O: Send + 'static,
-        E: Send + From<String> + std::fmt::Display + 'static,
-        Transform: Fn(&mut ParsedMessage) -> Result<O, E> + Sync,
-        Sink: FnMut(Vec<Result<O, E>>, Vec<R::Token>) -> SinkFut,
-        SinkFut: std::future::Future<Output = Result<(), EngineError>>,
-        Ticker: FnMut() -> TickerFut,
-        TickerFut: std::future::Future<Output = Result<(), EngineError>>,
-    {
-        tracing::info!(
-            chunk_size = self.config.max_chunk_size,
-            routing_field = ?self.config.routing_field,
-            ticker = ticker.is_some(),
-            "BatchEngine (async) starting"
-        );
-
-        // Ticker interval — if None, create a dummy that never fires.
-        let mut tick_interval = ticker.as_ref().map(|(d, _)| tokio::time::interval(*d));
-        let mut ticker_fn = ticker.map(|(_, f)| f);
-
-        // Consume the first tick (fires immediately).
-        if let Some(ref mut interval) = tick_interval {
-            interval.tick().await;
+        entries: Vec<crate::transport::filter::FilteredDlqEntry>,
+    ) -> Result<(), EngineError> {
+        if entries.is_empty() {
+            return Ok(());
         }
-
-        loop {
-            tokio::select! {
-                biased;
-
-                () = shutdown.cancelled() => {
-                    tracing::info!("BatchEngine (async) shutting down");
-                    return Ok(());
-                }
-
-                _ = async {
-                    match tick_interval.as_mut() {
-                        Some(interval) => interval.tick().await,
-                        None => std::future::pending().await,
-                    }
-                } => {
-                    if let Some(ref mut f) = ticker_fn
-                        && let Err(e) = f().await
-                    {
-                        tracing::error!(error = %e, "Ticker failed");
-                    }
-                }
-
-                recv_result = receiver.recv(self.config.max_chunk_size) => {
-                    let messages = recv_result.map_err(EngineError::Transport)?;
-                    if messages.is_empty() {
-                        continue;
-                    }
-
-                    // Collect commit tokens before converting (move happens below).
-                    let tokens: Vec<R::Token> = messages.iter()
-                        .map(|m| m.token.clone())
-                        .collect();
-
-                    // Convert to RawMessage (type-erased).
-                    let raw: Vec<RawMessage> = messages.into_iter()
-                        .map(RawMessage::from)
-                        .collect();
-
-                    // Process: pre-route + parse + parallel transform.
-                    let results = self.process_mid_tier(&raw, &transform);
-
-                    // Sink receives results AND tokens — sink decides when to commit.
-                    if let Err(e) = sink(results, tokens).await {
-                        tracing::error!(error = %e, "Sink failed (async)");
-                    }
-                }
+        match &self.filter_dlq_policy {
+            FilterDlqPolicy::Reject => Err(EngineError::FilterDlqUnrouted(entries.len())),
+            FilterDlqPolicy::DiscardWithMetric => {
+                #[cfg(feature = "metrics")]
+                ::metrics::counter!("dfe_engine_filter_dlq_discarded_total")
+                    .increment(entries.len() as u64);
+                Ok(())
             }
+            FilterDlqPolicy::Route(sink) => sink(entries),
         }
     }
+}
 
-    /// Transport-wired async run loop for raw byte processing with full control.
-    ///
-    /// Like [`run_async`](Self::run_async) but uses [`process_raw`](Self::process_raw):
-    /// the transform closure receives `&RawMessage` bytes without JSON parsing.
-    ///
-    /// # Errors
-    ///
-    /// Returns `EngineError::Transport` if recv fails fatally.
-    /// Returns `EngineError::Sink` if the sink callback errors.
-    #[cfg(feature = "transport")]
-    pub async fn run_raw_async<R, O, E, Transform, Sink, SinkFut, Ticker, TickerFut>(
-        &self,
-        receiver: &R,
-        shutdown: tokio_util::sync::CancellationToken,
-        transform: Transform,
-        mut sink: Sink,
-        ticker: Option<(std::time::Duration, Ticker)>,
-    ) -> Result<(), EngineError>
-    where
-        R: crate::transport::TransportReceiver,
-        O: Send + 'static,
-        E: Send + From<String> + std::fmt::Display + 'static,
-        Transform: Fn(&RawMessage) -> Result<O, E> + Sync,
-        Sink: FnMut(Vec<Result<O, E>>, Vec<R::Token>) -> SinkFut,
-        SinkFut: std::future::Future<Output = Result<(), EngineError>>,
-        Ticker: FnMut() -> TickerFut,
-        TickerFut: std::future::Future<Output = Result<(), EngineError>>,
-    {
-        tracing::info!(
-            chunk_size = self.config.max_chunk_size,
-            ticker = ticker.is_some(),
-            "BatchEngine (raw async) starting"
-        );
+/// RAII lease over in-flight ingress bytes tracked by a [`MemoryGuard`].
+///
+/// Created by the WorkBatch driver's `lease_ingress_batch`; releases the
+/// accounted bytes back to the guard on drop so no block exit path can leak
+/// the reservation.
+///
+/// [`MemoryGuard`]: crate::memory::MemoryGuard
+#[cfg(feature = "memory")]
+#[must_use = "the lease must be held for the lifetime of the in-flight block; \
+              dropping it immediately releases the reservation and corrupts the \
+              in-flight byte accounting"]
+pub(crate) struct IngressLease<'a> {
+    guard: &'a crate::memory::MemoryGuard,
+    bytes: u64,
+}
 
-        let mut tick_interval = ticker.as_ref().map(|(d, _)| tokio::time::interval(*d));
-        let mut ticker_fn = ticker.map(|(_, f)| f);
-
-        if let Some(ref mut interval) = tick_interval {
-            interval.tick().await;
-        }
-
-        loop {
-            tokio::select! {
-                biased;
-
-                () = shutdown.cancelled() => {
-                    tracing::info!("BatchEngine (raw async) shutting down");
-                    return Ok(());
-                }
-
-                _ = async {
-                    match tick_interval.as_mut() {
-                        Some(interval) => interval.tick().await,
-                        None => std::future::pending().await,
-                    }
-                } => {
-                    if let Some(ref mut f) = ticker_fn
-                        && let Err(e) = f().await
-                    {
-                        tracing::error!(error = %e, "Ticker (raw) failed");
-                    }
-                }
-
-                recv_result = receiver.recv(self.config.max_chunk_size) => {
-                    let messages = recv_result.map_err(EngineError::Transport)?;
-                    if messages.is_empty() {
-                        continue;
-                    }
-
-                    let tokens: Vec<R::Token> = messages.iter()
-                        .map(|m| m.token.clone())
-                        .collect();
-
-                    let raw: Vec<RawMessage> = messages.into_iter()
-                        .map(RawMessage::from)
-                        .collect();
-
-                    let results = self.process_raw(&raw, &transform);
-
-                    if let Err(e) = sink(results, tokens).await {
-                        tracing::error!(error = %e, "Sink failed (raw async)");
-                    }
-                }
-            }
-        }
+#[cfg(feature = "memory")]
+impl<'a> IngressLease<'a> {
+    /// Construct a lease over already-accounted ingress bytes. The caller must
+    /// have already called `guard.add_bytes(bytes)`; `Drop` releases them. Used
+    /// by the WorkBatch driver's `lease_ingress_batch`.
+    fn new(guard: &'a crate::memory::MemoryGuard, bytes: u64) -> Self {
+        Self { guard, bytes }
     }
+}
 
-    /// Pause between chunks when memory pressure is detected.
-    ///
-    /// Uses `std::thread::sleep` (not tokio) because `process_mid_tier` and
-    /// `process_raw` are sync methods that run within rayon context. The pause
-    /// happens between chunks (cold path), not per message.
-    #[allow(clippy::unused_self)]
-    fn check_memory_pressure(&self) {
-        #[cfg(feature = "memory")]
-        if let Some(guard) = &self.memory_guard
-            && guard.under_pressure()
-        {
-            tracing::warn!(
-                pause_ms = self.config.memory_pressure_pause_ms,
-                "BatchEngine: memory pressure detected, pausing between chunks"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(
-                self.config.memory_pressure_pause_ms,
-            ));
-        }
+#[cfg(feature = "memory")]
+impl Drop for IngressLease<'_> {
+    fn drop(&mut self) {
+        self.guard.release(self.bytes);
     }
 }
 
@@ -734,25 +636,29 @@ impl std::fmt::Debug for BatchEngine {
             .field("filters", &self.filters);
         #[cfg(feature = "memory")]
         s.field("memory_guard", &self.memory_guard.is_some());
+        #[cfg(feature = "transport")]
+        s.field("filter_dlq_policy", &self.filter_dlq_policy);
+        #[cfg(feature = "governor")]
+        s.field("self_regulated", &self.byte_budget.is_some());
         s.finish()
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "transport"))]
 mod engine_tests {
     use super::*;
+    use crate::transport::{PayloadFormat as TPayloadFormat, Record, RecordMeta};
     use bytes::Bytes;
 
-    fn make_json_messages(n: usize) -> Vec<RawMessage> {
+    fn make_json_messages(n: usize) -> Vec<Record> {
         (0..n)
-            .map(|i| RawMessage {
+            .map(|i| Record {
                 payload: Bytes::from(format!(r#"{{"_table":"events","id":{i}}}"#)),
                 key: None,
                 headers: vec![],
-                metadata: MessageMetadata {
+                metadata: RecordMeta {
                     timestamp_ms: None,
-                    format: types::PayloadFormat::Json,
-                    commit_token: None,
+                    format: TPayloadFormat::Json,
                 },
             })
             .collect()
@@ -760,6 +666,147 @@ mod engine_tests {
 
     fn default_engine() -> BatchEngine {
         BatchEngine::new(BatchProcessingConfig::default())
+    }
+
+    #[cfg(feature = "transport")]
+    #[test]
+    fn filter_dlq_policy_routes_discards_or_rejects() {
+        use crate::transport::WorkBatch;
+        use crate::transport::filter::FilteredDlqEntry;
+        use std::sync::Arc as StdArc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // Minimal CommitToken for the generic helper.
+        #[derive(Clone, Debug)]
+        struct TestTok;
+        impl std::fmt::Display for TestTok {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("test")
+            }
+        }
+        impl crate::transport::CommitToken for TestTok {}
+
+        let entry = || FilteredDlqEntry {
+            payload: b"x".to_vec(),
+            key: None,
+            reason: "r".to_string(),
+        };
+        let batch_with = |n: usize| {
+            WorkBatch::<TestTok>::from_records(vec![])
+                .with_dlq_entries((0..n).map(|_| entry()).collect())
+        };
+
+        // Reject (default): any DLQ entries -> fail fast, not silent drop.
+        let eng = default_engine();
+        assert!(matches!(
+            eng.apply_workbatch_dlq_policy(batch_with(1)),
+            Err(EngineError::FilterDlqUnrouted(1))
+        ));
+        // Reject + no entries -> ok (batch passes through with no DLQ entries).
+        let passed = eng
+            .apply_workbatch_dlq_policy(WorkBatch::<TestTok>::from_records(vec![]))
+            .expect("no entries -> ok");
+        assert!(passed.dlq_entries.is_empty());
+
+        // DiscardWithMetric -> ok (deliberately dropped); entries consumed.
+        let eng = default_engine().with_filter_dlq_policy(FilterDlqPolicy::DiscardWithMetric);
+        let passed = eng
+            .apply_workbatch_dlq_policy(batch_with(1))
+            .expect("discard -> ok");
+        assert!(
+            passed.dlq_entries.is_empty(),
+            "entries consumed after routing"
+        );
+
+        // Route -> the sink receives every entry.
+        let seen = StdArc::new(AtomicUsize::new(0));
+        let s = StdArc::clone(&seen);
+        let eng = default_engine().with_filter_dlq_policy(FilterDlqPolicy::Route(StdArc::new(
+            move |e: Vec<FilteredDlqEntry>| {
+                s.fetch_add(e.len(), Ordering::Relaxed);
+                Ok(())
+            },
+        )));
+        let passed = eng
+            .apply_workbatch_dlq_policy(batch_with(2))
+            .expect("route -> ok");
+        assert!(passed.dlq_entries.is_empty());
+        assert_eq!(
+            seen.load(Ordering::Relaxed),
+            2,
+            "Route sink received all entries"
+        );
+    }
+
+    /// Build a `WorkBatch` of `n` JSON records (no commit tokens) for the
+    /// `WorkBatch`-shaped ingress-lease tests.
+    #[cfg(all(feature = "memory", feature = "transport"))]
+    fn make_record_batch(n: usize) -> crate::transport::WorkBatch<TestTok> {
+        use crate::transport::{PayloadFormat, Record, RecordMeta};
+        let records = (0..n)
+            .map(|i| Record {
+                payload: Bytes::from(format!(r#"{{"_table":"events","id":{i}}}"#)),
+                key: None,
+                headers: vec![],
+                metadata: RecordMeta {
+                    timestamp_ms: None,
+                    format: PayloadFormat::Json,
+                },
+            })
+            .collect();
+        crate::transport::WorkBatch::from_records(records)
+    }
+
+    /// Minimal commit token for the `WorkBatch` ingress-lease tests.
+    #[cfg(all(feature = "memory", feature = "transport"))]
+    #[derive(Debug, Clone)]
+    struct TestTok;
+    #[cfg(all(feature = "memory", feature = "transport"))]
+    impl std::fmt::Display for TestTok {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("test")
+        }
+    }
+    #[cfg(all(feature = "memory", feature = "transport"))]
+    impl crate::transport::CommitToken for TestTok {}
+
+    #[cfg(all(feature = "memory", feature = "transport"))]
+    #[test]
+    fn ingress_lease_accounts_and_releases() {
+        use crate::memory::{MemoryGuard, MemoryGuardConfig};
+
+        let mut engine = default_engine();
+        let guard = Arc::new(MemoryGuard::new(MemoryGuardConfig {
+            limit_bytes: 1024 * 1024,
+            ..Default::default()
+        }));
+        engine.memory_guard = Some(Arc::clone(&guard));
+
+        let batch = make_record_batch(10);
+        let expected = batch.total_payload_bytes() as u64;
+        assert_eq!(guard.current_bytes(), 0, "starts at zero");
+
+        {
+            let _lease = engine.lease_ingress_batch(&batch).expect("guard present");
+            assert_eq!(
+                guard.current_bytes(),
+                expected,
+                "bytes accounted while lease held"
+            );
+        }
+        // Lease dropped -> bytes released.
+        assert_eq!(guard.current_bytes(), 0, "bytes released on drop");
+    }
+
+    #[cfg(all(feature = "memory", feature = "transport"))]
+    #[test]
+    fn ingress_lease_none_without_guard() {
+        let engine = default_engine();
+        let batch = make_record_batch(5);
+        assert!(
+            engine.lease_ingress_batch(&batch).is_none(),
+            "no lease when no guard wired"
+        );
     }
 
     #[test]
@@ -787,14 +834,13 @@ mod engine_tests {
         // Insert an invalid JSON message
         msgs.insert(
             1,
-            RawMessage {
+            Record {
                 payload: Bytes::from_static(b"not json {{{"),
                 key: None,
                 headers: vec![],
-                metadata: MessageMetadata {
+                metadata: RecordMeta {
                     timestamp_ms: None,
-                    format: types::PayloadFormat::Json,
-                    commit_token: None,
+                    format: TPayloadFormat::Json,
                 },
             },
         );
@@ -882,14 +928,13 @@ mod engine_tests {
 
         let mut msgs = make_json_messages(3);
         // Replace middle message with a poison value
-        msgs[1] = RawMessage {
+        msgs[1] = Record {
             payload: Bytes::from(r#"{"_table":"poison","id":999}"#),
             key: None,
             headers: vec![],
-            metadata: MessageMetadata {
+            metadata: RecordMeta {
                 timestamp_ms: None,
-                format: types::PayloadFormat::Json,
-                commit_token: None,
+                format: TPayloadFormat::Json,
             },
         };
 
@@ -926,21 +971,20 @@ mod engine_tests {
 
         let mut msgs = make_json_messages(3);
         // Replace middle message with one missing _table
-        msgs[1] = RawMessage {
+        msgs[1] = Record {
             payload: Bytes::from(r#"{"host":"web1"}"#),
             key: None,
             headers: vec![],
-            metadata: MessageMetadata {
+            metadata: RecordMeta {
                 timestamp_ms: None,
-                format: types::PayloadFormat::Json,
-                commit_token: None,
+                format: TPayloadFormat::Json,
             },
         };
 
         let results: Vec<Result<String, String>> =
             engine.process_mid_tier(&msgs, |_pm| Ok("ok".to_string()));
 
-        // Filtered messages are removed — only 2 results
+        // Filtered messages are removed -- only 2 results
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(|r| r.is_ok()));
 
@@ -987,24 +1031,45 @@ mod engine_tests {
         assert!(debug.contains("config"));
     }
 
+    /// The driver run loops (`run_workbatch` / `run_workbatch_parsed`) replaced
+    /// the four legacy loops in Task 0.7b. These tests exercise the same
+    /// behaviours -- process+sink, ticker, on-demand (no-parse) pass-through, and
+    /// sink-error resilience -- through the surviving WorkBatch driver.
     #[cfg(feature = "transport-memory")]
-    mod async_engine_tests {
+    mod driver_engine_tests {
         use super::*;
+        use crate::transport::WorkBatch;
+        use crate::worker::engine::CommitMode;
         use std::sync::atomic::{AtomicU64, Ordering};
 
         fn json_payload(table: &str, id: usize) -> Vec<u8> {
             format!(r#"{{"_table":"{table}","id":{id}}}"#).into_bytes()
         }
 
+        /// No-ticker placeholder for the `ticker` argument.
+        #[allow(clippy::type_complexity)]
+        fn no_ticker() -> Option<(
+            std::time::Duration,
+            fn() -> std::future::Ready<Result<(), EngineError>>,
+        )> {
+            None
+        }
+
+        fn cancel_after(shutdown: tokio_util::sync::CancellationToken, ms: u64) {
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                shutdown.cancel();
+            });
+        }
+
         #[tokio::test]
-        async fn run_async_processes_and_passes_tokens_to_sink() {
+        async fn run_workbatch_processes_and_passes_tokens_to_sink() {
             let config = crate::transport::memory::MemoryConfig {
                 recv_timeout_ms: 50,
                 ..Default::default()
             };
-            let transport = crate::transport::memory::MemoryTransport::new(&config);
-
-            // Inject 5 messages
+            let transport = crate::transport::memory::MemoryTransport::new(&config)
+                .expect("memory transport with valid config must construct");
             for i in 0..5 {
                 transport
                     .inject(None, json_payload("events", i))
@@ -1014,79 +1079,62 @@ mod engine_tests {
 
             let engine = default_engine();
             let shutdown = tokio_util::sync::CancellationToken::new();
-            let shutdown_clone = shutdown.clone();
+            cancel_after(shutdown.clone(), 200);
 
-            let sink_count = Arc::new(AtomicU64::new(0));
+            let record_count = Arc::new(AtomicU64::new(0));
             let token_count = Arc::new(AtomicU64::new(0));
-            let sink_count_clone = Arc::clone(&sink_count);
-            let token_count_clone = Arc::clone(&token_count);
-
-            // Shut down after a short delay
-            tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                shutdown_clone.cancel();
-            });
+            let rc = Arc::clone(&record_count);
+            let tc = Arc::clone(&token_count);
 
             let result = engine
-                .run_async(
+                .run_workbatch(
                     &transport,
                     shutdown,
-                    |pm: &mut ParsedMessage| -> Result<String, String> {
-                        Ok(pm
-                            .field("_table")
-                            .and_then(|v| sonic_rs::JsonValueTrait::as_str(v))
-                            .unwrap_or("?")
-                            .to_string())
-                    },
-                    |results, tokens| {
-                        let sc = Arc::clone(&sink_count_clone);
-                        let tc = Arc::clone(&token_count_clone);
+                    |batch| Ok(batch),
+                    |out: &WorkBatch<_>| {
+                        let rc = Arc::clone(&rc);
+                        let tc = Arc::clone(&tc);
+                        let records = out.records.len();
+                        let tokens = out.commit_tokens.len();
                         async move {
-                            sc.fetch_add(results.len() as u64, Ordering::Relaxed);
-                            tc.fetch_add(tokens.len() as u64, Ordering::Relaxed);
-                            // Simulate app committing tokens via receiver
+                            rc.fetch_add(records as u64, Ordering::Relaxed);
+                            tc.fetch_add(tokens as u64, Ordering::Relaxed);
                             Ok(())
                         }
                     },
-                    None::<(
-                        std::time::Duration,
-                        fn() -> std::future::Ready<Result<(), EngineError>>,
-                    )>,
+                    // SinkManaged mirrors the legacy run_async sink-owns-commit shape.
+                    CommitMode::SinkManaged,
+                    no_ticker(),
                 )
                 .await;
 
             assert!(result.is_ok());
-            assert_eq!(sink_count.load(Ordering::Relaxed), 5);
+            assert_eq!(record_count.load(Ordering::Relaxed), 5);
             assert_eq!(token_count.load(Ordering::Relaxed), 5);
         }
 
         #[tokio::test]
-        async fn run_async_ticker_fires() {
+        async fn run_workbatch_ticker_fires() {
             let config = crate::transport::memory::MemoryConfig {
                 recv_timeout_ms: 50,
                 ..Default::default()
             };
-            let transport = crate::transport::memory::MemoryTransport::new(&config);
-
+            let transport = crate::transport::memory::MemoryTransport::new(&config)
+                .expect("memory transport with valid config must construct");
             let engine = default_engine();
             let shutdown = tokio_util::sync::CancellationToken::new();
-            let shutdown_clone = shutdown.clone();
+            cancel_after(shutdown.clone(), 350);
 
             let tick_count = Arc::new(AtomicU64::new(0));
             let tick_count_clone = Arc::clone(&tick_count);
 
-            // Shut down after 350ms — ticker at 100ms should fire ~2-3 times
-            tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(350)).await;
-                shutdown_clone.cancel();
-            });
-
             let result = engine
-                .run_async(
+                .run_workbatch(
                     &transport,
                     shutdown,
-                    |_pm: &mut ParsedMessage| -> Result<(), String> { Ok(()) },
-                    |_results, _tokens| async { Ok(()) },
+                    |batch| Ok(batch),
+                    |_out: &WorkBatch<_>| async { Ok(()) },
+                    CommitMode::Auto,
                     Some((std::time::Duration::from_millis(100), move || {
                         let tc = Arc::clone(&tick_count_clone);
                         async move {
@@ -1103,13 +1151,13 @@ mod engine_tests {
         }
 
         #[tokio::test]
-        async fn run_raw_async_processes_without_parse() {
+        async fn run_workbatch_passthrough_without_parse() {
             let config = crate::transport::memory::MemoryConfig {
                 recv_timeout_ms: 50,
                 ..Default::default()
             };
-            let transport = crate::transport::memory::MemoryTransport::new(&config);
-
+            let transport = crate::transport::memory::MemoryTransport::new(&config)
+                .expect("memory transport with valid config must construct");
             for i in 0..3 {
                 transport
                     .inject(None, json_payload("logs", i))
@@ -1119,34 +1167,27 @@ mod engine_tests {
 
             let engine = default_engine();
             let shutdown = tokio_util::sync::CancellationToken::new();
-            let shutdown_clone = shutdown.clone();
+            cancel_after(shutdown.clone(), 200);
 
             let total_bytes = Arc::new(AtomicU64::new(0));
             let total_bytes_clone = Arc::clone(&total_bytes);
 
-            tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                shutdown_clone.cancel();
-            });
-
+            // On-demand driver: pass-through process pays no parse cost.
             let result = engine
-                .run_raw_async(
+                .run_workbatch(
                     &transport,
                     shutdown,
-                    |msg: &RawMessage| -> Result<usize, String> { Ok(msg.payload.len()) },
-                    |results, _tokens| {
+                    |batch| Ok(batch),
+                    |out: &WorkBatch<_>| {
                         let tb = Arc::clone(&total_bytes_clone);
+                        let sum: u64 = out.records.iter().map(|r| r.payload.len() as u64).sum();
                         async move {
-                            for len in results.iter().flatten() {
-                                tb.fetch_add(*len as u64, Ordering::Relaxed);
-                            }
+                            tb.fetch_add(sum, Ordering::Relaxed);
                             Ok(())
                         }
                     },
-                    None::<(
-                        std::time::Duration,
-                        fn() -> std::future::Ready<Result<(), EngineError>>,
-                    )>,
+                    CommitMode::Auto,
+                    no_ticker(),
                 )
                 .await;
 
@@ -1155,13 +1196,63 @@ mod engine_tests {
         }
 
         #[tokio::test]
-        async fn run_async_sink_error_does_not_crash() {
+        async fn run_workbatch_parsed_reads_field() {
+            // The parsed path is the analogue of the old mid-tier run_async: the
+            // driver pre-parses and the process closure reads a routing field.
             let config = crate::transport::memory::MemoryConfig {
                 recv_timeout_ms: 50,
                 ..Default::default()
             };
-            let transport = crate::transport::memory::MemoryTransport::new(&config);
+            let transport = crate::transport::memory::MemoryTransport::new(&config)
+                .expect("memory transport with valid config must construct");
+            for i in 0..4 {
+                transport
+                    .inject(None, json_payload("events", i))
+                    .await
+                    .unwrap();
+            }
 
+            let engine = default_engine();
+            let shutdown = tokio_util::sync::CancellationToken::new();
+            cancel_after(shutdown.clone(), 200);
+
+            let hits = Arc::new(AtomicU64::new(0));
+            let hc = Arc::clone(&hits);
+
+            let result = engine
+                .run_workbatch_parsed(
+                    &transport,
+                    shutdown,
+                    move |pb| {
+                        let field = pb.intern("_table");
+                        let mut local = 0u64;
+                        for parsed in &pb.parsed {
+                            if parsed.field_str(&field) == Some("events") {
+                                local += 1;
+                            }
+                        }
+                        hc.fetch_add(local, Ordering::Relaxed);
+                        Ok(WorkBatch::new(pb.records, pb.commit_tokens)
+                            .with_dlq_entries(pb.dlq_entries))
+                    },
+                    |_out: &WorkBatch<_>| async { Ok(()) },
+                    CommitMode::Auto,
+                    no_ticker(),
+                )
+                .await;
+
+            assert!(result.is_ok());
+            assert_eq!(hits.load(Ordering::Relaxed), 4);
+        }
+
+        #[tokio::test]
+        async fn run_workbatch_sink_error_does_not_crash() {
+            let config = crate::transport::memory::MemoryConfig {
+                recv_timeout_ms: 50,
+                ..Default::default()
+            };
+            let transport = crate::transport::memory::MemoryTransport::new(&config)
+                .expect("memory transport with valid config must construct");
             transport
                 .inject(None, json_payload("events", 0))
                 .await
@@ -1169,29 +1260,28 @@ mod engine_tests {
 
             let engine = default_engine();
             let shutdown = tokio_util::sync::CancellationToken::new();
-            let shutdown_clone = shutdown.clone();
+            cancel_after(shutdown.clone(), 200);
 
-            tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                shutdown_clone.cancel();
-            });
-
-            // Sink always errors — engine should continue (not crash)
+            // Sink always errors -- the driver returns the error cleanly (no
+            // crash/panic). Post Remediation Phase 1 the sink error is a
+            // TERMINAL ack-barrier error rather than a logged continue.
             let result = engine
-                .run_async(
+                .run_workbatch(
                     &transport,
                     shutdown,
-                    |_pm: &mut ParsedMessage| -> Result<(), String> { Ok(()) },
-                    |_results, _tokens| async { Err(EngineError::Sink("test sink error".into())) },
-                    None::<(
-                        std::time::Duration,
-                        fn() -> std::future::Ready<Result<(), EngineError>>,
-                    )>,
+                    |batch| Ok(batch),
+                    |_out: &WorkBatch<_>| async {
+                        Err(EngineError::Sink("test sink error".into()))
+                    },
+                    CommitMode::Auto,
+                    no_ticker(),
                 )
                 .await;
 
-            // Should shut down cleanly (not propagate sink error)
-            assert!(result.is_ok());
+            assert!(
+                matches!(result, Err(EngineError::Sink(_))),
+                "sink error returns terminally without crashing: {result:?}"
+            );
         }
     }
 }

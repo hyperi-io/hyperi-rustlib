@@ -3,7 +3,7 @@
 // Purpose:   Standard CLI arguments for DFE services
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Common CLI arguments shared across all DFE services.
@@ -109,17 +109,20 @@ impl CommonArgs {
     }
 
     /// Convert to `ConfigOptions` for use with `config::setup()`.
+    ///
+    /// The `--config <path>` flag names a FILE, so it populates
+    /// [`ConfigOptions::config_file`](crate::config::ConfigOptions::config_file)
+    /// -- NOT `config_paths`, which is a list of DIRECTORIES to search for the
+    /// standard base names. (Before 2.8.11 this wrongly pushed the file path
+    /// into `config_paths`, where directory discovery never found it.)
     #[cfg(feature = "config")]
     #[must_use]
     pub fn to_config_options(&self, env_prefix: &str) -> crate::config::ConfigOptions {
-        let mut opts = crate::config::ConfigOptions {
+        crate::config::ConfigOptions {
             env_prefix: env_prefix.to_string(),
+            config_file: self.config.as_deref().map(std::path::PathBuf::from),
             ..Default::default()
-        };
-        if let Some(ref path) = self.config {
-            opts.config_paths.push(path.into());
         }
-        opts
     }
 }
 
@@ -164,6 +167,43 @@ mod tests {
             quiet: true,
         };
         assert_eq!(args.effective_log_level(), "error");
+    }
+
+    #[cfg(feature = "config")]
+    #[test]
+    fn test_to_config_options_sets_config_file_not_paths() {
+        let args = CommonArgs {
+            config: Some("/etc/svc/config.yaml".to_string()),
+            log_level: "info".to_string(),
+            log_format: "auto".to_string(),
+            metrics_addr: "0.0.0.0:9090".to_string(),
+            verbose: false,
+            quiet: false,
+        };
+        let opts = args.to_config_options("MY_SVC");
+        assert_eq!(opts.env_prefix, "MY_SVC");
+        // The file path lands in config_file, NOT config_paths (the 2.8.11 fix).
+        assert_eq!(
+            opts.config_file,
+            Some(std::path::PathBuf::from("/etc/svc/config.yaml"))
+        );
+        assert!(opts.config_paths.is_empty());
+    }
+
+    #[cfg(feature = "config")]
+    #[test]
+    fn test_to_config_options_no_config_file_when_absent() {
+        let args = CommonArgs {
+            config: None,
+            log_level: "info".to_string(),
+            log_format: "auto".to_string(),
+            metrics_addr: "0.0.0.0:9090".to_string(),
+            verbose: false,
+            quiet: false,
+        };
+        let opts = args.to_config_options("MY_SVC");
+        assert!(opts.config_file.is_none());
+        assert!(opts.config_paths.is_empty());
     }
 
     #[test]

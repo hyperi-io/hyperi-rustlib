@@ -34,7 +34,7 @@ flowchart TB
         MEM["memory<br/>MemoryGuard"]
         SCA["scaling<br/>ScalingPressure"]
         CON["concurrency<br/>BackgroundSink · PeriodicWorker · ActorHandle"]
-        CACHE["cache · database"]
+        CACHE["cache · database · strmatch"]
         EXP["expression (CEL)"]
     end
 
@@ -93,11 +93,8 @@ Pillars are singletons. Modules in higher layers call into them via macros
 | `concurrency` | `concurrency` | `BackgroundSink`, `PeriodicWorker`, `ActorHandle` — fire-and-forget, timer, command-queue primitives |
 | `cache` | `cache` | Moka TinyLFU async cache |
 | `database` | `database` | URL builders, connection-string helpers |
+| `strmatch` | `strmatch` | 4-tier string matcher: `Byte`, `Literal`, `LiteralSet`, `Regex` |
 | `expression` | `expression` | CEL evaluator (used by transport filters) |
-
-> **Planned for next release** (not in v2.7.4): `strmatch` — 4-tier
-> regex→fast-path matcher. See
-> [`pipeline/STRMATCH.md`](pipeline/STRMATCH.md) for the API preview.
 
 ### L3 — Transport & I/O
 
@@ -142,7 +139,7 @@ Pillars are singletons. Modules in higher layers call into them via macros
    required.** `metrics` uses `tracing` for its own logging, but does not
    know `config` exists.
 3. **L2 modules can be used standalone.** `MemoryGuard`, `ScalingPressure`,
-   `cache` all work without the L4 pipeline above them.
+   `cache`, `strmatch` all work without the L4 pipeline above them.
 4. **L3 transports always embed the filter engine.** Even when no filters
    are configured the engine is present as a no-op (a single
    `has_inbound_filters()` branch on every send/recv). Zero-cost when empty.
@@ -159,8 +156,8 @@ Pillars are singletons. Modules in higher layers call into them via macros
 ## Feature defaults
 
 - `default = ["config", "logger"]`. Nothing else. Apps explicitly opt in.
-- The trim landed in 2.6.0 to shave ~200 transitive deps off the
-  "I-just-want-config" use case.
+- Trimmed defaults keep the "I-just-want-config" use case off the full
+  transitive dependency set.
 - See [FEATURE-FLAGS.md](FEATURE-FLAGS.md) for the full tree and which
   features pull in which.
 
@@ -189,10 +186,53 @@ auto-wired vs explicit.
 
 ---
 
+## Opinionated integrated core (config-metrics-scaling, and beyond)
+
+A first-class VALUE of rustlib, and a standing MAINTAINER principle:
+rustlib DELIBERATELY inter-wires its core functions so the integrated
+behaviour is FREE for the app developer -- instead of pushing the
+cross-cutting integration onto the infra/platform team per app (the usual
+outcome). The layering above says what depends on what; this says why some
+couplings are intentional, not accidental.
+
+config-metrics-scaling is the worked example (2.8.10): the cascade defines
+scaling-pressure expressions + params; every subsystem PRE-SUPPLIES metrics
+(the RULE below); the engine computes a **correlated composite** pressure
+from those metrics via config-defined CEL; the app exposes one
+`scaling_pressure` gauge the autoscaler reads. Autoscaling-readiness with
+ZERO hand-wiring of config -> metrics -> KEDA. The pattern recurs:
+
+- **memory-guard -> self-regulation governor -> inbound brake -> lag ->
+  scaling:** vertical (in-pod) coping coupled to horizontal scale-out via
+  the lag signal -- graceful degradation AND scale-out, free.
+- **transport -> WorkBatch engine -> DLQ -> commit tokens:** a
+  pre-integrated zero-copy, at-least-once, no-silent-drop data plane.
+- **config cascade -> every subsystem** (`unmarshal_key_registered`): one
+  8-layer model + redacted `/config`, not N bespoke ones.
+- **logging + metrics + tracing:** the three observability pillars
+  integrated (Prometheus+OTel fanout, W3C traceparent, secret redaction).
+- **secrets -> config -> TLS:** credential + cert provisioning integrated.
+- **shutdown + health -> every subsystem:** graceful drain + readiness
+  threaded by `ServiceRuntime`, the integrator that builds the whole stack.
+
+### Maintainer principle: pre-supply metrics by default
+
+If rustlib can emit a MEANINGFUL and USEFUL metric for something it owns,
+it SHOULD, by default. Consumers get observability + scaling signals for
+free, and the scaling engine can only correlate what exists. Applied
+pragmatically -- scaling-relevant + clearly-useful signals first, no vanity
+metrics. When you add a new core function, wire it into these couplings the
+SAME way (emit its metrics, honour the config cascade, thread
+shutdown/health) -- preserve the integration, don't regress to a bag of
+un-wired parts. See [core-pillars/METRICS.md](core-pillars/METRICS.md) and
+[deployment/KEDA.md](deployment/KEDA.md).
+
+---
+
 ## Project facts
 
 - **Edition:** 2024
-- **MSRV:** 1.95
+- **MSRV:** see `rust-version` in `Cargo.toml`
 - **Sibling lib:** `hyperi-pylib` (Python equivalent)
 - **Downstream:** the six core DFE apps consume `hyperi-rustlib` in
   lockstep (see [README.md § Project facts](README.md#project-facts))

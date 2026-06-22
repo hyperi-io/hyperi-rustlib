@@ -3,14 +3,14 @@
 // Purpose:   Compile-time safe sensitive string type that never serialises its value
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Sensitive string type for fields that must never be exposed.
 //!
 //! [`SensitiveString`] wraps a `String` but always serialises as
 //! `"***REDACTED***"`. This provides compile-time guarantees that the
-//! value cannot leak through serialisation — not in the config registry,
+//! value cannot leak through serialisation -- not in the config registry,
 //! not in logs, not in debug output, not in API responses.
 //!
 //! This module is always available (no feature gate) so that any module
@@ -38,12 +38,105 @@
 //! }
 //! ```
 
+use std::cell::Cell;
 use std::fmt;
 
 use serde::de::Deserializer;
 use serde::ser::Serializer;
 
 const REDACTED: &str = "***REDACTED***";
+
+thread_local! {
+    /// Per-thread serde-exposure flag. When set (via [`expose_during`])
+    /// [`SensitiveString::serialize`] writes the inner value verbatim
+    /// instead of `***REDACTED***`. Default: `false` -- every other call
+    /// site continues to redact.
+    static EXPOSE: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Drop-guard for the thread-local exposure flag.
+///
+/// Using a guard (rather than a try/finally pair) ensures the flag is
+/// restored even if the closure passed to [`expose_during`] panics. Held
+/// for the duration of the `expose_during` body, dropped at scope-exit.
+struct ExposeGuard {
+    prev: bool,
+}
+
+impl ExposeGuard {
+    fn enter() -> Self {
+        EXPOSE.with(|e| {
+            let prev = e.get();
+            e.set(true);
+            Self { prev }
+        })
+    }
+}
+
+impl Drop for ExposeGuard {
+    fn drop(&mut self) {
+        let prev = self.prev;
+        EXPOSE.with(|e| e.set(prev));
+    }
+}
+
+/// Run `f` with [`SensitiveString`]'s `Serialize` impl exposing inner values.
+///
+/// Use this around code paths that need to serialise-and-deserialise a
+/// config struct without destroying its secrets -- typically the
+/// `figment::Figment::from(Serialized::defaults(&config))` + `.extract()`
+/// round-trip in a consumer's config loader.
+///
+/// # Scope and reentrancy
+///
+/// The flag is thread-local. Calls from inside the closure on the same
+/// thread observe exposure; calls from other threads do not. Nested
+/// calls compose correctly (inner guards restore the outer state on
+/// drop). Async callers should be aware that the flag does NOT cross
+/// `.await` boundaries to other threads -- keep the round-trip on one
+/// thread, or wrap each thread's section in its own
+/// `expose_during`.
+///
+/// # Panic safety
+///
+/// If `f` panics, the previous flag value is restored via an RAII
+/// drop guard before the panic unwinds further.
+///
+/// # Examples
+///
+/// ```rust
+/// use hyperi_rustlib::{SensitiveString, expose_during};
+/// use serde::{Serialize, Deserialize};
+///
+/// #[derive(Serialize, Deserialize)]
+/// struct Cfg {
+///     password: SensitiveString,
+/// }
+///
+/// let cfg = Cfg { password: SensitiveString::new("hunter2") };
+///
+/// // Default: serialise redacts.
+/// let json = serde_json::to_string(&cfg).unwrap();
+/// assert!(json.contains("***REDACTED***"));
+///
+/// // Inside expose_during: serialise reveals so a round-trip preserves the value.
+/// let round_tripped: Cfg = expose_during(|| {
+///     let v = serde_json::to_value(&cfg).unwrap();
+///     serde_json::from_value(v).unwrap()
+/// });
+/// assert_eq!(round_tripped.password.expose(), "hunter2");
+///
+/// // After the call, default redaction resumes.
+/// let json = serde_json::to_string(&cfg).unwrap();
+/// assert!(json.contains("***REDACTED***"));
+/// ```
+pub fn expose_during<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    let _guard = ExposeGuard::enter();
+    f()
+}
 
 /// A string value that is always redacted when serialised.
 ///
@@ -83,7 +176,18 @@ impl SensitiveString {
 
 impl serde::Serialize for SensitiveString {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(REDACTED)
+        // Honour the thread-local exposure flag set by `expose_during`.
+        // Without exposure (the default), every serialise path --
+        // serde_json::to_string, config-registry dump, logger output --
+        // emits the redacted constant. Inside `expose_during`, the
+        // serializer emits the inner value verbatim, which is what
+        // figment / serde round-trips need to avoid destroying secrets
+        // (see hyperi-rustlib#41).
+        if EXPOSE.with(Cell::get) {
+            serializer.serialize_str(&self.0)
+        } else {
+            serializer.serialize_str(REDACTED)
+        }
     }
 }
 
@@ -224,5 +328,129 @@ mod tests {
         assert!(!format!("{s:?}").contains(secret));
         // Only expose() reveals it
         assert_eq!(s.expose(), secret);
+    }
+
+    // ----- Round-trip preservation (hyperi-rustlib#41) -----
+
+    /// The motivating case from hyperi-rustlib#41: serialise to a serde
+    /// `Value`, then deserialise back. Without `expose_during` the
+    /// inner string is destroyed (replaced by `***REDACTED***`); inside
+    /// the helper, the value survives.
+    #[test]
+    fn round_trip_inside_expose_during_preserves_value() {
+        let s = SensitiveString::new("hunter2");
+        let v = expose_during(|| serde_json::to_value(&s).unwrap());
+        let round_tripped: SensitiveString = serde_json::from_value(v).unwrap();
+        assert_eq!(round_tripped.expose(), "hunter2");
+    }
+
+    #[test]
+    fn round_trip_outside_expose_during_redacts() {
+        let s = SensitiveString::new("hunter2");
+        // Default path -- no `expose_during` wrap.
+        let v = serde_json::to_value(&s).unwrap();
+        let round_tripped: SensitiveString = serde_json::from_value(v).unwrap();
+        // The serialised form was the literal "***REDACTED***", so the
+        // deserialised value is that literal. This is the bug being
+        // fixed for the consumer who wraps their round-trip -- but the
+        // default behaviour is preserved verbatim.
+        assert_eq!(round_tripped.expose(), REDACTED);
+    }
+
+    #[test]
+    fn expose_during_restores_after_body() {
+        let s = SensitiveString::new("secret");
+        // Before: redacted
+        assert!(serde_json::to_string(&s).unwrap().contains(REDACTED));
+        // Inside: exposed
+        expose_during(|| {
+            assert!(serde_json::to_string(&s).unwrap().contains("secret"));
+        });
+        // After: redacted again -- guard restored the flag
+        assert!(serde_json::to_string(&s).unwrap().contains(REDACTED));
+        assert!(!serde_json::to_string(&s).unwrap().contains("secret"));
+    }
+
+    #[test]
+    fn expose_during_restores_after_panic() {
+        let s = SensitiveString::new("secret");
+        let result = std::panic::catch_unwind(|| {
+            expose_during(|| {
+                // Confirm we're exposed inside the closure.
+                assert!(serde_json::to_string(&s).unwrap().contains("secret"));
+                panic!("simulated panic");
+            })
+        });
+        assert!(result.is_err(), "panic should have propagated");
+        // The drop guard must have restored the flag despite the panic.
+        assert!(serde_json::to_string(&s).unwrap().contains(REDACTED));
+        assert!(!serde_json::to_string(&s).unwrap().contains("secret"));
+    }
+
+    #[test]
+    fn expose_during_nests_correctly() {
+        let s = SensitiveString::new("secret");
+        expose_during(|| {
+            assert!(serde_json::to_string(&s).unwrap().contains("secret"));
+            expose_during(|| {
+                assert!(serde_json::to_string(&s).unwrap().contains("secret"));
+            });
+            // Inner guard restored OUTER state (which was also exposed).
+            assert!(serde_json::to_string(&s).unwrap().contains("secret"));
+        });
+        // Outer guard restored the original (redacted) state.
+        assert!(serde_json::to_string(&s).unwrap().contains(REDACTED));
+    }
+
+    #[test]
+    fn struct_round_trip_inside_expose_during_preserves_values() {
+        // Mirrors the dfe-loader bug: serialise a Config containing a
+        // SensitiveString password, merge env overrides via figment,
+        // deserialise back. Without expose_during, password becomes
+        // "***REDACTED***".
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Config {
+            host: String,
+            password: SensitiveString,
+        }
+        let original = Config {
+            host: "db.example.com".into(),
+            password: SensitiveString::new("env-resolved-secret"),
+        };
+        let round_tripped: Config = expose_during(|| {
+            let v = serde_json::to_value(&original).unwrap();
+            serde_json::from_value(v).unwrap()
+        });
+        assert_eq!(round_tripped.host, "db.example.com");
+        assert_eq!(round_tripped.password.expose(), "env-resolved-secret");
+    }
+
+    /// Cross-thread isolation: thread A's `expose_during` does NOT
+    /// affect thread B's serialisation.
+    #[test]
+    fn expose_flag_is_thread_local() {
+        use std::sync::{Arc, Mutex};
+        let s = Arc::new(SensitiveString::new("secret"));
+        let observed = Arc::new(Mutex::new(String::new()));
+
+        let s2 = Arc::clone(&s);
+        let observed2 = Arc::clone(&observed);
+        let handle = std::thread::spawn(move || {
+            // Thread B: no expose_during. Must observe REDACTED.
+            let out = serde_json::to_string(&*s2).unwrap();
+            *observed2.lock().unwrap() = out;
+        });
+
+        // Thread A: inside expose_during. Spawn happened above; let it
+        // race the closure.
+        expose_during(|| {
+            std::thread::yield_now();
+        });
+        handle.join().unwrap();
+        let b_output = observed.lock().unwrap().clone();
+        assert!(
+            b_output.contains(REDACTED),
+            "thread B should have observed REDACTED, got: {b_output}"
+        );
     }
 }

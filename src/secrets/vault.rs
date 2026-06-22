@@ -3,7 +3,7 @@
 // Purpose:   OpenBao/Vault secret provider
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! OpenBao/Vault secret provider using vaultrs.
@@ -21,6 +21,7 @@ use vaultrs::kv2;
 use super::error::{SecretsError, SecretsResult};
 use super::provider::SecretProvider;
 use super::types::{SecretMetadata, SecretValue};
+use crate::sensitive::SensitiveString;
 
 /// OpenBao/Vault connection configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,16 +51,18 @@ pub struct OpenBaoConfig {
 pub enum OpenBaoAuth {
     /// Token authentication.
     Token {
-        /// Vault token.
-        token: String,
+        /// Vault token. Redacted in `Debug`/serialised output; `.expose()`
+        /// only at the auth call site.
+        token: SensitiveString,
     },
 
     /// AppRole authentication.
     AppRole {
-        /// Role ID.
+        /// Role ID. An identifier (like a username), not a credential.
         role_id: String,
-        /// Secret ID.
-        secret_id: String,
+        /// Secret ID. The AppRole credential -- redacted in
+        /// `Debug`/serialised output; `.expose()` only at the auth call site.
+        secret_id: SensitiveString,
         /// Mount path (default: "approle").
         #[serde(default = "default_approle_mount")]
         mount: String,
@@ -126,14 +129,16 @@ impl OpenBaoConfig {
 
         // Determine authentication method
         let auth = if let Some(token) = vault::token().get() {
-            OpenBaoAuth::Token { token }
+            OpenBaoAuth::Token {
+                token: token.into(),
+            }
         } else if let (Some(role_id), Some(secret_id)) = (
             vault::approle_role_id().get(),
             vault::approle_secret_id().get(),
         ) {
             OpenBaoAuth::AppRole {
                 role_id,
-                secret_id,
+                secret_id: secret_id.into(),
                 mount: default_approle_mount(),
             }
         } else if let Some(role) = vault::k8s_role().get() {
@@ -162,7 +167,7 @@ impl OpenBaoConfig {
         Self {
             address: address.to_string(),
             auth: OpenBaoAuth::Token {
-                token: token.to_string(),
+                token: token.into(),
             },
             namespace: None,
             ca_cert: None,
@@ -177,7 +182,7 @@ impl OpenBaoConfig {
             address: address.to_string(),
             auth: OpenBaoAuth::AppRole {
                 role_id: role_id.to_string(),
-                secret_id: secret_id.to_string(),
+                secret_id: secret_id.into(),
                 mount: default_approle_mount(),
             },
             namespace: None,
@@ -200,11 +205,36 @@ impl OpenBaoConfig {
         self
     }
 
-    /// Enable TLS skip verification (not recommended for production).
+    /// Enable TLS skip verification (dev/test only -- rejected in production
+    /// by [`validate`](Self::validate)).
     #[must_use]
     pub fn with_skip_verify(mut self) -> Self {
         self.skip_verify = true;
         self
+    }
+
+    /// Validate the Vault config against the deployment profile.
+    ///
+    /// `skip_verify` disables TLS certificate verification, which exposes the
+    /// connection to MITM. It is permitted only in dev/test; under a
+    /// production profile this returns an error. Call at startup with
+    /// [`crate::env::is_production`].
+    ///
+    /// NOTE: `skip_verify` is slated for removal at GA -- private-CA trust via
+    /// `ca_cert` (the unified TLS module) is the supported path.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` when `is_production` and `skip_verify` is set.
+    pub fn validate(&self, is_production: bool) -> Result<(), String> {
+        if is_production && self.skip_verify {
+            return Err(
+                "vault: skip_verify (TLS verification disabled) is not permitted in \
+                 production -- configure ca_cert for private-CA trust instead"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -220,6 +250,12 @@ impl OpenBaoProvider {
     ///
     /// Returns an error if client initialization fails.
     pub fn new(config: &OpenBaoConfig) -> SecretsResult<Self> {
+        // Enforce the production guardrail at the construction boundary -- a
+        // shared library cannot rely on every app remembering to call
+        // validate() at startup.
+        config
+            .validate(crate::env::is_production())
+            .map_err(SecretsError::ConfigError)?;
         Ok(Self {
             config: config.clone(),
         })
@@ -242,8 +278,15 @@ impl OpenBaoProvider {
             settings.namespace(Some(ns.clone()));
         }
 
-        // Note: vaultrs handles TLS configuration via the address URL scheme
-        // For custom CA certs, users should configure system trust store or use VAULT_CACERT env var
+        // Private-CA trust + verification (finding 9: these were previously
+        // ignored). vaultrs owns its reqwest client, so we route through its
+        // native settings rather than the unified `tls` module: a PEM CA file
+        // for private-CA deployments, and TLS verification on unless the
+        // dev-only `skip_verify` is set (rejected in prod by `validate`).
+        if let Some(ref ca) = self.config.ca_cert {
+            settings.ca_certs(vec![ca.clone()]);
+        }
+        settings.verify(!self.config.skip_verify);
 
         let settings = settings.build().map_err(|e| {
             SecretsError::ConfigError(format!("failed to build Vault client settings: {e}"))
@@ -256,14 +299,14 @@ impl OpenBaoProvider {
         // Authenticate based on method
         match &self.config.auth {
             OpenBaoAuth::Token { token } => {
-                client.set_token(token);
+                client.set_token(token.expose());
             }
             OpenBaoAuth::AppRole {
                 role_id,
                 secret_id,
                 mount,
             } => {
-                self.auth_approle(&mut client, role_id, secret_id, mount)
+                self.auth_approle(&mut client, role_id, secret_id.expose(), mount)
                     .await?;
             }
             OpenBaoAuth::Kubernetes {
@@ -452,6 +495,52 @@ mod tests {
         let json = serde_json::to_string(&auth).unwrap();
         assert!(json.contains("\"method\":\"app_role\""));
         assert!(json.contains("role_id"));
+    }
+
+    #[test]
+    fn test_openbao_auth_redacts_secrets() {
+        // Token + secret_id values must never appear in Debug or serialised
+        // output -- they are SensitiveString. role_id (an identifier) may.
+        let token_auth = OpenBaoAuth::Token {
+            token: "super-secret-token".into(),
+        };
+        let dbg = format!("{token_auth:?}");
+        let json = serde_json::to_string(&token_auth).unwrap();
+        assert!(!dbg.contains("super-secret-token"), "token leaked in Debug");
+        assert!(!json.contains("super-secret-token"), "token leaked in JSON");
+
+        let approle = OpenBaoAuth::AppRole {
+            role_id: "role-abc".into(),
+            secret_id: "super-secret-id".into(),
+            mount: "approle".into(),
+        };
+        let dbg = format!("{approle:?}");
+        let json = serde_json::to_string(&approle).unwrap();
+        assert!(
+            !dbg.contains("super-secret-id"),
+            "secret_id leaked in Debug"
+        );
+        assert!(
+            !json.contains("super-secret-id"),
+            "secret_id leaked in JSON"
+        );
+        // role_id is a non-secret identifier and is allowed through.
+        assert!(json.contains("role-abc"));
+    }
+
+    #[test]
+    fn validate_rejects_skip_verify_in_production() {
+        let insecure = OpenBaoConfig::with_token("https://vault:8200", "t").with_skip_verify();
+        assert!(insecure.skip_verify);
+        assert!(insecure.validate(false).is_ok(), "dev allows skip_verify");
+        assert!(
+            insecure.validate(true).is_err(),
+            "production must reject skip_verify"
+        );
+
+        let secure = OpenBaoConfig::with_token("https://vault:8200", "t");
+        assert!(!secure.skip_verify);
+        assert!(secure.validate(true).is_ok());
     }
 
     #[test]

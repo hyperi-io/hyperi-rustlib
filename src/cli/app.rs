@@ -3,7 +3,7 @@
 // Purpose:   DfeApp trait and standard lifecycle runner
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Application trait and lifecycle runner for DFE services.
@@ -79,7 +79,7 @@ pub trait DfeApp: Sized {
     /// Called after logging, config, and [`ServiceRuntime`](super::ServiceRuntime)
     /// are initialised. The runtime contains all common infrastructure (metrics,
     /// memory guard, shutdown token, worker pool, scaling pressure). Apps just
-    /// use it — no boilerplate needed.
+    /// use it -- no boilerplate needed.
     ///
     /// # Errors
     ///
@@ -156,7 +156,23 @@ pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
                         output::print_kv("log_format", &args.log_format);
                         output::print_kv("metrics_addr", &args.metrics_addr);
                         eprintln!();
-                        eprintln!("  config: {config:#?}");
+                        // Mask the Debug dump before printing: configs hold
+                        // ENV-sourced secrets in plain `String` fields, so
+                        // `{config:#?}` would print them in clear text.
+                        // Without the `logger` feature the consumer has opted
+                        // out of every sensitive-field defence anyway, so an
+                        // unmasked print here is consistent.
+                        let raw = format!("{config:#?}");
+                        #[cfg(feature = "logger")]
+                        let masked = {
+                            let default_fields = crate::logger::default_sensitive_fields();
+                            let patterns: Vec<&str> =
+                                default_fields.iter().map(String::as_str).collect();
+                            crate::logger::mask_sensitive_string(&raw, &patterns)
+                        };
+                        #[cfg(not(feature = "logger"))]
+                        let masked = raw;
+                        eprintln!("  config: {masked}");
                     }
                     Ok(())
                 }
@@ -181,7 +197,7 @@ pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
         }
         #[cfg(not(any(feature = "metrics", feature = "otel-metrics")))]
         StandardCommand::MetricsManifest => {
-            output::print_error("metrics feature not enabled — no manifest available");
+            output::print_error("metrics feature not enabled -- no manifest available");
             Err(CliError::Service("metrics feature not enabled".into()))
         }
 
@@ -200,12 +216,36 @@ pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
                 "starting service"
             );
 
+            // Populate the global config cascade BEFORE load_config + the
+            // ServiceRuntime build, so every `from_cascade()` subsystem
+            // (governor, worker pool, batch engine, scaling) reads the app's
+            // real config instead of silently defaulting. Guarded by the
+            // try_get() check so apps that already call config::setup()
+            // themselves (e.g. those needing setup_async for Postgres) are not
+            // double-initialised -- setup() returns Err(AlreadyInitialised)
+            // otherwise.
+            #[cfg(feature = "config")]
+            if crate::config::try_get().is_none() {
+                let opts = crate::config::ConfigOptions {
+                    env_prefix: app.env_prefix().to_string(),
+                    app_name: Some(app.name().to_string()),
+                    config_file: args.config.as_deref().map(std::path::PathBuf::from),
+                    ..Default::default()
+                };
+                if let Err(e) = crate::config::setup(opts) {
+                    tracing::warn!(
+                        error = %e,
+                        "config cascade setup failed; from_cascade subsystems will use defaults"
+                    );
+                }
+            }
+
             let config_path = args.config.as_deref();
             let config = app.load_config(config_path)?;
 
             tracing::debug!(?config, "configuration loaded");
 
-            // Build ServiceRuntime — all common infrastructure for free
+            // Build ServiceRuntime -- all common infrastructure for free
             let commit = option_env!("GIT_COMMIT").unwrap_or("unknown");
             let runtime = super::ServiceRuntime::build(
                 app.name(),
@@ -272,7 +312,7 @@ fn init_logger_for_service(
 /// Generate all CI artefacts for this service.
 ///
 /// Produces metrics manifest, deployment contract, and container spec
-/// in the output directory. Files are deterministic — running twice produces
+/// in the output directory. Files are deterministic -- running twice produces
 /// identical output (no timestamps that change between runs).
 fn generate_artefacts<A: DfeApp>(
     app: &A,
@@ -307,7 +347,7 @@ fn generate_artefacts<A: DfeApp>(
     #[cfg(feature = "deployment")]
     if deployment_contract.is_none() {
         output::print_warn(&format!(
-            "DfeApp::deployment_contract() returned None for `{}` — \
+            "DfeApp::deployment_contract() returned None for `{}` -- \
              only metrics-manifest.json will be generated. \
              Implement the trait hook to emit deployment-contract.json, \
              container-manifest.json, and Dockerfile.runtime.",
@@ -341,7 +381,7 @@ fn generate_artefacts<A: DfeApp>(
         })?;
         generated.push("Dockerfile.runtime".to_string());
 
-        // ArgoCD Application CR (default generation — ArgoCD is the
+        // ArgoCD Application CR (default generation -- ArgoCD is the
         // standard CD tool across the fleet).
         let argo_path = output_dir.join("argocd-application.yaml");
         let argo_cfg = crate::deployment::ArgocdConfig {

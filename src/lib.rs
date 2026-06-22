@@ -3,20 +3,16 @@
 // Purpose:   Main library entry point and public API exports
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # hyperi-rustlib
 //!
-//! There's plenty of sage advice out there about how to run Rust services in
-//! production at scale — config cascades, structured logging, masking secrets,
-//! multi-backend secrets management, Prometheus, OpenTelemetry, Kafka transports,
-//! tiered disk-spillover sinks, adaptive worker pools, graceful shutdown — but
-//! almost none of it as code you can just install and use.
+//! There's plenty of sage advice out there about how to run Rust services in production at scale -- config cascades, structured logging, masking secrets, multi-backend secrets management, Prometheus, OpenTelemetry, Kafka transports, tiered disk-spillover sinks, adaptive worker pools, graceful shutdown -- but almost none of it as code you can just install and use.
 //!
-//! **This is that code.** Opinionated, drop-in, working out of the box. The
-//! patterns from blog posts as actual library — not a framework you assemble
-//! from twenty crates and a weekend.
+//! This is that code.
+//!
+//! Opinionated, drop-in, working out of the box. The patterns from blog posts, watercooler chats and beers with your Google mates as actual library -- not a framework you assemble from twenty crates and 8 weeks of munging.
 //!
 //! Built as the foundation for HyperI's PB/hr data services. Generic enough
 //! that you don't need to be at HyperI to use it.
@@ -93,6 +89,11 @@ pub mod env;
 pub mod kafka_config;
 pub mod sensitive;
 
+// Parse-path depth guard, shared by the transport codec (JSON/MsgPack) and the
+// worker engine parse stage. Compiled whenever either consumer is enabled.
+#[cfg(any(feature = "transport", feature = "worker-batch"))]
+pub(crate) mod parse_guard;
+
 #[cfg(feature = "runtime")]
 #[cfg_attr(docsrs, doc(cfg(feature = "runtime")))]
 pub mod runtime;
@@ -165,9 +166,17 @@ pub mod directory_config;
 #[cfg_attr(docsrs, doc(cfg(feature = "memory")))]
 pub mod memory;
 
+#[cfg(feature = "tls")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tls")))]
+pub mod tls;
+
 #[cfg(feature = "scaling")]
 #[cfg_attr(docsrs, doc(cfg(feature = "scaling")))]
 pub mod scaling;
+
+#[cfg(feature = "governor")]
+#[cfg_attr(docsrs, doc(cfg(feature = "governor")))]
+pub mod governor;
 
 #[cfg(any(feature = "worker-pool", feature = "worker-batch", feature = "worker"))]
 #[cfg_attr(
@@ -212,13 +221,17 @@ pub mod version_check;
 #[cfg_attr(docsrs, doc(cfg(feature = "concurrency")))]
 pub mod concurrency;
 
+#[cfg(feature = "strmatch")]
+#[cfg_attr(docsrs, doc(cfg(feature = "strmatch")))]
+pub mod strmatch;
+
 // Re-export common types at crate root
 pub use env::{Environment, RuntimeContext, runtime_context};
 pub use kafka_config::{
     DfeSource, KafkaConfigError, KafkaConfigResult, ServiceRole, TOPIC_SUFFIX_LAND,
     TOPIC_SUFFIX_LOAD, config_from_file, config_from_properties_str,
 };
-pub use sensitive::SensitiveString;
+pub use sensitive::{SensitiveString, expose_during};
 
 #[cfg(feature = "runtime")]
 #[cfg_attr(docsrs, doc(cfg(feature = "runtime")))]
@@ -267,8 +280,8 @@ pub use metrics::{OtelMetricsConfig, OtelProtocol};
 #[cfg(feature = "transport")]
 #[cfg_attr(docsrs, doc(cfg(feature = "transport")))]
 pub use transport::{
-    CommitToken, Message, PayloadFormat, SendResult, Transport, TransportConfig, TransportError,
-    TransportResult, TransportType,
+    CommitToken, Message, PayloadFormat, Record, RecordMeta, SendResult, Transport,
+    TransportConfig, TransportError, TransportResult, TransportType, WorkBatch,
 };
 
 #[cfg(feature = "http-server")]
@@ -321,6 +334,15 @@ pub use memory::{MemoryGuard, MemoryGuardConfig, MemoryPressure, detect_memory_l
 pub use scaling::{
     ComponentSnapshot, GateType, PressureSnapshot, RateWindow, ScalingComponent, ScalingPressure,
     ScalingPressureConfig,
+};
+
+#[cfg(feature = "governor")]
+#[cfg_attr(docsrs, doc(cfg(feature = "governor")))]
+pub use governor::{
+    Admit, ByteBudgetConfig, ByteBudgetController, GateActuator, Hysteresis, InboundGate,
+    MemoryPressureSource, NoopActuator, ObservingActuator, Pressure, PressureSource,
+    SelfRegulationConfig, SelfRegulationGovernor, SelfRegulationProfile, UnifiedPressure,
+    UnifiedPressureSnapshot,
 };
 
 #[cfg(any(feature = "worker-pool", feature = "worker-batch", feature = "worker"))]

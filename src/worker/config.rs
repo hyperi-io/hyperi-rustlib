@@ -3,7 +3,7 @@
 // Purpose:   Configuration for adaptive worker pool
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use serde::{Deserialize, Serialize};
@@ -105,7 +105,9 @@ impl WorkerPoolConfig {
     /// Returns an error if validation fails (e.g. thresholds out of order).
     pub fn from_cascade(key: &str) -> Result<Self, crate::config::ConfigError> {
         let pool_cfg: Self = if let Some(cfg) = crate::config::try_get() {
-            cfg.unmarshal_key(key).unwrap_or_default()
+            // `or_warn`: absent key -> default (silent); present-but-malformed
+            // -> WARN + default (was silently swallowed pre-2.8.11).
+            cfg.unmarshal_key_or_warn(key).unwrap_or_default()
         } else {
             tracing::debug!("Config cascade not initialised, using default WorkerPoolConfig");
             Self::default()
@@ -147,13 +149,30 @@ impl WorkerPoolConfig {
                 ),
             });
         }
+        // `fan_out_async` does `step_by(async_concurrency)`; 0 panics.
+        if self.async_concurrency == 0 {
+            return Err(crate::config::ConfigError::InvalidValue {
+                key: "worker_pool.async_concurrency".into(),
+                reason: "must be >= 1 (fan_out_async iterates via step_by)".into(),
+            });
+        }
+        // Zero CPU workers leaves the rayon semaphore
+        // spinning in `yield_now()` forever. Reject upfront; the
+        // scaler's clamp uses min_threads as the floor, so this
+        // also guarantees the scaler never drives permits below 1.
+        if self.min_threads == 0 {
+            return Err(crate::config::ConfigError::InvalidValue {
+                key: "worker_pool.min_threads".into(),
+                reason: "must be >= 1 (zero permits busy-spin the pool)".into(),
+            });
+        }
         Ok(())
     }
 
     /// Resolve `max_threads` to the effective CPU count.
     ///
-    /// - `max_threads = 0` → auto-detect from `available_parallelism` (cgroup-aware)
-    /// - `max_threads > 0` → cap at `min(configured, available_parallelism)`
+    /// - `max_threads = 0` -> auto-detect from `available_parallelism` (cgroup-aware)
+    /// - `max_threads > 0` -> cap at `min(configured, available_parallelism)`
     ///   to avoid creating more threads than physical cores
     pub fn resolve_max_threads(&mut self) {
         let available = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
@@ -163,5 +182,50 @@ impl WorkerPoolConfig {
         } else {
             self.max_threads = self.max_threads.min(available);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: `async_concurrency: 0` previously
+    /// passed validation and panicked at `step_by(0)` in
+    /// `fan_out_async`.
+    #[test]
+    fn validate_rejects_zero_async_concurrency() {
+        let cfg = WorkerPoolConfig {
+            async_concurrency: 0,
+            ..Default::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            crate::config::ConfigError::InvalidValue { .. }
+        ));
+    }
+
+    #[test]
+    fn validate_accepts_one_async_concurrency() {
+        let cfg = WorkerPoolConfig {
+            async_concurrency: 1,
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_ok());
+    }
+
+    /// Regression: `min_threads: 0` previously passed
+    /// validation and pinned the rayon semaphore in a yield loop.
+    #[test]
+    fn validate_rejects_zero_min_threads() {
+        let cfg = WorkerPoolConfig {
+            min_threads: 0,
+            ..Default::default()
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(matches!(
+            err,
+            crate::config::ConfigError::InvalidValue { .. }
+        ));
     }
 }

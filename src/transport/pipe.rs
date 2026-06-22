@@ -3,7 +3,7 @@
 // Purpose:   Unix pipe transport (stdin/stdout)
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Pipe Transport
@@ -20,15 +20,16 @@
 //! let transport = PipeTransport::new(&config);
 //!
 //! // Send writes payload + newline to stdout
-//! transport.send("ignored", b"hello world").await;
+//! transport.send("ignored", bytes::Bytes::from_static(b"hello world")).await;
 //!
 //! // Recv reads lines from stdin
-//! let messages = transport.recv(10).await?;
+//! let records = transport.recv(10).await?.records;
 //! ```
 
 use super::error::{TransportError, TransportResult};
-use super::traits::{CommitToken, TransportBase, TransportReceiver, TransportSender};
+use super::traits::{CommitToken, RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
+use super::work_batch::WorkBatch;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -86,15 +87,7 @@ impl PipeTransportConfig {
     /// Load from the config cascade under the `transport.pipe` key.
     #[must_use]
     pub fn from_cascade() -> Self {
-        #[cfg(feature = "config")]
-        {
-            if let Some(cfg) = crate::config::try_get()
-                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.pipe")
-            {
-                return tc;
-            }
-        }
-        Self::default()
+        <Self as super::traits::FromCascade>::from_cascade_key("transport.pipe")
     }
 }
 
@@ -110,9 +103,6 @@ pub struct PipeTransport {
     closed: Arc<AtomicBool>,
     recv_timeout_ms: u64,
     filter_engine: super::filter::TransportFilterEngine,
-    /// Buffer for messages staged to DLQ by inbound filters.
-    /// Drained by `take_filtered_dlq_entries()`.
-    filtered_dlq_buffer: parking_lot::Mutex<Vec<super::filter::FilteredDlqEntry>>,
 }
 
 impl PipeTransport {
@@ -156,7 +146,6 @@ impl PipeTransport {
             closed,
             recv_timeout_ms: config.recv_timeout_ms,
             filter_engine,
-            filtered_dlq_buffer: parking_lot::Mutex::new(Vec::new()),
         }
     }
 }
@@ -185,14 +174,14 @@ impl TransportBase for PipeTransport {
 }
 
 impl TransportSender for PipeTransport {
-    async fn send(&self, _key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, _key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
@@ -202,7 +191,7 @@ impl TransportSender for PipeTransport {
         let mut stdout = self.stdout.lock().await;
 
         // Write payload + newline
-        if let Err(e) = stdout.write_all(payload).await {
+        if let Err(e) = stdout.write_all(&payload).await {
             return SendResult::Fatal(TransportError::Send(format!("stdout write failed: {e}")));
         }
         if let Err(e) = stdout.write_all(b"\n").await {
@@ -230,7 +219,7 @@ impl TransportSender for PipeTransport {
 impl TransportReceiver for PipeTransport {
     type Token = PipeToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
+    async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -284,7 +273,7 @@ impl TransportReceiver for PipeTransport {
                         continue;
                     }
 
-                    let payload_bytes = payload.as_bytes().to_vec();
+                    let payload_bytes: bytes::Bytes = payload.as_bytes().to_vec().into();
                     let seq = self.sequence.fetch_add(1, Ordering::Relaxed);
                     let format = PayloadFormat::detect(&payload_bytes);
                     let timestamp_ms = chrono::Utc::now().timestamp_millis();
@@ -307,25 +296,17 @@ impl TransportReceiver for PipeTransport {
             }
         }
 
-        // Apply inbound filters: drop messages, stage DLQ entries
-        if self.filter_engine.has_inbound_filters() {
-            let mut staged_dlq: Vec<super::filter::FilteredDlqEntry> = Vec::new();
-            messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
-                super::filter::FilterDisposition::Pass => true,
-                super::filter::FilterDisposition::Drop => false,
-                super::filter::FilterDisposition::Dlq => {
-                    staged_dlq.push(super::filter::FilteredDlqEntry {
-                        payload: msg.payload.clone(),
-                        key: msg.key.clone(),
-                        reason: "transport filter".to_string(),
-                    });
-                    false
-                }
-            });
-            if !staged_dlq.is_empty() {
-                self.filtered_dlq_buffer.lock().extend(staged_dlq);
-            }
-        }
+        // Apply inbound filters via the shared partition helper; DLQ entries
+        // are returned in the RecvBatch for the caller to route onward.
+        let batch = self.filter_engine.partition_batch(
+            messages,
+            |m| m.payload.as_ref(),
+            |m| m.key.clone(),
+            |m| m.token,
+        );
+        let messages = batch.messages;
+        let dlq_entries = batch.dlq_entries;
+        let filtered_tokens = batch.filtered_tokens;
 
         #[cfg(feature = "logger")]
         if !messages.is_empty() {
@@ -335,11 +316,12 @@ impl TransportReceiver for PipeTransport {
             );
         }
 
-        Ok(messages)
-    }
-
-    fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
-        std::mem::take(&mut *self.filtered_dlq_buffer.lock())
+        Ok(RecvBatch {
+            messages,
+            dlq_entries,
+            filtered_tokens,
+        }
+        .into())
     }
 
     async fn commit(&self, _tokens: &[Self::Token]) -> TransportResult<()> {
@@ -347,6 +329,8 @@ impl TransportReceiver for PipeTransport {
         Ok(())
     }
 }
+
+impl super::traits::FromCascade for PipeTransportConfig {}
 
 #[cfg(test)]
 mod tests {
@@ -418,7 +402,9 @@ mod tests {
         let transport = PipeTransport::new(&config);
 
         transport.close().await.unwrap();
-        let result = transport.send("key", b"data").await;
+        let result = transport
+            .send("key", bytes::Bytes::from_static(b"data"))
+            .await;
         assert!(result.is_fatal());
     }
 

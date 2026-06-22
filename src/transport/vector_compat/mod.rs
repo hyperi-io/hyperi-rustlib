@@ -3,7 +3,7 @@
 // Purpose:   Vector gRPC compatibility layer
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Vector Wire Protocol Compatibility
@@ -11,19 +11,19 @@
 //! Provides source (server) and sink (client) implementations compatible
 //! with Vector's v2 gRPC protocol (`vector.Vector/PushEvents`).
 //!
-//! This enables seamless migration from Vector-based pipelines to DFE native:
+//! Migration path from Vector-based pipelines to DFE native:
 //!
 //! ```text
-//! Phase 1: vector-receiver → vector-sink → [DFE loader + vector-compat]
-//! Phase 2: [DFE receiver] → DFE gRPC → [DFE loader, native proto]
+//! Phase 1: vector-receiver -> vector-sink -> [DFE loader + vector-compat]
+//! Phase 2: [DFE receiver] -> DFE gRPC -> [DFE loader, native proto]
 //! Phase 3: Disable vector-compat (pure DFE pipeline)
 //! ```
 //!
 //! ## Proto files
 //!
 //! Vendored from <https://github.com/vectordotdev/vector> (pinned 2026-03-02):
-//! - `proto/vector/vector.proto` — PushEvents service definition
-//! - `proto/vector/event.proto` — EventWrapper, Log, Value, Metric, Trace
+//! - `proto/vector/vector.proto` -- PushEvents service definition
+//! - `proto/vector/event.proto` -- EventWrapper, Log, Value, Metric, Trace
 //!
 //! ## Feature flag
 //!

@@ -1,9 +1,9 @@
 // Project:   hyperi-rustlib
 // File:      src/config/mod.rs
-// Purpose:   7-layer configuration cascade
+// Purpose:   8-layer configuration cascade
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Configuration management with 8-layer cascade.
@@ -25,34 +25,9 @@
 //!
 //! ## How .env Files Work in the Cascade
 //!
-//! The `.env` file is loaded early in the cascade using `dotenvy::dotenv()`.
-//! This populates the process environment, so `.env` values become available
-//! via `std::env::var()`. The cascade then reads environment variables at
-//! layer 2, which includes both real environment variables AND `.env` values.
-//!
-//! **Important**: Real environment variables take precedence over `.env` values
-//! because `dotenvy` does NOT overwrite existing environment variables.
-//!
-//! ```text
-//! Priority (highest wins):
-//! ┌─────────────────────────────────────────────────────────────┐
-//! │ 1. CLI arguments (merged via merge_cli())                   │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 2. Environment variables (PREFIX_KEY)                       │
-//! │    ↑ Includes .env values (loaded into env by dotenvy)      │
-//! │    ↑ Real env vars win over .env (dotenvy doesn't overwrite)│
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 3. PostgreSQL config (if config-postgres feature enabled)   │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 4. settings.{env}.yaml (e.g., settings.production.yaml)     │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 5. settings.yaml                                            │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 6. defaults.yaml                                            │
-//! ├─────────────────────────────────────────────────────────────┤
-//! │ 7. Hard-coded defaults (lowest priority)                    │
-//! └─────────────────────────────────────────────────────────────┘
-//! ```
+//! `dotenvy::dotenv()` loads `.env` into the process environment, so `.env`
+//! values are read at layer 2 alongside real env vars. Real env vars win:
+//! `dotenvy` does NOT overwrite existing variables.
 //!
 //! ## Environment Variable Naming
 //!
@@ -158,6 +133,18 @@ pub struct ConfigOptions {
     /// Default: None (user config directory not searched)
     pub app_name: Option<String>,
 
+    /// Explicit config file (e.g. from `--config <path>`).
+    ///
+    /// When set, the named YAML file is merged ABOVE the discovered
+    /// `defaults`/`settings`/`settings.{env}` files but BELOW environment
+    /// variables -- it is an explicit override that still yields to ENV. This
+    /// is distinct from [`config_paths`](Self::config_paths), which are
+    /// DIRECTORIES searched for the standard base names. A `--config` flag
+    /// names a FILE, so it cannot be ingested via directory discovery.
+    ///
+    /// Default: None (no explicit file merged)
+    pub config_file: Option<PathBuf>,
+
     /// Additional paths to search for config files.
     pub config_paths: Vec<PathBuf>,
 
@@ -188,6 +175,7 @@ impl Default for ConfigOptions {
             env_prefix: String::new(),
             app_env: None,
             app_name: None,
+            config_file: None,
             config_paths: Vec::new(),
             load_dotenv: true,
             load_home_dotenv: false,
@@ -223,10 +211,8 @@ impl Config {
         let resolved_app_name = Self::resolve_app_name(opts.app_name.as_deref());
         let app_name_ref = resolved_app_name.as_deref();
 
-        // Load .env files in cascade order (lowest to highest priority)
-        // Home directory .env provides global defaults
-        // Project .env provides project-specific overrides
-        // Real environment variables always win (dotenvy doesn't overwrite)
+        // Load .env files (home = global defaults, project = overrides).
+        // Real env vars always win -- dotenvy doesn't overwrite.
         if opts.load_dotenv {
             Self::load_dotenv_cascade(opts.load_home_dotenv);
         }
@@ -253,6 +239,15 @@ impl Config {
             figment = figment.merge(Yaml::file(&path));
         }
 
+        // 3b. Explicit `--config <file>`. Merged ABOVE the discovered files
+        // (it is a deliberate override) but BELOW ENV (operators can still
+        // override per-key from the environment). Same Yaml provider as the
+        // discovery layers, so figment's later-wins merge gives it priority
+        // over everything above.
+        if let Some(ref path) = opts.config_file {
+            figment = figment.merge(Yaml::file(path));
+        }
+
         // 3. .env file values are already loaded into env vars
 
         // 2. Environment variables (with prefix)
@@ -272,9 +267,8 @@ impl Config {
 
     /// Create a new configuration with async loading (for PostgreSQL support).
     ///
-    /// This method loads configuration asynchronously, allowing PostgreSQL to be
-    /// used as a config source. PostgreSQL sits above file-based config in the
-    /// cascade, so database values override file values.
+    /// PostgreSQL sits above file-based config in the cascade, so database
+    /// values override file values.
     ///
     /// # Errors
     ///
@@ -321,13 +315,17 @@ impl Config {
             figment = figment.merge(Yaml::file(&path));
         }
 
-        // 4. PostgreSQL config (above files, below .env)
+        // 4b. Explicit `--config <file>`. A file-based source, so it sits with
+        // the discovered files: ABOVE them (deliberate override), BELOW the
+        // PostgreSQL layer and ENV. Same Yaml provider as the discovery layers.
+        if let Some(ref path) = opts.config_file {
+            figment = figment.merge(Yaml::file(path));
+        }
+
+        // 4. PostgreSQL config (above files, below .env). Figment merges are
+        // additive, later wins -- cascade position alone sets priority.
         if let Some(ref pg) = pg_config {
             let nested = pg.to_nested();
-            // For merge mode, we merge into existing config
-            // For replace mode, PostgreSQL config replaces file-based config
-            // Since figment merges are additive with later values winning,
-            // we just merge here - the position in the cascade determines priority
             figment = figment.merge(Serialized::defaults(nested));
         }
 
@@ -346,23 +344,13 @@ impl Config {
         })
     }
 
-    /// Load `.env` files in cascade order.
-    ///
-    /// Order (lowest to highest priority):
-    /// 1. `~/.env` (home directory - global defaults)
-    /// 2. Project `.env` (current directory - project overrides)
-    ///
-    /// Note: `dotenvy` does NOT overwrite existing environment variables,
-    /// so later files in the cascade take precedence. We load in reverse
-    /// order (project first, then home) so that project values are set first
-    /// and home values only fill in missing variables.
-    ///
-    /// Real environment variables always take precedence over all `.env` values.
+    /// Load `.env` files: `~/.env` (global defaults) then project `.env`
+    /// (overrides). `dotenvy` doesn't overwrite, so load in reverse --
+    /// project first wins, home only fills gaps. Real env vars beat both.
     fn load_dotenv_cascade(load_home: bool) {
         use tracing::debug;
 
-        // Load project .env first (these values take precedence)
-        // dotenvy::dotenv() looks for .env in current directory
+        // Project .env first -- these values take precedence.
         match dotenvy::dotenv() {
             Ok(path) => {
                 debug!(path = %path.display(), "Loaded project .env file");
@@ -540,6 +528,58 @@ impl Config {
             .map_err(ConfigError::ExtractError)
     }
 
+    /// Deserialise a specific key, warning if it is present but malformed.
+    ///
+    /// Cascade `from_cascade()` impls treat an ABSENT key as "use the default"
+    /// (silent -- a default-ON subsystem relies on this). The pre-2.8.11 path
+    /// also swallowed a present-but-MALFORMED key (typo, type mismatch) the same
+    /// way, so a `worker_pool: { min_thraeds: 7 }` typo silently defaulted with
+    /// no signal. This helper splits the two:
+    ///
+    /// - key ABSENT -> `None`, no log (caller falls back to default)
+    /// - key PRESENT but fails to deserialise -> `tracing::warn!` naming the key
+    ///   and error, then `None` (caller still falls back to default, but the
+    ///   misconfiguration is now observable)
+    /// - key PRESENT and valid -> `Some(value)`
+    #[must_use]
+    pub fn unmarshal_key_or_warn<T: DeserializeOwned>(&self, key: &str) -> Option<T> {
+        match self.figment.extract_inner::<T>(key) {
+            Ok(value) => Some(value),
+            Err(_) if self.figment.find_value(key).is_err() => {
+                // Key genuinely absent -- silent, caller uses its default.
+                None
+            }
+            Err(e) => {
+                tracing::warn!(
+                    config_key = key,
+                    error = %e,
+                    "config section present but failed to deserialise; using defaults \
+                     (check for a typo or type mismatch in this section)"
+                );
+                None
+            }
+        }
+    }
+
+    /// Deserialise + auto-register a key, warning if present but malformed.
+    ///
+    /// The registry-aware sibling of
+    /// [`unmarshal_key_or_warn`](Self::unmarshal_key_or_warn): on a present,
+    /// valid key it records the section in the [`registry`] (same as
+    /// [`unmarshal_key_registered`](Self::unmarshal_key_registered)) and returns
+    /// `Some(value)`. An ABSENT key returns `None` silently; a PRESENT but
+    /// malformed key warns and returns `None`. The section is only registered
+    /// on success.
+    #[must_use]
+    pub fn unmarshal_key_registered_or_warn<T>(&self, key: &str) -> Option<T>
+    where
+        T: DeserializeOwned + serde::Serialize + Default + 'static,
+    {
+        let value: T = self.unmarshal_key_or_warn(key)?;
+        registry::register::<T>(key, &value);
+        Some(value)
+    }
+
     /// Deserialise a specific key and auto-register it in the config registry.
     ///
     /// Same as [`unmarshal_key`](Self::unmarshal_key) but also records the
@@ -624,9 +664,6 @@ pub fn setup(opts: ConfigOptions) -> Result<(), ConfigError> {
 
 /// Initialise the global configuration with async loading (for PostgreSQL support).
 ///
-/// This function loads configuration asynchronously, allowing PostgreSQL to be
-/// used as a config source.
-///
 /// # Errors
 ///
 /// Returns an error if configuration loading fails or if already initialised.
@@ -689,6 +726,7 @@ mod tests {
         assert!(opts.env_prefix.is_empty());
         assert!(opts.app_env.is_none());
         assert!(opts.app_name.is_none());
+        assert!(opts.config_file.is_none());
         assert!(opts.config_paths.is_empty());
         assert!(opts.load_dotenv);
         assert!(!opts.load_home_dotenv);
@@ -707,6 +745,79 @@ mod tests {
         // Should have hardcoded defaults
         assert_eq!(config.get_string("log_level"), Some("info".to_string()));
         assert_eq!(config.get_string("log_format"), Some("auto".to_string()));
+    }
+
+    #[test]
+    fn test_config_file_is_merged() {
+        // An explicit config_file must be ingested (the run_app bug was that
+        // a --config file was never merged into the cascade at all).
+        let dir = std::env::temp_dir().join(format!("rustlib-cfgfile-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("explicit.yaml");
+        std::fs::write(&file, "log_level: warn\ncustom_key: from_file\n").unwrap();
+
+        let config = Config::new(ConfigOptions {
+            config_file: Some(file.clone()),
+            ..Default::default()
+        })
+        .unwrap();
+
+        // Explicit file overrides the hard-coded default (log_level=info).
+        assert_eq!(config.get_string("log_level"), Some("warn".to_string()));
+        // And a key that exists only in the file is visible.
+        assert_eq!(
+            config.get_string("custom_key"),
+            Some("from_file".to_string())
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_config_file_loses_to_env() {
+        // The explicit file must merge BELOW environment variables.
+        let dir = std::env::temp_dir().join(format!("rustlib-cfgenv-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("explicit.yaml");
+        std::fs::write(&file, "host: from_file\n").unwrap();
+
+        temp_env::with_var("TESTF_HOST", Some("from_env"), || {
+            let config = Config::new(ConfigOptions {
+                env_prefix: "TESTF".into(),
+                config_file: Some(file.clone()),
+                ..Default::default()
+            })
+            .unwrap();
+            // ENV wins over the explicit file.
+            assert_eq!(config.get_string("host"), Some("from_env".to_string()));
+        });
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_unmarshal_key_or_warn_absent_is_none() {
+        let config = Config::new(ConfigOptions::default()).unwrap();
+        // Absent key -> None (silent; caller uses its default).
+        let v: Option<i64> = config.unmarshal_key_or_warn("definitely_absent_key");
+        assert!(v.is_none());
+    }
+
+    #[test]
+    fn test_unmarshal_key_or_warn_present_valid_is_some() {
+        let config = Config::new(ConfigOptions::default()).unwrap();
+        // log_level is a hard-coded default String present in the cascade.
+        let v: Option<String> = config.unmarshal_key_or_warn("log_level");
+        assert_eq!(v, Some("info".to_string()));
+    }
+
+    #[test]
+    fn test_unmarshal_key_or_warn_present_malformed_is_none() {
+        // log_level is present as a String -- extracting it as i64 is a present
+        // -but-malformed case: helper returns None (and warns), never panics.
+        let config = Config::new(ConfigOptions::default()).unwrap();
+        let v: Option<i64> = config.unmarshal_key_or_warn("log_level");
+        assert!(v.is_none());
     }
 
     #[test]

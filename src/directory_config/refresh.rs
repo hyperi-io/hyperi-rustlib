@@ -3,7 +3,7 @@
 // Purpose:   Background polling refresh for DirectoryConfigStore
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ pub(crate) async fn refresh_loop(
     mut shutdown_rx: oneshot::Receiver<()>,
 ) {
     let mut ticker = tokio::time::interval(interval);
-    // First tick fires immediately — skip it since we loaded on init
+    // First tick fires immediately -- skip it since we loaded on init
     ticker.tick().await;
 
     loop {

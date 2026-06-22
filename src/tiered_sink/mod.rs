@@ -3,7 +3,7 @@
 // Purpose:   Tiered sink with disk spillover for resilient message delivery
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Tiered sink with automatic disk spillover for resilient message delivery.
@@ -42,7 +42,7 @@
 //! - **Circuit breaker**: Avoids hammering a dead sink
 //! - **Background drain**: Recovers spooled messages when sink is healthy
 //! - **Configurable ordering**: Interleaved (default) or strict FIFO
-//! - **Multiple compression codecs**: LZ4 (default), Snappy, Zstd, None
+//! - **Multiple compression codecs**: Zstd (default, level 1), LZ4, Snappy, None
 //!
 //! ## Example
 //!

@@ -3,14 +3,14 @@
 // Purpose:   Kafka-based DLQ backend variant
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Kafka backend variant for the DLQ enum.
 //!
 //! Routes failed messages to Kafka topics using rustlib's
 //! [`KafkaProducer`](crate::transport::kafka::KafkaProducer). The
-//! producer uses the `LowLatency` profile — DLQ volume is low and we
+//! producer uses the `LowLatency` profile -- DLQ volume is low and we
 //! want failures visible quickly.
 //!
 //! ## Topic Routing
@@ -29,7 +29,7 @@ use super::config::{DlqRouting, KafkaDlqConfig};
 use super::entry::DlqEntry;
 use super::error::DlqError;
 
-/// Kafka backend — internal variant carried by [`super::DlqBackend::Kafka`].
+/// Kafka backend -- internal variant carried by [`super::DlqBackend::Kafka`].
 pub struct KafkaDlqInner {
     producer: KafkaProducer,
     routing: DlqRouting,
@@ -93,7 +93,7 @@ impl KafkaDlqInner {
 
     /// Send a batch. Per-entry topic resolution + non-blocking producer
     /// queue. The producer's background delivery thread does the network
-    /// I/O — `send()` is sync-shaped and returns immediately.
+    /// I/O -- `send()` is sync-shaped and returns immediately.
     pub async fn send_batch(&mut self, batch: &[DlqEntry]) -> Result<(), DlqError> {
         for entry in batch {
             let topic = self.resolve_topic(entry);
@@ -116,6 +116,34 @@ impl KafkaDlqInner {
                     return Err(DlqError::Kafka(format!("DLQ send failed: {e}")));
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Block until every entry queued by `send_batch` is acked by the
+    /// broker (per the producer's `acks` config). `send_batch` is
+    /// sync-shaped -- without this flush the orchestrator barrier would
+    /// ack `Dlq::flush()` callers while entries are merely queued, not
+    /// durable (hyperi-rustlib pre-GA C06).
+    ///
+    /// # Errors
+    ///
+    /// `DlqError::Kafka` when the flush timeout expires with messages
+    /// still outstanding. Returning `Ok(())` regardless would let a
+    /// process exit lose in-flight entries.
+    pub async fn flush_durable(&mut self) -> Result<(), DlqError> {
+        // Bounded wait -- typical producer flush completes in
+        // milliseconds; a 30s ceiling avoids wedging the actor on a
+        // hard-to-reach broker.
+        let outstanding = self.producer.flush(std::time::Duration::from_secs(30));
+        if outstanding > 0 {
+            debug!(
+                outstanding,
+                "Kafka DLQ flush timed out with messages still in flight"
+            );
+            return Err(DlqError::Kafka(format!(
+                "flush_durable timed out with {outstanding} messages still in flight"
+            )));
         }
         Ok(())
     }

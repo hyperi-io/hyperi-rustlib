@@ -12,31 +12,20 @@ write in the DFE stack should sit behind one.
 
 ## What it composes
 
-```text
-          ┌────────────────────────────────────────┐
-          │           TieredSink<S>                │
-send() ──►│                                        │
-          │  ┌──── hot path ────────────────┐      │
-          │  │ circuit.state == Closed?     │      │
-          │  │ try_send with timeout        │──Ok─►│──► caller
-          │  └──── retry / backoff ─────────┘      │
-          │             │                          │
-          │       Full / Unavailable / timeout     │
-          │             │                          │
-          │  ┌──── cold path ───────────────┐      │
-          │  │ compress (LZ4/Snappy/Zstd)   │      │
-          │  │ append to yaque spool        │──Ok─►│──► caller
-          │  └──────────────────────────────┘      │
-          │             │                          │
-          │       SpoolFull / DiskUnavailable      │
-          │             │                          │
-          │  ┌──── fatal ───────────────────┐      │
-          │  │ Sink::Fatal — propagate err  │──────│──► caller (Err)
-          │  └──────────────────────────────┘      │
-          │                                        │
-          │  Background drain task (always running)│
-          │  When circuit recovers → spool → sink  │
-          └────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    Send["send()"] --> Hot
+    subgraph TS["TieredSink wraps sink S"]
+        Hot["Hot path<br/>circuit Closed? try_send with timeout + retry/backoff"]
+        Cold["Cold path<br/>compress (LZ4/Snappy/Zstd), append to yaque spool"]
+        Fatal["Fatal<br/>Sink::Fatal — propagate error"]
+        Drain["Background drain, always running<br/>circuit recovers → spool → sink"]
+        Hot -->|"Full / Unavailable / timeout"| Cold
+        Cold -->|"SpoolFull / DiskUnavailable"| Fatal
+    end
+    Hot -->|Ok| Caller["caller"]
+    Cold -->|Ok| Caller
+    Fatal --> CallerErr["caller (Err)"]
 ```
 
 A `disk_capacity_poller` watches the spool filesystem when
@@ -82,14 +71,13 @@ Backends classify errors via the three-way `SinkError<E>` enum (`Full`
 
 Three states, evaluated per `send`:
 
-```
-CLOSED ── consecutive_failures ≥ threshold ──► OPEN
-   ▲                                              │
-   │ record_success                               │ reset_timeout elapsed
-   │                                              ▼
-   └──── record_success ────────────────────── HALF_OPEN
-              ▲                                   │
-              └─── record_failure ────────────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> Closed
+    Closed --> Open : consecutive_failures ≥ threshold
+    Open --> HalfOpen : reset_timeout elapsed
+    HalfOpen --> Closed : record_success
+    HalfOpen --> Open : record_failure
 ```
 
 - **Closed** — hot path active, failures counted.

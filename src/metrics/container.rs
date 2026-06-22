@@ -3,7 +3,7 @@
 // Purpose:   Container-level metrics from cgroups
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Container metrics from cgroups (v1 and v2).
@@ -129,6 +129,30 @@ impl ContainerMetrics {
             }
             CgroupVersion::Unknown => None,
         }
+    }
+}
+
+/// Read the container CPU limit in cores from cgroups (v1/v2), independent of a
+/// [`ContainerMetrics`] instance. `None` when unlimited or undetectable -- the
+/// scaling engine then falls back to `available_parallelism` for the CPU
+/// utilisation denominator.
+#[cfg(all(feature = "scaling", feature = "expression"))]
+pub(crate) fn cpu_limit_cores() -> Option<f64> {
+    match detect_cgroup_version() {
+        CgroupVersion::V2 => {
+            let content = fs::read_to_string("/sys/fs/cgroup/cpu.max").ok()?;
+            parse_cpu_max_v2(&content)
+        }
+        CgroupVersion::V1 => {
+            let quota = read_cgroup_value("/sys/fs/cgroup/cpu/cpu.cfs_quota_us")?;
+            let period = read_cgroup_value("/sys/fs/cgroup/cpu/cpu.cfs_period_us")?;
+            if quota == u64::MAX || period == 0 {
+                None
+            } else {
+                Some(quota as f64 / period as f64)
+            }
+        }
+        CgroupVersion::Unknown => None,
     }
 }
 

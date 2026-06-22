@@ -3,7 +3,7 @@
 // Purpose:   Production HTTP client with retry middleware
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Production HTTP client with automatic retries and timeouts.
@@ -114,6 +114,14 @@ impl HttpClient {
     }
 
     /// Send a POST request with a JSON body.
+    ///
+    /// # Errors
+    ///
+    /// Returns a middleware-wrapped error if JSON serialisation of `body`
+    /// fails, or a network error if the request fails to send. Previously
+    /// a serialisation failure was silently substituted with an empty body
+    /// -- the request would dispatch with no payload, hiding the bug at the
+    /// caller and producing confusing downstream behaviour.
     pub async fn post_json<T: serde::Serialize + ?Sized>(
         &self,
         url: &str,
@@ -122,11 +130,17 @@ impl HttpClient {
         #[cfg(feature = "metrics")]
         let start = std::time::Instant::now();
 
+        let body_bytes = serde_json::to_vec(body).map_err(|e| {
+            reqwest_middleware::Error::Middleware(anyhow::anyhow!(
+                "POST {url}: JSON serialise failed: {e}"
+            ))
+        })?;
+
         let result = self
             .inner
             .post(url)
             .header("content-type", "application/json")
-            .body(serde_json::to_vec(body).unwrap_or_default())
+            .body(body_bytes)
             .send()
             .await;
 
@@ -142,6 +156,10 @@ impl HttpClient {
     }
 
     /// Send a PUT request with a JSON body.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::post_json`] -- same serialise + send error contract.
     pub async fn put_json<T: serde::Serialize + ?Sized>(
         &self,
         url: &str,
@@ -150,11 +168,17 @@ impl HttpClient {
         #[cfg(feature = "metrics")]
         let start = std::time::Instant::now();
 
+        let body_bytes = serde_json::to_vec(body).map_err(|e| {
+            reqwest_middleware::Error::Middleware(anyhow::anyhow!(
+                "PUT {url}: JSON serialise failed: {e}"
+            ))
+        })?;
+
         let result = self
             .inner
             .put(url)
             .header("content-type", "application/json")
-            .body(serde_json::to_vec(body).unwrap_or_default())
+            .body(body_bytes)
             .send()
             .await;
 

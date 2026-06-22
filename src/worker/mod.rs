@@ -3,7 +3,7 @@
 // Purpose:   Adaptive worker pool with hybrid rayon + tokio execution
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Adaptive worker pool and batch processing framework.
@@ -12,7 +12,7 @@
 //!
 //! - **Generic:** [`AdaptiveWorkerPool`] provides CPU-saturating parallelism via
 //!   rayon (CPU-bound) + tokio (async I/O), with reactive pressure-based scaling.
-//!   Useful for any workload — not DFE-specific.
+//!   Useful for any workload -- not DFE-specific.
 //!
 //! - **Opinionated:** [`BatchProcessor`] trait + [`BatchPipeline`] provide a
 //!   structured parallel-then-sequential pipeline for DFE apps. Apps implement
@@ -51,16 +51,18 @@ mod pool;
 pub(crate) mod scaler;
 mod stats;
 
+#[cfg(feature = "transport")]
+pub use accumulator::records_into_work_batch;
 pub use accumulator::{AccumulatorConfig, AccumulatorFull, BatchAccumulator, BatchDrainer};
 pub use batch::{BatchPipeline, BatchProcessor};
 pub use config::WorkerPoolConfig;
-#[cfg(all(feature = "worker-batch", feature = "transport"))]
-pub use engine::EngineError;
 #[cfg(feature = "worker-batch")]
 pub use engine::{
     BatchEngine, BatchProcessingConfig, FieldInterner, MessageMetadata, ParsedMessage,
-    PreRouteFilterConfig, RawMessage,
+    PreRouteFilterConfig,
 };
-pub use pool::AdaptiveWorkerPool;
+#[cfg(all(feature = "worker-batch", feature = "transport"))]
+pub use engine::{CommitMode, EngineError, FilterDlqPolicy, ParsedBatch};
+pub use pool::{AdaptiveWorkerPool, FanOutPolicy, FanOutResult};
 pub use scaler::{ScalingDecision, ScalingInput};
 pub use stats::{PipelineStats, PipelineStatsSnapshot};

@@ -3,7 +3,7 @@
 // Purpose:   Stateful payload format detection with auto-locking
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Format Detection
@@ -72,9 +72,9 @@ pub enum FormatMode {
     /// Auto-detect format from first message (default)
     #[default]
     Auto,
-    /// Force JSON only - reject MessagePack
+    /// Force JSON only -- reject MessagePack
     ForceJson,
-    /// Force MessagePack only - reject JSON
+    /// Force MessagePack only -- reject JSON
     ForceMessagePack,
 }
 

@@ -3,7 +3,7 @@
 // Purpose:   Shared DLQ entry envelope format
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Shared DLQ entry types used by all backends.
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 /// A failed message routed to the dead letter queue.
 ///
-/// This envelope is backend-agnostic — it carries the original payload
+/// This envelope is backend-agnostic -- it carries the original payload
 /// plus metadata about why and where the failure occurred.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DlqEntry {

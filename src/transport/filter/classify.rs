@@ -3,7 +3,7 @@
 // Purpose:   CEL expression classification into performance tiers
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Classify CEL expressions into performance tiers via text pattern matching.
@@ -121,7 +121,7 @@ const CEL_KEYWORDS: &[&str] = &[
 /// Classify a CEL expression into a performance tier.
 ///
 /// Returns `Err` if the expression is syntactically invalid (can't even be
-/// parsed as a potential CEL expression — empty, unbalanced quotes, etc.).
+/// parsed as a potential CEL expression -- empty, unbalanced quotes, etc.).
 ///
 /// # Examples
 ///
@@ -143,7 +143,7 @@ pub fn classify(expr: &str) -> Result<ClassifyResult, String> {
         return Ok(ClassifyResult::Tier1(op));
     }
 
-    // Not Tier 1 — check for restricted functions (Tier 3) vs standard (Tier 2)
+    // Not Tier 1 -- check for restricted functions (Tier 3) vs standard (Tier 2)
     let has_restricted = check_restricted_functions(trimmed);
     let fields = extract_field_references(trimmed);
 
@@ -215,23 +215,37 @@ fn try_tier1(expr: &str) -> Option<Tier1Op> {
 
 /// Check if the expression uses any restricted functions (Tier 3).
 ///
-/// Text-scanning approach (same as `profile.rs`). Scans for function names
-/// followed by `(`, skipping occurrences inside string literals.
+/// Walks all occurrences of each `func(` pattern; returns true on
+/// the first match that lands outside a string literal. The previous
+/// "find first occurrence + quote-count" shape missed real calls
+/// when an earlier same-name occurrence sat inside a string.
 fn check_restricted_functions(expr: &str) -> bool {
     for func in RESTRICTED_FUNCTIONS {
-        // Look for `func(` pattern, not inside a string
         let pattern = format!("{func}(");
-        if let Some(pos) = expr.find(&pattern) {
-            // Check we're not inside a string literal by counting quotes before pos
-            let before = &expr[..pos];
-            let quote_count = before.chars().filter(|&c| c == '"').count();
-            if quote_count % 2 == 0 {
-                // Even number of quotes = we're outside a string
+        for (pos, _) in expr.match_indices(&pattern) {
+            if !position_is_in_string(expr, pos) {
                 return true;
             }
         }
     }
     false
+}
+
+/// `true` if byte `pos` falls inside a `"..."` string literal,
+/// counting `\"` as escaped.
+fn position_is_in_string(expr: &str, pos: usize) -> bool {
+    let mut in_string = false;
+    let mut prev_was_escape = false;
+    for (i, ch) in expr.char_indices() {
+        if i >= pos {
+            return in_string;
+        }
+        if ch == '"' && !prev_was_escape {
+            in_string = !in_string;
+        }
+        prev_was_escape = ch == '\\' && !prev_was_escape;
+    }
+    in_string
 }
 
 /// Extract field references from an expression (for Tier 2/3 CEL context building).
@@ -240,7 +254,7 @@ fn check_restricted_functions(expr: &str) -> bool {
 /// For method calls like `field.matches("...")`, extracts only the receiver field.
 /// Returns unique field names (may include dotted paths for nested access).
 fn extract_field_references(expr: &str) -> Vec<String> {
-    // Match dotted identifier (potentially nested) — we'll trim trailing method call
+    // Match dotted identifier (potentially nested) -- we'll trim trailing method call
     // segments after matching.
     static RE_IDENT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[a-zA-Z_][\w.]*").unwrap());
 
@@ -268,7 +282,7 @@ fn extract_field_references(expr: &str) -> Vec<String> {
         let mut ident = m.as_str().to_string();
 
         // If this identifier is immediately followed by '(' (a function call),
-        // strip the last dotted segment (the method name) — the receiver is
+        // strip the last dotted segment (the method name) -- the receiver is
         // the actual field reference.
         let after = &expr[m.end()..];
         if after.trim_start().starts_with('(') {
@@ -276,7 +290,7 @@ fn extract_field_references(expr: &str) -> Vec<String> {
                 // Method call on a field: keep the receiver
                 ident.truncate(dot_pos);
             } else {
-                // Bare function call (e.g., has(), size()) — not a field
+                // Bare function call (e.g., has(), size()) -- not a field
                 continue;
             }
         }
@@ -435,5 +449,15 @@ mod tests {
         // "matches" inside a string literal should NOT trigger Tier 3
         let result = classify(r#"field == "matches""#).unwrap();
         assert_eq!(result.tier(), FilterTier::Tier1);
+    }
+
+    /// Regression: real `.matches()` after a same-name
+    /// occurrence inside a string must still classify as Tier 3.
+    /// Pre-fix `expr.find` returned the in-string position and
+    /// the function never looked further.
+    #[test]
+    fn restricted_call_after_string_literal_decoy_classifies_tier3() {
+        let result = classify(r#"message == "matches(" || source.matches("^prod")"#).unwrap();
+        assert_eq!(result.tier(), FilterTier::Tier3);
     }
 }

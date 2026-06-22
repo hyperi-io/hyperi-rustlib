@@ -3,7 +3,7 @@
 // Purpose:   File output sink configuration
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Configuration for the file output sink.
@@ -16,7 +16,7 @@ use crate::io::{FileWriterConfig, RotationPeriod};
 
 /// File output sink configuration.
 ///
-/// Writes raw NDJSON events to rotating files — used for testing and
+/// Writes raw NDJSON events to rotating files -- used for testing and
 /// bare-metal deployments where Kafka is not available.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

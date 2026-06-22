@@ -1,9 +1,9 @@
 // Project:   hyperi-rustlib
 // File:      src/dlq/backend.rs
-// Purpose:   DlqBackend enum — variant per supported backend
+// Purpose:   DlqBackend enum -- variant per supported backend
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Static enum dispatch for DLQ backends.
@@ -21,14 +21,14 @@ use super::error::DlqError;
 ///
 /// Variants are feature-gated:
 ///
-/// - [`Self::File`] — always available
-/// - [`Self::Kafka`] — `dlq-kafka` feature
-/// - [`Self::Http`] — `dlq-http` feature
-/// - [`Self::Redis`] — `dlq-redis` feature
+/// - [`Self::File`] -- always available
+/// - `Kafka` -- `dlq-kafka` feature
+/// - `Http` -- `dlq-http` feature
+/// - `Redis` -- `dlq-redis` feature
 ///
 /// Each variant's inner struct lives in its sibling module
 /// (`file::FileDlqInner`, `kafka::KafkaDlqInner`, etc.). They are
-/// crate-private — consumers configure DLQ via [`super::DlqConfig`] and
+/// crate-private -- consumers configure DLQ via [`super::DlqConfig`] and
 /// drive it via [`super::orchestrator::Dlq`].
 #[non_exhaustive]
 pub enum DlqBackend {
@@ -57,7 +57,7 @@ impl std::fmt::Debug for DlqBackend {
 
 impl DlqBackend {
     /// Write a batch of entries to this backend. Called only by the
-    /// orchestrator's drain task — never from a consumer hot path.
+    /// orchestrator's drain task -- never from a consumer hot path.
     ///
     /// # Errors
     ///
@@ -72,6 +72,39 @@ impl DlqBackend {
             Self::Http(b) => b.send_batch(batch).await,
             #[cfg(feature = "dlq-redis")]
             Self::Redis(b) => b.send_batch(batch).await,
+        }
+    }
+
+    /// Make every entry written so far DURABLE.
+    ///
+    /// Called from the BackgroundSink barrier handler when a consumer
+    /// invokes [`super::orchestrator::Dlq::flush`]. Each backend honours
+    /// the strongest durability it can express:
+    ///
+    /// - **File**: `flush()` on the rotating writer. `file-rotate`
+    ///   doesn't expose the inner `File`, so we can't `fsync()` -- this
+    ///   only flushes to the kernel page cache, so power loss before
+    ///   write-back can still lose data. Limitation, tracked until
+    ///   `file-rotate` exposes a sync hook.
+    /// - **Kafka**: `producer.flush()` -- blocks until every queued
+    ///   message is acked by the broker (per the producer's acks
+    ///   config). The real durability semantic.
+    /// - **HTTP**: no-op. `send_batch` already awaits the response.
+    /// - **Redis**: no-op. `send_batch` already awaits the XADD pipeline.
+    ///
+    /// # Errors
+    ///
+    /// Backend-specific. Surfaced to the BackgroundSink barrier
+    /// handler which logs and continues.
+    pub async fn flush_durable(&mut self) -> Result<(), DlqError> {
+        match self {
+            Self::File(b) => b.flush_durable().await,
+            #[cfg(feature = "dlq-kafka")]
+            Self::Kafka(b) => b.flush_durable().await,
+            #[cfg(feature = "dlq-http")]
+            Self::Http(_) => Ok(()),
+            #[cfg(feature = "dlq-redis")]
+            Self::Redis(_) => Ok(()),
         }
     }
 

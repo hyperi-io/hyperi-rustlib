@@ -36,12 +36,12 @@ that fail to acquire a permit `std::thread::yield_now`.
 
 The scaler updates `permits` — never the underlying pool size.
 
-```
-rayon::ThreadPool (fixed at max_threads)
-        ↓
-    Semaphore (permits — scaler controls)
-        ↓
-    process_batch — each item acquires a permit, releases on drop
+```mermaid
+flowchart TB
+    Pool["rayon::ThreadPool<br/>fixed at max_threads"]
+    Sem["Semaphore<br/>permits — scaler controls"]
+    Batch["process_batch<br/>each item acquires a permit, releases on drop"]
+    Pool --> Sem --> Batch
 ```
 
 This is the same permit-throttling pattern documented in the Rust

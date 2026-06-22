@@ -3,7 +3,7 @@
 // Purpose:   High-throughput Kafka producer for PB/day workloads
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! High-throughput Kafka producer optimized for PB/day workloads.
@@ -106,9 +106,7 @@ pub struct KafkaProducer {
 
 /// Producer context for delivery callbacks and metrics.
 #[derive(Clone)]
-pub struct ProducerContext {
-    // Could add metrics collection here
-}
+pub struct ProducerContext {}
 
 impl rdkafka::ClientContext for ProducerContext {}
 
@@ -120,7 +118,7 @@ impl rdkafka::producer::ProducerContext for ProducerContext {
         _result: &rdkafka::producer::DeliveryResult<'_>,
         _opaque: Self::DeliveryOpaque,
     ) {
-        // Delivery callback - could update metrics here
+        // Delivery callback -- metrics hook point.
     }
 }
 
@@ -180,8 +178,16 @@ impl KafkaProducer {
             client_config.set(*key, *value);
         }
 
-        // Apply user overrides (highest priority)
+        // Legacy overrides (highest priority in the old system).
         for (key, value) in &config.librdkafka_overrides {
+            client_config.set(key, value);
+        }
+
+        // Sizing surface (producer side), applied AFTER legacy so it wins:
+        //   profile defaults < named producer knobs < sizing.producer_librdkafka
+        // The raw sizing.producer_librdkafka map wins over everything
+        // (applied last inside resolved_producer_map()).
+        for (key, value) in config.sizing.resolved_producer_map() {
             client_config.set(key, value);
         }
 

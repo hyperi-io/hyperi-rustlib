@@ -3,13 +3,25 @@
 // Purpose:   In-memory transport using tokio channels
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Memory Transport
 //!
-//! In-memory transport using tokio channels for unit testing.
-//! No persistence, same-process only.
+//! In-memory transport backed by tokio channels. It exists primarily as a
+//! **no-mocks test substrate**: a REAL `Transport` implementation (send / recv
+//! / commit / DLQ / `WorkBatch`, with Kafka-style CUMULATIVE commit semantics)
+//! so the engine, driver, filter, routed and factory test suites can exercise
+//! the actual transport trait end-to-end -- fast, deterministic, in-process --
+//! WITHOUT standing up a Kafka or Redis broker. Per the HyperI no-mocks policy
+//! we run tests against this real backend rather than mocking the trait.
+//!
+//! It doubles as a **same-process loopback** for local dev / demos
+//! (`transport: memory` via the factory).
+//!
+//! NOT a production backend: no persistence, same-process only (sender and
+//! receiver are tied to one instance), and no cross-pod surface -- so it is
+//! also not horizontally autoscalable (it has no lag / backpressure signal).
 //!
 //! ## Example
 //!
@@ -17,14 +29,14 @@
 //! use hyperi_rustlib::transport::{MemoryTransport, MemoryConfig, Transport};
 //!
 //! let config = MemoryConfig::default();
-//! let transport = MemoryTransport::new(&config);
+//! let transport = MemoryTransport::new(&config).expect("memory transport with valid config must construct");
 //!
 //! // In tests, you can also get a sender handle
 //! let sender = transport.sender();
 //! sender.send(b"test payload".to_vec()).await?;
 //!
-//! let messages = transport.recv(10).await?;
-//! assert_eq!(messages.len(), 1);
+//! let records = transport.recv(10).await?.records;
+//! assert_eq!(records.len(), 1);
 //! ```
 
 mod token;
@@ -32,8 +44,9 @@ mod token;
 pub use token::MemoryToken;
 
 use super::error::{TransportError, TransportResult};
-use super::traits::{TransportBase, TransportReceiver, TransportSender};
+use super::traits::{RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
+use super::work_batch::WorkBatch;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -77,7 +90,7 @@ impl Default for MemoryConfig {
 /// Internal message type for the channel.
 struct InternalMessage {
     key: Option<Arc<str>>,
-    payload: Vec<u8>,
+    payload: bytes::Bytes,
     seq: u64,
     timestamp_ms: i64,
 }
@@ -93,26 +106,27 @@ pub struct MemoryTransport {
     closed: AtomicBool,
     recv_timeout_ms: u64,
     filter_engine: super::filter::TransportFilterEngine,
-    /// Buffer for messages staged to DLQ by inbound filters.
-    /// Drained by `take_filtered_dlq_entries()`.
-    filtered_dlq_buffer: parking_lot::Mutex<Vec<super::filter::FilteredDlqEntry>>,
 }
 
 impl MemoryTransport {
     /// Create a new memory transport.
-    #[must_use]
-    pub fn new(config: &MemoryConfig) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TransportError`] when any inbound/outbound filter rule
+    /// fails to compile. Previously this produced a `tracing::warn!` and
+    /// silently substituted an empty filter engine; that fail-open
+    /// behaviour hid real misconfiguration (a filter that should have
+    /// blocked traffic would instead let every message through), so the
+    /// constructor now propagates the error to the caller.
+    pub fn new(config: &MemoryConfig) -> super::error::TransportResult<Self> {
         let (sender, receiver) = mpsc::channel(config.buffer_size);
         let filter_engine = super::filter::TransportFilterEngine::new(
             &config.filters_in,
             &config.filters_out,
-            &crate::transport::filter::TransportFilterTierConfig::default(),
-        )
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Failed to compile transport filters, filtering disabled");
-            super::filter::TransportFilterEngine::empty()
-        });
-        Self {
+            &crate::transport::filter::TransportFilterTierConfig::from_cascade(),
+        )?;
+        Ok(Self {
             sender,
             receiver: tokio::sync::Mutex::new(receiver),
             sequence: AtomicU64::new(0),
@@ -120,8 +134,7 @@ impl MemoryTransport {
             closed: AtomicBool::new(false),
             recv_timeout_ms: config.recv_timeout_ms,
             filter_engine,
-            filtered_dlq_buffer: parking_lot::Mutex::new(Vec::new()),
-        }
+        })
     }
 
     /// Get a sender handle for injecting test messages.
@@ -151,7 +164,7 @@ impl MemoryTransport {
 
         let msg = InternalMessage {
             key: key.map(Arc::from),
-            payload,
+            payload: payload.into(),
             seq,
             timestamp_ms,
         };
@@ -187,7 +200,7 @@ impl MemorySender<'_> {
 
         let msg = InternalMessage {
             key: key.map(Arc::from),
-            payload,
+            payload: payload.into(),
             seq,
             timestamp_ms,
         };
@@ -215,14 +228,14 @@ impl TransportBase for MemoryTransport {
 }
 
 impl TransportSender for MemoryTransport {
-    async fn send(&self, key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
@@ -234,7 +247,7 @@ impl TransportSender for MemoryTransport {
 
         let msg = InternalMessage {
             key: Some(Arc::from(key)),
-            payload: payload.to_vec(),
+            payload,
             seq,
             timestamp_ms,
         };
@@ -250,7 +263,7 @@ impl TransportSender for MemoryTransport {
 impl TransportReceiver for MemoryTransport {
     type Token = MemoryToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
+    async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -286,10 +299,11 @@ impl TransportReceiver for MemoryTransport {
             };
 
             if let Some(internal) = result {
-                let format = PayloadFormat::detect(&internal.payload);
+                let payload = internal.payload;
+                let format = PayloadFormat::detect(&payload);
                 messages.push(Message {
                     key: internal.key,
-                    payload: internal.payload,
+                    payload,
                     token: MemoryToken { seq: internal.seq },
                     timestamp_ms: Some(internal.timestamp_ms),
                     format,
@@ -297,31 +311,24 @@ impl TransportReceiver for MemoryTransport {
             }
         }
 
-        // Apply inbound filters: drop messages, stage DLQ entries
-        if self.filter_engine.has_inbound_filters() {
-            let mut staged_dlq: Vec<super::filter::FilteredDlqEntry> = Vec::new();
-            messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
-                super::filter::FilterDisposition::Pass => true,
-                super::filter::FilterDisposition::Drop => false,
-                super::filter::FilterDisposition::Dlq => {
-                    staged_dlq.push(super::filter::FilteredDlqEntry {
-                        payload: msg.payload.clone(),
-                        key: msg.key.clone(),
-                        reason: "transport filter".to_string(),
-                    });
-                    false
-                }
-            });
-            if !staged_dlq.is_empty() {
-                self.filtered_dlq_buffer.lock().extend(staged_dlq);
-            }
+        // Apply inbound filters via the shared partition helper; DLQ entries
+        // are returned in the RecvBatch for the caller to route onward.
+        let batch = self.filter_engine.partition_batch(
+            messages,
+            |m| m.payload.as_ref(),
+            |m| m.key.clone(),
+            |m| m.token,
+        );
+        let messages = batch.messages;
+        let dlq_entries = batch.dlq_entries;
+        let filtered_tokens = batch.filtered_tokens;
+
+        Ok(RecvBatch {
+            messages,
+            dlq_entries,
+            filtered_tokens,
         }
-
-        Ok(messages)
-    }
-
-    fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
-        std::mem::take(&mut *self.filtered_dlq_buffer.lock())
+        .into())
     }
 
     async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
@@ -339,24 +346,95 @@ mod tests {
     #[tokio::test]
     async fn send_and_receive() {
         let config = MemoryConfig::default();
-        let transport = MemoryTransport::new(&config);
-
+        let transport = MemoryTransport::new(&config)
+            .expect("memory transport with valid config must construct");
         // Send a message
-        let result = transport.send("test-key", b"hello world").await;
+        let result = transport
+            .send("test-key", bytes::Bytes::from_static(b"hello world"))
+            .await;
         assert!(result.is_ok());
 
         // Receive it
-        let messages = transport.recv(10).await.unwrap();
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].key.as_deref(), Some("test-key"));
-        assert_eq!(messages[0].payload, b"hello world");
+        let records = transport.recv(10).await.unwrap().records;
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].key.as_deref(), Some("test-key"));
+        assert_eq!(records[0].payload.as_ref(), b"hello world");
+    }
+
+    /// MemoryTransport does NOT override `send_batch`, so this exercises the
+    /// trait's per-record default fallback (Task 0.7c): every record is sent
+    /// individually via `send`, using its own key, and all arrive intact.
+    #[tokio::test]
+    async fn send_batch_default_fallback_sends_each_record() {
+        use super::super::work_batch::{Record, RecordMeta};
+
+        let transport = MemoryTransport::new(&MemoryConfig::default())
+            .expect("memory transport with valid config must construct");
+
+        let records: Vec<Record> = (0..3)
+            .map(|i| Record {
+                payload: bytes::Bytes::from(format!(r#"{{"id":{i}}}"#)),
+                key: Some(Arc::from(format!("k{i}").as_str())),
+                headers: Vec::new(),
+                metadata: RecordMeta {
+                    timestamp_ms: None,
+                    format: PayloadFormat::Json,
+                },
+            })
+            .collect();
+
+        // Default fallback: one send per record, returns Ok for the whole block.
+        let result = transport.send_batch(&records).await;
+        assert!(
+            result.is_ok(),
+            "default send_batch must succeed: {result:?}"
+        );
+
+        // All three records loop back through recv with keys + payloads intact.
+        let got = transport.recv(10).await.unwrap().records;
+        assert_eq!(got.len(), 3, "every record in the block was sent");
+        assert_eq!(got[0].key.as_deref(), Some("k0"));
+        assert_eq!(got[0].payload.as_ref(), br#"{"id":0}"#);
+        assert_eq!(got[2].key.as_deref(), Some("k2"));
+        assert_eq!(got[2].payload.as_ref(), br#"{"id":2}"#);
+    }
+
+    /// The default `send_batch` short-circuits on the first non-Ok result so the
+    /// caller retries the unconfirmed remainder (at-least-once). A closed
+    /// transport makes every `send` Fatal, so a non-empty block returns Fatal.
+    #[tokio::test]
+    async fn send_batch_default_short_circuits_on_error() {
+        use super::super::work_batch::{Record, RecordMeta};
+
+        let transport = MemoryTransport::new(&MemoryConfig::default())
+            .expect("memory transport with valid config must construct");
+        transport.close().await.unwrap();
+
+        let records = vec![Record {
+            payload: bytes::Bytes::from_static(b"{}"),
+            key: None,
+            headers: Vec::new(),
+            metadata: RecordMeta {
+                timestamp_ms: None,
+                format: PayloadFormat::Json,
+            },
+        }];
+
+        let result = transport.send_batch(&records).await;
+        assert!(
+            result.is_fatal(),
+            "closed transport must surface the send failure, got {result:?}"
+        );
+
+        // An empty block is a trivial Ok (nothing to send).
+        assert!(transport.send_batch(&[]).await.is_ok());
     }
 
     #[tokio::test]
     async fn inject_messages() {
         let config = MemoryConfig::default();
-        let transport = MemoryTransport::new(&config);
-
+        let transport = MemoryTransport::new(&config)
+            .expect("memory transport with valid config must construct");
         // Inject test messages
         transport
             .inject(Some("key1"), b"msg1".to_vec())
@@ -368,21 +446,20 @@ mod tests {
             .unwrap();
 
         // Receive them
-        let messages = transport.recv(10).await.unwrap();
-        assert_eq!(messages.len(), 2);
+        let records = transport.recv(10).await.unwrap().records;
+        assert_eq!(records.len(), 2);
     }
 
     #[tokio::test]
     async fn commit_advances_sequence() {
         let config = MemoryConfig::default();
-        let transport = MemoryTransport::new(&config);
-
+        let transport = MemoryTransport::new(&config)
+            .expect("memory transport with valid config must construct");
         transport.inject(None, b"msg".to_vec()).await.unwrap();
-        let messages = transport.recv(1).await.unwrap();
+        let batch = transport.recv(1).await.unwrap();
 
-        // Commit the message
-        let tokens: Vec<_> = messages.iter().map(|m| m.token).collect();
-        transport.commit(&tokens).await.unwrap();
+        // Commit the message via the batch's commit tokens.
+        transport.commit(&batch.commit_tokens).await.unwrap();
 
         // Verify committed sequence advanced
         assert_eq!(transport.committed_sequence(), 0);
@@ -391,13 +468,15 @@ mod tests {
     #[tokio::test]
     async fn close_prevents_operations() {
         let config = MemoryConfig::default();
-        let transport = MemoryTransport::new(&config);
-
+        let transport = MemoryTransport::new(&config)
+            .expect("memory transport with valid config must construct");
         transport.close().await.unwrap();
         assert!(!transport.is_healthy());
 
         // Send should fail
-        let result = transport.send("key", b"data").await;
+        let result = transport
+            .send("key", bytes::Bytes::from_static(b"data"))
+            .await;
         assert!(result.is_fatal());
 
         // Recv should fail
@@ -412,14 +491,19 @@ mod tests {
             recv_timeout_ms: 0,
             ..Default::default()
         };
-        let transport = MemoryTransport::new(&config);
+        let transport = MemoryTransport::new(&config)
+            .expect("memory transport with valid config must construct");
 
         // Fill the channel
-        let result1 = transport.send("key", b"msg1").await;
+        let result1 = transport
+            .send("key", bytes::Bytes::from_static(b"msg1"))
+            .await;
         assert!(result1.is_ok());
 
         // Next send should backpressure
-        let result2 = transport.send("key", b"msg2").await;
+        let result2 = transport
+            .send("key", bytes::Bytes::from_static(b"msg2"))
+            .await;
         assert!(result2.is_backpressured());
     }
 }

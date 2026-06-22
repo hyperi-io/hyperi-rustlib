@@ -3,7 +3,7 @@
 // Purpose:   Kafka administrative operations
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Kafka administrative operations.
@@ -74,11 +74,10 @@ impl KafkaAdmin {
     pub fn new(config: &KafkaConfig) -> TransportResult<Self> {
         let mut client_config = ClientConfig::new();
 
-        // Required settings
         client_config.set("bootstrap.servers", config.brokers.join(","));
         client_config.set("client.id", &config.client_id);
 
-        // Security settings
+        // Security.
         client_config.set("security.protocol", &config.security_protocol);
         if let Some(ref mechanism) = config.sasl_mechanism {
             client_config.set("sasl.mechanism", mechanism);
@@ -90,7 +89,7 @@ impl KafkaAdmin {
             client_config.set("sasl.password", password.expose());
         }
 
-        // TLS settings
+        // TLS.
         if let Some(ref ca) = config.ssl_ca_location {
             client_config.set("ssl.ca.location", ca);
         }
@@ -104,18 +103,17 @@ impl KafkaAdmin {
             client_config.set("enable.ssl.certificate.verification", "false");
         }
 
-        // Apply profile defaults and user overrides
+        // Profile defaults and user overrides.
         let rdkafka_config = config.build_librdkafka_config();
         for (key, value) in &rdkafka_config {
             client_config.set(key, value);
         }
 
-        // Create admin client
         let admin: AdminClient<DefaultClientContext> = client_config.create().map_err(|e| {
             TransportError::Connection(format!("Failed to create admin client: {e}"))
         })?;
 
-        // Create consumer for offset queries (group.id required but can be arbitrary)
+        // Consumer for offset queries (group.id required but arbitrary).
         let mut consumer_config = client_config.clone();
         consumer_config.set("group.id", "__hs_admin_internal");
         let consumer: BaseConsumer = consumer_config
@@ -152,7 +150,6 @@ impl KafkaAdmin {
     ) -> TransportResult<()> {
         let partition_list: TopicPartitionList = self.get_partition_list(topic, partitions).await?;
 
-        // Set all offsets to Beginning
         let mut tpl = TopicPartitionList::new();
         for elem in partition_list.elements() {
             tpl.add_partition_offset(elem.topic(), elem.partition(), Offset::Beginning)
@@ -181,7 +178,7 @@ impl KafkaAdmin {
     ) -> TransportResult<()> {
         let partition_list: TopicPartitionList = self.get_partition_list(topic, partitions).await?;
 
-        // Get high watermarks for each partition
+        // Each partition resets to its high watermark.
         let mut tpl = TopicPartitionList::new();
         for elem in partition_list.elements() {
             let (_, high) = self
@@ -224,14 +221,14 @@ impl KafkaAdmin {
     ) -> TransportResult<()> {
         let partition_list: TopicPartitionList = self.get_partition_list(topic, partitions).await?;
 
-        // Build TPL with timestamps
+        // Seed the TPL with the target timestamp per partition.
         let mut tpl = TopicPartitionList::new();
         for elem in partition_list.elements() {
             tpl.add_partition_offset(elem.topic(), elem.partition(), Offset::Offset(timestamp_ms))
                 .map_err(|e| TransportError::Admin(format!("Failed to build TPL: {e}")))?;
         }
 
-        // Get offsets for timestamps
+        // Resolve timestamps to concrete offsets.
         let offsets = self
             .consumer
             .offsets_for_times(tpl, Duration::from_secs(30))
@@ -256,14 +253,13 @@ impl KafkaAdmin {
         group_id: &str,
         topic: &str,
     ) -> TransportResult<HashMap<i32, i64>> {
-        // Create a consumer with the target group to query committed offsets
+        // Bind a consumer to the queried group so committed offsets resolve.
         let mut group_config = self.config.clone();
         group_config.set("group.id", group_id);
         let group_consumer: BaseConsumer = group_config
             .create()
             .map_err(|e| TransportError::Connection(format!("Failed to create consumer: {e}")))?;
 
-        // Get topic metadata to find partitions
         let metadata = self
             .consumer
             .fetch_metadata(Some(topic), Duration::from_secs(10))
@@ -275,18 +271,16 @@ impl KafkaAdmin {
             .find(|t| t.name() == topic)
             .ok_or_else(|| TransportError::Admin(format!("Topic {topic} not found")))?;
 
-        // Build TPL for committed offset query
         let mut tpl = TopicPartitionList::new();
         for partition in topic_meta.partitions() {
             tpl.add_partition(topic, partition.id());
         }
 
-        // Get committed offsets
         let committed = group_consumer
             .committed_offsets(tpl, Duration::from_secs(10))
             .map_err(|e| TransportError::Admin(format!("Failed to get committed offsets: {e}")))?;
 
-        // Calculate lag for each partition
+        // lag = high watermark - committed offset, per partition.
         let mut lag_map = HashMap::new();
         for elem in committed.elements() {
             let (_, high) = self
@@ -316,7 +310,7 @@ impl KafkaAdmin {
 
     /// Create one or more topics.
     ///
-    /// Ignores "topic already exists" errors — safe to call repeatedly.
+    /// Ignores "topic already exists" errors -- safe to call repeatedly.
     ///
     /// # Arguments
     ///
@@ -553,7 +547,7 @@ impl KafkaAdmin {
                 tpl.add_partition(topic, partition);
             }
         } else {
-            // Get all partitions from metadata
+            // All partitions when none specified.
             let metadata = self
                 .consumer
                 .fetch_metadata(Some(topic), Duration::from_secs(10))
@@ -584,7 +578,7 @@ impl KafkaAdmin {
         group_id: &str,
         offsets: &TopicPartitionList,
     ) -> TransportResult<()> {
-        // Create a consumer with the target group to commit offsets
+        // Commit must come from a consumer bound to the target group.
         let mut group_config = self.config.clone();
         group_config.set("group.id", group_id);
         group_config.set("enable.auto.commit", "false");
@@ -593,7 +587,6 @@ impl KafkaAdmin {
             TransportError::Connection(format!("Failed to create group consumer: {e}"))
         })?;
 
-        // Commit the offsets
         group_consumer
             .commit(offsets, rdkafka::consumer::CommitMode::Sync)
             .map_err(|e| TransportError::Commit(format!("Failed to commit offsets: {e}")))?;

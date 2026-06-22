@@ -3,21 +3,21 @@
 // Purpose:   Core NDJSON file writer with rotation and metrics
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Core NDJSON file writer with automatic rotation.
 //!
 //! Writes `&[u8]` lines to a rotating file using the `file-rotate` crate.
-//! This writer knows nothing about DLQ or output semantics — callers
+//! This writer knows nothing about DLQ or output semantics -- callers
 //! serialise their own types and hand raw bytes to the writer.
 //!
 //! ## Two APIs
 //!
-//! - [`NdjsonWriter`] — synchronous. Acquires a `parking_lot::Mutex` and
+//! - [`NdjsonWriter`] -- synchronous. Acquires a `parking_lot::Mutex` and
 //!   calls `std::io::Write::write_all` directly. Cheap (~µs) but blocks
 //!   the calling thread. Safe to call from non-async code and tests.
-//! - [`AsyncNdjsonWriter`] — async wrapper over `Arc<NdjsonWriter>`. Each
+//! - [`AsyncNdjsonWriter`] -- async wrapper over `Arc<NdjsonWriter>`. Each
 //!   call runs the sync work on a `tokio::task::spawn_blocking` thread,
 //!   so the tokio runtime is never stalled. Use this from `async fn`
 //!   bodies.
@@ -72,10 +72,10 @@ impl NdjsonWriter {
     ///
     /// # Arguments
     ///
-    /// * `config` — Shared file writer settings (path, rotation, compression)
-    /// * `subdir` — Subdirectory under `config.path` (e.g. service name)
-    /// * `filename` — Output filename (e.g. "dlq.ndjson", "events.ndjson")
-    /// * `label` — Human label for log messages (e.g. "dlq", "output")
+    /// * `config` -- Shared file writer settings (path, rotation, compression)
+    /// * `subdir` -- Subdirectory under `config.path` (e.g. service name)
+    /// * `filename` -- Output filename (e.g. "dlq.ndjson", "events.ndjson")
+    /// * `label` -- Human label for log messages (e.g. "dlq", "output")
     ///
     /// # Errors
     ///
@@ -126,7 +126,7 @@ impl NdjsonWriter {
 
     /// Write a single line (must include trailing newline or caller appends it).
     ///
-    /// The data is written as-is — caller is responsible for serialisation
+    /// The data is written as-is -- caller is responsible for serialisation
     /// and newline termination.
     pub fn write_line(&self, line: &[u8]) -> Result<(), std::io::Error> {
         let mut writer = self.writer.lock();
@@ -149,6 +149,27 @@ impl NdjsonWriter {
             return Err(e);
         }
         self.lines_written.fetch_add(count, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// Flush the in-memory buffer through the rotating writer.
+    ///
+    /// `file-rotate` doesn't expose the inner `File`, so this flushes to
+    /// the kernel page cache only -- NOT on-disk durability. Power loss
+    /// before write-back can still lose data. Strongest the file backend
+    /// can express until `file-rotate` gains a sync hook; for real
+    /// durability pair with an `acks=all` Kafka backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying `std::io::Error` if the flush fails. The
+    /// internal `write_errors` counter is incremented.
+    pub fn flush(&self) -> Result<(), std::io::Error> {
+        let mut writer = self.writer.lock();
+        if let Err(e) = writer.flush() {
+            self.write_errors.fetch_add(1, Ordering::Relaxed);
+            return Err(e);
+        }
         Ok(())
     }
 
@@ -225,6 +246,22 @@ impl AsyncNdjsonWriter {
     pub async fn write_buf(&self, buf: Vec<u8>, count: u64) -> Result<(), std::io::Error> {
         let inner = Arc::clone(&self.inner);
         tokio::task::spawn_blocking(move || inner.write_buf(&buf, count))
+            .await
+            .map_err(std::io::Error::other)?
+    }
+
+    /// Flush buffered bytes through the rotating writer off-runtime.
+    ///
+    /// See [`NdjsonWriter::flush`] for durability semantics -- currently
+    /// flushes to kernel page cache only (the `file-rotate` crate
+    /// doesn't expose the inner `File` for `fsync`).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::write_line`].
+    pub async fn flush(&self) -> Result<(), std::io::Error> {
+        let inner = Arc::clone(&self.inner);
+        tokio::task::spawn_blocking(move || inner.flush())
             .await
             .map_err(std::io::Error::other)?
     }
@@ -351,7 +388,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // AsyncNdjsonWriter tests — these prove the async wrapper actually
+    // AsyncNdjsonWriter tests -- these prove the async wrapper actually
     // moves the sync work off the runtime thread.
     // -----------------------------------------------------------------
 
@@ -411,7 +448,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn async_writer_does_not_block_runtime() {
         // Prove that concurrent writers + ticker on the same runtime
-        // make progress concurrently — i.e. write_line releases the
+        // make progress concurrently -- i.e. write_line releases the
         // runtime thread.
         let dir = tempfile::tempdir().expect("tempdir");
         let cfg = test_config(dir.path());
@@ -450,7 +487,7 @@ mod tests {
         let ticks = ticker_fired.load(std::sync::atomic::Ordering::SeqCst);
         assert!(
             ticks >= 10,
-            "ticker fired only {ticks} times — writers starved the runtime",
+            "ticker fired only {ticks} times -- writers starved the runtime",
         );
     }
 }

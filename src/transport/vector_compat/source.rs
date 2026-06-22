@@ -3,7 +3,7 @@
 // Purpose:   Vector gRPC source compatibility wrapper
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Vector-compatible gRPC source.
@@ -59,9 +59,10 @@ impl vector::vector_server::Vector for VectorCompatService {
 
             let seq = self.sequence.fetch_add(1, Ordering::Relaxed);
 
+            // `payload` is `Vec<u8>` from `serde_json::to_vec`; move into `Bytes`.
             let msg = Message {
                 key: None, // Vector events don't carry a topic key
-                payload,
+                payload: payload.into(),
                 token: GrpcToken::new(seq),
                 timestamp_ms: None,
                 format: PayloadFormat::Json,

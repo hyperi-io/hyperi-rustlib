@@ -3,7 +3,7 @@
 // Purpose:   TUI dashboard configuration
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Configuration for the `top` TUI dashboard.
@@ -32,7 +32,8 @@ pub struct TopConfig {
     /// Output mode (TUI, once, or JSON).
     pub output_mode: TopOutputMode,
 
-    /// Optional regex filter for metric names.
+    /// Optional metric-name filter: substring match, or `.*` wildcards
+    /// with `^`/`$` anchors. Not a full regex.
     pub filter: Option<String>,
 }
 

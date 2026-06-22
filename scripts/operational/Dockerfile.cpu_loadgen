@@ -1,0 +1,21 @@
+# Project:   hyperi-rustlib
+# File:      scripts/operational/Dockerfile.cpu_loadgen
+# Purpose:   Build the CPU operational-test harness for cgroup-confined runs
+# Language:  Dockerfile
+#
+# License:   BUSL-1.1
+# Copyright: (c) 2026 HYPERI PTY LIMITED
+#
+# The `worker` feature pulls rayon + parking_lot (no native libs), so the build
+# is light. Built + run by scripts/operational-cpu-test.sh under `docker run
+# --cpus` to observe the KERNEL outcome (CPU burned + cgroup throttling) with a
+# parked-pool vs busy-spin control.
+
+FROM rust:1-bookworm AS builder
+WORKDIR /build
+COPY . .
+RUN cargo build --release --example cpu_loadgen --features worker
+
+FROM debian:bookworm-slim
+COPY --from=builder /build/target/release/examples/cpu_loadgen /usr/local/bin/cpu_loadgen
+ENTRYPOINT ["/usr/local/bin/cpu_loadgen"]

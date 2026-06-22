@@ -3,14 +3,14 @@
 // Purpose:   Redis Streams DLQ backend variant
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Redis Streams backend variant for the DLQ enum.
 //!
 //! Writes failed messages to a Redis Stream via `XADD`. Supports
 //! optional `MAXLEN ~` trimming to bound stream size. The connection
-//! is a `MultiplexedConnection` — async-native, no `spawn_blocking`
+//! is a `MultiplexedConnection` -- async-native, no `spawn_blocking`
 //! needed.
 //!
 //! Single-batch sends are issued via Redis pipelining (one round-trip
@@ -49,7 +49,7 @@ impl Default for RedisDlqConfig {
     }
 }
 
-/// Redis backend — internal variant carried by [`super::DlqBackend::Redis`].
+/// Redis backend -- internal variant carried by [`super::DlqBackend::Redis`].
 pub struct RedisDlqInner {
     conn: redis::aio::MultiplexedConnection,
     stream_key: String,

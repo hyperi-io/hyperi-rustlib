@@ -3,7 +3,7 @@
 // Purpose:   Structured security event logging following OWASP Logging Vocabulary
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Structured security event logging following OWASP Logging Vocabulary.
@@ -291,7 +291,7 @@ pub fn input_validation_failure(action: &str, reason: &str, source_ip: Option<Ip
     event.emit();
 }
 
-/// Log a data quality event — record routed to DLQ.
+/// Log a data quality event -- record routed to DLQ.
 pub fn record_dlq(action: &str, reason: &str, detail: Option<&str>) {
     let mut event =
         SecurityEvent::new("data.dlq_routed", action, SecurityOutcome::Failure).reason(reason);
@@ -301,7 +301,7 @@ pub fn record_dlq(action: &str, reason: &str, detail: Option<&str>) {
     event.emit();
 }
 
-/// Log a data quality event — validation rejection rate threshold exceeded.
+/// Log a data quality event -- validation rejection rate threshold exceeded.
 pub fn data_quality_alert(action: &str, detail: &str) {
     SecurityEvent::new("data.quality_alert", action, SecurityOutcome::Failure)
         .detail(detail)

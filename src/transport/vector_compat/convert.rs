@@ -1,9 +1,9 @@
 // Project:   hyperi-rustlib
 // File:      src/transport/vector_compat/convert.rs
-// Purpose:   Vector ↔ hyperi message conversion
+// Purpose:   Vector <-> hyperi message conversion
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Bidirectional conversion between Vector protobuf types and serde_json::Value.
@@ -286,7 +286,7 @@ mod tests {
 
         let log = event::Log {
             fields,
-            value: None, // No unified value — use deprecated fields
+            value: None, // No unified value -- use deprecated fields
             metadata: None,
             metadata_full: None,
         };

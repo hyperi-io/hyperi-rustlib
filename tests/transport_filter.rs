@@ -3,7 +3,7 @@
 // Purpose:   Integration + adversarial tests for transport filter engine
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Transport filter engine integration tests.
@@ -35,6 +35,7 @@ fn transport_with_inbound_filters(filters: Vec<FilterRule>) -> MemoryTransport {
         filters_in: filters,
         filters_out: Vec::new(),
     })
+    .expect("memory transport with valid filters must construct")
 }
 
 fn transport_with_outbound_filters(filters: Vec<FilterRule>) -> MemoryTransport {
@@ -44,6 +45,7 @@ fn transport_with_outbound_filters(filters: Vec<FilterRule>) -> MemoryTransport 
         filters_in: Vec::new(),
         filters_out: filters,
     })
+    .expect("memory transport with valid filters must construct")
 }
 
 fn transport_no_filters() -> MemoryTransport {
@@ -52,6 +54,7 @@ fn transport_no_filters() -> MemoryTransport {
         recv_timeout_ms: 50,
         ..Default::default()
     })
+    .expect("memory transport without filters must construct")
 }
 
 // ============================================================================
@@ -87,7 +90,7 @@ async fn inbound_filter_drops_matching_messages() {
         .await
         .unwrap();
 
-    let messages = transport.recv(10).await.unwrap();
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(
         messages.len(),
         3,
@@ -115,7 +118,7 @@ async fn inbound_filter_dlq_removes_from_batch() {
         .await
         .unwrap();
 
-    let messages = transport.recv(10).await.unwrap();
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(
         messages.len(),
         2,
@@ -132,7 +135,10 @@ async fn outbound_filter_blocks_send() {
 
     // Send a debug message — should be silently dropped
     let result = transport
-        .send("topic", br#"{"debug":true,"msg":"test"}"#)
+        .send(
+            "topic",
+            bytes::Bytes::from_static(br#"{"debug":true,"msg":"test"}"#),
+        )
         .await;
     assert!(
         result.is_ok(),
@@ -140,11 +146,13 @@ async fn outbound_filter_blocks_send() {
     );
 
     // Send a normal message — should go through
-    let result = transport.send("topic", br#"{"msg":"normal"}"#).await;
+    let result = transport
+        .send("topic", bytes::Bytes::from_static(br#"{"msg":"normal"}"#))
+        .await;
     assert!(result.is_ok());
 
     // Only the normal message should be receivable
-    let messages = transport.recv(10).await.unwrap();
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(
         messages.len(),
         1,
@@ -160,7 +168,10 @@ async fn outbound_filter_dlq_returns_filtered_dlq() {
     }]);
 
     let result = transport
-        .send("topic", br#"{"status":"bad","data":"x"}"#)
+        .send(
+            "topic",
+            bytes::Bytes::from_static(br#"{"status":"bad","data":"x"}"#),
+        )
         .await;
     assert!(
         result.is_filtered_dlq(),
@@ -168,7 +179,10 @@ async fn outbound_filter_dlq_returns_filtered_dlq() {
     );
 
     let result = transport
-        .send("topic", br#"{"status":"good","data":"x"}"#)
+        .send(
+            "topic",
+            bytes::Bytes::from_static(br#"{"status":"good","data":"x"}"#),
+        )
         .await;
     assert!(result.is_ok(), "Non-matching message should send normally");
 }
@@ -184,7 +198,7 @@ async fn no_filters_passthrough() {
             .unwrap();
     }
 
-    let messages = transport.recv(20).await.unwrap();
+    let messages = transport.recv(20).await.unwrap().records;
     assert_eq!(
         messages.len(),
         10,
@@ -226,7 +240,7 @@ async fn first_match_wins_integration() {
         .await
         .unwrap(); // matches nothing → pass
 
-    let messages = transport.recv(10).await.unwrap();
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(messages.len(), 1, "Only the no-status message should pass");
 }
 
@@ -264,7 +278,7 @@ async fn mixed_tier1_filters() {
         .await
         .unwrap(); // pass
 
-    let messages = transport.recv(10).await.unwrap();
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(messages.len(), 1);
 }
 
@@ -1013,11 +1027,11 @@ fn tier2_missing_field_safe() {
 }
 
 // ============================================================================
-// Section 8: take_filtered_dlq_entries() — DLQ buffering integration
+// Section 8: filter DLQ entries returned via WorkBatch
 // ============================================================================
 
 #[tokio::test]
-async fn dlq_filter_entries_exposed_via_take() {
+async fn dlq_filter_entries_returned_in_recv_batch() {
     let transport = transport_with_inbound_filters(vec![FilterRule {
         expression: r#"status == "poison""#.into(),
         action: FilterAction::Dlq,
@@ -1036,22 +1050,22 @@ async fn dlq_filter_entries_exposed_via_take() {
         .await
         .unwrap();
 
-    let messages = transport.recv(10).await.unwrap();
+    let batch = transport.recv(10).await.unwrap();
     assert_eq!(
-        messages.len(),
+        batch.records.len(),
         1,
         "Only the non-poison message should be in result"
     );
 
-    // The DLQ entries should be exposed via take_filtered_dlq_entries
-    let dlq_entries = transport.take_filtered_dlq_entries();
-    assert_eq!(dlq_entries.len(), 2, "Two DLQ entries should be staged");
+    // DLQ entries are carried inline on the WorkBatch (no separate drain).
+    let dlq_entries = batch.dlq_entries;
+    assert_eq!(dlq_entries.len(), 2, "Two DLQ entries should be returned");
     assert!(dlq_entries[0].payload.windows(6).any(|w| w == b"poison"));
     assert!(dlq_entries[1].payload.windows(6).any(|w| w == b"poison"));
 }
 
 #[tokio::test]
-async fn take_filtered_dlq_entries_drains_buffer() {
+async fn dlq_entries_returned_once_per_recv() {
     let transport = transport_with_inbound_filters(vec![FilterRule {
         expression: "has(_internal)".into(),
         action: FilterAction::Dlq,
@@ -1061,15 +1075,17 @@ async fn take_filtered_dlq_entries_drains_buffer() {
         .inject(None, br#"{"_internal":true}"#.to_vec())
         .await
         .unwrap();
-    let _ = transport.recv(10).await.unwrap();
 
-    // First take returns the entry
-    let first = transport.take_filtered_dlq_entries();
-    assert_eq!(first.len(), 1);
+    // recv() returns the DLQ entry inline; nothing is retained.
+    let first = transport.recv(10).await.unwrap();
+    assert_eq!(first.dlq_entries.len(), 1);
 
-    // Second take returns empty (buffer drained)
-    let second = transport.take_filtered_dlq_entries();
-    assert!(second.is_empty(), "Buffer should be drained after take");
+    // A second recv (nothing new injected) yields no DLQ entries.
+    let second = transport.recv(10).await.unwrap();
+    assert!(
+        second.dlq_entries.is_empty(),
+        "DLQ entries are returned once, with the recv that produced them"
+    );
 }
 
 #[tokio::test]
@@ -1088,14 +1104,13 @@ async fn drop_filter_does_not_populate_dlq_buffer() {
         .await
         .unwrap();
 
-    let messages = transport.recv(10).await.unwrap();
-    assert_eq!(messages.len(), 1);
+    let batch = transport.recv(10).await.unwrap();
+    assert_eq!(batch.records.len(), 1);
 
-    // Drop action should NOT populate the DLQ buffer
-    let dlq_entries = transport.take_filtered_dlq_entries();
+    // Drop action should NOT produce DLQ entries.
     assert!(
-        dlq_entries.is_empty(),
-        "Drop action should not populate DLQ buffer"
+        batch.dlq_entries.is_empty(),
+        "Drop action should not produce DLQ entries"
     );
 }
 
@@ -1106,33 +1121,20 @@ async fn no_filters_no_dlq_buffer_overhead() {
         .inject(None, br#"{"any":"thing"}"#.to_vec())
         .await
         .unwrap();
-    let _ = transport.recv(10).await.unwrap();
-    let dlq_entries = transport.take_filtered_dlq_entries();
-    assert!(dlq_entries.is_empty());
+    let batch = transport.recv(10).await.unwrap();
+    assert!(batch.dlq_entries.is_empty());
 }
 
 // ============================================================================
-// Section 9: Memmem false positive (documented limitation)
+// Section 9: Tier-1 has() strict CEL semantics (F13)
 // ============================================================================
 
+/// Tier-1 `has(<single-field>)` only matches the field at the top
+/// level of the JSON object. Nested occurrences must NOT trigger.
+/// Codex F13 — strict CEL syntax adherence even when the engine is
+/// the SIMD fast path.
 #[test]
-fn memmem_false_positive_nested_field_matches_top_level_filter() {
-    // KNOWN LIMITATION: the memmem fast-path for `has(<single-field>)` searches
-    // for the literal `"<field>":` byte pattern anywhere in the payload. It does
-    // NOT verify that the field appears at the TOP LEVEL of the JSON object.
-    //
-    // If the same field name occurs at a nested level, the fast-path will match
-    // even though a strict CEL `has()` would not.
-    //
-    // Example: filter is `has(_table)` (top-level), payload is
-    //   {"data":{"_table":"events"}}
-    // The bytes contain `"_table":`, so memmem matches and the filter triggers.
-    //
-    // This is a deliberate tradeoff for the ~50% performance gain on the most
-    // common transport filter (existence checks on top-level routing fields).
-    // Workaround for users who need strict top-level matching: use a nested
-    // path like `has(some.nested._table)` which forces the slower sonic-rs path.
-
+fn has_single_field_only_matches_top_level() {
     let engine = TransportFilterEngine::new(
         &[FilterRule {
             expression: "has(_table)".into(),
@@ -1143,27 +1145,24 @@ fn memmem_false_positive_nested_field_matches_top_level_filter() {
     )
     .unwrap();
 
-    // Real top-level field — correct match
+    // Top-level — match.
     let real_match = br#"{"_table":"events"}"#;
     assert_eq!(engine.apply_inbound(real_match), FilterDisposition::Drop);
 
-    // Nested field at non-top-level — documented false positive
+    // Nested — must NOT match (strict CEL).
     let nested_payload = br#"{"data":{"_table":"events"}}"#;
     assert_eq!(
         engine.apply_inbound(nested_payload),
-        FilterDisposition::Drop,
-        "Documented false positive: memmem fast-path matches nested occurrences"
+        FilterDisposition::Pass,
+        "F13: nested _table must not satisfy top-level has(_table)",
     );
 
-    // Sound case: well-formed JSON with field name only inside an escaped
-    // string value never triggers a false positive — JSON encoding requires
-    // a `\` before any embedded `\"`, so the literal byte pattern `"_table":`
-    // never appears inside a string value.
+    // Field name appears only inside an escaped string value — no match.
     let escaped_in_value = br#"{"description":"event with \"_table\": substring"}"#;
     assert_eq!(
         engine.apply_inbound(escaped_in_value),
         FilterDisposition::Pass,
-        "Escaped quotes prevent the literal `\"_table\":` pattern from appearing in a string value"
+        "escaped quotes never produce a literal \"_table\": at structural depth",
     );
 }
 
@@ -1250,7 +1249,8 @@ async fn smoke_memory_transport_filters_field_present() {
             expression: "has(_drop_me)".into(),
             action: FilterAction::Drop,
         }],
-    });
+    })
+    .expect("memory transport with valid filters must construct");
 
     // Filter actually works
     transport
@@ -1262,7 +1262,7 @@ async fn smoke_memory_transport_filters_field_present() {
         .await
         .unwrap();
 
-    let messages = transport.recv(10).await.unwrap();
+    let messages = transport.recv(10).await.unwrap().records;
     assert_eq!(messages.len(), 1, "Filter must be wired in MemoryTransport");
 }
 

@@ -3,21 +3,21 @@
 // Purpose:   Lock-free scaling pressure calculator
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Lock-free scaling pressure calculator for KEDA autoscaling.
 //!
 //! Apps register components at construction, then update values atomically
-//! from their pipeline. [`ScalingPressure::calculate`] returns 0.0–100.0.
+//! from their pipeline. [`ScalingPressure::calculate`] returns 0.0-100.0.
 //!
 //! ## Gate Logic
 //!
 //! Two hard gates are evaluated before the weighted composite:
 //!
-//! 1. **Circuit breaker** — if any circuit is open, returns 0.0
+//! 1. **Circuit breaker** -- if any circuit is open, returns 0.0
 //!    (sink is down, scaling won't help)
-//! 2. **Memory pressure** — if `used/limit >= threshold`, returns 100.0
+//! 2. **Memory pressure** -- if `used/limit >= threshold`, returns 100.0
 //!    (scale immediately before OOM)
 //!
 //! If neither gate fires, the weighted composite is calculated.
@@ -51,7 +51,7 @@ pub struct ComponentSnapshot {
     pub name: String,
     /// Current raw value.
     pub raw_value: f64,
-    /// Score contribution (0.0–weight*100.0).
+    /// Score contribution (0.0-weight*100.0).
     pub score: f64,
     /// Configured weight.
     pub weight: f64,
@@ -62,13 +62,13 @@ pub struct ComponentSnapshot {
 /// Full diagnostic snapshot of scaling pressure state.
 #[derive(Debug, Clone)]
 pub struct PressureSnapshot {
-    /// Calculated scaling pressure (0.0–100.0).
+    /// Calculated scaling pressure (0.0-100.0).
     pub value: f64,
     /// Active gate, if any.
     pub gate_active: Option<GateType>,
     /// Per-component breakdown.
     pub components: Vec<ComponentSnapshot>,
-    /// Current memory usage ratio (0.0–1.0).
+    /// Current memory usage ratio (0.0-1.0).
     pub memory_ratio: f64,
     /// Whether the circuit breaker is signalled open.
     pub circuit_open: bool,
@@ -85,10 +85,10 @@ struct ComponentEntry {
 
 /// Lock-free scaling pressure calculator.
 ///
-/// Produces a 0.0–100.0 composite metric for KEDA (or any autoscaler)
+/// Produces a 0.0-100.0 composite metric for KEDA (or any autoscaler)
 /// based on weighted application signals with two hard gates.
 ///
-/// All updates are lock-free (`Relaxed` ordering) — safe to call from
+/// All updates are lock-free (`Relaxed` ordering) -- safe to call from
 /// any thread without contention.
 ///
 /// # Example
@@ -174,7 +174,7 @@ impl ScalingPressure {
         self.memory_limit.store(limit_bytes, Ordering::Relaxed);
     }
 
-    /// Calculate composite scaling pressure (0.0–100.0).
+    /// Calculate composite scaling pressure (0.0-100.0).
     ///
     /// Gate logic:
     /// 1. Disabled → 0.0
@@ -187,7 +187,7 @@ impl ScalingPressure {
             return 0.0;
         }
 
-        // Gate 1: Circuit breaker open — sink is down, scaling won't help
+        // Gate 1: Circuit breaker open -- sink is down, scaling won't help
         if self.circuit_open.load(Ordering::Relaxed) {
             return 0.0;
         }
@@ -201,7 +201,7 @@ impl ScalingPressure {
             0.0
         };
 
-        // Gate 2: High memory pressure — scale immediately before OOM
+        // Gate 2: High memory pressure -- scale immediately before OOM
         if memory_ratio >= self.memory_gate_threshold {
             return 100.0;
         }
@@ -403,7 +403,7 @@ mod tests {
     #[test]
     fn test_memory_below_threshold_uses_composite() {
         let p = test_pressure();
-        // 70% memory — below 0.8 threshold
+        // 70% memory -- below 0.8 threshold
         p.set_memory(700, 1000);
         p.set_component("kafka_lag", 50_000.0);
         let value = p.calculate();
@@ -417,7 +417,7 @@ mod tests {
     #[test]
     fn test_memory_gate_takes_precedence_over_circuit_breaker() {
         // Memory gate (100.0) fires. Circuit breaker (0.0) is checked first.
-        // Circuit breaker is checked before memory — so CB wins.
+        // Circuit breaker is checked before memory -- so CB wins.
         let p = test_pressure();
         p.set_memory(900, 1000);
         p.set_circuit_open(true);

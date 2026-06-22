@@ -3,7 +3,7 @@
 // Purpose:   HTTP server configuration
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! HTTP server configuration.
@@ -23,48 +23,55 @@ pub struct HttpServerConfig {
     #[serde(default = "default_request_timeout_ms")]
     pub request_timeout_ms: u64,
 
-    /// Keep-alive timeout in milliseconds.
-    /// Defaults to 75 seconds.
+    /// Keep-alive timeout in ms. Default 75 s.
+    ///
+    /// **Not wired.** axum 0.8 `serve()` doesn't surface keep-alive;
+    /// needs hyper builder. Follow-up.
     #[serde(default = "default_keep_alive_timeout_ms")]
     pub keep_alive_timeout_ms: u64,
 
-    /// Maximum number of concurrent connections.
-    /// Defaults to 10,000.
+    /// In-flight request cap. Default 10,000. Enforced via
+    /// `tower::limit::ConcurrencyLimitLayer`. Excess requests queue.
     #[serde(default = "default_max_connections")]
     pub max_connections: usize,
 
-    /// Whether to include health check endpoints (/health/live, /health/ready).
-    /// Defaults to true.
+    /// Mount /health/live + /health/ready. Default true.
     #[serde(default = "default_true")]
     pub enable_health_endpoints: bool,
 
-    /// Whether to include metrics endpoint (/metrics).
-    /// Defaults to false (use metrics module's server instead if needed).
+    /// Mount /metrics.
+    ///
+    /// **Not wired here.** MetricsManager owns its own /metrics
+    /// listener (often a separate admin port). Forward-compat for
+    /// framework-managed wiring.
     #[serde(default)]
     pub enable_metrics_endpoint: bool,
 
-    /// Whether to include config registry endpoint (/config).
-    /// Returns the redacted effective config from the registry.
-    /// Defaults to false (opt-in for admin/debug use).
+    /// Mount /config (redacted effective config). Default false.
     #[serde(default)]
     pub enable_config_endpoint: bool,
 
-    /// Enable HTTP/2 support (also required for gRPC).
-    /// Defaults to true.
+    /// HTTP/2 (also required for gRPC).
+    ///
+    /// **Not wired.** axum 0.8 `serve()` always negotiates HTTP/1
+    /// and HTTP/2 on cleartext. Disabling needs hyper builder.
     #[serde(default = "default_true")]
     pub enable_http2: bool,
 
-    /// TLS certificate path (PEM format).
-    /// If set along with `tls_key_path`, TLS is enabled.
+    /// TLS cert path (PEM).
+    ///
+    /// **Not wired.** Needs `axum_server::tls_rustls` (not a dep).
+    /// K8s pattern: terminate TLS at Ingress / Service Mesh,
+    /// cleartext in-pod.
     #[serde(default)]
     pub tls_cert_path: Option<String>,
 
-    /// TLS private key path (PEM format).
+    /// TLS key path (PEM). See `tls_cert_path` -- not wired.
     #[serde(default)]
     pub tls_key_path: Option<String>,
 
-    /// Graceful shutdown timeout in milliseconds.
-    /// Defaults to 30 seconds.
+    /// Graceful drain budget in ms. Default 30 s. Caps drain time
+    /// to fit under K8s `terminationGracePeriodSeconds`.
     #[serde(default = "default_shutdown_timeout_ms")]
     pub shutdown_timeout_ms: u64,
 }
@@ -135,10 +142,38 @@ impl HttpServerConfig {
         Duration::from_millis(self.shutdown_timeout_ms)
     }
 
-    /// Check if TLS is configured.
+    /// Whether TLS cert+key paths are present in config.
+    ///
+    /// NOTE: this only reports that the fields are *set* -- in-process TLS is
+    /// NOT terminated by this server (see `tls_cert_path`). Use
+    /// [`validate`](Self::validate) at startup so a config that *expects*
+    /// in-pod TLS fails loudly instead of silently serving cleartext.
     #[must_use]
     pub fn is_tls_enabled(&self) -> bool {
         self.tls_cert_path.is_some() && self.tls_key_path.is_some()
+    }
+
+    /// Validate the server config (finding 10: `is_tls_enabled` must not lie).
+    ///
+    /// In-process TLS termination is not supported -- the K8s pattern is to
+    /// terminate TLS at the ingress / service mesh and run cleartext in-pod.
+    /// If `tls_cert_path`/`tls_key_path` are set, the operator expects in-pod
+    /// TLS that will not happen, so this errors rather than letting the server
+    /// bind cleartext while the config claims TLS. Call at startup.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if either TLS path is set.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.tls_cert_path.is_some() || self.tls_key_path.is_some() {
+            return Err(
+                "http_server: in-process TLS is not supported (tls_cert_path / \
+                 tls_key_path set) -- terminate TLS at the ingress / service mesh \
+                 and leave these unset, or front the service with a TLS sidecar"
+                    .to_string(),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -175,6 +210,30 @@ mod tests {
 
         config.tls_key_path = Some("/path/to/key.pem".to_string());
         assert!(config.is_tls_enabled());
+    }
+
+    #[test]
+    fn validate_rejects_unsupported_in_process_tls() {
+        // Default (no TLS paths) validates.
+        assert!(HttpServerConfig::default().validate().is_ok());
+
+        // Setting either TLS path is rejected -- the server can't terminate
+        // TLS, so a config expecting in-pod TLS must fail loudly, not serve
+        // cleartext while is_tls_enabled() reports true.
+        let mut config = HttpServerConfig::default();
+        config.tls_cert_path = Some("/path/to/cert.pem".to_string());
+        assert!(!config.is_tls_enabled()); // only one path set
+        assert!(
+            config.validate().is_err(),
+            "a set TLS path must be rejected"
+        );
+
+        config.tls_key_path = Some("/path/to/key.pem".to_string());
+        assert!(config.is_tls_enabled());
+        assert!(
+            config.validate().is_err(),
+            "is_tls_enabled() true but in-process TLS unsupported -> reject"
+        );
     }
 
     #[test]

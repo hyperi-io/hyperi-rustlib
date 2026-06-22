@@ -3,7 +3,7 @@
 // Purpose:   Kafka transport integration tests
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Integration tests for Kafka transport.
@@ -650,21 +650,20 @@ async fn test_kafka_send_receive_batch() {
     // Send a batch of messages
     for i in 0..10 {
         let payload = format!(r#"{{"id": {i}, "data": "test"}}"#);
-        let result = transport.send(topic, payload.as_bytes()).await;
+        let result = transport.send(topic, bytes::Bytes::from(payload)).await;
         assert!(result.is_ok(), "Send failed: {result:?}");
     }
 
     // Receive messages (may not get all if topic is shared)
-    let messages = transport.recv(100).await;
-    assert!(messages.is_ok(), "Recv failed: {:?}", messages.err());
+    let batch = transport.recv(100).await;
+    assert!(batch.is_ok(), "Recv failed: {:?}", batch.err());
 
-    let messages = messages.unwrap();
-    println!("Received {} messages", messages.len());
+    let batch = batch.unwrap();
+    println!("Received {} records", batch.records.len());
 
-    // Commit if we got messages
-    if !messages.is_empty() {
-        let tokens: Vec<_> = messages.iter().map(|m| m.token.clone()).collect();
-        let result = transport.commit(&tokens).await;
+    // Commit if we got records.
+    if !batch.records.is_empty() {
+        let result = transport.commit(&batch.commit_tokens).await;
         assert!(result.is_ok(), "Commit failed: {:?}", result.err());
     }
 }

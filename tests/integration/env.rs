@@ -3,7 +3,7 @@
 // Purpose:   Integration tests for environment variable loading
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 #![allow(unsafe_code)]
@@ -80,6 +80,25 @@ mod kafka_env {
         assert_eq!(config.sasl_mechanism, Some("SCRAM-SHA-512".to_string()));
         assert_eq!(config.group, "test-group");
         assert_eq!(config.topics, vec!["topic1", "topic2"]);
+    }
+
+    #[test]
+    fn test_kafka_from_env_group_instance_id() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        // Set; canonically the pod name.
+        let _guard = EnvGuard::new(&[("KAFKA_GROUP_INSTANCE_ID", "pod-7")]);
+        assert_eq!(
+            KafkaConfig::from_env_standard().group_instance_id,
+            Some("pod-7".to_string())
+        );
+    }
+
+    #[test]
+    fn test_kafka_group_instance_id_unset_by_default() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvGuard::new(&[("KAFKA_BOOTSTRAP_SERVERS", "b:9092")]);
+        // Opt-in: absent env -> dynamic membership.
+        assert_eq!(KafkaConfig::from_env_standard().group_instance_id, None);
     }
 
     #[test]
@@ -209,7 +228,9 @@ mod vault_env {
         let config = OpenBaoConfig::from_env().expect("Should load from env");
 
         assert_eq!(config.address, "https://vault.example.com:8200");
-        assert!(matches!(config.auth, OpenBaoAuth::Token { token } if token == "s.test-token"));
+        assert!(
+            matches!(config.auth, OpenBaoAuth::Token { token } if token.expose() == "s.test-token")
+        );
     }
 
     #[test]
@@ -230,7 +251,7 @@ mod vault_env {
                 role_id,
                 secret_id,
                 ..
-            } if role_id == "role-123" && secret_id == "secret-456"
+            } if role_id == "role-123" && secret_id.expose() == "secret-456"
         ));
     }
 
@@ -263,7 +284,9 @@ mod vault_env {
         let config = OpenBaoConfig::from_env().expect("Should load from env");
 
         assert_eq!(config.address, "https://openbao:8200");
-        assert!(matches!(config.auth, OpenBaoAuth::Token { token } if token == "s.openbao-token"));
+        assert!(
+            matches!(config.auth, OpenBaoAuth::Token { token } if token.expose() == "s.openbao-token")
+        );
     }
 
     #[test]
@@ -281,7 +304,9 @@ mod vault_env {
 
         // VAULT_* should win
         assert_eq!(config.address, "https://vault-wins:8200");
-        assert!(matches!(config.auth, OpenBaoAuth::Token { token } if token == "vault-token"));
+        assert!(
+            matches!(config.auth, OpenBaoAuth::Token { token } if token.expose() == "vault-token")
+        );
     }
 
     #[test]

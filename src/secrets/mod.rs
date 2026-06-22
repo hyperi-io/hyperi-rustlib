@@ -3,7 +3,7 @@
 // Purpose:   Secrets management with multi-provider support and caching
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Secrets management with multi-provider support and resilient caching.
@@ -51,6 +51,7 @@
 //! ```
 
 mod cache;
+mod crypto;
 mod error;
 mod provider;
 mod types;

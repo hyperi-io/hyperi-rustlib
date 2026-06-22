@@ -18,8 +18,8 @@ User-agent: Applebot-Extended
 User-agent: Bytespider
 User-agent: CCBot
 User-agent: ChatGLM-Spider
-User-agent: Bot
-User-agent: -Web
+User-agent: ClaudeBot
+User-agent: Claude-Web
 User-agent: cohere-ai
 User-agent: cohere-training-data-crawler
 User-agent: Crawl4AI
@@ -86,8 +86,8 @@ Disallow: /
 # content from being retrieved and potentially cached/indexed by AI systems.
 
 User-agent: ChatGPT-User
-User-agent: -SearchBot
-User-agent: -User
+User-agent: Claude-SearchBot
+User-agent: Claude-User
 User-agent: DuckAssistBot
 User-agent: Google-Agent
 User-agent: GoogleAgent-Mariner

@@ -3,7 +3,7 @@
 // Purpose:   Compiled filter variants with Tier 1 SIMD evaluation
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Compiled filter representations and evaluation logic.
@@ -17,7 +17,7 @@ use super::config::{FilterAction, FilterDirection, FilterTier, TransportFilterTi
 
 /// A compiled filter ready for hot-path evaluation.
 ///
-/// Tier 1 variants bypass the CEL engine entirely — they use SIMD JSON
+/// Tier 1 variants bypass the CEL engine entirely -- they use SIMD JSON
 /// field extraction via `sonic_rs::get_from_str()` (zero-copy &str path,
 /// no UTF-8 revalidation per call).
 ///
@@ -26,13 +26,13 @@ use super::config::{FilterAction, FilterDirection, FilterTier, TransportFilterTi
 /// in raw bytes, bypassing the JSON parser entirely (~10-20ns vs ~200ns).
 #[derive(Debug)]
 pub enum CompiledFilter {
-    // Tier 1 — SIMD field ops
+    // Tier 1 -- SIMD field ops
     FieldExists {
         field: String,
         path: Vec<String>,
         /// Pre-compiled memmem finder for the `"field":` byte pattern.
         /// Used as a fast-path when the path is a single segment (no nested).
-        /// `None` for nested paths — falls back to sonic-rs.
+        /// `None` for nested paths -- falls back to sonic-rs.
         needle: Option<memchr::memmem::Finder<'static>>,
         action: FilterAction,
         expression_text: String,
@@ -79,7 +79,7 @@ pub enum CompiledFilter {
         action: FilterAction,
         expression_text: String,
     },
-    // Tier 2/3 — CEL expression (feature-gated)
+    // Tier 2/3 -- CEL expression (feature-gated)
     #[cfg(feature = "expression")]
     CelExpression {
         program: cel::Program,
@@ -87,6 +87,8 @@ pub enum CompiledFilter {
         expression_text: String,
         tier: FilterTier,
         action: FilterAction,
+        /// Runtime payload cap (Gate 2). Larger payloads skip CEL and pass.
+        max_payload_bytes: usize,
     },
 }
 
@@ -125,6 +127,8 @@ impl CompiledFilter {
             ClassifyResult::Tier1(op) => Ok(Self::from_tier1_op(op, action, expression_text)),
             #[cfg(feature = "expression")]
             ClassifyResult::Tier2 { fields } => {
+                super::budget::check_static_budget(expr, &tier_config.budget)
+                    .map_err(|e| e.to_string())?;
                 let program = crate::expression::compile(expr)
                     .map_err(|e| format!("CEL compilation failed: {e}"))?;
                 Ok(Self::CelExpression {
@@ -133,10 +137,19 @@ impl CompiledFilter {
                     expression_text,
                     tier: FilterTier::Tier2,
                     action,
+                    max_payload_bytes: tier_config.budget.max_payload_bytes,
                 })
             }
             #[cfg(feature = "expression")]
             ClassifyResult::Tier3 { fields } => {
+                super::budget::check_static_budget(expr, &tier_config.budget)
+                    .map_err(|e| e.to_string())?;
+                // `allow_complex_filters_in/out` is the single source
+                // of truth for Tier-3 transport filters -- it implies
+                // the restricted CEL categories at the expression
+                // layer. Two-knob (transport AND expression) was
+                // confusing in practice; the tier gate approved
+                // already, so compile under a permissive profile.
                 let profile = crate::expression::ProfileConfig {
                     allow_regex: true,
                     allow_iteration: true,
@@ -150,6 +163,7 @@ impl CompiledFilter {
                     expression_text,
                     tier: FilterTier::Tier3,
                     action,
+                    max_payload_bytes: tier_config.budget.max_payload_bytes,
                 })
             }
             #[cfg(not(feature = "expression"))]
@@ -254,10 +268,12 @@ impl CompiledFilter {
                 action,
                 ..
             } => {
-                // Fast path: pre-compiled memmem Finder for single-segment fields.
-                // SIMD substring search ~10-20ns vs sonic-rs ~200ns.
+                // Fast path: pre-compiled memmem Finder, single-segment fields.
+                // SIMD ~10-20ns vs sonic-rs ~200ns. `first_structural_hit`
+                // rejects `"key":` matches inside string values (else false
+                // positives violate `has(field)` semantics).
                 if let Some(n) = needle {
-                    return n.find(payload).is_some().then_some(*action);
+                    return first_structural_hit(payload, n.find_iter(payload)).map(|_| *action);
                 }
                 // Slow path: nested field, use sonic-rs
                 with_path_refs(path, |refs| {
@@ -273,7 +289,10 @@ impl CompiledFilter {
                 ..
             } => {
                 if let Some(n) = needle {
-                    return n.find(payload).is_none().then_some(*action);
+                    return match first_structural_hit(payload, n.find_iter(payload)) {
+                        Some(_) => None,
+                        None => Some(*action),
+                    };
                 }
                 with_path_refs(path, |refs| {
                     sonic_rs::get_from_slice(payload, refs)
@@ -301,7 +320,7 @@ impl CompiledFilter {
                     let field_val = extract_string_value(&lv);
                     (field_val != value.as_str()).then_some(*action)
                 }
-                // Field missing → not equal to anything → match
+                // Field missing -> not equal to anything -> match
                 Err(_) => Some(*action),
             }),
             Self::FieldStartsWith {
@@ -339,8 +358,9 @@ impl CompiledFilter {
                 program,
                 fields,
                 action,
+                max_payload_bytes,
                 ..
-            } => evaluate_cel(payload, program, fields, *action),
+            } => evaluate_cel(payload, program, fields, *action, *max_payload_bytes),
         }
     }
 
@@ -414,17 +434,68 @@ fn split_field_path(field: &str) -> Vec<String> {
     field.split('.').map(String::from).collect()
 }
 
+/// First memmem `hits` position at a **top-level structural position** --
+/// outside any string AND at object depth 1 (immediate child of the root).
+///
+/// Tier-1 `FieldExists` / `FieldNotExists` scan raw bytes for `"key":`, which
+/// can also occur inside a string VALUE (e.g. `{"d":"my \"key\": stuff"}`).
+/// Walking once and tracking string-state + depth rejects those false hits.
+///
+/// Strict CEL semantics (F13): `has(_table)` on `{"data":{"_table":"events"}}`
+/// must NOT match -- `_table` is at depth 2, not the implicit root. Matching
+/// anywhere outside string values broke this for routed messages where the
+/// same field name commonly appears nested in user data.
+#[inline]
+fn first_structural_hit(payload: &[u8], hits: impl IntoIterator<Item = usize>) -> Option<usize> {
+    let mut in_string = false;
+    let mut depth: i32 = 0;
+    let mut walk = 0usize;
+    for hit in hits {
+        while walk < hit {
+            let b = payload[walk];
+            if in_string {
+                if b == b'"' {
+                    let mut bs = 0usize;
+                    let mut k = walk;
+                    while k > 0 && payload[k - 1] == b'\\' {
+                        bs += 1;
+                        k -= 1;
+                    }
+                    if bs.is_multiple_of(2) {
+                        in_string = false;
+                    }
+                }
+            } else {
+                match b {
+                    b'"' => in_string = true,
+                    b'{' | b'[' => depth += 1,
+                    b'}' | b']' => depth -= 1,
+                    _ => {}
+                }
+            }
+            walk += 1;
+        }
+        // Hit is "<field>":; the JSON key is at the same depth as
+        // its containing object, so depth == 1 means top-level.
+        if !in_string && depth == 1 {
+            return Some(hit);
+        }
+    }
+    None
+}
+
 /// Build a memmem Finder for a single-segment field name. Returns `None`
 /// for nested paths (those fall back to sonic-rs).
 ///
-/// The needle is `"<field>":` — the JSON key pattern. memchr's SIMD-accelerated
+/// The needle is `"<field>":` -- the JSON key pattern. memchr's SIMD-accelerated
 /// substring search detects this pattern in raw bytes ~10-20ns per call,
 /// vs ~200ns for a full sonic-rs JSON parse.
 ///
-/// Note: this is a heuristic — the pattern could appear inside a string value.
-/// Used as a fast yes/no check; for false positives we'd need to verify.
-/// In practice, valid JSON rarely contains escaped key-like patterns inside
-/// string values, so the false positive rate is negligible.
+/// A raw memmem hit is not a sufficient yes/no answer: the pattern can also
+/// occur inside a string VALUE. The Tier-1 evaluator (`FieldExists` /
+/// `FieldNotExists`) therefore verifies every hit via
+/// [`first_structural_hit`] before declaring the field present, so the
+/// fast path is correct under `has(field)` semantics rather than approximate.
 fn build_field_needle(path: &[String]) -> Option<memchr::memmem::Finder<'static>> {
     if path.len() != 1 {
         return None;
@@ -447,7 +518,7 @@ fn extract_string_value<'a>(lv: &'a sonic_rs::LazyValue<'a>) -> std::borrow::Cow
     let raw = lv.as_raw_str();
 
     if lv.is_str() {
-        // Strip the quotes — sonic-rs guarantees raw is `"..."` for string values
+        // Strip the quotes -- sonic-rs guarantees raw is `"..."` for string values
         let bytes = raw.as_bytes();
         if bytes.len() >= 2 && bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"' {
             let inner = &raw[1..raw.len() - 1];
@@ -455,7 +526,7 @@ fn extract_string_value<'a>(lv: &'a sonic_rs::LazyValue<'a>) -> std::borrow::Cow
             if memchr::memchr(b'\\', inner.as_bytes()).is_none() {
                 return std::borrow::Cow::Borrowed(inner);
             }
-            // Has escapes — un-escape via sonic-rs as_str
+            // Has escapes -- un-escape via sonic-rs as_str
             if let Some(s) = lv.as_str() {
                 return std::borrow::Cow::Owned(s.to_string());
             }
@@ -492,27 +563,47 @@ fn with_path_refs<R>(path: &[String], f: impl FnOnce(&[&str]) -> R) -> R {
 }
 
 /// Evaluate a Tier 2/3 CEL expression against a JSON payload.
+///
+/// Allocation profile per call:
+///   - One `Vec<(&String, serde_json::Value)>` of length up to `fields.len()`
+///     -- small, on a hot path with typically 1-5 fields.
+///   - Per field: one `Vec<&str>` for the dotted path split, plus the
+///     `serde_json::Value` tree produced by `from_str`.
+///
+/// Crucially the field NAMES are not cloned -- they reference the
+/// `CompiledFilter::fields` storage, which lives as long as the filter.
+/// The previous implementation built a `HashMap<String, Value>` per call
+/// which cloned every field name; at PB/hr rates that allocator pressure
+/// shows up as GC-like tail-latency spikes.
 #[cfg(feature = "expression")]
 fn evaluate_cel(
     payload: &[u8],
     program: &cel::Program,
     fields: &[String],
     action: FilterAction,
+    max_payload_bytes: usize,
 ) -> Option<FilterAction> {
-    use std::collections::HashMap;
+    // Gate 2: skip oversized payloads (pass-through). Data-driven
+    // CEL cost scales with payload size -- caps the worst case.
+    if payload.len() > max_payload_bytes {
+        #[cfg(feature = "metrics")]
+        metrics::counter!("dfe_transport_filter_cel_payload_skip_total").increment(1);
+        return None;
+    }
 
-    // Extract only declared fields via SIMD (not full JSON parse)
-    let mut context_data: HashMap<String, serde_json::Value> = HashMap::with_capacity(fields.len());
+    let mut extracted: Vec<(&String, serde_json::Value)> = Vec::with_capacity(fields.len());
     for field in fields {
         let path: Vec<&str> = field.split('.').collect();
         if let Ok(lv) = sonic_rs::get_from_slice(payload, path.as_slice())
             && let Ok(v) = sonic_rs::from_str::<serde_json::Value>(lv.as_raw_str())
         {
-            context_data.insert(field.clone(), v);
+            extracted.push((field, v));
         }
     }
 
-    let ctx = crate::expression::build_context(&context_data).ok()?;
+    // `build_context` takes `(&String, &JsonValue)`; `extracted.iter()` yields
+    // `&(&String, JsonValue)`, so we re-borrow the value to match.
+    let ctx = crate::expression::build_context(extracted.iter().map(|(k, v)| (*k, v))).ok()?;
     match program.execute(&ctx) {
         Ok(cel::Value::Bool(true)) => Some(action),
         _ => None,
@@ -548,6 +639,74 @@ mod tests {
         )
         .unwrap();
         assert_eq!(filter.evaluate(br#"{"host":"web1","id":1}"#), None);
+    }
+
+    /// Regression for the pre-GA review C10 finding: Tier-1 used raw memmem
+    /// over the whole payload, so a `"_table":` literal appearing inside a
+    /// string VALUE would falsely trigger `has(_table)`. The post-fix
+    /// evaluator iterates hits and only counts ones at JSON-structural
+    /// positions (outside any string value).
+    #[test]
+    fn tier1_field_exists_ignores_match_inside_string_value() {
+        let filter = CompiledFilter::from_expression(
+            "has(_table)",
+            FilterAction::Drop,
+            FilterDirection::In,
+            &TransportFilterTierConfig::default(),
+        )
+        .unwrap();
+        // The substring `"_table":` appears inside the description VALUE,
+        // not as a real property name. Must not match.
+        let payload = br#"{"description":"the doc says \"_table\":\"events\" but i have no such key","id":1}"#;
+        assert_eq!(filter.evaluate(payload), None);
+
+        // Same key as a real property is still matched.
+        let payload = br#"{"description":"see below","_table":"events","id":1}"#;
+        assert_eq!(filter.evaluate(payload), Some(FilterAction::Drop));
+    }
+
+    /// Mirror regression for `!has(field)`: a memmem hit inside a string
+    /// VALUE must NOT cause `!has(field)` to fail.
+    #[test]
+    fn tier1_field_not_exists_ignores_match_inside_string_value() {
+        let filter = CompiledFilter::from_expression(
+            "!has(_table)",
+            FilterAction::Drop,
+            FilterDirection::In,
+            &TransportFilterTierConfig::default(),
+        )
+        .unwrap();
+        // Substring appears inside description; field is genuinely absent.
+        let payload = br#"{"description":"docs mention \"_table\":\"x\" only","id":1}"#;
+        assert_eq!(filter.evaluate(payload), Some(FilterAction::Drop));
+
+        // Field genuinely present at structural position.
+        let payload = br#"{"_table":"events","id":1}"#;
+        assert_eq!(filter.evaluate(payload), None);
+    }
+
+    /// F13: `first_structural_hit` returns hits only at depth 1
+    /// (top-level child) AND outside any string. Nested hits skipped.
+    #[test]
+    fn first_structural_hit_only_matches_top_level() {
+        let needle = memchr::memmem::Finder::new(b"\"_table\":");
+
+        // Top-level -- match.
+        let top = br#"{"_table":"events"}"#;
+        let hits: Vec<usize> = needle.find_iter(top).collect();
+        assert_eq!(first_structural_hit(top, hits), Some(1));
+
+        // Nested at depth 2 -- no match.
+        let nested = br#"{"data":{"_table":"events"}}"#;
+        let hits: Vec<usize> = needle.find_iter(nested).collect();
+        assert!(!hits.is_empty(), "memmem must find the nested key");
+        assert_eq!(first_structural_hit(nested, hits), None);
+
+        // Hit inside a string value -- no match (well-formed JSON
+        // would escape the `"`, but defence-in-depth either way).
+        let in_value = br#"{"d":"\"_table\":x"}"#;
+        let hits: Vec<usize> = needle.find_iter(in_value).collect();
+        assert_eq!(first_structural_hit(in_value, hits), None);
     }
 
     #[test]

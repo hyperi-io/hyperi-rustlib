@@ -1,14 +1,14 @@
 // Project:   hyperi-rustlib
 // File:      src/concurrency/sink.rs
-// Purpose:   BackgroundSink — generic fire-and-forget durable sink
+// Purpose:   BackgroundSink -- generic fire-and-forget durable sink
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Generic fire-and-forget durable sink built on bounded `mpsc` +
 //! background actor. Consumer hot path is sync-shaped and never blocks
-//! the tokio runtime — `try_push` is ~100 ns push to an mpsc queue.
+//! the tokio runtime -- `try_push` is ~100 ns push to an mpsc queue.
 //!
 //! See `docs/superpowers/plans/2026-05-08-async-patterns.md` for the
 //! design rationale and `hyperi-ai/standards/languages/RUST.md`
@@ -81,7 +81,7 @@ pub struct BackgroundSinkConfig {
     ///   - `<prefix>_pending`              (gauge, current queue depth)
     ///
     /// When `None`, the sink tracks `dropped()` / `pending()` via
-    /// internal atomics only — callers can read them but nothing is
+    /// internal atomics only -- callers can read them but nothing is
     /// published.
     pub metric_prefix: Option<&'static str>,
 }
@@ -101,13 +101,13 @@ impl Default for BackgroundSinkConfig {
 /// Overflow policy for [`BackgroundSink::try_push`].
 ///
 /// `push_blocking` and `flush` always wait for queue space regardless
-/// of this setting — overflow only governs the sync `try_push` path.
+/// of this setting -- overflow only governs the sync `try_push` path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Overflow {
     /// `try_push` returns `Err(Overflow)` immediately and increments
     /// the dropped counter. Default for hot paths.
     Drop,
-    /// `try_push` is rejected — callers in this mode MUST use
+    /// `try_push` is rejected -- callers in this mode MUST use
     /// `push_blocking` or `flush`. Documents intent: "this sink may
     /// not be used from a sync context."
     Block,
@@ -115,15 +115,19 @@ pub enum Overflow {
 
 /// Internal channel message. Tagged so flush() barriers and data
 /// messages share the queue and are processed in FIFO order.
+///
+/// `Barrier` ack carries `Result<(), DrainError>` so flush() reports
+/// drain / flush_durable failures back to the caller instead of
+/// silently lying that everything before the barrier was durable.
 enum SinkMsg<T> {
     Data(T),
-    Barrier(oneshot::Sender<()>),
+    Barrier(oneshot::Sender<Result<(), DrainError>>),
 }
 
 /// A drain consumes batches of messages and writes them to the backend.
 ///
 /// Implementations are captured by [`BackgroundSink::spawn`] and live
-/// inside the actor task. They run only on the actor — never on
+/// inside the actor task. They run only on the actor -- never on
 /// consumer hot paths.
 ///
 /// **CRITICAL:** drain methods may take time (disk fsync, network
@@ -131,19 +135,33 @@ enum SinkMsg<T> {
 /// `rdkafka` / `reqwest` / `redis`) or `tokio::task::spawn_blocking`
 /// for unavoidable sync work. **NEVER** put `std::fs::*` /
 /// `std::io::Write::*` / `std::thread::sleep` directly in `write_batch`
-/// — that pins the actor task's tokio worker, and `tests/sync_in_async.rs`
+/// -- that pins the actor task's tokio worker, and `tests/sync_in_async.rs`
 /// will fail the lint.
 pub trait SinkDrain<T: Send>: Send + 'static {
     /// Flush a batch. Implementer chooses the async I/O strategy.
     /// Returned `Err` is logged + counted by the actor; the actor
     /// continues draining subsequent batches.
     ///
-    /// Takes `&mut self` — drains typically own mutable I/O state
+    /// Takes `&mut self` -- drains typically own mutable I/O state
     /// (file handles, connection pools, write buffers). The actor
     /// holds the only reference; this method is never called
     /// concurrently for a given drain instance.
     fn write_batch(&mut self, batch: Vec<T>)
     -> impl Future<Output = Result<(), DrainError>> + Send;
+
+    /// Block until every entry written to this drain so far is durable
+    /// (synced to disk for file backends, acked by the broker for
+    /// network backends). Called by the actor when it processes a
+    /// `BackgroundSink::flush()` barrier -- BEFORE acking the barrier
+    /// -- so callers of `flush()` see real durability, not just "the
+    /// bytes were handed to the kernel".
+    ///
+    /// Default: no-op (the trait stays additive; non-durable drains
+    /// pay nothing). Implementers with durability semantics
+    /// (fsync, Kafka producer flush, etc.) override.
+    fn flush_durable(&mut self) -> impl Future<Output = Result<(), DrainError>> + Send {
+        std::future::ready(Ok(()))
+    }
 
     /// One-shot close at actor shutdown. Default: no-op.
     /// Typical implementations flush remaining state, close file
@@ -247,40 +265,56 @@ impl<T: Send + 'static> BackgroundSink<T> {
     ///
     /// - `Overflow::Drop` (default): returns `Err(Overflow)` immediately
     ///   when the queue is full and increments the dropped counter.
-    /// - `Overflow::Block`: returns `Err(Overflow)` unconditionally —
+    /// - `Overflow::Block`: returns `Err(Overflow)` unconditionally --
     ///   callers in Block mode must use `push_blocking`. This makes the
     ///   policy decision explicit at the call site.
     pub fn try_push(&self, msg: T) -> Result<(), SinkError> {
         match self.overflow {
-            Overflow::Drop => match self.tx.try_send(SinkMsg::Data(msg)) {
-                Ok(()) => {
-                    self.pending.fetch_add(1, Ordering::Relaxed);
-                    if let Some(p) = self.metric_prefix {
-                        metrics::counter!(format!("{p}_pushed_total")).increment(1);
+            Overflow::Drop => {
+                // Increment BEFORE sending. The actor's
+                // `write_batch_with_metrics` subtracts from `pending`
+                // when it processes a message. If we incremented AFTER
+                // send, a fast actor could receive + process + subtract
+                // before our add landed -- underflowing `pending` to a
+                // huge wrap-around value.
+                self.pending.fetch_add(1, Ordering::Relaxed);
+                match self.tx.try_send(SinkMsg::Data(msg)) {
+                    Ok(()) => {
+                        if let Some(p) = self.metric_prefix {
+                            metrics::counter!(format!("{p}_pushed_total")).increment(1);
+                        }
+                        Ok(())
                     }
-                    Ok(())
-                }
-                Err(mpsc::error::TrySendError::Full(_)) => {
-                    self.dropped.fetch_add(1, Ordering::Relaxed);
-                    if let Some(p) = self.metric_prefix {
-                        metrics::counter!(format!("{p}_dropped_total")).increment(1);
+                    Err(mpsc::error::TrySendError::Full(_)) => {
+                        // Send refused -- give the slot back.
+                        self.pending.fetch_sub(1, Ordering::Relaxed);
+                        self.dropped.fetch_add(1, Ordering::Relaxed);
+                        if let Some(p) = self.metric_prefix {
+                            metrics::counter!(format!("{p}_dropped_total")).increment(1);
+                        }
+                        Err(SinkError::Overflow)
                     }
-                    Err(SinkError::Overflow)
+                    Err(mpsc::error::TrySendError::Closed(_)) => {
+                        self.pending.fetch_sub(1, Ordering::Relaxed);
+                        Err(SinkError::Closed)
+                    }
                 }
-                Err(mpsc::error::TrySendError::Closed(_)) => Err(SinkError::Closed),
-            },
+            }
             Overflow::Block => Err(SinkError::Overflow),
         }
     }
 
     /// Async push that awaits queue space. Returns when queued (NOT
-    /// yet durably written — use [`Self::flush`] for that).
+    /// yet durably written -- use [`Self::flush`] for that).
     pub async fn push_blocking(&self, msg: T) -> Result<(), SinkError> {
-        self.tx
-            .send(SinkMsg::Data(msg))
-            .await
-            .map_err(|_| SinkError::Closed)?;
+        // Increment before send, same race avoidance as `try_push`. The
+        // .await yield point makes the race window wider than the sync
+        // case; the same fix applies.
         self.pending.fetch_add(1, Ordering::Relaxed);
+        if self.tx.send(SinkMsg::Data(msg)).await.is_err() {
+            self.pending.fetch_sub(1, Ordering::Relaxed);
+            return Err(SinkError::Closed);
+        }
         if let Some(p) = self.metric_prefix {
             metrics::counter!(format!("{p}_pushed_total")).increment(1);
         }
@@ -292,7 +326,7 @@ impl<T: Send + 'static> BackgroundSink<T> {
     /// the back of the queue.
     ///
     /// In `Overflow::Drop` mode, "every message accepted" excludes
-    /// messages that were dropped via overflow — those were never in
+    /// messages that were dropped via overflow -- those were never in
     /// the queue. If you need lossless flush semantics, use
     /// `Overflow::Block` + `push_blocking`.
     pub async fn flush(&self) -> Result<(), SinkError> {
@@ -301,7 +335,12 @@ impl<T: Send + 'static> BackgroundSink<T> {
             .send(SinkMsg::Barrier(ack_tx))
             .await
             .map_err(|_| SinkError::Closed)?;
-        ack_rx.await.map_err(|_| SinkError::Closed)
+        // Two layers of failure: the actor dropped before processing
+        // (Closed), or the drain returned an error (Drain).
+        ack_rx
+            .await
+            .map_err(|_| SinkError::Closed)?
+            .map_err(SinkError::Drain)
     }
 
     /// Total messages dropped due to overflow since spawn.
@@ -310,7 +349,7 @@ impl<T: Send + 'static> BackgroundSink<T> {
         self.dropped.load(Ordering::Relaxed)
     }
 
-    /// Current queue depth (approximate — actor may be mid-recv).
+    /// Current queue depth (approximate -- actor may be mid-recv).
     #[must_use]
     pub fn pending(&self) -> usize {
         self.pending.load(Ordering::Relaxed)
@@ -339,27 +378,45 @@ async fn actor_loop<T, D>(
             biased;
 
             () = shutdown.cancelled() => {
-                // Drain remaining queue before exit.
+                // Refuse new sends BEFORE we drain. Producers that race
+                // shutdown will see `Closed` instead of having their
+                // message sit in a channel we observed as empty.
+                rx.close();
+
+                // Flush whatever's already accumulated. Drop the
+                // result -- non-barrier writes log + count failures
+                // internally; we're already shutting down.
                 if !batch.is_empty() {
-                    write_batch_with_metrics(
+                    let _ = write_batch_with_metrics(
                         &mut drain, std::mem::take(&mut batch),
                         &pending, metric_prefix,
                     ).await;
                 }
                 while let Ok(msg) = rx.try_recv() {
                     match msg {
-                        SinkMsg::Data(t) => batch.push(t),
-                        SinkMsg::Barrier(ack) => { let _ = ack.send(()); }
-                    }
-                    if batch.len() >= config.batch_size {
-                        write_batch_with_metrics(
-                            &mut drain, std::mem::take(&mut batch),
-                            &pending, metric_prefix,
-                        ).await;
+                        SinkMsg::Data(t) => {
+                            batch.push(t);
+                            if batch.len() >= config.batch_size {
+                                let _ = write_batch_with_metrics(
+                                    &mut drain, std::mem::take(&mut batch),
+                                    &pending, metric_prefix,
+                                ).await;
+                            }
+                        }
+                        SinkMsg::Barrier(ack) => {
+                            // Flush + durable, then ack with the
+                            // composite Result. Acking Ok on a failed
+                            // drain is the durability lie F2 fixes.
+                            let result = barrier_drain(
+                                &mut drain, std::mem::take(&mut batch),
+                                &pending, metric_prefix,
+                            ).await;
+                            let _ = ack.send(result);
+                        }
                     }
                 }
                 if !batch.is_empty() {
-                    write_batch_with_metrics(
+                    let _ = write_batch_with_metrics(
                         &mut drain, std::mem::take(&mut batch),
                         &pending, metric_prefix,
                     ).await;
@@ -374,25 +431,22 @@ async fn actor_loop<T, D>(
                 Some(SinkMsg::Data(t)) => {
                     batch.push(t);
                     if batch.len() >= config.batch_size {
-                        write_batch_with_metrics(
+                        let _ = write_batch_with_metrics(
                             &mut drain, std::mem::take(&mut batch),
                             &pending, metric_prefix,
                         ).await;
                     }
                 }
                 Some(SinkMsg::Barrier(ack)) => {
-                    if !batch.is_empty() {
-                        write_batch_with_metrics(
-                            &mut drain, std::mem::take(&mut batch),
-                            &pending, metric_prefix,
-                        ).await;
-                    }
-                    let _ = ack.send(());
+                    let result = barrier_drain(
+                        &mut drain, std::mem::take(&mut batch),
+                        &pending, metric_prefix,
+                    ).await;
+                    let _ = ack.send(result);
                 }
                 None => {
-                    // All senders dropped — graceful exit.
                     if !batch.is_empty() {
-                        write_batch_with_metrics(
+                        let _ = write_batch_with_metrics(
                             &mut drain, std::mem::take(&mut batch),
                             &pending, metric_prefix,
                         ).await;
@@ -406,7 +460,7 @@ async fn actor_loop<T, D>(
 
             _ = tick.tick() => {
                 if !batch.is_empty() {
-                    write_batch_with_metrics(
+                    let _ = write_batch_with_metrics(
                         &mut drain, std::mem::take(&mut batch),
                         &pending, metric_prefix,
                     ).await;
@@ -416,12 +470,34 @@ async fn actor_loop<T, D>(
     }
 }
 
+/// Run the batch write + drain.flush_durable() and report the
+/// first error back through the barrier ack. Acking `Ok(())` when
+/// either step failed is the durability-lie F2 fixes.
+async fn barrier_drain<T, D: SinkDrain<T>>(
+    drain: &mut D,
+    batch: Vec<T>,
+    pending: &AtomicUsize,
+    metric_prefix: Option<&'static str>,
+) -> Result<(), DrainError>
+where
+    T: Send,
+{
+    let write_result = if batch.is_empty() {
+        Ok(())
+    } else {
+        write_batch_with_metrics(drain, batch, pending, metric_prefix).await
+    };
+    let durable_result = drain.flush_durable().await;
+    write_result.and(durable_result)
+}
+
 async fn write_batch_with_metrics<T, D: SinkDrain<T>>(
     drain: &mut D,
     batch: Vec<T>,
     pending: &AtomicUsize,
     metric_prefix: Option<&'static str>,
-) where
+) -> Result<(), DrainError>
+where
     T: Send,
 {
     let count = batch.len();
@@ -430,10 +506,14 @@ async fn write_batch_with_metrics<T, D: SinkDrain<T>>(
         metrics::counter!(format!("{p}_writes_total")).increment(1);
         metrics::gauge!(format!("{p}_pending")).set(pending.load(Ordering::Relaxed) as f64);
     }
-    if let Err(e) = drain.write_batch(batch).await {
-        warn!(error = %e, count, "sink drain write_batch failed");
-        if let Some(p) = metric_prefix {
-            metrics::counter!(format!("{p}_write_errors_total")).increment(1);
+    match drain.write_batch(batch).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            warn!(error = %e, count, "sink drain write_batch failed");
+            if let Some(p) = metric_prefix {
+                metrics::counter!(format!("{p}_write_errors_total")).increment(1);
+            }
+            Err(e)
         }
     }
 }
@@ -538,7 +618,7 @@ mod tests {
         }
         assert!(overflowed > 0, "expected at least one overflow");
         assert_eq!(sink.dropped(), overflowed);
-        // Queue cap is 4 — once filled, every push past that overflows.
+        // Queue cap is 4 -- once filled, every push past that overflows.
         assert!(accepted >= 4, "should accept at least queue_capacity");
         let _ = (accepted, count); // silence unused
         shutdown.cancel();
@@ -672,7 +752,7 @@ mod tests {
             shutdown.clone(),
         );
 
-        // Push 10_000 messages back-to-back. Drain is gated — actor is
+        // Push 10_000 messages back-to-back. Drain is gated -- actor is
         // blocked on `notified()`. The hot path MUST stay fast anyway.
         let start = Instant::now();
         for i in 0..10_000_u32 {
@@ -796,8 +876,48 @@ mod tests {
         }
         assert!(
             max_us < 5_000,
-            "max try_push latency was {max_us}µs — slow drain leaked back to consumer",
+            "max try_push latency was {max_us}µs -- slow drain leaked back to consumer",
         );
+        shutdown.cancel();
+    }
+
+    /// Regression: drain returning Err means flush() returns
+    /// Err. The ack must carry the drain error, not silently `Ok(())`.
+    #[tokio::test]
+    async fn flush_surfaces_drain_write_failure() {
+        struct FailingDrain;
+        impl SinkDrain<u32> for FailingDrain {
+            async fn write_batch(&mut self, _batch: Vec<u32>) -> Result<(), DrainError> {
+                Err(DrainError::Io(std::io::Error::other("simulated")))
+            }
+        }
+        let shutdown = CancellationToken::new();
+        let (sink, _handle) = BackgroundSink::spawn(FailingDrain, fast_config(), shutdown.clone());
+        sink.try_push(1).unwrap();
+        let err = sink.flush().await.unwrap_err();
+        assert!(matches!(err, SinkError::Drain(_)), "got: {err:?}");
+        shutdown.cancel();
+    }
+
+    /// Regression: drain accepts writes but flush_durable
+    /// fails -- flush() must surface the durable failure.
+    #[tokio::test]
+    async fn flush_surfaces_flush_durable_failure() {
+        struct WriteOkFlushFail;
+        impl SinkDrain<u32> for WriteOkFlushFail {
+            async fn write_batch(&mut self, _batch: Vec<u32>) -> Result<(), DrainError> {
+                Ok(())
+            }
+            async fn flush_durable(&mut self) -> Result<(), DrainError> {
+                Err(DrainError::Io(std::io::Error::other("durable-fail")))
+            }
+        }
+        let shutdown = CancellationToken::new();
+        let (sink, _handle) =
+            BackgroundSink::spawn(WriteOkFlushFail, fast_config(), shutdown.clone());
+        sink.try_push(1).unwrap();
+        let err = sink.flush().await.unwrap_err();
+        assert!(matches!(err, SinkError::Drain(_)), "got: {err:?}");
         shutdown.cancel();
     }
 }

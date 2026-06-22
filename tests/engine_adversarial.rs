@@ -3,36 +3,37 @@
 // Purpose:   Adversarial tests for BatchEngine — edge cases, boundaries, stress
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-#![cfg(feature = "worker")]
+// process_mid_tier / process_raw take the canonical transport Record (Task
+// 0.7c), so this suite needs the transport feature for Record/RecordMeta.
+#![cfg(all(feature = "worker", feature = "transport"))]
 
 use std::sync::Arc;
 
 use bytes::Bytes;
+use hyperi_rustlib::transport::{PayloadFormat, Record, RecordMeta};
 use hyperi_rustlib::worker::engine::config::PreRouteFilterConfig;
 use hyperi_rustlib::worker::engine::intern::FieldInterner;
-use hyperi_rustlib::worker::engine::types::{MessageMetadata, PayloadFormat, RawMessage};
 use hyperi_rustlib::worker::engine::{BatchEngine, BatchProcessingConfig};
 use sonic_rs::JsonValueTrait as _;
 
 // --- Helpers ---
 
-fn make_raw(payload: &[u8]) -> RawMessage {
-    RawMessage {
+fn make_raw(payload: &[u8]) -> Record {
+    Record {
         payload: Bytes::copy_from_slice(payload),
         key: None,
         headers: vec![],
-        metadata: MessageMetadata {
+        metadata: RecordMeta {
             timestamp_ms: None,
             format: PayloadFormat::Json,
-            commit_token: None,
         },
     }
 }
 
-fn make_json_messages(n: usize) -> Vec<RawMessage> {
+fn make_json_messages(n: usize) -> Vec<Record> {
     (0..n)
         .map(|i| make_raw(format!(r#"{{"_table":"events","id":{i}}}"#).as_bytes()))
         .collect()
@@ -96,7 +97,7 @@ fn chunk_boundary_plus_one() {
 #[test]
 fn all_parse_errors() {
     let engine = default_engine();
-    let msgs: Vec<RawMessage> = (0..20)
+    let msgs: Vec<Record> = (0..20)
         .map(|i| make_raw(format!("not json {i} {{{{").as_bytes()))
         .collect();
 
@@ -112,7 +113,7 @@ fn all_parse_errors() {
 #[test]
 fn mixed_valid_invalid() {
     let engine = default_engine();
-    let msgs: Vec<RawMessage> = (0..100)
+    let msgs: Vec<Record> = (0..100)
         .map(|i| {
             if i % 2 == 0 {
                 make_raw(format!(r#"{{"id":{i}}}"#).as_bytes())
@@ -131,24 +132,49 @@ fn mixed_valid_invalid() {
     assert_eq!(err_count, 50);
 }
 
+/// Deeply-nested JSON must be handled GRACEFULLY, not crash the worker.
+///
+/// The parse path recurses once per nesting level (sonic_rs), so an unbounded
+/// hostile payload can exhaust the worker stack and abort the process -- a DoS.
+/// The engine now rejects nesting beyond a fixed bound with a per-record error
+/// (via a cheap iterative pre-scan, so the recursive parser never sees it).
+/// Modest nesting still parses fine.
 #[test]
 fn deeply_nested_json() {
-    // Build 50 levels of nesting: {"a":{"a":{"a":...{}}}}
-    let mut payload = String::new();
-    for _ in 0..50 {
-        payload.push_str(r#"{"a":"#);
-    }
-    payload.push_str(r#""leaf""#);
-    for _ in 0..50 {
-        payload.push('}');
+    fn nested(levels: usize) -> Vec<u8> {
+        let mut p = String::new();
+        for _ in 0..levels {
+            p.push_str(r#"{"a":"#);
+        }
+        p.push_str(r#""leaf""#);
+        for _ in 0..levels {
+            p.push('}');
+        }
+        p.into_bytes()
     }
 
     let engine = default_engine();
-    let msgs = vec![make_raw(payload.as_bytes())];
-    let results: Vec<Result<usize, String>> =
-        engine.process_mid_tier(&msgs, |pm| Ok(pm.raw_payload().len()));
-    assert_eq!(results.len(), 1);
-    assert!(results[0].is_ok());
+
+    // Modest nesting (well within the bound) parses successfully.
+    let shallow = vec![make_raw(&nested(10))];
+    let ok: Vec<Result<usize, String>> =
+        engine.process_mid_tier(&shallow, |pm| Ok(pm.raw_payload().len()));
+    assert_eq!(ok.len(), 1);
+    assert!(ok[0].is_ok(), "10-level nesting should parse");
+
+    // Pathological nesting is REJECTED gracefully, never a stack overflow /
+    // process abort. The iterative pre-scan rejects it before the recursive
+    // parser runs, so this is stack-safe at any depth. Reaching this assertion
+    // at all proves there was no crash; the payload must not parse successfully
+    // (asserted action-agnostically: Skip yields no result, Dlq/FailBatch an
+    // Err -- in neither case an Ok).
+    let bomb = vec![make_raw(&nested(5000))];
+    let rejected: Vec<Result<usize, String>> =
+        engine.process_mid_tier(&bomb, |pm| Ok(pm.raw_payload().len()));
+    assert!(
+        !rejected.iter().any(Result::is_ok),
+        "5000-level nesting must be rejected, not parsed (and must not crash)"
+    );
 }
 
 #[test]
@@ -218,7 +244,7 @@ fn pre_route_all_filtered() {
     let engine = BatchEngine::new(config);
 
     // All messages are missing _table
-    let msgs: Vec<RawMessage> = (0..20)
+    let msgs: Vec<Record> = (0..20)
         .map(|i| make_raw(format!(r#"{{"host":"web-{i}"}}"#).as_bytes()))
         .collect();
 
@@ -425,15 +451,16 @@ fn msgpack_auto_detection() {
     let msgpack_bytes = rmp_serde::to_vec(&json_value).expect("msgpack encode failed");
 
     let engine = default_engine();
-    // Use Auto format — engine should sniff the MsgPack header bytes
-    let msg = RawMessage {
+    // Use Auto format — engine should sniff the MsgPack header bytes, then
+    // decode natively via rmpv (no rmp_serde -> serde_json bridge on the
+    // engine parse path).
+    let msg = Record {
         payload: bytes::Bytes::from(msgpack_bytes),
         key: None,
         headers: vec![],
-        metadata: MessageMetadata {
+        metadata: RecordMeta {
             timestamp_ms: None,
             format: PayloadFormat::Auto,
-            commit_token: None,
         },
     };
 

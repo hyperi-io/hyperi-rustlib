@@ -3,7 +3,7 @@
 // Purpose:   NDJSON file transport
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # File Transport
@@ -27,12 +27,13 @@
 //!
 //! let config = FileTransportConfig { path: "/tmp/events.ndjson".into(), append: true, ..Default::default() };
 //! let transport = FileTransport::new(&config).await?;
-//! transport.send("events", b"{\"msg\":\"hello\"}").await;
+//! transport.send("events", bytes::Bytes::from_static(b"{\"msg\":\"hello\"}")).await;
 //! ```
 
 use super::error::{TransportError, TransportResult};
-use super::traits::{CommitToken, TransportBase, TransportReceiver, TransportSender};
+use super::traits::{CommitToken, RecvBatch, TransportBase, TransportReceiver, TransportSender};
 use super::types::{Message, PayloadFormat, SendResult};
+use super::work_batch::WorkBatch;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -95,15 +96,7 @@ impl FileTransportConfig {
     /// Load from the config cascade under the `transport.file` key.
     #[must_use]
     pub fn from_cascade() -> Self {
-        #[cfg(feature = "config")]
-        {
-            if let Some(cfg) = crate::config::try_get()
-                && let Ok(tc) = cfg.unmarshal_key_registered::<Self>("transport.file")
-            {
-                return tc;
-            }
-        }
-        Self::default()
+        <Self as super::traits::FromCascade>::from_cascade_key("transport.file")
     }
 }
 
@@ -130,9 +123,6 @@ pub struct FileTransport {
     reader: Mutex<Option<ReadState>>,
     closed: Arc<AtomicBool>,
     filter_engine: super::filter::TransportFilterEngine,
-    /// Buffer for messages staged to DLQ by inbound filters.
-    /// Drained by `take_filtered_dlq_entries()`.
-    filtered_dlq_buffer: parking_lot::Mutex<Vec<super::filter::FilteredDlqEntry>>,
 }
 
 impl FileTransport {
@@ -149,15 +139,13 @@ impl FileTransport {
         #[cfg(feature = "logger")]
         tracing::info!(path = %config.path, append = config.append, "File transport opened");
 
+        // Fail loud on bad filter config -- silently disabling filters
+        // turns a misconfigured `drop` / `dlq` rule into a permanent pass.
         let filter_engine = super::filter::TransportFilterEngine::new(
             &config.filters_in,
             &config.filters_out,
-            &crate::transport::filter::TransportFilterTierConfig::default(),
-        )
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Failed to compile transport filters, filtering disabled");
-            super::filter::TransportFilterEngine::empty()
-        });
+            &crate::transport::filter::TransportFilterTierConfig::from_cascade(),
+        )?;
 
         let closed = Arc::new(AtomicBool::new(false));
 
@@ -179,7 +167,6 @@ impl FileTransport {
             reader: Mutex::new(None),
             closed,
             filter_engine,
-            filtered_dlq_buffer: parking_lot::Mutex::new(Vec::new()),
         })
     }
 
@@ -294,14 +281,14 @@ impl TransportBase for FileTransport {
 }
 
 impl TransportSender for FileTransport {
-    async fn send(&self, _key: &str, payload: &[u8]) -> SendResult {
+    async fn send(&self, _key: &str, payload: bytes::Bytes) -> SendResult {
         if self.closed.load(Ordering::Relaxed) {
             return SendResult::Fatal(TransportError::Closed);
         }
 
         // Outbound filter check
         if self.filter_engine.has_outbound_filters() {
-            match self.filter_engine.apply_outbound(payload) {
+            match self.filter_engine.apply_outbound(&payload) {
                 super::filter::FilterDisposition::Pass => {}
                 super::filter::FilterDisposition::Drop => return SendResult::Ok,
                 super::filter::FilterDisposition::Dlq => return SendResult::FilteredDlq,
@@ -318,7 +305,7 @@ impl TransportSender for FileTransport {
         };
 
         // Write payload + newline as a single operation
-        if let Err(e) = state.file.write_all(payload).await {
+        if let Err(e) = state.file.write_all(&payload).await {
             #[cfg(feature = "logger")]
             tracing::warn!(error = %e, "File transport: write error");
             return SendResult::Fatal(TransportError::Send(format!("write failed: {e}")));
@@ -347,7 +334,7 @@ impl TransportSender for FileTransport {
 impl TransportReceiver for FileTransport {
     type Token = FileToken;
 
-    async fn recv(&self, max: usize) -> TransportResult<Vec<Message<Self::Token>>> {
+    async fn recv(&self, max: usize) -> TransportResult<WorkBatch<Self::Token>> {
         if self.closed.load(Ordering::Relaxed) {
             return Err(TransportError::Closed);
         }
@@ -382,7 +369,7 @@ impl TransportReceiver for FileTransport {
                 continue;
             }
 
-            let payload = line.as_bytes().to_vec();
+            let payload: bytes::Bytes = line.as_bytes().to_vec().into();
             let format = PayloadFormat::detect(&payload);
             let timestamp_ms = chrono::Utc::now().timestamp_millis();
 
@@ -397,25 +384,17 @@ impl TransportReceiver for FileTransport {
             });
         }
 
-        // Apply inbound filters: drop messages, stage DLQ entries
-        if self.filter_engine.has_inbound_filters() {
-            let mut staged_dlq: Vec<super::filter::FilteredDlqEntry> = Vec::new();
-            messages.retain(|msg| match self.filter_engine.apply_inbound(&msg.payload) {
-                super::filter::FilterDisposition::Pass => true,
-                super::filter::FilterDisposition::Drop => false,
-                super::filter::FilterDisposition::Dlq => {
-                    staged_dlq.push(super::filter::FilteredDlqEntry {
-                        payload: msg.payload.clone(),
-                        key: msg.key.clone(),
-                        reason: "transport filter".to_string(),
-                    });
-                    false
-                }
-            });
-            if !staged_dlq.is_empty() {
-                self.filtered_dlq_buffer.lock().extend(staged_dlq);
-            }
-        }
+        // Apply inbound filters via the shared partition helper; DLQ entries
+        // are returned in the RecvBatch for the caller to route onward.
+        let batch = self.filter_engine.partition_batch(
+            messages,
+            |m| m.payload.as_ref(),
+            |m| m.key.clone(),
+            |m| m.token,
+        );
+        let messages = batch.messages;
+        let dlq_entries = batch.dlq_entries;
+        let filtered_tokens = batch.filtered_tokens;
 
         #[cfg(feature = "logger")]
         if !messages.is_empty() {
@@ -428,11 +407,12 @@ impl TransportReceiver for FileTransport {
                 .increment(messages.len() as u64);
         }
 
-        Ok(messages)
-    }
-
-    fn take_filtered_dlq_entries(&self) -> Vec<super::filter::FilteredDlqEntry> {
-        std::mem::take(&mut *self.filtered_dlq_buffer.lock())
+        Ok(RecvBatch {
+            messages,
+            dlq_entries,
+            filtered_tokens,
+        }
+        .into())
     }
 
     async fn commit(&self, tokens: &[Self::Token]) -> TransportResult<()> {
@@ -449,6 +429,8 @@ impl TransportReceiver for FileTransport {
         Ok(())
     }
 }
+
+impl super::traits::FromCascade for FileTransportConfig {}
 
 #[cfg(test)]
 mod tests {
@@ -479,9 +461,13 @@ mod tests {
         };
         let sender = FileTransport::new(&config).await.unwrap();
 
-        let r1 = sender.send("key", b"{\"msg\":\"hello\"}").await;
+        let r1 = sender
+            .send("key", bytes::Bytes::from_static(b"{\"msg\":\"hello\"}"))
+            .await;
         assert!(r1.is_ok());
-        let r2 = sender.send("key", b"{\"msg\":\"world\"}").await;
+        let r2 = sender
+            .send("key", bytes::Bytes::from_static(b"{\"msg\":\"world\"}"))
+            .await;
         assert!(r2.is_ok());
         sender.close().await.unwrap();
 
@@ -492,14 +478,15 @@ mod tests {
             ..Default::default()
         };
         let reader = FileTransport::new(&reader_config).await.unwrap();
-        let messages = reader.recv(10).await.unwrap();
+        let batch = reader.recv(10).await.unwrap();
 
-        assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].payload, b"{\"msg\":\"hello\"}");
-        assert_eq!(messages[1].payload, b"{\"msg\":\"world\"}");
+        assert_eq!(batch.records.len(), 2);
+        assert_eq!(batch.records[0].payload.as_ref(), b"{\"msg\":\"hello\"}");
+        assert_eq!(batch.records[1].payload.as_ref(), b"{\"msg\":\"world\"}");
 
-        // Tokens should have increasing offsets
-        assert!(messages[1].token.offset > messages[0].token.offset);
+        // Commit tokens (carried on the batch, in record order) should have
+        // increasing offsets.
+        assert!(batch.commit_tokens[1].offset > batch.commit_tokens[0].offset);
     }
 
     #[tokio::test]
@@ -515,9 +502,9 @@ mod tests {
             ..Default::default()
         };
         let sender = FileTransport::new(&config).await.unwrap();
-        sender.send("k", b"line1").await;
-        sender.send("k", b"line2").await;
-        sender.send("k", b"line3").await;
+        sender.send("k", bytes::Bytes::from_static(b"line1")).await;
+        sender.send("k", bytes::Bytes::from_static(b"line2")).await;
+        sender.send("k", bytes::Bytes::from_static(b"line3")).await;
         sender.close().await.unwrap();
 
         // Read first 2 messages and commit
@@ -528,17 +515,16 @@ mod tests {
         })
         .await
         .unwrap();
-        let msgs = r1.recv(2).await.unwrap();
-        assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0].payload, b"line1");
-        assert_eq!(msgs[1].payload, b"line2");
+        let batch = r1.recv(2).await.unwrap();
+        assert_eq!(batch.records.len(), 2);
+        assert_eq!(batch.records[0].payload.as_ref(), b"line1");
+        assert_eq!(batch.records[1].payload.as_ref(), b"line2");
 
-        // Commit up to message 2
-        let tokens: Vec<_> = msgs.iter().map(|m| m.token).collect();
-        r1.commit(&tokens).await.unwrap();
+        // Commit up to message 2 via the batch's commit tokens.
+        r1.commit(&batch.commit_tokens).await.unwrap();
         r1.close().await.unwrap();
 
-        // Open a new transport — should resume from committed position
+        // Open a new transport -- should resume from committed position
         let r2 = FileTransport::new(&FileTransportConfig {
             path: path_str,
             append: true,
@@ -546,9 +532,9 @@ mod tests {
         })
         .await
         .unwrap();
-        let remaining = r2.recv(10).await.unwrap();
+        let remaining = r2.recv(10).await.unwrap().records;
         assert_eq!(remaining.len(), 1);
-        assert_eq!(remaining[0].payload, b"line3");
+        assert_eq!(remaining[0].payload.as_ref(), b"line3");
     }
 
     #[tokio::test]
@@ -559,7 +545,9 @@ mod tests {
         transport.close().await.unwrap();
         assert!(!transport.is_healthy());
 
-        let result = transport.send("k", b"data").await;
+        let result = transport
+            .send("k", bytes::Bytes::from_static(b"data"))
+            .await;
         assert!(result.is_fatal());
 
         let result = transport.recv(1).await;
@@ -585,10 +573,12 @@ mod tests {
             ..Default::default()
         };
         let transport = FileTransport::new(&config).await.unwrap();
-        transport.send("k", b"only_line").await;
+        transport
+            .send("k", bytes::Bytes::from_static(b"only_line"))
+            .await;
         transport.close().await.unwrap();
 
-        // Read all, then read again — should get empty
+        // Read all, then read again -- should get empty
         let reader = FileTransport::new(&FileTransportConfig {
             path: path_str,
             append: true,
@@ -596,10 +586,10 @@ mod tests {
         })
         .await
         .unwrap();
-        let msgs = reader.recv(10).await.unwrap();
+        let msgs = reader.recv(10).await.unwrap().records;
         assert_eq!(msgs.len(), 1);
 
-        let more = reader.recv(10).await.unwrap();
+        let more = reader.recv(10).await.unwrap().records;
         assert!(more.is_empty());
     }
 

@@ -3,7 +3,7 @@
 // Purpose:   Reusable test helpers for contract-artefact e2e tests
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Test helpers for contract-artefact end-to-end tests, shared by rustlib
@@ -12,29 +12,20 @@
 //!
 //! # What this module provides
 //!
-//! * **Tool probes** -- thin wrappers over `Command::new(<tool>).output()`
-//!   that cache result via `OnceLock` so a slow probe runs at most once
-//!   per test binary. Probes: [`docker_available`], [`helm_available`],
+//! * **Tool probes** -- `OnceLock`-cached wrappers (slow probe runs at most
+//!   once per test binary): [`docker_available`], [`helm_available`],
 //!   [`kubeconform_available`], [`kind_available`], [`kubectl_available`].
 //! * **Skip emission** -- [`skip`] writes the canonical
-//!   `HYPERCI-SKIP[contract-e2e][<tier>]: <test>: <reason>` line to BOTH
-//!   stderr and a side-channel file at
-//!   `$CARGO_TARGET_TMPDIR/contract-e2e-skips.log` (or
-//!   `~/.cache/hyperi-ai/contract-e2e-skips.log` outside a cargo run).
-//!   The CI test runner is expected to grep + count these lines and
-//!   emit a top-of-stage summary; tests themselves don't need to do
-//!   anything fancier than call this helper and `return`.
-//! * **Tier-B gate** -- [`tier_b_enabled`] returns true iff
-//!   `HYPERI_E2E_CLUSTER=1`. Cluster-based tests gate on this.
+//!   `HYPERCI-SKIP[contract-e2e][<tier>]: <test>: <reason>` line to stderr
+//!   AND a side-channel log the CI runner greps + counts for a summary.
+//! * **Tier-B gate** -- [`tier_b_enabled`] (true iff `HYPERI_E2E_CLUSTER=1`).
 //! * **Kind cluster lifecycle** -- [`KindClusterGuard`] +
-//!   [`ensure_kind_cluster`] bring up a uniquely-named local kind
-//!   cluster and tear it down on Drop. Each test gets its own cluster
-//!   so parallel test runs never collide on cluster name.
+//!   [`ensure_kind_cluster`]: per-test uniquely-named cluster, torn down on
+//!   Drop so parallel runs never collide on cluster name.
 //!
 //! # Usage from a consumer's `tests/e2e/`
 //!
-//! Add `hyperi-rustlib` with the `deployment` feature in your
-//! dev-dependencies (this module always ships with `deployment`):
+//! Add `hyperi-rustlib` with the `deployment` feature in dev-dependencies:
 //!
 //! ```ignore
 //! use hyperi_rustlib::deployment::test_support::{
@@ -57,12 +48,10 @@
 //!
 //! # Why no `tempfile` dependency here?
 //!
-//! rustlib `src/` stays std-only -- `tempfile` is a dev-dep, available
-//! to integration tests but not pulled into the runtime crate. Callers
-//! that need a tempdir for kubeconfig storage create their own and pass
-//! the path in via [`ensure_kind_cluster_in`]. The shorthand
-//! [`ensure_kind_cluster`] uses `~/.cache/hyperi-ai/contract-test/<cluster>/`
-//! and cleans the directory on Drop -- works without any dev-dep.
+//! rustlib `src/` stays std-only; `tempfile` is a dev-dep not pulled into the
+//! runtime crate. Callers needing a tempdir pass one in via
+//! [`ensure_kind_cluster_in`]. The shorthand [`ensure_kind_cluster`] uses
+//! `~/.cache/hyperi-ai/contract-test/<cluster>/` and cleans it on Drop.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

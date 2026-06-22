@@ -3,7 +3,7 @@
 // Purpose:   HTTP POST DLQ backend variant
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! HTTP backend variant for the DLQ enum.
@@ -41,7 +41,7 @@ impl Default for HttpDlqConfig {
     }
 }
 
-/// HTTP backend — internal variant carried by [`super::DlqBackend::Http`].
+/// HTTP backend -- internal variant carried by [`super::DlqBackend::Http`].
 #[derive(Debug)]
 pub struct HttpDlqInner {
     client: reqwest::Client,

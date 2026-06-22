@@ -3,40 +3,35 @@
 // Purpose:   Standard DFE metric definitions with transport labels
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Standard DFE metrics.
+//! Standard DFE metrics for pipeline components (receiver, loader, engine).
 //!
-//! Pre-defined metric set for DFE pipeline components (receiver, loader, engine).
 //! Call [`DfeMetrics::register`] **after** creating a
-//! [`MetricsManager`](super::MetricsManager) — the manager must exist so that
-//! platform metrics are automatically captured in the manifest registry.
-//!
-//! All methods are `#[inline]` and designed for hot-path use.
+//! [`MetricsManager`](super::MetricsManager): the manager must exist so platform
+//! metrics land in the manifest registry. Methods are `#[inline]` for hot-path use.
 //!
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::metrics::{MetricsManager, DfeMetrics};
+//! use hyperi_rustlib::metrics::{MetricsManager, DfeMetrics, TransportKind};
 //!
 //! let mgr = MetricsManager::new("myapp");
 //! let dfe = DfeMetrics::register(&mgr);
 //!
-//! dfe.transport_sent("kafka", 100);
+//! dfe.transport_sent(TransportKind::Kafka, 100);
 //! dfe.records_received(500);
 //! dfe.scaling_pressure(42.0);
 //! ```
 
 use super::manifest::{MetricDescriptor, MetricType};
 
-/// Standard DFE metric set.
+/// Standard DFE metric set: labelled counters, gauges, and histograms across
+/// transport, pipeline, records, scaling, spool, and security.
 ///
-/// Provides labelled counters, gauges, and histograms covering transport,
-/// pipeline, records, scaling, spool, and security concerns.
-///
-/// Construct via [`DfeMetrics::register`] — this describes all metrics with
-/// the global recorder AND pushes descriptors into the manifest registry.
+/// Construct via [`DfeMetrics::register`] -- describes all metrics with the
+/// global recorder AND pushes descriptors into the manifest registry.
 pub struct DfeMetrics {
     /// Prevent external construction.
     _private: (),
@@ -44,14 +39,12 @@ pub struct DfeMetrics {
 
 impl DfeMetrics {
     /// Register all DFE metric descriptions with the global recorder and
-    /// manifest registry.
+    /// manifest registry. Call **once** after creating a
+    /// [`MetricsManager`](super::MetricsManager). Returned handle is zero-sized
+    /// (recording goes through the global `metrics!` macros).
     ///
-    /// Call this **once** after creating a [`MetricsManager`](super::MetricsManager).
-    /// The returned handle is cheaply clonable (it's zero-sized — all recording
-    /// goes through the global `metrics!` macros).
-    ///
-    /// **Breaking change (v1.22):** Now takes `&MetricsManager` to ensure
-    /// platform metrics are tightly coupled with the manifest registry.
+    /// **Breaking change (v1.22):** takes `&MetricsManager` so platform metrics
+    /// are tightly coupled with the manifest registry.
     #[must_use]
     #[allow(clippy::too_many_lines)]
     pub fn register(manager: &super::MetricsManager) -> Self {
@@ -244,12 +237,19 @@ impl DfeMetrics {
             "dfe_scaling_pressure",
             "Normalised scaling pressure (0-100)"
         );
+        // 0/1 state gauge (documented), not a bool type. `unit` is empty.
         metrics::describe_gauge!(
             "dfe_scaling_circuit_open",
             "Circuit breaker state (1=open, 0=closed)"
         );
         metrics::describe_gauge!(
             "dfe_scaling_memory_pressure",
+            "Memory pressure ratio (0.0-1.0)"
+        );
+        // dual-emit: drop OLD in next release (MIGRATIONS) -- `_ratio` suffix
+        // for a 0-1 ratio gauge.
+        metrics::describe_gauge!(
+            "dfe_scaling_memory_pressure_ratio",
             "Memory pressure ratio (0.0-1.0)"
         );
 
@@ -264,6 +264,11 @@ impl DfeMetrics {
             ),
             (
                 "dfe_scaling_memory_pressure",
+                "Memory pressure ratio (0.0-1.0)",
+            ),
+            // dual-emit: drop OLD in next release (MIGRATIONS)
+            (
+                "dfe_scaling_memory_pressure_ratio",
                 "Memory pressure ratio (0.0-1.0)",
             ),
         ] {
@@ -287,12 +292,23 @@ impl DfeMetrics {
             "dfe_spool_disk_available",
             "Available disk space for spool in bytes"
         );
+        // dual-emit: drop OLD in next release (MIGRATIONS) -- `_bytes` base-unit
+        // suffix; aligns with tiered_sink's `dfe_spool_disk_available_bytes`.
+        metrics::describe_gauge!(
+            "dfe_spool_disk_available_bytes",
+            "Available disk space for spool in bytes"
+        );
 
         for (name, desc) in [
             ("dfe_spool_bytes", "Current spool size in bytes"),
             ("dfe_spool_messages", "Current spool message count"),
             (
                 "dfe_spool_disk_available",
+                "Available disk space for spool in bytes",
+            ),
+            // dual-emit: drop OLD in next release (MIGRATIONS)
+            (
+                "dfe_spool_disk_available_bytes",
                 "Available disk space for spool in bytes",
             ),
         ] {
@@ -349,15 +365,15 @@ impl DfeMetrics {
 
     /// Record messages successfully sent to a transport.
     #[inline]
-    pub fn transport_sent(&self, transport: &str, count: u64) {
-        metrics::counter!("dfe_transport_sent_total", "transport" => transport.to_string())
+    pub fn transport_sent(&self, transport: super::TransportKind, count: u64) {
+        metrics::counter!("dfe_transport_sent_total", "transport" => transport.as_label())
             .increment(count);
     }
 
     /// Record send errors for a transport.
     #[inline]
-    pub fn transport_send_errors(&self, transport: &str, count: u64) {
-        metrics::counter!("dfe_transport_send_errors_total", "transport" => transport.to_string())
+    pub fn transport_send_errors(&self, transport: super::TransportKind, count: u64) {
+        metrics::counter!("dfe_transport_send_errors_total", "transport" => transport.as_label())
             .increment(count);
     }
 
@@ -376,6 +392,9 @@ impl DfeMetrics {
     }
 
     /// Set transport health status.
+    ///
+    /// `dfe_transport_healthy` is a 0/1 state gauge (documented), not a bool
+    /// type -- 1=healthy, 0=unhealthy.
     #[inline]
     pub fn transport_healthy(&self, transport: &str, healthy: bool) {
         metrics::gauge!("dfe_transport_healthy", "transport" => transport.to_string())
@@ -414,6 +433,9 @@ impl DfeMetrics {
     // ── Pipeline ─────────────────────────────────────────────────────
 
     /// Set pipeline readiness state.
+    ///
+    /// `dfe_pipeline_ready` is a 0/1 state gauge (documented), not a bool type
+    /// -- 1=ready, 0=not ready.
     #[inline]
     pub fn pipeline_ready(&self, ready: bool) {
         metrics::gauge!("dfe_pipeline_ready").set(if ready { 1.0 } else { 0.0 });
@@ -460,6 +482,9 @@ impl DfeMetrics {
     }
 
     /// Set circuit breaker state.
+    ///
+    /// `dfe_scaling_circuit_open` is a 0/1 state gauge (documented), not a bool
+    /// type -- 1=open, 0=closed.
     #[inline]
     pub fn scaling_circuit_open(&self, open: bool) {
         metrics::gauge!("dfe_scaling_circuit_open").set(if open { 1.0 } else { 0.0 });
@@ -469,6 +494,8 @@ impl DfeMetrics {
     #[inline]
     pub fn scaling_memory_pressure(&self, ratio: f64) {
         metrics::gauge!("dfe_scaling_memory_pressure").set(ratio);
+        // dual-emit: drop OLD in next release (MIGRATIONS) -- `_ratio` suffix.
+        metrics::gauge!("dfe_scaling_memory_pressure_ratio").set(ratio);
     }
 
     // ── Spool ────────────────────────────────────────────────────────
@@ -489,20 +516,23 @@ impl DfeMetrics {
     #[inline]
     pub fn spool_disk_available(&self, bytes: f64) {
         metrics::gauge!("dfe_spool_disk_available").set(bytes);
+        // dual-emit: drop OLD in next release (MIGRATIONS) -- `_bytes` suffix;
+        // aligns with tiered_sink's `dfe_spool_disk_available_bytes`.
+        metrics::gauge!("dfe_spool_disk_available_bytes").set(bytes);
     }
 
     // ── Security ─────────────────────────────────────────────────────
 
     /// Record authentication failure.
     #[inline]
-    pub fn auth_failure(&self, reason: &str) {
-        metrics::counter!("dfe_auth_failures_total", "reason" => reason.to_string()).increment(1);
+    pub fn auth_failure(&self, reason: super::AuthFailureReason) {
+        metrics::counter!("dfe_auth_failures_total", "reason" => reason.as_label()).increment(1);
     }
 
     /// Record validation failure.
     #[inline]
-    pub fn validation_failure(&self, reason: &str) {
-        metrics::counter!("dfe_validation_failures_total", "reason" => reason.to_string())
+    pub fn validation_failure(&self, reason: super::ValidationFailureReason) {
+        metrics::counter!("dfe_validation_failures_total", "reason" => reason.as_label())
             .increment(1);
     }
 }
@@ -554,8 +584,8 @@ mod tests {
         let mgr = super::super::MetricsManager::new("test_app");
         let dfe = DfeMetrics::register(&mgr);
 
-        dfe.transport_sent("kafka", 1);
-        dfe.transport_send_errors("kafka", 1);
+        dfe.transport_sent(super::super::TransportKind::Kafka, 1);
+        dfe.transport_send_errors(super::super::TransportKind::Kafka, 1);
         dfe.transport_backpressured("kafka", 1);
         dfe.transport_refused("kafka", 1);
         dfe.transport_healthy("kafka", true);
@@ -580,7 +610,7 @@ mod tests {
         dfe.spool_messages(10.0);
         dfe.spool_disk_available(1_000_000.0);
 
-        dfe.auth_failure("invalid_token");
-        dfe.validation_failure("missing_field");
+        dfe.auth_failure(super::super::AuthFailureReason::MalformedToken);
+        dfe.validation_failure(super::super::ValidationFailureReason::FieldMissing);
     }
 }

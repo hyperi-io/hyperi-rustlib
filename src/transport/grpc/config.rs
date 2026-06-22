@@ -3,7 +3,7 @@
 // Purpose:   gRPC transport configuration
 // Language:  Rust
 //
-// License:   FSL-1.1-ALv2
+// License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use serde::{Deserialize, Serialize};
@@ -40,11 +40,38 @@ pub struct GrpcConfig {
     /// Receive timeout in milliseconds (0 = non-blocking).
     pub recv_timeout_ms: u64,
 
+    /// Per-RPC send deadline in milliseconds (0 = no deadline).
+    ///
+    /// Bounds a single `push` so a hung/black-holing server cannot block a
+    /// sender task forever. Applied as the `grpc-timeout` header. Default 30s.
+    pub send_timeout_ms: u64,
+
     /// Maximum message size in bytes (both send and receive).
     pub max_message_size: usize,
 
     /// Enable gzip compression for gRPC messages.
     pub compression: bool,
+
+    // --- Client TLS. tonic owns its TLS stack (like librdkafka), so these map
+    // TlsTrust onto tonic's ClientTlsConfig rather than crate::tls's rustls
+    // ClientConfig. In-cluster DFE gRPC is usually mesh-mTLS (Istio/Linkerd);
+    // set these only for DIRECT TLS to a remote endpoint. ---
+    /// Enable client TLS for the `endpoint` connection.
+    #[serde(default)]
+    pub tls_enabled: bool,
+    /// Private-CA PEM (maps to `TlsTrust.extra_roots`). When unset with
+    /// `tls_enabled`, falls back to OS native roots.
+    #[serde(default)]
+    pub tls_ca_path: Option<String>,
+    /// Domain name for SNI / certificate verification (overrides the URI host).
+    #[serde(default)]
+    pub tls_domain: Option<String>,
+    /// Client certificate PEM for mTLS (with `tls_client_key_path`).
+    #[serde(default)]
+    pub tls_client_cert_path: Option<String>,
+    /// Client key PEM for mTLS (with `tls_client_cert_path`).
+    #[serde(default)]
+    pub tls_client_key_path: Option<String>,
 
     /// Enable Vector wire protocol compatibility on the same server.
     /// When true, the server also accepts `/vector.Vector/PushEvents` RPCs
@@ -67,8 +94,14 @@ impl Default for GrpcConfig {
             endpoint: None,
             recv_buffer_size: 10_000,
             recv_timeout_ms: 100,
+            send_timeout_ms: 30_000, // 30s -- bound a single push RPC
             max_message_size: 16 * 1024 * 1024, // 16 MB
             compression: false,
+            tls_enabled: false,
+            tls_ca_path: None,
+            tls_domain: None,
+            tls_client_cert_path: None,
+            tls_client_key_path: None,
             #[cfg(feature = "transport-grpc-vector-compat")]
             vector_compat: false,
             filters_in: Vec::new(),
@@ -81,15 +114,7 @@ impl GrpcConfig {
     /// Load from the config cascade under the `grpc` key.
     #[must_use]
     pub fn from_cascade() -> Self {
-        #[cfg(feature = "config")]
-        {
-            if let Some(cfg) = crate::config::try_get()
-                && let Ok(grpc) = cfg.unmarshal_key_registered::<Self>("grpc")
-            {
-                return grpc;
-            }
-        }
-        Self::default()
+        <Self as crate::transport::traits::FromCascade>::from_cascade_key("grpc")
     }
 
     /// Create a server-only config.
@@ -132,3 +157,5 @@ impl GrpcConfig {
         self
     }
 }
+
+impl crate::transport::traits::FromCascade for GrpcConfig {}

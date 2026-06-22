@@ -3,7 +3,9 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use hyperi_rustlib::worker::{AdaptiveWorkerPool, ScalingDecision, ScalingInput, WorkerPoolConfig};
+use hyperi_rustlib::worker::{
+    AdaptiveWorkerPool, FanOutPolicy, FanOutResult, ScalingDecision, ScalingInput, WorkerPoolConfig,
+};
 
 // --- Config tests ---
 
@@ -29,6 +31,25 @@ fn test_config_validation_rejects_min_greater_than_max() {
         ..Default::default()
     };
     assert!(cfg.validate().is_err());
+}
+
+#[test]
+fn test_try_new_rejects_invalid_config() {
+    // try_new validates after resolving max_threads -- an invalid config is
+    // rejected at construction, not surfaced as a later scaler clamp panic.
+    let bad = WorkerPoolConfig {
+        min_threads: 16,
+        max_threads: 4,
+        ..Default::default()
+    };
+    assert!(AdaptiveWorkerPool::try_new(bad).is_err());
+
+    let good = WorkerPoolConfig {
+        min_threads: 1,
+        max_threads: 0,
+        ..Default::default()
+    };
+    assert!(AdaptiveWorkerPool::try_new(good).is_ok());
 }
 
 #[test]
@@ -180,7 +201,7 @@ async fn test_fan_out_async_preserves_order() {
     let pool = AdaptiveWorkerPool::new(config);
 
     let items: Vec<i32> = (0..20).collect();
-    let results: Vec<Result<i32, String>> = pool
+    let results: Vec<Option<Result<i32, String>>> = pool
         .fan_out_async(&items, |&item| async move {
             tokio::time::sleep(std::time::Duration::from_millis(
                 u64::try_from(20 - item).unwrap_or(0) % 10,
@@ -192,8 +213,13 @@ async fn test_fan_out_async_preserves_order() {
 
     assert_eq!(results.len(), 20);
     for (i, result) in results.iter().enumerate() {
+        let val = result
+            .as_ref()
+            .expect("task should not panic")
+            .as_ref()
+            .expect("task returned Err");
         assert_eq!(
-            *result.as_ref().unwrap(),
+            *val,
             (i32::try_from(i).unwrap()) * 3,
             "Result at index {i} has wrong value"
         );
@@ -214,7 +240,7 @@ async fn test_fan_out_async_respects_concurrency_limit() {
 
     let c = concurrent.clone();
     let mc = max_concurrent.clone();
-    let _results: Vec<Result<i32, String>> = pool
+    let _results: Vec<Option<Result<i32, String>>> = pool
         .fan_out_async(&items, |&item| {
             let c = c.clone();
             let mc = mc.clone();
@@ -236,7 +262,7 @@ async fn test_fan_out_async_respects_concurrency_limit() {
 async fn test_fan_out_async_empty_input() {
     let pool = AdaptiveWorkerPool::new(WorkerPoolConfig::default());
     let items: Vec<i32> = vec![];
-    let results: Vec<Result<i32, String>> =
+    let results: Vec<Option<Result<i32, String>>> =
         pool.fan_out_async(&items, |&x| async move { Ok(x) }).await;
     assert!(results.is_empty());
 }
@@ -335,20 +361,57 @@ async fn test_graceful_shutdown_drains_work() {
 // --- Pool active_threads test ---
 
 #[test]
-fn test_active_threads_reports_correct_count() {
+fn test_map_owned_throttles_to_target_not_rayon_size() {
+    // Pool with 4 rayon threads but target=1 (min_threads=1). map_owned must
+    // cap concurrent execution at the target (1), proving the parsed path is
+    // throttled by the scaler -- not by the rayon pool size. Without the
+    // semaphore (the old install() path) peak concurrency would reach 4.
+    let config = WorkerPoolConfig {
+        min_threads: 1,
+        max_threads: 4,
+        ..Default::default()
+    };
+    let pool = AdaptiveWorkerPool::new(config);
+    assert_eq!(pool.target_threads(), 1);
+
+    let in_flight = Arc::new(AtomicUsize::new(0));
+    let peak = Arc::new(AtomicUsize::new(0));
+    let items: Vec<usize> = (0..40).collect();
+
+    let inflight2 = Arc::clone(&in_flight);
+    let peak2 = Arc::clone(&peak);
+    let out: Vec<usize> = pool.map_owned(items, move |i| {
+        let now = inflight2.fetch_add(1, Ordering::SeqCst) + 1;
+        peak2.fetch_max(now, Ordering::SeqCst);
+        // Hold the permit briefly so overlap would occur if unthrottled.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        inflight2.fetch_sub(1, Ordering::SeqCst);
+        i * 2
+    });
+
+    assert_eq!(out.len(), 40);
+    assert_eq!(out[10], 20, "map_owned preserves per-item mapping/order");
+    assert_eq!(
+        peak.load(Ordering::SeqCst),
+        1,
+        "concurrent execution never exceeded target=1"
+    );
+}
+
+#[test]
+fn test_thread_accounting_target_leased_available() {
     let config = WorkerPoolConfig {
         min_threads: 3,
         max_threads: 8,
         ..Default::default()
     };
     let pool = AdaptiveWorkerPool::new(config);
-    // Initially, semaphore has min_threads (3) permits available out of 8 total
-    // active = max - available = 8 - 3 = 5 ... wait that's not right
-    // Actually at rest, no work in flight, all permits available = min_threads
-    // active = max_threads - available_permits = 8 - 3 = 5
-    // Hmm, this is tricky. Let me just verify the initial state makes sense.
-    let max = pool.max_threads();
-    assert_eq!(max, 8);
+    // Idle pool: zero in-flight, regardless of the scaler target.
+    assert_eq!(pool.active_threads(), 0, "idle pool reports zero active");
+    // Target starts at min_threads; headroom equals the target when idle.
+    assert_eq!(pool.target_threads(), 3, "initial target is min_threads");
+    assert_eq!(pool.available_threads(), 3, "idle headroom equals target");
+    assert_eq!(pool.max_threads(), 8);
 }
 
 // =============================================================================
@@ -450,20 +513,15 @@ fn test_config_validation_emergency_below_shrink_rejected() {
 }
 
 #[test]
-fn test_config_min_threads_zero_rejected_by_rayon() {
-    // min_threads=0 means no permits — every rayon task would block forever.
-    // This should still create the pool (rayon allows 0 threads? no, it panics).
-    // Actually rayon requires at least 1 thread. But our semaphore starts at min_threads.
-    // With 0 permits, process_batch would deadlock. Validate this edge case.
+fn test_config_min_threads_zero_rejected_by_validate() {
+    // Codex F11: min_threads=0 leaves the rayon semaphore spinning
+    // in yield_now() forever. validate() now rejects upfront.
     let config = WorkerPoolConfig {
         min_threads: 0,
         max_threads: 4,
         ..Default::default()
     };
-    // Config validates OK (0 is technically valid — means "start with 0 active, scaler grows")
-    // But process_batch would block. This is a design choice — min_threads=0 is allowed
-    // for services that start idle and scale up on demand.
-    assert!(config.validate().is_ok());
+    assert!(config.validate().is_err());
 }
 
 #[test]
@@ -545,11 +603,12 @@ fn test_scaling_decision_memory_exactly_at_cap() {
 async fn test_fan_out_async_with_all_failures() {
     let pool = AdaptiveWorkerPool::new(WorkerPoolConfig::default());
     let items: Vec<i32> = (0..10).collect();
-    let results: Vec<Result<i32, String>> = pool
+    let results: Vec<Option<Result<i32, String>>> = pool
         .fan_out_async(&items, |&item| async move { Err(format!("fail: {item}")) })
         .await;
     assert_eq!(results.len(), 10);
-    assert!(results.iter().all(Result::is_err));
+    // Every slot is `Some(Err(...))` — no task panicked, every one returned Err.
+    assert!(results.iter().all(|r| matches!(r, Some(Err(_)))));
 }
 
 #[tokio::test]
@@ -559,7 +618,7 @@ async fn test_fan_out_async_mixed_success_failure_preserves_order() {
         ..Default::default()
     });
     let items: Vec<i32> = (0..20).collect();
-    let results: Vec<Result<i32, String>> = pool
+    let results: Vec<Option<Result<i32, String>>> = pool
         .fan_out_async(&items, |&item| async move {
             // Variable delay to stress ordering
             tokio::time::sleep(std::time::Duration::from_millis(
@@ -575,11 +634,57 @@ async fn test_fan_out_async_mixed_success_failure_preserves_order() {
         .await;
 
     assert_eq!(results.len(), 20);
-    // Verify ordering: even indices that are multiples of 3 should be errors
-    assert!(results[0].is_err()); // 0 % 3 == 0
-    assert!(results[3].is_err()); // 3 % 3 == 0
-    assert!(results[6].is_err()); // 6 % 3 == 0
-    assert_eq!(*results[1].as_ref().unwrap(), 10); // 1 * 10
-    assert_eq!(*results[2].as_ref().unwrap(), 20); // 2 * 10
-    assert_eq!(*results[4].as_ref().unwrap(), 40); // 4 * 10
+    // Verify ordering: indices that are multiples of 3 should be Err
+    assert!(matches!(results[0], Some(Err(_)))); // 0 % 3 == 0
+    assert!(matches!(results[3], Some(Err(_)))); // 3 % 3 == 0
+    assert!(matches!(results[6], Some(Err(_)))); // 6 % 3 == 0
+    assert_eq!(*results[1].as_ref().unwrap().as_ref().unwrap(), 10);
+    assert_eq!(*results[2].as_ref().unwrap().as_ref().unwrap(), 20);
+    assert_eq!(*results[4].as_ref().unwrap().as_ref().unwrap(), 40);
+}
+
+// --- fan_out_async_with_policy ---
+
+#[tokio::test]
+async fn fan_out_with_policy_times_out_slow_items_preserving_order() {
+    let pool = AdaptiveWorkerPool::new(WorkerPoolConfig::default());
+    let policy = FanOutPolicy {
+        per_item_timeout: Some(std::time::Duration::from_millis(100)),
+        cancel: None,
+    };
+    // Item 1 sleeps past the timeout; 0 and 2 are fast.
+    let items = vec![0u64, 1, 2];
+    let results: Vec<FanOutResult<u64, ()>> = pool
+        .fan_out_async_with_policy(&items, &policy, |&n| async move {
+            if n == 1 {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+            Ok(n * 10)
+        })
+        .await;
+
+    assert_eq!(results.len(), 3);
+    assert!(matches!(results[0], FanOutResult::Ok(0)));
+    assert!(
+        matches!(results[1], FanOutResult::TimedOut),
+        "slow item times out"
+    );
+    assert!(matches!(results[2], FanOutResult::Ok(20)));
+}
+
+#[tokio::test]
+async fn fan_out_with_policy_cancellation_stops_spawning() {
+    let pool = AdaptiveWorkerPool::new(WorkerPoolConfig::default());
+    let token = tokio_util::sync::CancellationToken::new();
+    token.cancel(); // pre-cancelled
+    let policy = FanOutPolicy {
+        per_item_timeout: None,
+        cancel: Some(token),
+    };
+    let items = vec![0u64, 1, 2];
+    let results: Vec<FanOutResult<u64, ()>> = pool
+        .fan_out_async_with_policy(&items, &policy, |&n| async move { Ok(n) })
+        .await;
+    // Nothing spawned -> all Cancelled.
+    assert!(results.iter().all(|r| matches!(r, FanOutResult::Cancelled)));
 }
