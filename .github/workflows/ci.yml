@@ -23,8 +23,19 @@ on:
     inputs:
       tag:
         type: string
-        required: true
-        description: "Tag to publish (e.g. v1.20.1)"
+        required: false
+        default: ""
+        description: "Tag to re-publish (existing tag). Omit + set from-head to release HEAD."
+      from-head:
+        type: string
+        required: false
+        default: ""
+        description: "'true' to release/retry the current HEAD - the CI creates the tag (issue #35)."
+      bump:
+        type: string
+        required: false
+        default: "auto"
+        description: "Version resolution for from-head: auto | patch | minor (forced - release even with no release-worthy commit) | X.Y.Z (exact version)."
 
 permissions:
   contents: write
@@ -38,4 +49,6 @@ jobs:
     with:
       publish-target: oss
       tag: ${{ inputs.tag || '' }}
+      from-head: ${{ inputs.from-head || '' }}
+      bump: ${{ inputs.bump || 'auto' }}
     secrets: inherit
