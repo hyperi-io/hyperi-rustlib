@@ -1,6 +1,6 @@
 // Project:   scalo
 // File:      src/version_check/mod.rs
-// Purpose:   Startup version check against HyperI version API
+// Purpose:   Startup version check against a configured version API
 // Language:  Rust
 //
 // License:   Apache-2.0
@@ -8,7 +8,7 @@
 
 //! Startup version check.
 //!
-//! Calls the HyperI version API on startup to check if a newer version is
+//! Calls a configured version API on startup to check if a newer version is
 //! available. The check is non-blocking, fire-and-forget, and gracefully
 //! handles all failure modes (network errors, timeouts, bad responses).
 //!
@@ -20,7 +20,7 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     let checker = VersionCheck::new(VersionCheckConfig {
-//!         product: "dfe-loader".into(),
+//!         product: "my-service".into(),
 //!         current_version: env!("CARGO_PKG_VERSION").into(),
 //!         ..Default::default()
 //!     });
@@ -34,9 +34,6 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-/// Default version check API endpoint.
-const DEFAULT_API_URL: &str = "https://releases.hyperi.io/api/v1/check";
-
 /// Default HTTP timeout for the version check.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -47,9 +44,9 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 ///
 /// ```yaml
 /// version_check:
-///   api_url: "https://releases.hyperi.io/api/v1/check"
+///   enabled: true
+///   api_url: "https://releases.example.com/api/v1/check"
 ///   timeout_secs: 5
-///   disabled: false
 /// ```
 ///
 /// `product` and `current_version` are always set programmatically -- they
@@ -65,19 +62,16 @@ pub struct VersionCheckConfig {
     /// Deployment type (e.g., "k8s", "docker", "bare").
     #[serde(default)]
     pub deployment: Option<String>,
-    /// API endpoint URL. Defaults to the HyperI version API.
-    #[serde(default = "default_api_url")]
+    /// Version API endpoint URL. No default -- set it via the `version_check`
+    /// config cascade (or programmatically). Empty disables the check.
+    #[serde(default)]
     pub api_url: String,
     /// HTTP request timeout in seconds.
     #[serde(default = "default_timeout", with = "duration_secs")]
     pub timeout: Duration,
-    /// Disable the version check entirely.
+    /// Enable the startup version check. Opt-in: off unless explicitly true.
     #[serde(default)]
-    pub disabled: bool,
-}
-
-fn default_api_url() -> String {
-    DEFAULT_API_URL.into()
+    pub enabled: bool,
 }
 
 fn default_timeout() -> Duration {
@@ -106,9 +100,9 @@ impl Default for VersionCheckConfig {
             product: String::new(),
             current_version: String::new(),
             deployment: None,
-            api_url: default_api_url(),
+            api_url: String::new(),
             timeout: DEFAULT_TIMEOUT,
-            disabled: false,
+            enabled: false,
         }
     }
 }
@@ -116,8 +110,8 @@ impl Default for VersionCheckConfig {
 impl VersionCheckConfig {
     /// Load from the config cascade, then overlay product/version.
     ///
-    /// Reads the `version_check` key from the cascade for `api_url`,
-    /// `timeout`, and `disabled`. The `product` and `current_version`
+    /// Reads the `version_check` key from the cascade for `enabled`,
+    /// `api_url`, and `timeout`. The `product` and `current_version`
     /// fields are always set from the provided arguments (they come
     /// from the binary, not from config files).
     #[must_use]
@@ -128,7 +122,7 @@ impl VersionCheckConfig {
         config
     }
 
-    /// Load just the cascade portion (api_url, timeout, disabled).
+    /// Load just the cascade portion (enabled, api_url, timeout).
     fn cascade_base() -> Self {
         #[cfg(feature = "config")]
         {
@@ -164,8 +158,13 @@ impl VersionCheck {
     /// This method returns immediately. The check runs asynchronously and
     /// logs the result. Any errors are logged at warn level and swallowed.
     pub fn check_on_startup(&self) {
-        if self.config.disabled {
-            tracing::debug!("version check disabled");
+        if !self.config.enabled {
+            tracing::debug!("version check not enabled (opt-in)");
+            return;
+        }
+
+        if self.config.api_url.is_empty() {
+            tracing::debug!("version check skipped: no api_url configured");
             return;
         }
 
@@ -430,9 +429,9 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = VersionCheckConfig::default();
-        assert_eq!(config.api_url, DEFAULT_API_URL);
+        assert!(config.api_url.is_empty());
         assert_eq!(config.timeout, Duration::from_secs(5));
-        assert!(!config.disabled);
+        assert!(!config.enabled);
         assert!(config.product.is_empty());
     }
 
@@ -575,9 +574,9 @@ mod tests {
     }
 
     #[test]
-    fn test_disabled_does_not_spawn() {
+    fn test_not_enabled_does_not_spawn() {
         let checker = VersionCheck::new(VersionCheckConfig {
-            disabled: true,
+            enabled: false,
             ..Default::default()
         });
         // Should return immediately without panic (no tokio runtime needed)

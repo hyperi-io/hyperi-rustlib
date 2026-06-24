@@ -223,12 +223,8 @@ impl ServiceRuntime {
         // --- Version check (fire-and-forget) ---
         #[cfg(feature = "version-check")]
         {
-            crate::VersionCheck::new(crate::VersionCheckConfig {
-                product: app_name.to_string(),
-                current_version: version.to_string(),
-                ..Default::default()
-            })
-            .check_on_startup();
+            crate::VersionCheck::new(crate::VersionCheckConfig::from_cascade(app_name, version))
+                .check_on_startup();
         }
 
         // Log runtime context

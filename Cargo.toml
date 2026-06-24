@@ -1,6 +1,6 @@
 # Project:   scalo
 # File:      Cargo.toml
-# Purpose:   Rust shared library for HyperI projects
+# Purpose:   Self-regulating runtime for data-plane services
 # Language:  TOML
 #
 # License:   Apache-2.0
@@ -86,7 +86,8 @@ otel = ["dep:opentelemetry", "opentelemetry_sdk", "opentelemetry-otlp", "tracing
 otel-metrics = ["otel", "metrics", "metrics-util", "metrics-exporter-opentelemetry"]
 otel-tracing = ["otel", "opentelemetry_sdk/rt-tokio", "tokio", "tracing-subscriber"]
 
-# DFE-specific metric groups (opt-in, DFE pipeline apps only)
+# Standard pipeline metric groups (opt-in). Feature name retained for
+# back-compat; the dfe_* metric prefix de-brand is tracked separately.
 metrics-dfe = ["metrics"]
 
 # Directory config store (YAML directory-backed)
@@ -129,7 +130,7 @@ worker-msgpack = ["worker", "rmpv"]
 # - cli: bare clap types — CommonArgs, StandardCommand, VersionInfo, CliError,
 #   output helpers. Useful for tooling-style CLIs that don't need a metrics
 #   server, worker pool, or memory guard.
-# - cli-service: + ServiceApp trait, run_app, ServiceRuntime (full DFE app
+# - cli-service: + ServiceApp trait, run_app, ServiceRuntime (full service app
 #   scaffolding — pulls in metrics + memory + scaling + worker-pool).
 cli = ["clap", "tracing"]
 cli-service = ["cli", "metrics", "memory", "scaling", "worker-pool", "shutdown", "governor"]
@@ -148,7 +149,7 @@ dlq-redis = ["dlq", "transport-redis"]
 # File output sink (local NDJSON file output)
 output-file = ["io", "serde_json", "tracing"]
 
-# CEL expression evaluation (DFE expression profile)
+# CEL expression evaluation
 expression = ["dep:cel", "serde_json"]
 
 # Deployment contract validation (Helm chart + Dockerfile sync)
@@ -158,11 +159,11 @@ deployment = ["serde_yaml_ng", "serde_json"]
 deployment-smoke = ["deployment"]
 
 # Public reusable test helpers (probes, skip emitter, kind cluster guard) used
-# by scalo's own e2e tests AND by downstream DFE consumers writing their own
+# by scalo's own e2e tests AND by downstream consumers writing their own
 # contract-artefact e2e tests. See src/deployment/test_support.rs.
 deployment-test-support = ["deployment"]
 
-# Startup version check (calls HyperI version API)
+# Startup version check (calls a configured version API)
 version-check = ["reqwest", "tokio", "serde_json", "tracing", "chrono", "dirs"]
 
 # Config hot-reload (SharedConfig<T> + ConfigReloader<T>)
@@ -263,7 +264,7 @@ tokio-util = { version = ">=0.7.14, <0.8", optional = true }
 # opentelemetry-otlp 0.32 and vaultrs 0.8 both moved to reqwest 0.13, so the
 # coordinated migration is now possible.
 # `default-features = false` drops the `default-tls` feature (which pulls
-# native-tls + openssl). HyperI standard is rustls everywhere — `rustls-tls`
+# native-tls + openssl). The standard here is rustls everywhere — `rustls-tls`
 # is enabled explicitly so the resulting client still talks HTTPS.
 reqwest = { version = ">=0.13.3, <0.14", default-features = false, features = ["json", "rustls"], optional = true }
 reqwest-middleware = { version = ">=0.5.1, <0.6", optional = true }

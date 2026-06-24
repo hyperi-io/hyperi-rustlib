@@ -14,8 +14,11 @@
 //!
 //! Opinionated, drop-in, working out of the box. The patterns from blog posts, watercooler chats and beers with your Google mates as actual library -- not a framework you assemble from twenty crates and 8 weeks of munging.
 //!
-//! Built as the foundation for HyperI's PB/hr data services. Generic enough
-//! that you don't need to be at HyperI to use it.
+//! scalo is the embedded, self-regulating runtime for data-plane services:
+//! opinionated about correctness (backpressure, memory safety and the probe
+//! trinity on by default), unopinionated about your domain -- no web framework,
+//! no ORM, no enforced transport. Built as the foundation for PB/hr data
+//! services.
 //!
 //! Full reference docs live under [`docs/`](https://github.com/hyperi-io/scalo-rs/tree/main/docs).
 //! Start at [`docs/README.md`](https://github.com/hyperi-io/scalo-rs/blob/main/docs/README.md)
