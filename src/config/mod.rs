@@ -115,8 +115,8 @@ pub struct ConfigOptions {
     /// Application name for user-scoped config discovery.
     ///
     /// When set, enables searching `~/.config/{app_name}/` for config files.
-    /// Falls back to `APP_NAME`, then `SCALO_APP_NAME`, then the deprecated
-    /// `HYPERI_LIB_APP_NAME` environment variable if not explicitly provided.
+    /// Falls back to the bare `APP_NAME` environment variable if not
+    /// explicitly provided.
     ///
     /// Default: None (user config directory not searched)
     pub app_name: Option<String>,
@@ -164,17 +164,12 @@ pub struct Config {
 impl Config {
     /// Resolve the effective app name from explicit value or environment.
     ///
-    /// Order: explicit -> `APP_NAME` -> `SCALO_APP_NAME` -> deprecated
-    /// `HYPERI_LIB_APP_NAME` (logs a one-shot deprecation warning).
+    /// Order: explicit -> bare `APP_NAME`. No brand prefix is imposed and no
+    /// legacy fallback -- a consumer needing an old name maps it in its config.
     fn resolve_app_name(explicit: Option<&str>) -> Option<String> {
         explicit
             .map(String::from)
             .or_else(|| std::env::var("APP_NAME").ok())
-            .or_else(|| {
-                env_compat::EnvVar::new("SCALO_APP_NAME")
-                    .with_legacy("HYPERI_LIB_APP_NAME")
-                    .get()
-            })
     }
 
     /// Create a new configuration with the given options.

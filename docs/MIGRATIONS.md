@@ -429,12 +429,12 @@ that set `max_connections: 1` to "disable" filtering will now hit
 a hard cap; raise to a realistic number or document the throttling
 intent.
 
-### Telemetry / `version-check`
+### Version check
 
+`version-check` is now opt-in: set `version_check.enabled: true` and a
+`version_check.api_url` via config. There is no default endpoint, and the
+old opt-out env var is removed (gate via `version_check.enabled`).
 `CheckPayload` no longer includes `instance_id` or `deployment`.
-`SCALO_TELEMETRY=off` opt-out env var (deprecated `HYPERI_TELEMETRY`).
-No consumer code change required; the field rename only affects log
-lines from scalo itself.
 
 ### Wave 1 — Tier-3 single-knob
 

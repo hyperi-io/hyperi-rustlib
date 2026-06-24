@@ -29,9 +29,8 @@ Each YAML layer is searched in this order, first match wins:
 ~/.config/<app_name>/<name>.yaml      ~/.config/<app_name>/<name>.yml
 ```
 
-`<app_name>` resolves from `ConfigOptions::app_name`, then `APP_NAME`, then
-`SCALO_APP_NAME` (deprecated `HYPERI_LIB_APP_NAME`). No name -> the home-config
-path is skipped.
+`<app_name>` resolves from `ConfigOptions::app_name`, then `APP_NAME`, then the
+deprecated `HYPERI_LIB_APP_NAME`. No name -> the home-config path is skipped.
 
 ---
 

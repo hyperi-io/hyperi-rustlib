@@ -18,7 +18,7 @@
 //! * **Skip emission** -- [`skip`] writes the canonical
 //!   `HYPERCI-SKIP[contract-e2e][<tier>]: <test>: <reason>` line to stderr
 //!   AND a side-channel log the CI runner greps + counts for a summary.
-//! * **Tier-B gate** -- [`tier_b_enabled`] (true iff `SCALO_E2E_CLUSTER=1`).
+//! * **Tier-B gate** -- [`tier_b_enabled`] (true iff `E2E_CLUSTER=1`).
 //! * **Kind cluster lifecycle** -- [`KindClusterGuard`] +
 //!   [`ensure_kind_cluster`]: per-test uniquely-named cluster, torn down on
 //!   Drop so parallel runs never collide on cluster name.
@@ -123,18 +123,14 @@ pub fn kubectl_available() -> bool {
     })
 }
 
-/// Returns true iff `SCALO_E2E_CLUSTER` (or the deprecated `HYPERI_E2E_CLUSTER`)
-/// env var is set to `1` or `true`.
+/// Returns true iff the `E2E_CLUSTER` env var is set to `1` or `true`.
 ///
 /// Cluster-based (Tier B) tests must check this before bringing up kind
 /// because cluster spin-up is slow (60-120 s typical) and the harness
 /// shouldn't run by default in `cargo test`.
 #[must_use]
 pub fn tier_b_enabled() -> bool {
-    let value = std::env::var("SCALO_E2E_CLUSTER")
-        .ok()
-        .or_else(|| std::env::var("HYPERI_E2E_CLUSTER").ok());
-    value.is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+    std::env::var("E2E_CLUSTER").is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
 }
 
 // ============================================================================

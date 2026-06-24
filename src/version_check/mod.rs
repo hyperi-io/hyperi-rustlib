@@ -235,44 +235,16 @@ pub struct VersionCheckResponse {
 // Internal helpers
 // ============================================================================
 
-/// Environment-variable opt-out check. Returns true if the user has disabled
-/// telemetry via `SCALO_TELEMETRY=off|0|false|no` (or the deprecated
-/// `HYPERI_TELEMETRY`).
-fn telemetry_opted_out() -> bool {
-    let value = std::env::var("SCALO_TELEMETRY").ok().or_else(|| {
-        std::env::var("HYPERI_TELEMETRY")
-            .ok()
-            .inspect(|_| warn_legacy_telemetry_env())
-    });
-    value.is_some_and(|v| {
-        let l = v.to_ascii_lowercase();
-        matches!(l.as_str(), "off" | "0" | "false" | "no" | "disabled")
-    })
-}
-
-/// One-shot deprecation warning for the legacy `HYPERI_TELEMETRY` env var.
-fn warn_legacy_telemetry_env() {
-    static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        tracing::warn!(
-            legacy = "HYPERI_TELEMETRY",
-            preferred = "SCALO_TELEMETRY",
-            "deprecated env var; migrate to SCALO_TELEMETRY"
-        );
-    }
-}
-
-/// Once-per-process announcement of the telemetry call. The first
-/// time we make a version check, log loudly what gets sent and how
-/// to opt out. Subsequent calls stay quiet (this is `info!`, not
-/// `warn!`, so log level filtering still applies).
+/// Once-per-process announcement of the version check. The first time a
+/// check runs, log what gets sent. Subsequent calls stay quiet (`info!`,
+/// so log-level filtering still applies).
 fn announce_once(config: &VersionCheckConfig) {
     static ANNOUNCED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     ANNOUNCED.get_or_init(|| {
         tracing::info!(
             endpoint = %config.api_url,
-            "version check telemetry: sending anonymous {{product, current_version, os, arch}} to endpoint; \
-             set SCALO_TELEMETRY=off to disable"
+            "version check: sending anonymous {{product, current_version, os, arch}} \
+             to endpoint (opt-in via version_check.enabled)"
         );
     });
 }
@@ -281,12 +253,6 @@ fn announce_once(config: &VersionCheckConfig) {
 async fn do_version_check(
     config: &VersionCheckConfig,
 ) -> Result<VersionCheckResponse, VersionCheckError> {
-    if telemetry_opted_out() {
-        return Err(VersionCheckError::Http(
-            "telemetry opted out via SCALO_TELEMETRY env var".into(),
-        ));
-    }
-
     announce_once(config);
 
     let payload = CheckPayload {
@@ -433,44 +399,6 @@ mod tests {
         assert_eq!(config.timeout, Duration::from_secs(5));
         assert!(!config.enabled);
         assert!(config.product.is_empty());
-    }
-
-    #[test]
-    fn telemetry_opt_out_recognises_common_values() {
-        // `temp_env::with_var` scopes env mutation to the closure and
-        // restores the previous value on drop -- required because the
-        // crate has `#![deny(unsafe_code)]` and edition 2024 forbids
-        // direct `std::env::set_var` without `unsafe { }`.
-        for v in ["off", "Off", "OFF", "0", "false", "False", "no", "disabled"] {
-            temp_env::with_var("SCALO_TELEMETRY", Some(v), || {
-                assert!(telemetry_opted_out(), "value `{v}` should opt out");
-            });
-        }
-        for v in ["on", "1", "true", ""] {
-            temp_env::with_var("SCALO_TELEMETRY", Some(v), || {
-                assert!(!telemetry_opted_out(), "value `{v}` should NOT opt out");
-            });
-        }
-        temp_env::with_var_unset("SCALO_TELEMETRY", || {
-            assert!(!telemetry_opted_out(), "absent var should NOT opt out");
-        });
-    }
-
-    #[test]
-    fn telemetry_opt_out_honours_deprecated_hyperi_var() {
-        // The deprecated HYPERI_TELEMETRY name still opts out (with a warning).
-        temp_env::with_vars(
-            [
-                ("SCALO_TELEMETRY", None::<&str>),
-                ("HYPERI_TELEMETRY", Some("off")),
-            ],
-            || {
-                assert!(
-                    telemetry_opted_out(),
-                    "deprecated HYPERI_TELEMETRY should still opt out"
-                );
-            },
-        );
     }
 
     #[test]
