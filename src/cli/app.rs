@@ -1,6 +1,6 @@
 // Project:   scalo
 // File:      src/cli/app.rs
-// Purpose:   DfeApp trait and standard lifecycle runner
+// Purpose:   ServiceApp trait and standard lifecycle runner
 // Language:  Rust
 //
 // License:   BUSL-1.1
@@ -13,11 +13,11 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use scalo::cli::{CommonArgs, DfeApp, CliError, VersionInfo, run_app};
+//! use scalo::cli::{CommonArgs, ServiceApp, CliError, VersionInfo, run_app};
 //!
 //! struct MyApp { common: CommonArgs }
 //!
-//! impl DfeApp for MyApp {
+//! impl ServiceApp for MyApp {
 //!     type Config = MyConfig;
 //!
 //!     fn name(&self) -> &str { "my-service" }
@@ -44,7 +44,7 @@ use super::{CommonArgs, StandardCommand, output};
 /// Implement this trait to get the standard CLI lifecycle for free.
 /// The 80% common behaviour (logging, config, metrics, version) is handled
 /// by `run_app()`. Your app provides the 20% (config type, service logic).
-pub trait DfeApp: Sized {
+pub trait ServiceApp: Sized {
     /// Application-specific configuration type.
     type Config: DeserializeOwned + Debug + Send + Sync;
 
@@ -104,7 +104,7 @@ pub trait DfeApp: Sized {
     /// Called by `metrics-manifest` and `generate-artefacts` subcommands to
     /// capture the full metric catalogue without starting the service.
     /// The default implementation is a no-op. Override to register
-    /// `DfeMetrics`, metric groups, and app-specific metrics.
+    /// `ServiceMetrics`, metric groups, and app-specific metrics.
     #[cfg(any(feature = "metrics", feature = "otel-metrics"))]
     fn register_metrics(&self, _manager: &crate::metrics::MetricsManager) {}
 
@@ -129,7 +129,7 @@ pub trait DfeApp: Sized {
 /// # Errors
 ///
 /// Returns `CliError` if any lifecycle step fails.
-pub async fn run_app<A: DfeApp>(app: A) -> Result<(), CliError> {
+pub async fn run_app<A: ServiceApp>(app: A) -> Result<(), CliError> {
     let command = app.command().cloned().unwrap_or(StandardCommand::Run);
     let args = app.common_args();
 
@@ -290,7 +290,7 @@ fn init_logger_for_service(
 /// Produces metrics manifest, deployment contract, and container spec
 /// in the output directory. Files are deterministic -- running twice produces
 /// identical output (no timestamps that change between runs).
-fn generate_artefacts<A: DfeApp>(
+fn generate_artefacts<A: ServiceApp>(
     app: &A,
     args: &super::commands::GenerateArtefactsArgs,
 ) -> Result<(), CliError> {
@@ -323,7 +323,7 @@ fn generate_artefacts<A: DfeApp>(
     #[cfg(feature = "deployment")]
     if deployment_contract.is_none() {
         output::print_warn(&format!(
-            "DfeApp::deployment_contract() returned None for `{}` -- \
+            "ServiceApp::deployment_contract() returned None for `{}` -- \
              only metrics-manifest.json will be generated. \
              Implement the trait hook to emit deployment-contract.json, \
              container-manifest.json, and Dockerfile.runtime.",

@@ -199,6 +199,6 @@ Source: [../../src/transport/](../../src/transport/) — particularly
 - [FILTER-ENGINE.md](FILTER-ENGINE.md) — tiered CEL filtering
 - [ROUTING.md](ROUTING.md) — `RoutedSender` for originators
 - [../AUTO-WIRING.md](../AUTO-WIRING.md) — factory in the pillar model
-- [../INTEGRATION.md](../INTEGRATION.md) — DfeApp wiring recipe
+- [../INTEGRATION.md](../INTEGRATION.md) — ServiceApp wiring recipe
 - [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) — per-backend features
 - [../pipeline/DLQ.md](../pipeline/DLQ.md) — DLQ sinks

@@ -102,7 +102,9 @@ pub type ReadinessFn = Arc<dyn Fn() -> bool + Send + Sync>;
 use metrics_exporter_prometheus::PrometheusHandle;
 
 pub use container::ContainerMetrics;
+#[allow(deprecated)]
 pub use dfe::DfeMetrics;
+pub use dfe::ServiceMetrics;
 #[cfg(feature = "metrics-dfe")]
 pub mod dfe_groups;
 pub use manifest::{ManifestResponse, MetricDescriptor, MetricRegistry, MetricType};

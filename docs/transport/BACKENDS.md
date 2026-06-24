@@ -258,5 +258,5 @@ and zero when absent.
 - [FILTER-ENGINE.md](FILTER-ENGINE.md) — embedded filtering
 - [ROUTING.md](ROUTING.md) — per-key dispatch over multiple backends
 - [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) — feature-to-dep table
-- [../INTEGRATION.md](../INTEGRATION.md) — DfeApp recipe
+- [../INTEGRATION.md](../INTEGRATION.md) — ServiceApp recipe
 - [../pipeline/DLQ.md](../pipeline/DLQ.md) — DLQ sink backends

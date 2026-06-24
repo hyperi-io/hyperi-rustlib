@@ -150,7 +150,7 @@ gate when both fire:
 
 Outside the gates, components are weighted (sum to 1.0) and each
 saturates at its configured ceiling. The app surfaces the score as a
-Prometheus gauge (the `DfeMetrics` helper exposes it as
+Prometheus gauge (the `ServiceMetrics` helper exposes it as
 `dfe_scaling_pressure`) for KEDA's Prometheus trigger to consume.
 
 ---

@@ -5,7 +5,7 @@ DFE service receives from `run_app` before its `run_service` method
 is called. It collapses the identical startup boilerplate every
 service would otherwise hand-write into a single typed struct.
 
-A service author writes `DfeApp::run_service(config, runtime)` and
+A service author writes `ServiceApp::run_service(config, runtime)` and
 uses the runtime's fields directly -- metrics manager, memory guard,
 shutdown token, worker pool, batch engine, scaling pressure,
 self-regulation governor, K8s context. Nothing to plumb, nothing to
@@ -18,7 +18,7 @@ remember to register.
 | Field | Type | Feature gate | Always present? |
 |-------|------|--------------|-----------------|
 | `metrics` | `MetricsManager` | always (with `metrics`) | yes |
-| `dfe` | `Arc<DfeMetrics>` | always (with `metrics`) | yes |
+| `dfe` | `Arc<ServiceMetrics>` | always (with `metrics`) | yes |
 | `memory_guard` | `Arc<MemoryGuard>` | `memory` | yes |
 | `shutdown` | `CancellationToken` | always | yes |
 | `context` | `&'static RuntimeContext` | always | yes |
@@ -48,7 +48,7 @@ full service-runtime profile.
 
 ```mermaid
 flowchart LR
-    A[main] --> B["run_app::&lt;A: DfeApp&gt;"]
+    A[main] --> B["run_app::&lt;A: ServiceApp&gt;"]
     B --> C[parse CommonArgs]
     C --> D[init logger]
     D --> E[app.load_config]
@@ -65,7 +65,7 @@ Step by step inside `run_app` for the default `run` subcommand:
 3. Call `app.load_config(args.config.as_deref())` -- apps own this
    step so they can deserialise into their own typed config.
 4. Build `ServiceRuntime`:
-   - Construct `MetricsManager`, register `DfeMetrics`.
+   - Construct `MetricsManager`, register `ServiceMetrics`.
    - Construct `MemoryGuard` from env prefix (cgroup auto-detect).
    - Construct the self-regulation governor from the same guard if
      `governor` is on and not opted out. Built before the worker pool,
@@ -90,10 +90,10 @@ is the framework.
 
 ---
 
-## DfeApp trait
+## ServiceApp trait
 
 ```rust
-pub trait DfeApp: Sized {
+pub trait ServiceApp: Sized {
     type Config: DeserializeOwned + Debug + Send + Sync;
 
     fn name(&self) -> &str;
@@ -195,7 +195,7 @@ remain in app code because they're genuinely domain-specific:
 
 | Item | Purpose |
 |------|---------|
-| `DfeApp` trait | Service contract -- implement to get the standard lifecycle |
+| `ServiceApp` trait | Service contract -- implement to get the standard lifecycle |
 | `run_app::<A>(app)` | Drives the lifecycle; matches subcommand, builds runtime, calls `run_service` |
 | `ServiceRuntime` | Pre-wired infrastructure bundle -- built by `run_app`, passed to `run_service` |
 | `ServiceRuntime::set_readiness_check(fn)` | Install the app's readiness criterion |

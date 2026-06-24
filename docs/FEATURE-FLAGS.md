@@ -81,7 +81,7 @@ flowchart LR
 | Feature | Adds |
 |---------|------|
 | `cli` | `clap`-based `CommonArgs`, `StandardCommand`, `VersionInfo`, output helpers |
-| `cli-service` | Above + `DfeApp` trait, `run_app`, `ServiceRuntime` (pulls `metrics + memory + scaling + worker-pool + shutdown`) |
+| `cli-service` | Above + `ServiceApp` trait, `run_app`, `ServiceRuntime` (pulls `metrics + memory + scaling + worker-pool + shutdown`) |
 | `top` | Above + `ratatui` TUI metrics dashboard |
 
 ### Transport

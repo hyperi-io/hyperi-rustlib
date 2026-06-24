@@ -10,13 +10,13 @@
 //!
 //! Provides the 80% of CLI boilerplate that every DFE service needs:
 //! config path, log level/format, metrics address, version, config-check.
-//! Apps provide the 20% (config type, service logic) via the [`DfeApp`] trait.
+//! Apps provide the 20% (config type, service logic) via the [`ServiceApp`] trait.
 //!
 //! ## Quick Start
 //!
 //! ```rust,ignore
 //! use clap::Parser;
-//! use scalo::cli::{CommonArgs, DfeApp, CliError, StandardCommand, VersionInfo, run_app};
+//! use scalo::cli::{CommonArgs, ServiceApp, CliError, StandardCommand, VersionInfo, run_app};
 //!
 //! #[derive(Parser)]
 //! #[command(name = "dfe-loader", version)]
@@ -28,7 +28,7 @@
 //!     command: Option<StandardCommand>,
 //! }
 //!
-//! impl DfeApp for App {
+//! impl ServiceApp for App {
 //!     type Config = MyConfig;
 //!
 //!     fn name(&self) -> &str { "dfe-loader" }
@@ -58,7 +58,7 @@ mod error;
 pub mod output;
 mod version;
 
-// DfeApp + ServiceRuntime require the full service infrastructure stack
+// ServiceApp + ServiceRuntime require the full service infrastructure stack
 // (MetricsManager, MemoryGuard, ScalingPressure, AdaptiveWorkerPool).
 // Gated behind `cli-service`. Bare `cli` exposes only the clap types.
 #[cfg(feature = "cli-service")]
@@ -72,7 +72,10 @@ pub use error::CliError;
 pub use version::VersionInfo;
 
 #[cfg(feature = "cli-service")]
-pub use app::{DfeApp, run_app};
+pub use app::{ServiceApp, run_app};
+// Deprecated brand alias for the app trait -- removed before GA.
+#[cfg(feature = "cli-service")]
+pub use app::ServiceApp as DfeApp;
 #[cfg(feature = "cli-service")]
 pub use runtime::ServiceRuntime;
 

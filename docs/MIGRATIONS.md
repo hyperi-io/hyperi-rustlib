@@ -489,7 +489,7 @@ dotted path (`has(some.path.field)`) or to a Tier-2 CEL filter.
 
 ### Wave 5 — bounded metric labels (F7)
 
-`DfeMetrics` methods that took free-form `&str` for metric labels
+`ServiceMetrics` methods that took free-form `&str` for metric labels
 now take typed enums. The labels are bounded; cardinality is
 fixed at the enum variant count.
 

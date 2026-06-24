@@ -15,7 +15,7 @@ Subcommand: the `cli` feature's `StandardCommand::GenerateArtefacts`
 ```text
 ci/
 |-- metrics-manifest.json        # when `metrics` feature on
-|-- deployment-contract.json     # when DfeApp::deployment_contract() is Some
+|-- deployment-contract.json     # when ServiceApp::deployment_contract() is Some
 |-- container-manifest.json      # minimal CI-consumable subset
 |-- Dockerfile.runtime           # runtime-stage fragment for CI composition
 `-- argocd-application.yaml      # ArgoCD Application CR
@@ -216,7 +216,7 @@ CI diff check reliable.
 - [CONTRACT.md](CONTRACT.md) -- the input
 - [NATIVE-DEPS.md](NATIVE-DEPS.md) -- what populates the APT block
 - [KEDA.md](KEDA.md) -- when the KEDA templates fire
-- [../INTEGRATION.md](../INTEGRATION.md) -- `DfeApp::deployment_contract`
+- [../INTEGRATION.md](../INTEGRATION.md) -- `ServiceApp::deployment_contract`
 - [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) -- `deployment`, `cli`
 - Source: [../../src/deployment/generate/mod.rs](../../src/deployment/generate/mod.rs),
   [../../src/cli/app.rs](../../src/cli/app.rs)

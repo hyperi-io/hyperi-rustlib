@@ -172,10 +172,10 @@ pub struct LoggerOptions {
     /// Log throttle configuration (deduplicate identical events).
     pub throttle: ThrottleConfig,
     /// Service name injected into JSON log output.
-    /// Auto-populated by DfeApp. Falls back to SERVICE_NAME env var.
+    /// Auto-populated by ServiceApp. Falls back to SERVICE_NAME env var.
     pub service_name: Option<String>,
     /// Service version injected into JSON log output.
-    /// Auto-populated by DfeApp. Falls back to SERVICE_VERSION env var.
+    /// Auto-populated by ServiceApp. Falls back to SERVICE_VERSION env var.
     pub service_version: Option<String>,
 }
 

@@ -114,7 +114,7 @@ sub-components (filter engine lives inside every transport).
 
 ### Runtime
 
-- [runtime/SERVICE-RUNTIME.md](runtime/SERVICE-RUNTIME.md) — `ServiceRuntime`, `DfeApp` trait, `run_app`
+- [runtime/SERVICE-RUNTIME.md](runtime/SERVICE-RUNTIME.md) — `ServiceRuntime`, `ServiceApp` trait, `run_app`
 - [runtime/RUNTIME-CONTEXT.md](runtime/RUNTIME-CONTEXT.md) — K8s/Docker/BareMetal detection, pod metadata
 - [runtime/MEMORY.md](runtime/MEMORY.md) — `MemoryGuard`, cgroup-aware backpressure
 

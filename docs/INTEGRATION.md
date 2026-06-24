@@ -4,7 +4,7 @@ This walks through wiring `scalo` into a new DFE service from
 empty `Cargo.toml` to running binary. The goal is a self-contained recipe;
 the deep-dive details for each line live in the subsystem docs.
 
-If you already know what a `DfeApp` is and just want the trait signature,
+If you already know what a `ServiceApp` is and just want the trait signature,
 jump to [cli/app.rs](../src/cli/app.rs).
 
 ---
@@ -24,7 +24,7 @@ KEDA, and ships container artefacts, the `Cargo.toml` reads:
 [dependencies.scalo]
 version = "2"
 features = [
-    "cli-service",          # DfeApp trait, run_app, ServiceRuntime
+    "cli-service",          # ServiceApp trait, run_app, ServiceRuntime
     "config-reload",        # Hot-reload of the config cascade
     "logger",               # Always
     "metrics-dfe",          # DFE-specific metric groups
@@ -95,11 +95,11 @@ nesting).
 
 ---
 
-## 3. Implement `DfeApp`
+## 3. Implement `ServiceApp`
 
 ```rust
 use scalo::cli::{
-    CliError, CommonArgs, DfeApp, ScalingComponent, ServiceRuntime,
+    CliError, CommonArgs, ServiceApp, ScalingComponent, ServiceRuntime,
     StandardCommand, VersionInfo, run_app,
 };
 use scalo::metrics::MetricsManager;
@@ -113,7 +113,7 @@ pub struct LoaderCli {
     command: Option<StandardCommand>,
 }
 
-impl DfeApp for LoaderCli {
+impl ServiceApp for LoaderCli {
     type Config = LoaderConfig;
 
     fn name(&self) -> &str { "dfe-loader" }
@@ -155,7 +155,7 @@ impl DfeApp for LoaderCli {
     }
 
     fn register_metrics(&self, mgr: &MetricsManager) {
-        DfeMetrics::register(mgr);
+        ServiceMetrics::register(mgr);
         // ... app-specific metric registrations
     }
 
@@ -249,7 +249,7 @@ For the dfe-loader-shaped app above, the code you actually write is:
 
 - a `Cargo.toml` dependency block
 - your config struct definitions
-- the `DfeApp` impl
+- the `ServiceApp` impl
 - a near-trivial `main.rs`
 - the `deployment_contract()` builder
 - your actual pipeline business logic in `run_service` — the bulk of it

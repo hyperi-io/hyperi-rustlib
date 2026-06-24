@@ -140,7 +140,7 @@ worker-msgpack = ["worker", "rmpv"]
 # - cli: bare clap types — CommonArgs, StandardCommand, VersionInfo, CliError,
 #   output helpers. Useful for tooling-style CLIs that don't need a metrics
 #   server, worker pool, or memory guard.
-# - cli-service: + DfeApp trait, run_app, ServiceRuntime (full DFE app
+# - cli-service: + ServiceApp trait, run_app, ServiceRuntime (full DFE app
 #   scaffolding — pulls in metrics + memory + scaling + worker-pool).
 cli = ["clap", "tracing"]
 cli-service = ["cli", "metrics", "memory", "scaling", "worker-pool", "shutdown", "governor"]

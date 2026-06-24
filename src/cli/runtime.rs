@@ -9,13 +9,13 @@
 //! Pre-built service infrastructure for DFE pipeline applications.
 //!
 //! [`ServiceRuntime`] is created by [`super::run_app`] before calling
-//! [`DfeApp::run_service`]. Apps receive it fully wired -- eliminates
+//! [`ServiceApp::run_service`]. Apps receive it fully wired -- eliminates
 //! ~50 lines of identical boilerplate per DFE app.
 //!
 //! ## What's included (always)
 //!
 //! - [`MetricsManager`] -- started, serving `/metrics`, `/healthz`, `/readyz`
-//! - [`DfeMetrics`] -- platform `dfe_*` metrics registered
+//! - [`ServiceMetrics`] -- platform `dfe_*` metrics registered
 //! - [`MemoryGuard`] -- cgroup-aware, auto-detected from env prefix
 //! - [`CancellationToken`] -- signal handler installed with K8s pre-stop delay
 //! - [`RuntimeContext`] -- K8s/Docker/BareMetal metadata
@@ -56,7 +56,7 @@ pub struct ServiceRuntime {
     pub metrics: MetricsManager,
 
     /// Platform DFE metrics (`dfe_*` counters/gauges). Already registered.
-    pub dfe: Arc<crate::metrics::DfeMetrics>,
+    pub dfe: Arc<crate::metrics::ServiceMetrics>,
 
     /// Cgroup-aware memory guard. Tracks memory usage for backpressure.
     /// Auto-detected from env prefix + cgroup limits.
@@ -118,7 +118,7 @@ impl ServiceRuntime {
 
         // --- Metrics ---
         let mut metrics = MetricsManager::new(app_name);
-        let dfe = Arc::new(crate::metrics::DfeMetrics::register(&metrics));
+        let dfe = Arc::new(crate::metrics::ServiceMetrics::register(&metrics));
 
         // App info metric (version, commit, service name)
         #[cfg(feature = "metrics-dfe")]

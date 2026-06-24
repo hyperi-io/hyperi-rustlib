@@ -10,7 +10,7 @@ The subscriber wraps stderr in a `MaskingWriter` that redacts sensitive field
 values at the write boundary -- both `password=secret123` and
 `"password":"secret123"` come out `[REDACTED]`. Masking is on by default; disable
 it explicitly if you must. JSON lines are also enriched with `service` /
-`version` (from `SERVICE_NAME` / `SERVICE_VERSION` or `DfeApp`) and K8s context
+`version` (from `SERVICE_NAME` / `SERVICE_VERSION` or `ServiceApp`) and K8s context
 (`pod_name`, `namespace`, `node_name`) from
 [`env::runtime_context`](../../src/env.rs); those K8s fields are absent on bare
 metal.
@@ -21,7 +21,7 @@ metal.
 
 ```rust
 use scalo::logger;
-logger::setup_default()?;                       // env-driven -- what DfeApp calls
+logger::setup_default()?;                       // env-driven -- what ServiceApp calls
 
 // or explicit
 use scalo::logger::{setup, LoggerOptions, LogFormat};
@@ -116,7 +116,7 @@ collapse into one.
 
 | Item | Purpose |
 |---|---|
-| `logger::setup_default()` | Env-driven install -- `DfeApp` calls this |
+| `logger::setup_default()` | Env-driven install -- `ServiceApp` calls this |
 | `logger::setup(opts)` | Explicit install |
 | `LoggerOptions` | `level`, `format`, `add_source`, `enable_masking`, `sensitive_fields`, `span_events`, `throttle`, `service_name`, `service_version` |
 | `LogFormat::{Json, Text, Auto}` | Format; `Auto` resolves on `setup` |

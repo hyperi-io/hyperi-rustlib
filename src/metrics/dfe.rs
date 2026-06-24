@@ -8,17 +8,17 @@
 
 //! Standard DFE metrics for pipeline components (receiver, loader, engine).
 //!
-//! Call [`DfeMetrics::register`] **after** creating a
+//! Call [`ServiceMetrics::register`] **after** creating a
 //! [`MetricsManager`](super::MetricsManager): the manager must exist so platform
 //! metrics land in the manifest registry. Methods are `#[inline]` for hot-path use.
 //!
 //! ## Example
 //!
 //! ```rust,no_run
-//! use scalo::metrics::{MetricsManager, DfeMetrics, TransportKind};
+//! use scalo::metrics::{MetricsManager, ServiceMetrics, TransportKind};
 //!
 //! let mgr = MetricsManager::new("myapp");
-//! let dfe = DfeMetrics::register(&mgr);
+//! let dfe = ServiceMetrics::register(&mgr);
 //!
 //! dfe.transport_sent(TransportKind::Kafka, 100);
 //! dfe.records_received(500);
@@ -30,14 +30,18 @@ use super::manifest::{MetricDescriptor, MetricType};
 /// Standard DFE metric set: labelled counters, gauges, and histograms across
 /// transport, pipeline, records, scaling, spool, and security.
 ///
-/// Construct via [`DfeMetrics::register`] -- describes all metrics with the
+/// Construct via [`ServiceMetrics::register`] -- describes all metrics with the
 /// global recorder AND pushes descriptors into the manifest registry.
-pub struct DfeMetrics {
+pub struct ServiceMetrics {
     /// Prevent external construction.
     _private: (),
 }
 
-impl DfeMetrics {
+/// Deprecated brand alias for [`ServiceMetrics`]. Removed before GA.
+#[deprecated(since = "2.9.0", note = "renamed to ServiceMetrics; removed before GA")]
+pub type DfeMetrics = ServiceMetrics;
+
+impl ServiceMetrics {
     /// Register all DFE metric descriptions with the global recorder and
     /// manifest registry. Call **once** after creating a
     /// [`MetricsManager`](super::MetricsManager). Returned handle is zero-sized
@@ -507,13 +511,13 @@ mod tests {
     #[tokio::test]
     async fn test_register_does_not_panic() {
         let mgr = super::super::MetricsManager::new_for_test("test_app");
-        let _dfe = DfeMetrics::register(&mgr);
+        let _dfe = ServiceMetrics::register(&mgr);
     }
 
     #[tokio::test]
     async fn test_register_populates_registry() {
         let mgr = super::super::MetricsManager::new_for_test("test_app");
-        let _dfe = DfeMetrics::register(&mgr);
+        let _dfe = ServiceMetrics::register(&mgr);
         let manifest = mgr.registry().manifest();
         let names: Vec<&str> = manifest.metrics.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"dfe_transport_sent_total"));
@@ -545,7 +549,7 @@ mod tests {
     #[tokio::test]
     async fn test_methods_callable_without_recorder() {
         let mgr = super::super::MetricsManager::new("test_app");
-        let dfe = DfeMetrics::register(&mgr);
+        let dfe = ServiceMetrics::register(&mgr);
 
         dfe.transport_sent(super::super::TransportKind::Kafka, 1);
         dfe.transport_send_errors(super::super::TransportKind::Kafka, 1);

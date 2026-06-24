@@ -121,7 +121,7 @@ let cfg = Figment::new()
 
 `apply_flat_env` reads `DFE_LOADER_KAFKA_BROKERS` and merges it as `kafka.brokers`,
 so apps accept both flat (K8s) and nested (double-underscore) forms.
-`flat_env::load_config(path, prefix)` and the `DfeApp::load_config` recipe wire
+`flat_env::load_config(path, prefix)` and the `ServiceApp::load_config` recipe wire
 this in. See [flat_env.rs](../../src/config/flat_env.rs).
 
 ---
@@ -211,7 +211,7 @@ helper is in [tests/common](../../tests/common/).
 ## Related
 
 - [AUTO-WIRING.md](../AUTO-WIRING.md) -- config in the singleton model
-- [INTEGRATION.md](../INTEGRATION.md) -- `DfeApp::load_config` recipe
+- [INTEGRATION.md](../INTEGRATION.md) -- `ServiceApp::load_config` recipe
 - [core-pillars/LOGGING.md](LOGGING.md) -- sensitive-field masking in logs
 - [FEATURE-FLAGS.md](../FEATURE-FLAGS.md) -- `config`, `config-reload`, `config-postgres`
 - Source: [`src/config/mod.rs`](../../src/config/mod.rs), [`src/config/registry.rs`](../../src/config/registry.rs), [`src/config/reloader.rs`](../../src/config/reloader.rs)

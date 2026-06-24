@@ -7,7 +7,7 @@ so consumers only pay for what they wire in.
 ```mermaid
 flowchart TB
     subgraph L5["L5 — App scaffolding"]
-        CLI["cli / cli-service<br/>DfeApp · ServiceRuntime · run_app"]
+        CLI["cli / cli-service<br/>ServiceApp · ServiceRuntime · run_app"]
         DEP["deployment<br/>DeploymentContract · generators"]
     end
 
@@ -123,7 +123,7 @@ Pillars are singletons. Modules in higher layers call into them via macros
 | Module | Feature | Purpose |
 |--------|---------|---------|
 | `cli` | `cli` | `clap` types: `CommonArgs`, `StandardCommand`, `VersionInfo`, output helpers |
-| `cli::service` | `cli-service` | `DfeApp` trait, `run_app`, `ServiceRuntime` — full DFE app scaffolding |
+| `cli::service` | `cli-service` | `ServiceApp` trait, `run_app`, `ServiceRuntime` — full DFE app scaffolding |
 | `top` | `top` | TUI metrics dashboard (`ratatui`) |
 | `deployment` | `deployment`, `deployment-smoke` | `DeploymentContract`, generators for Dockerfile / Helm chart / ArgoCD Application / container manifest |
 | `version_check` | `version-check` | Startup HTTP probe to the HyperI version API |

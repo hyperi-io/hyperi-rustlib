@@ -114,10 +114,10 @@ endpoint mount.
 ## App-side wiring
 
 Apps register their components by overriding
-`DfeApp::scaling_components`:
+`ServiceApp::scaling_components`:
 
 ```rust
-impl DfeApp for LoaderApp {
+impl ServiceApp for LoaderApp {
     fn scaling_components(&self, _cfg: &Self::Config) -> Vec<ScalingComponent> {
         vec![
             ScalingComponent::new("kafka_lag",      0.35, 100_000.0),
@@ -141,7 +141,7 @@ runtime.scaling.as_ref().unwrap().set_memory(used, limit);
 ```
 
 The `dfe.scaling_pressure(value)` / `dfe.scaling_circuit_open(...)` /
-`dfe.scaling_memory_pressure(...)` helpers on `DfeMetrics` write the
+`dfe.scaling_memory_pressure(...)` helpers on `ServiceMetrics` write the
 companion gauges (`dfe_scaling_pressure`,
 `dfe_scaling_circuit_open`, `dfe_scaling_memory_pressure`) for
 dashboard overlay.
@@ -180,7 +180,7 @@ falls back to defaults if absent.
 | `ScalingPressureConfig::from_cascade()` | Load base config from `scaling` cascade key |
 | `GateType::CircuitBreaker / MemoryPressure` | Diagnostic — which gate (if any) is currently active |
 | `RateWindow` | Helper for converting per-event rates into windowed pressure inputs |
-| `DfeApp::scaling_components(&self, &config) -> Vec<ScalingComponent>` | App registration hook (default empty) |
+| `ServiceApp::scaling_components(&self, &config) -> Vec<ScalingComponent>` | App registration hook (default empty) |
 
 ---
 

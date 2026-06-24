@@ -362,20 +362,20 @@ pub enum ServiceRole {
 /// receiver -> {source}_land -> transform -> {source}_load -> loader -> ClickHouse
 /// ```
 ///
-/// `DfeSource` is for **transform services** (middleware) that sit between
+/// `KafkaSource` is for **transform services** (middleware) that sit between
 /// `_land` and `_load`. It derives input/output topic names and source-scoped
 /// consumer group IDs from a source name.
 ///
-/// Terminal consumers (loader, archiver) do not use `DfeSource` -- they
+/// Terminal consumers (loader, archiver) do not use `KafkaSource` -- they
 /// consume from whatever topics are configured or auto-discovered, and their
 /// consumer group is simply `dfe-{service}` without a source component.
 ///
 /// # Examples
 ///
 /// ```
-/// use scalo::kafka_config::{DfeSource, ServiceRole};
+/// use scalo::kafka_config::{KafkaSource, ServiceRole};
 ///
-/// let source = DfeSource::new("syslog");
+/// let source = KafkaSource::new("syslog");
 /// assert_eq!(source.input_topic(), "syslog_land");
 /// assert_eq!(source.output_topic(), "syslog_load");
 ///
@@ -398,17 +398,21 @@ pub enum ServiceRole {
 /// );
 ///
 /// // Transform without source is an error
-/// let empty = DfeSource::new("");
+/// let empty = KafkaSource::new("");
 /// assert!(empty.consumer_group("transform-vector", ServiceRole::Transform, None, None).is_err());
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DfeSource {
+pub struct KafkaSource {
     name: String,
     land_suffix: String,
     load_suffix: String,
 }
 
-impl DfeSource {
+/// Deprecated brand alias for [`KafkaSource`]. Removed before GA.
+#[deprecated(since = "2.9.0", note = "renamed to KafkaSource; removed before GA")]
+pub type DfeSource = KafkaSource;
+
+impl KafkaSource {
     /// Create a new source with default suffixes (`_land`, `_load`).
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
@@ -465,7 +469,7 @@ impl DfeSource {
     /// | Universal (loader, archiver) | `dfe-{service}` | `dfe-loader` |
     ///
     /// For transforms, `pipeline` overrides the source component in the CG
-    /// (e.g. `syslog-enriched` instead of `syslog`). Either the `DfeSource`
+    /// (e.g. `syslog-enriched` instead of `syslog`). Either the `KafkaSource`
     /// name or `pipeline` must be non-empty -- a bare service name is never
     /// valid for transforms because multiple pipelines would compete.
     ///
@@ -508,11 +512,11 @@ impl DfeSource {
     /// Returns `None` if the topic doesn't end with a known suffix.
     ///
     /// ```
-    /// use scalo::kafka_config::DfeSource;
+    /// use scalo::kafka_config::KafkaSource;
     ///
-    /// assert_eq!(DfeSource::source_from_topic("syslog_land"), Some("syslog"));
-    /// assert_eq!(DfeSource::source_from_topic("netflow_load"), Some("netflow"));
-    /// assert_eq!(DfeSource::source_from_topic("unknown"), None);
+    /// assert_eq!(KafkaSource::source_from_topic("syslog_land"), Some("syslog"));
+    /// assert_eq!(KafkaSource::source_from_topic("netflow_load"), Some("netflow"));
+    /// assert_eq!(KafkaSource::source_from_topic("unknown"), None);
     /// ```
     #[must_use]
     pub fn source_from_topic(topic: &str) -> Option<&str> {
@@ -638,12 +642,12 @@ sasl.mechanism=SCRAM-SHA-512
     }
 
     // ===================================================================
-    // DfeSource tests
+    // KafkaSource tests
     // ===================================================================
 
     #[test]
     fn dfe_source_default_topics() {
-        let source = DfeSource::new("syslog");
+        let source = KafkaSource::new("syslog");
         assert_eq!(source.name(), "syslog");
         assert_eq!(source.input_topic(), "syslog_land");
         assert_eq!(source.output_topic(), "syslog_load");
@@ -651,14 +655,14 @@ sasl.mechanism=SCRAM-SHA-512
 
     #[test]
     fn dfe_source_custom_suffixes() {
-        let source = DfeSource::with_suffixes("auth", "_raw", "_enriched");
+        let source = KafkaSource::with_suffixes("auth", "_raw", "_enriched");
         assert_eq!(source.input_topic(), "auth_raw");
         assert_eq!(source.output_topic(), "auth_enriched");
     }
 
     #[test]
     fn dfe_source_cg_transform_default() {
-        let source = DfeSource::new("syslog");
+        let source = KafkaSource::new("syslog");
         assert_eq!(
             source
                 .consumer_group("transform-vector", ServiceRole::Transform, None, None)
@@ -669,7 +673,7 @@ sasl.mechanism=SCRAM-SHA-512
 
     #[test]
     fn dfe_source_cg_transform_with_pipeline() {
-        let source = DfeSource::new("syslog");
+        let source = KafkaSource::new("syslog");
         assert_eq!(
             source
                 .consumer_group(
@@ -685,7 +689,7 @@ sasl.mechanism=SCRAM-SHA-512
 
     #[test]
     fn dfe_source_cg_transform_empty_source_errors() {
-        let source = DfeSource::new("");
+        let source = KafkaSource::new("");
         assert!(
             source
                 .consumer_group("transform-vector", ServiceRole::Transform, None, None)
@@ -695,7 +699,7 @@ sasl.mechanism=SCRAM-SHA-512
 
     #[test]
     fn dfe_source_cg_transform_empty_source_pipeline_rescues() {
-        let source = DfeSource::new("");
+        let source = KafkaSource::new("");
         assert_eq!(
             source
                 .consumer_group(
@@ -711,7 +715,7 @@ sasl.mechanism=SCRAM-SHA-512
 
     #[test]
     fn dfe_source_cg_universal() {
-        let source = DfeSource::new("netflow");
+        let source = KafkaSource::new("netflow");
         assert_eq!(
             source
                 .consumer_group("loader", ServiceRole::Universal, None, None)
@@ -722,7 +726,7 @@ sasl.mechanism=SCRAM-SHA-512
 
     #[test]
     fn dfe_source_cg_universal_ignores_pipeline() {
-        let source = DfeSource::new("syslog");
+        let source = KafkaSource::new("syslog");
         assert_eq!(
             source
                 .consumer_group("archiver", ServiceRole::Universal, Some("ignored"), None)
@@ -733,7 +737,7 @@ sasl.mechanism=SCRAM-SHA-512
 
     #[test]
     fn dfe_source_cg_override_wins() {
-        let source = DfeSource::new("syslog");
+        let source = KafkaSource::new("syslog");
         assert_eq!(
             source
                 .consumer_group(
@@ -749,7 +753,7 @@ sasl.mechanism=SCRAM-SHA-512
 
     #[test]
     fn dfe_source_cg_override_wins_universal() {
-        let source = DfeSource::new("syslog");
+        let source = KafkaSource::new("syslog");
         assert_eq!(
             source
                 .consumer_group(
@@ -765,30 +769,36 @@ sasl.mechanism=SCRAM-SHA-512
 
     #[test]
     fn dfe_source_from_topic_land() {
-        assert_eq!(DfeSource::source_from_topic("syslog_land"), Some("syslog"));
-        assert_eq!(DfeSource::source_from_topic("auth_land"), Some("auth"));
+        assert_eq!(
+            KafkaSource::source_from_topic("syslog_land"),
+            Some("syslog")
+        );
+        assert_eq!(KafkaSource::source_from_topic("auth_land"), Some("auth"));
     }
 
     #[test]
     fn dfe_source_from_topic_load() {
-        assert_eq!(DfeSource::source_from_topic("syslog_load"), Some("syslog"));
         assert_eq!(
-            DfeSource::source_from_topic("netflow_load"),
+            KafkaSource::source_from_topic("syslog_load"),
+            Some("syslog")
+        );
+        assert_eq!(
+            KafkaSource::source_from_topic("netflow_load"),
             Some("netflow")
         );
     }
 
     #[test]
     fn dfe_source_from_topic_unknown() {
-        assert_eq!(DfeSource::source_from_topic("unknown"), None);
-        assert_eq!(DfeSource::source_from_topic("events"), None);
-        assert_eq!(DfeSource::source_from_topic(""), None);
+        assert_eq!(KafkaSource::source_from_topic("unknown"), None);
+        assert_eq!(KafkaSource::source_from_topic("events"), None);
+        assert_eq!(KafkaSource::source_from_topic(""), None);
     }
 
     #[test]
     fn dfe_source_from_topic_edge_cases() {
-        assert_eq!(DfeSource::source_from_topic("_land"), Some(""));
-        assert_eq!(DfeSource::source_from_topic("a_load"), Some("a"));
+        assert_eq!(KafkaSource::source_from_topic("_land"), Some(""));
+        assert_eq!(KafkaSource::source_from_topic("a_load"), Some("a"));
     }
 
     #[test]

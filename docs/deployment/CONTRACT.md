@@ -189,7 +189,7 @@ subcommand) emits the contract. CI then runs `validate_*` to confirm
 the repo's chart/Dockerfile still match the contract.
 
 See [ARTEFACTS.md](ARTEFACTS.md) for what generation writes and
-[../INTEGRATION.md](../INTEGRATION.md) for the `DfeApp::deployment_contract`
+[../INTEGRATION.md](../INTEGRATION.md) for the `ServiceApp::deployment_contract`
 hook that exposes the contract to the CLI.
 
 ---
@@ -200,6 +200,6 @@ hook that exposes the contract to the CLI.
 - [NATIVE-DEPS.md](NATIVE-DEPS.md) -- auto-detected APT packages
 - [KEDA.md](KEDA.md) -- autoscaling contract
 - [../AUTO-WIRING.md](../AUTO-WIRING.md) -- singleton pattern
-- [../INTEGRATION.md](../INTEGRATION.md) -- `DfeApp` trait
+- [../INTEGRATION.md](../INTEGRATION.md) -- `ServiceApp` trait
 - [../FEATURE-FLAGS.md](../FEATURE-FLAGS.md) -- `deployment`, `cli`
 - Source: [../../src/deployment/contract.rs](../../src/deployment/contract.rs)
