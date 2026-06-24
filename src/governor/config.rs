@@ -12,7 +12,7 @@
 //! data-plane governor ON (the default) or OFF. It is a sibling to
 //! [`MemoryGuardConfig`](crate::memory::MemoryGuardConfig) /
 //! [`ScalingPressureConfig`](crate::ScalingPressureConfig): loaded from the
-//! 8-layer cascade under the `self_regulation` key and registered in the
+//! 7-layer cascade under the `self_regulation` key and registered in the
 //! config registry so the `/config` admin endpoint and hot-reload see it.
 //!
 //! # Default-ON, opt-out

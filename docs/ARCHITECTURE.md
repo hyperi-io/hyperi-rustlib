@@ -71,7 +71,7 @@ backend, not a separate caller. Solid arrows show layer dependencies.
 
 | Module | Feature | Purpose |
 |--------|---------|---------|
-| `config` | `config` (default) | 8-layer cascade (CLI → env → .env → YAML → defaults), hot-reload, section registry, `/config` admin endpoint |
+| `config` | `config` (default) | 7-layer cascade (CLI → env → .env → YAML → defaults), hot-reload, section registry, `/config` admin endpoint |
 | `logger` | `logger` (default) | `tracing-subscriber` with JSON/text autodetect, RFC 3339 timestamps, sensitive-field masking, flood-control helpers |
 | `metrics` | `metrics-core`, `metrics-process`, `metrics` | Lock-free counters/gauges/histograms, Prometheus exporter, `/metrics` + `/metrics/manifest` |
 | `otel_metrics` / `otel_tracing` | `otel`, `otel-metrics`, `otel-tracing` | OTLP exporter, OTel SDK bridge for `tracing` spans |

@@ -1,6 +1,6 @@
 # Directory config
 
-A YAML directory-backed config store -- distinct from the [8-layer
+A YAML directory-backed config store -- distinct from the [7-layer
 config cascade](../core-pillars/CONFIG.md). Use this for ops-managed
 config that changes between deploys without a code change: detection
 rules, scrub patterns, routing tables, allow/deny lists, any artefact

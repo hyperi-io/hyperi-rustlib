@@ -30,7 +30,7 @@ exclude = [".claude/", ".github/", "ci/", "ai/", "docs/", "examples/", "benches/
 [package.metadata.docs.rs]
 # `all-features = true` triggers transport-kafka (needs librdkafka-dev),
 # directory-config-git (libgit2-dev), secrets-aws (aws-lc-sys cmake),
-# config-postgres (live Postgres), deployment-smoke (Docker daemon).
+# deployment-smoke (Docker daemon).
 # None of these are installed in the docs.rs sandbox. Enumerate the set
 # of features that builds without system libraries instead. When a new
 # pure-Rust feature lands, add it here.
@@ -51,7 +51,7 @@ features = [
     "secrets", "secrets-vault",
     "dlq", "dlq-http", "dlq-redis",
     "output-file",
-    "cache", "database",
+    "cache",
     "deployment",
     "expression", "version-check",
 ]
@@ -108,7 +108,6 @@ http = ["reqwest", "reqwest-middleware", "reqwest-retry", "serde_json", "dep:any
 http-server = ["axum", "tower", "tower-http", "tokio", "tracing"]
 spool = ["yaque", "zstd"]
 tiered-sink = ["yaque", "zstd", "lz4_flex", "snap", "tokio", "libc", "tracing"]
-database = ["serde_json", "dep:percent-encoding"]
 cache = ["moka", "serde_json"]
 
 # Cgroup-aware memory backpressure (OOM prevention)
@@ -179,9 +178,6 @@ version-check = ["reqwest", "tokio", "serde_json", "tracing", "uuid", "chrono", 
 # Config hot-reload (SharedConfig<T> + ConfigReloader<T>)
 config-reload = ["config", "parking_lot", "tokio", "tracing"]
 
-# PostgreSQL config source (optional)
-config-postgres = ["config", "sqlx", "tokio", "serde_json"]
-
 # Transport features (2.6.0 split):
 # - transport: bare transport abstraction
 # - transport-trace: + W3C traceparent propagation via opentelemetry
@@ -216,7 +212,7 @@ tls = ["dep:rustls", "dep:rustls-native-certs", "dep:rustls-pki-types", "dep:web
 dangerous-diagnostics = []
 
 # Full feature set
-full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "otel-tracing", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "database", "cache", "transport-all", "transport-trace", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "worker", "cli-service", "io", "dlq", "dlq-kafka", "dlq-http", "dlq-redis", "output-file", "expression", "tls"]
+full = ["config", "config-reload", "logger", "metrics", "metrics-dfe", "otel", "otel-metrics", "otel-tracing", "runtime", "shutdown", "health", "http", "http-server", "spool", "tiered-sink", "cache", "transport-all", "transport-trace", "transport-grpc-vector-compat", "secrets-all", "directory-config", "directory-config-git", "deployment", "version-check", "scaling", "memory", "worker", "cli-service", "io", "dlq", "dlq-kafka", "dlq-http", "dlq-redis", "output-file", "expression", "tls"]
 
 [dependencies]
 # Serialisation (always needed)
@@ -290,10 +286,6 @@ reqwest-retry = { version = ">=0.9.1, <0.10", optional = true }
 # HTTP client can convert serialise errors into Middleware errors
 # instead of silently dropping them.
 anyhow = { version = "1", optional = true }
-
-# Percent-encoding for database URL builders (avoids string interpolation
-# that breaks when user/password/db contain `:`, `/`, `@`, `?`, `#`).
-percent-encoding = { version = ">=2.3, <3", optional = true }
 
 # Unified TLS trust module (src/tls.rs, `tls` feature). All already present
 # transitively (reqwest/aws-smithy pull rustls 0.23 + aws-lc-rs); these are
@@ -372,9 +364,6 @@ memchr = { version = ">=2.7", optional = true }
 
 # Async trait (for tiered-sink Sink trait)
 async-trait = { version = ">=0.1.88, <0.2", optional = true }
-
-# PostgreSQL (for config-postgres)
-sqlx = { version = ">=0.8, <0.9", features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "json"], optional = true }
 
 # Secrets management
 parking_lot = { version = ">=0.12.3, <0.13", optional = true }

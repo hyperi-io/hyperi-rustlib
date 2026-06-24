@@ -28,7 +28,7 @@ version = "2"
 
 That's it. The default set covers:
 
-- 8-layer config cascade
+- 7-layer config cascade
 - Structured logging via `tracing-subscriber`
 
 If you only need those two, you can stop reading.

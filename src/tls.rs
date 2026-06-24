@@ -18,11 +18,12 @@
 //! ## Crypto provider
 //!
 //! Client configs are built with an **explicit aws-lc-rs provider** rather than
-//! relying on the rustls process-default. The dependency graph already pulls
-//! BOTH aws-lc-rs (via reqwest / aws-smithy) and ring (via sqlx), so there is
-//! no unambiguous process-default provider -- `ClientConfig::builder()` would
-//! panic at runtime ("no process-level CryptoProvider"). Selecting aws-lc-rs
-//! explicitly matches the reqwest / AWS path and removes that footgun.
+//! relying on the rustls process-default. Depending on enabled features the
+//! dependency graph can carry more than one rustls CryptoProvider (aws-lc-rs
+//! via reqwest / aws-smithy, plus ring via some TLS-enabling crates), so there
+//! is no guaranteed unambiguous process-default -- `ClientConfig::builder()`
+//! would panic at runtime ("no process-level CryptoProvider"). Selecting
+//! aws-lc-rs explicitly matches the reqwest / AWS path and removes that footgun.
 //!
 //! ## Trust model
 //!

@@ -51,7 +51,7 @@ Pick the slice you need; pay only for what you use.
 |---------|-------------|
 | `env` | Environment detection (K8s, Docker, Container, BareMetal) |
 | `runtime` | Runtime path resolution (XDG/container-aware) |
-| `config` | 8-layer config cascade (figment-based) |
+| `config` | 7-layer config cascade (figment-based) |
 | `config-reload` | `SharedConfig<T>` + `ConfigReloader` hot-reload |
 | `config-postgres` | PostgreSQL config source |
 | `logger` | Structured logging, JSON/text auto-detect, sensitive-field masking |
@@ -179,7 +179,7 @@ and opt-out via `self_regulation.enabled = false`. See
 
 See [docs/](docs/README.md) for the full documentation index —
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the module map and layering,
-and [docs/core-pillars/CONFIG.md](docs/core-pillars/CONFIG.md) for the 8-layer
+and [docs/core-pillars/CONFIG.md](docs/core-pillars/CONFIG.md) for the 7-layer
 config cascade reference.
 
 ## License

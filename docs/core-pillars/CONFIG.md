@@ -3,8 +3,8 @@
 Call `config::setup` once at startup; every module then reads one typed view of
 the whole cascade through the same API.
 
-The cascade is **8 layers with PostgreSQL wired, 7 otherwise** -- same code path,
-gated by the `config-postgres` feature.
+The cascade is **7 layers** -- one typed view assembled from CLI args, env vars,
+`.env`, the YAML files, and hard-coded defaults.
 
 ---
 
@@ -15,11 +15,10 @@ gated by the `config-postgres` feature.
 | 1 | CLI args | `Config::merge_cli(args)` after `Config::new` |
 | 2 | Environment variables | Prefix from `ConfigOptions::env_prefix`, double-underscore for nesting (`DFE_LOADER__KAFKA__BROKERS`) |
 | 3 | `.env` file | Loaded by `dotenvy` into env vars -- same precedence as layer 2 |
-| 4 | PostgreSQL (optional) | Only present with `config-postgres` (async path) |
-| 5 | `settings.{env}.yaml` | `{env}` from `APP_ENV` / `ENVIRONMENT` / `ENV` (default `development`) |
-| 6 | `settings.yaml` | Team defaults, committed |
-| 7 | `defaults.yaml` | Fallback baseline |
-| 8 | Hard-coded defaults | `log_level=info`, `log_format=auto` |
+| 4 | `settings.{env}.yaml` | `{env}` from `APP_ENV` / `ENVIRONMENT` / `ENV` (default `development`) |
+| 5 | `settings.yaml` | Team defaults, committed |
+| 6 | `defaults.yaml` | Fallback baseline |
+| 7 | Hard-coded defaults | `log_level=info`, `log_format=auto` |
 
 Each YAML layer is searched in this order, first match wins:
 

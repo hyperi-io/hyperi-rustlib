@@ -185,7 +185,7 @@ Env vars:
 | `MemoryGuard::current_bytes() -> u64` | True heap (with source) or tracked bytes |
 | `MemoryGuard::limit_bytes() -> u64` | Effective limit (after headroom) |
 | `MemoryGuardConfig` | Serde-deserialisable config struct |
-| `MemoryGuardConfig::from_cascade()` | Load from the 8-layer cascade |
+| `MemoryGuardConfig::from_cascade()` | Load from the 7-layer cascade |
 | `MemoryGuardConfig::from_env(prefix)` | Build from `{PREFIX}_MEMORY_*` env vars |
 | `MemoryPressure` | `Low` / `Medium` / `High` |
 | `cgroup::detect_memory_limit() -> u64` | Standalone limit detection |

@@ -94,7 +94,7 @@ are tools you compose into your `run_service`.
 
 | You did this | You got this — no extra wiring |
 |--------------|-------------------------------|
-| `config::setup(opts)` | 8-layer cascade, env-var nesting, `.env`, sensitive masking, hot-reload, `/config` admin endpoint, section registry |
+| `config::setup(opts)` | 7-layer cascade, env-var nesting, `.env`, sensitive masking, hot-reload, `/config` admin endpoint, section registry |
 | `logger::setup_default()` | Structured tracing, JSON/text autodetect, RFC 3339 timestamps, masking, flood control |
 | `MetricsManager::new("app")` | Prometheus exporter, `/metrics` endpoint, process metrics, cardinality cap, `/metrics/manifest` |
 | `ServiceRuntime::new(...)` | All of the above + memory guard + scaling pressure + worker pool + shutdown token + K8s pre-stop + runtime context + HTTP server |

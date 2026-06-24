@@ -46,7 +46,7 @@ pub enum PreRouteFilterConfig {
 
 /// Configuration for the batch processing engine.
 ///
-/// All values are overridable via the 8-layer config cascade
+/// All values are overridable via the 7-layer config cascade
 /// (CLI > ENV > .env > settings.{env}.yaml > settings.yaml > defaults > rustlib > hard-coded).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchProcessingConfig {

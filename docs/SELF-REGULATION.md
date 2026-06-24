@@ -215,7 +215,7 @@ cleared -- check the memory guard and consumer lag.
 
 ## Tune
 
-All tuning is via the `self_regulation` cascade section (8-layer cascade,
+All tuning is via the `self_regulation` cascade section (7-layer cascade,
 hot-reload, `/config` admin endpoint -- same as every other config section;
 see [core-pillars/CONFIG.md](core-pillars/CONFIG.md)).
 

@@ -1,12 +1,12 @@
 // Project:   scalo
 // File:      src/config/mod.rs
-// Purpose:   8-layer configuration cascade
+// Purpose:   7-layer configuration cascade
 // Language:  Rust
 //
 // License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Configuration management with 8-layer cascade.
+//! Configuration management with 7-layer cascade.
 //!
 //! Provides a hierarchical configuration system matching hyperi-pylib (Python)
 //! and hyperi-golib (Go). Configuration is loaded from multiple sources with
@@ -17,11 +17,10 @@
 //! 1. CLI arguments (via clap integration)
 //! 2. Environment variables (with configurable prefix)
 //! 3. `.env` file (loaded via dotenvy)
-//! 4. PostgreSQL (optional, via `config-postgres` feature)
-//! 5. `settings.{env}.yaml` (environment-specific)
-//! 6. `settings.yaml` (base settings)
-//! 7. `defaults.yaml`
-//! 8. Hard-coded defaults
+//! 4. `settings.{env}.yaml` (environment-specific)
+//! 5. `settings.yaml` (base settings)
+//! 6. `defaults.yaml`
+//! 7. Hard-coded defaults
 //!
 //! ## How .env Files Work in the Cascade
 //!
@@ -62,9 +61,6 @@ pub mod reloader;
 #[cfg(feature = "config-reload")]
 pub mod shared;
 
-#[cfg(feature = "config-postgres")]
-pub mod postgres;
-
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -75,9 +71,6 @@ use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 use crate::env::get_app_env;
-
-#[cfg(feature = "config-postgres")]
-use self::postgres::{PostgresConfig, PostgresConfigError, PostgresConfigSource};
 
 /// Global configuration singleton.
 static CONFIG: OnceLock<Config> = OnceLock::new();
@@ -108,11 +101,6 @@ pub enum ConfigError {
     /// Configuration not initialised.
     #[error("configuration not initialised - call config::setup() first")]
     NotInitialised,
-
-    /// PostgreSQL config error.
-    #[cfg(feature = "config-postgres")]
-    #[error("PostgreSQL config error: {0}")]
-    Postgres(#[from] PostgresConfigError),
 }
 
 /// Configuration options.
@@ -151,10 +139,6 @@ pub struct ConfigOptions {
     /// Only applies when `load_dotenv` is true.
     /// Default: false (opt-in, matching hyperi-pylib)
     pub load_home_dotenv: bool,
-
-    /// PostgreSQL config source (optional, requires `config-postgres` feature).
-    #[cfg(feature = "config-postgres")]
-    pub postgres: Option<PostgresConfigSource>,
 }
 
 impl Default for ConfigOptions {
@@ -166,8 +150,6 @@ impl Default for ConfigOptions {
             config_paths: Vec::new(),
             load_dotenv: true,
             load_home_dotenv: false,
-            #[cfg(feature = "config-postgres")]
-            postgres: None,
         }
     }
 }
@@ -231,78 +213,6 @@ impl Config {
         // 2. Environment variables (with prefix)
         // Keys are lowercased: TEST_DATABASE_HOST -> database_host
         // Use double underscore for nesting: TEST_DATABASE__HOST -> database.host
-        if !opts.env_prefix.is_empty() {
-            figment = figment.merge(Env::prefixed(&format!("{}_", opts.env_prefix)).split("__"));
-        }
-
-        // 1. CLI args would be merged by the application via merge_cli()
-
-        Ok(Self {
-            figment,
-            env_prefix: opts.env_prefix,
-        })
-    }
-
-    /// Create a new configuration with async loading (for PostgreSQL support).
-    ///
-    /// PostgreSQL sits above file-based config in the cascade, so database
-    /// values override file values.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if configuration loading fails.
-    #[cfg(feature = "config-postgres")]
-    pub async fn new_async(opts: ConfigOptions) -> Result<Self, ConfigError> {
-        let app_env = opts.app_env.clone().unwrap_or_else(get_app_env);
-        let resolved_app_name = Self::resolve_app_name(opts.app_name.as_deref());
-        let app_name_ref = resolved_app_name.as_deref();
-
-        // Load .env files in cascade order (lowest to highest priority)
-        if opts.load_dotenv {
-            Self::load_dotenv_cascade(opts.load_home_dotenv);
-        }
-
-        // Determine PostgreSQL config source
-        let pg_source = opts
-            .postgres
-            .clone()
-            .unwrap_or_else(|| PostgresConfigSource::from_env(&opts.env_prefix));
-
-        // Load PostgreSQL config (async)
-        let pg_config = PostgresConfig::load(&pg_source).await?;
-
-        // Build the cascade (lowest to highest priority)
-        let mut figment = Figment::new();
-
-        // 8. Hard-coded defaults (lowest priority)
-        figment = figment.merge(Serialized::defaults(HardcodedDefaults::default()));
-
-        // 7. defaults.yaml
-        for path in Self::find_config_files("defaults", &opts.config_paths, app_name_ref) {
-            figment = figment.merge(Yaml::file(&path));
-        }
-
-        // 6. settings.yaml
-        for path in Self::find_config_files("settings", &opts.config_paths, app_name_ref) {
-            figment = figment.merge(Yaml::file(&path));
-        }
-
-        // 5. settings.{env}.yaml
-        let env_settings = format!("settings.{app_env}");
-        for path in Self::find_config_files(&env_settings, &opts.config_paths, app_name_ref) {
-            figment = figment.merge(Yaml::file(&path));
-        }
-
-        // 4. PostgreSQL config (above files, below .env). Figment merges are
-        // additive, later wins -- cascade position alone sets priority.
-        if let Some(ref pg) = pg_config {
-            let nested = pg.to_nested();
-            figment = figment.merge(Serialized::defaults(nested));
-        }
-
-        // 3. .env file values are already loaded into env vars
-
-        // 2. Environment variables (with prefix)
         if !opts.env_prefix.is_empty() {
             figment = figment.merge(Env::prefixed(&format!("{}_", opts.env_prefix)).split("__"));
         }
@@ -576,19 +486,6 @@ fn parse_duration(s: &str) -> Option<Duration> {
 /// Returns an error if configuration loading fails or if already initialised.
 pub fn setup(opts: ConfigOptions) -> Result<(), ConfigError> {
     let config = Config::new(opts)?;
-    CONFIG
-        .set(config)
-        .map_err(|_| ConfigError::AlreadyInitialised)
-}
-
-/// Initialise the global configuration with async loading (for PostgreSQL support).
-///
-/// # Errors
-///
-/// Returns an error if configuration loading fails or if already initialised.
-#[cfg(feature = "config-postgres")]
-pub async fn setup_async(opts: ConfigOptions) -> Result<(), ConfigError> {
-    let config = Config::new_async(opts).await?;
     CONFIG
         .set(config)
         .map_err(|_| ConfigError::AlreadyInitialised)

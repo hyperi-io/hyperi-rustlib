@@ -134,10 +134,6 @@ pub mod http_client;
 #[cfg_attr(docsrs, doc(cfg(feature = "http-server")))]
 pub mod http_server;
 
-#[cfg(feature = "database")]
-#[cfg_attr(docsrs, doc(cfg(feature = "database")))]
-pub mod database;
-
 #[cfg(feature = "cache")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cache")))]
 pub mod cache;
@@ -255,12 +251,6 @@ pub use config::reloader::{ConfigReloader, ReloaderConfig};
 #[cfg(feature = "config-reload")]
 #[cfg_attr(docsrs, doc(cfg(feature = "config-reload")))]
 pub use config::shared::SharedConfig;
-
-#[cfg(feature = "config-postgres")]
-#[cfg_attr(docsrs, doc(cfg(feature = "config-postgres")))]
-pub use config::postgres::{
-    FallbackMode, PostgresConfig, PostgresConfigError, PostgresConfigSource,
-};
 
 #[cfg(feature = "logger")]
 #[cfg_attr(docsrs, doc(cfg(feature = "logger")))]

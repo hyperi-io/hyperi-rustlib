@@ -133,7 +133,6 @@ impl NativeDepsContract {
             *f == "http"
                 || f.starts_with("secrets")
                 || f.starts_with("transport")
-                || *f == "config-postgres"
                 || f.starts_with("otel")
         });
         if needs_ssl {

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 /// Configuration for the adaptive worker pool.
 ///
-/// All values are overridable via the 8-layer config cascade
+/// All values are overridable via the 7-layer config cascade
 /// (CLI > ENV > .env > settings.{env}.yaml > settings.yaml > defaults > rustlib > hard-coded).
 ///
 /// Every field is also emitted as a gauge metric for Grafana overlay.
