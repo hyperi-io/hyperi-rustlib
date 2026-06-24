@@ -3,7 +3,7 @@
 // Purpose:   Byte-budget controller: AIMD lever with memory HARD override
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Byte-budget controller: the self-regulation lever.

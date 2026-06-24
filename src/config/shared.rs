@@ -3,7 +3,7 @@
 // Purpose:   Thread-safe shared configuration with hot-reload support
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Generic thread-safe shared configuration with version tracking.

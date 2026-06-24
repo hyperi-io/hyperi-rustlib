@@ -3,7 +3,7 @@
 // Purpose:   CEL expression classification into performance tiers
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Classify CEL expressions into performance tiers via text pattern matching.

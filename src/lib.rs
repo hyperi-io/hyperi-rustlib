@@ -3,7 +3,7 @@
 // Purpose:   Main library entry point and public API exports
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # scalo
@@ -133,10 +133,6 @@ pub mod http_client;
 #[cfg(feature = "http-server")]
 #[cfg_attr(docsrs, doc(cfg(feature = "http-server")))]
 pub mod http_server;
-
-#[cfg(feature = "cache")]
-#[cfg_attr(docsrs, doc(cfg(feature = "cache")))]
-pub mod cache;
 
 #[cfg(feature = "spool")]
 #[cfg_attr(docsrs, doc(cfg(feature = "spool")))]

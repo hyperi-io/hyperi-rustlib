@@ -1,7 +1,7 @@
 # MIGRATIONS
 
 API surface changes that require consumer adjustment. Indexed by the
-rustlib version where the change first ships. Used by the
+scalo version where the change first ships. Used by the
 [rebuild-consumers skill](../.claude/skills/rebuild-consumers/SKILL.md)
 when `cargo check` flags breakage on a downstream bump.
 
@@ -385,8 +385,8 @@ fn main() {
 }
 ```
 
-rustlib intentionally takes **no allocator dependency** (the global
-allocator is the binary's choice, and rustlib is `#![forbid(unsafe_code)]`).
+scalo intentionally takes **no allocator dependency** (the global
+allocator is the binary's choice, and scalo is `#![forbid(unsafe_code)]`).
 
 ### `SinkDrain::flush_durable` (additive, default no-op)
 
@@ -432,9 +432,9 @@ intent.
 ### Telemetry / `version-check`
 
 `CheckPayload` no longer includes `instance_id` or `deployment`.
-`HYPERI_TELEMETRY=off` opt-out env var. No consumer code change
-required; the field rename only affects log lines from rustlib
-itself.
+`SCALO_TELEMETRY=off` opt-out env var (deprecated `HYPERI_TELEMETRY`).
+No consumer code change required; the field rename only affects log
+lines from scalo itself.
 
 ### Wave 1 — Tier-3 single-knob
 
@@ -526,7 +526,7 @@ Variant lists:
   `PatternMismatch`, `FormatInvalid`, `EnumViolation`,
   `AdditionalProperties`, `NullValue`, `EncodingError`)
 
-No `Other` catch-all. New failure modes require a rustlib release
+No `Other` catch-all. New failure modes require a scalo release
 that adds a variant; consumers then bump and recompile. The compiler
 flags every site needing the new variant.
 

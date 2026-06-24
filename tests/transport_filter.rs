@@ -3,7 +3,7 @@
 // Purpose:   Integration + adversarial tests for transport filter engine
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Transport filter engine integration tests.

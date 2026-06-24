@@ -3,7 +3,7 @@
 // Purpose:   Mandatory app-level DFE metrics
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Mandatory app-level metrics for every DFE application.

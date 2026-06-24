@@ -3,7 +3,7 @@
 // Purpose:   Generate deployment artifacts from DeploymentContract
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Generate deployment artifacts (Dockerfile, Helm chart, Compose fragment,

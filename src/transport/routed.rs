@@ -3,7 +3,7 @@
 // Purpose:   Per-key routing transport for data originators (receiver, fetcher)
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Per-key routing transport for data originators.

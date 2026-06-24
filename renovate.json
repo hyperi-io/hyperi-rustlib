@@ -1,4 +1,36 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>hyperi-io/renovate-config"]
+  "extends": ["github>hyperi-io/renovate-config"],
+  "packageRules": [
+    {
+      "description": "OpenTelemetry SDK + exporters + the tracing bridge move in lockstep -- held at 0.31 until tracing-opentelemetry supports 0.32. Bumping one alone breaks the build.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["/^opentelemetry/", "tracing-opentelemetry"],
+      "groupName": "opentelemetry"
+    },
+    {
+      "description": "tonic + prost are generated-and-linked together (build.rs codegen); never bump one without the other.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["/^tonic/", "/^prost/"],
+      "groupName": "tonic-prost"
+    },
+    {
+      "description": "AWS SDK crates (aws-config, aws-sdk-*) share a release train and must move together.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["/^aws-/"],
+      "groupName": "aws-sdk"
+    },
+    {
+      "description": "metrics facade + exporters version together.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["/^metrics/"],
+      "groupName": "metrics"
+    },
+    {
+      "description": "tracing core + subscriber + throttle.",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["tracing", "tracing-subscriber", "tracing-throttle"],
+      "groupName": "tracing"
+    }
+  ]
 }

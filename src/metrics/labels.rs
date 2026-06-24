@@ -3,7 +3,7 @@
 // Purpose:   Bounded enum types for low-cardinality Prometheus labels
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Bounded label values for Prometheus / OTel metrics.

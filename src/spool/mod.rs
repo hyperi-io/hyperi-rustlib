@@ -3,7 +3,7 @@
 // Purpose:   Disk-backed async FIFO queue with optional compression
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Disk-backed async FIFO queue with optional zstd compression.

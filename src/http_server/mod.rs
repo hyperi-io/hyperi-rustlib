@@ -3,7 +3,7 @@
 // Purpose:   High-performance HTTP server with axum
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! HTTP server built on axum. Compatible with Tonic for gRPC.

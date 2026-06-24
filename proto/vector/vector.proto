@@ -1,4 +1,6 @@
-// Vendored from https://github.com/vectordotdev/vector
+// Vendored verbatim from https://github.com/vectordotdev/vector
+// Copyright Datadog, Inc. Licensed under the Mozilla Public License 2.0
+// (MPL-2.0, https://www.mozilla.org/MPL/2.0/). Unmodified -- see /NOTICE.
 // Source: proto/vector/vector.proto (Vector v2 gRPC protocol)
 // Pinned: 2026-03-02 (stable since 2021, rarely changes)
 

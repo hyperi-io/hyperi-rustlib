@@ -3,7 +3,7 @@
 // Purpose:   Standard DFE metric definitions with transport labels
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Standard DFE metrics for pipeline components (receiver, loader, engine).

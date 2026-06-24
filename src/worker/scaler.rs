@@ -3,7 +3,7 @@
 // Purpose:   Scaling controller loop, watermark algorithm, CPU sampling
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Threading model and the CPU vs memory asymmetry

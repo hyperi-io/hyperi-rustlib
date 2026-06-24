@@ -3,7 +3,7 @@
 // Purpose:   Stack-safe nesting-depth guard for the JSON/MsgPack parse paths
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Parse-path depth guard against stack-exhaustion DoS.

@@ -1,6 +1,6 @@
 # Self-regulation
 
-The data plane regulates itself. A rustlib app sized for steady state does
+The data plane regulates itself. A scalo app sized for steady state does
 not fall over when a burst arrives, an upstream stalls, or a transform
 balloons memory -- the pipeline slows its own intake, lets the in-flight
 work drain, and speeds back up once the pressure clears. This happens
@@ -27,7 +27,7 @@ batch sizes feed the loop). The code lives in `src/governor/`.
 
 ## Self-regulation: the default vertical-scaling principle
 
-Self-regulation is how a rustlib app scales VERTICALLY -- a single pod
+Self-regulation is how a scalo app scales VERTICALLY -- a single pod
 adapting its OWN intake to its OWN resources. It is the DEFAULT and the
 FIRST response to pressure, and it is distinct from (and complementary to)
 HORIZONTAL scaling, where KEDA adds pods.

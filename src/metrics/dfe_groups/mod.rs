@@ -3,7 +3,7 @@
 // Purpose:   DFE-specific metric groups
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Composable DFE metric groups.

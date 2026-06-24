@@ -3,7 +3,7 @@
 // Purpose:   File output sink using NdjsonWriter
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! File output sink for raw NDJSON events.

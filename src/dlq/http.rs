@@ -3,7 +3,7 @@
 // Purpose:   HTTP POST DLQ backend variant
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! HTTP backend variant for the DLQ enum.

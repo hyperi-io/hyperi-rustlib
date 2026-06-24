@@ -3,7 +3,7 @@
 // Purpose:   Rayon pool + semaphore management, process_batch(), fan_out_async()
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use std::sync::Arc;

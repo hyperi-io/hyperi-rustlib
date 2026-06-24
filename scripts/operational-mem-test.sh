@@ -4,7 +4,7 @@
 # Purpose:   Cgroup-confined memory backpressure operational test (black box)
 # Language:  Bash
 #
-# License:   BUSL-1.1
+# License:   Apache-2.0
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 #
 # Proves the MemoryGuard cap ACTUALLY works in operation, not just in a unit
@@ -19,7 +19,7 @@
 #                                   survived, the test would be proving nothing.
 #
 # This is BLACK BOX: it asserts on the kernel outcome (exit/OOM) and the
-# harness's stdout backpressure counters, NOT on rustlib internals.
+# harness's stdout backpressure counters, NOT on scalo internals.
 #
 # Usage:  scripts/operational-mem-test.sh [MEM] [DURATION_SECS]
 #   MEM            docker --memory value           (default 512m)
@@ -42,7 +42,7 @@ fi
 
 # Avoid host credential helpers (e.g. docker-credential-secretservice) that are
 # absent in headless/CI contexts -- the public base images need no auth.
-# Mirrors rustlib's contract-artefact e2e (docker_empty_creds_json).
+# Mirrors scalo's contract-artefact e2e (docker_empty_creds_json).
 DOCKER_CONFIG_DIR="$(mktemp -d)"
 printf '{"auths":{}}\n' >"$DOCKER_CONFIG_DIR/config.json"
 export DOCKER_CONFIG="$DOCKER_CONFIG_DIR"

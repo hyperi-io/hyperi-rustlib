@@ -3,7 +3,7 @@
 // Purpose:   DFE schema cache metrics group
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Schema cache metrics for apps with dynamic schema reflection.

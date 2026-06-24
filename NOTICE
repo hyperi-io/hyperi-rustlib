@@ -1,0 +1,21 @@
+scalo
+Copyright 2026 HYPERI PTY LIMITED
+
+Licensed under the Apache License, Version 2.0 (the "License"); see the
+LICENSE file. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+------------------------------------------------------------------------
+Third-party components
+
+This distribution vendors Protocol Buffer definitions from Vector
+(https://github.com/vectordotdev/vector), Copyright Datadog, Inc.,
+licensed under the Mozilla Public License 2.0 (MPL-2.0, see
+https://www.mozilla.org/MPL/2.0/):
+
+    proto/vector/vector.proto
+    proto/vector/event.proto
+
+These two files remain under MPL-2.0. All other files in this
+distribution are under the Apache License 2.0.

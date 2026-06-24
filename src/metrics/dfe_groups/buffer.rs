@@ -3,7 +3,7 @@
 // Purpose:   DFE buffer metrics group
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Buffer metrics for apps with batching (receiver, loader, archiver).

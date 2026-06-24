@@ -3,7 +3,7 @@
 // Purpose:   Integration tests for BatchEngine WorkBatch driver run loop
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 #![cfg(all(feature = "worker", feature = "transport-memory"))]

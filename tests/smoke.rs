@@ -3,7 +3,7 @@
 // Purpose:   Startup smoke test — catches init panics before production
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Startup smoke test.

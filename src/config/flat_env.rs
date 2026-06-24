@@ -3,7 +3,7 @@
 // Purpose:   Flat environment variable override helpers for K8s-friendly config
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Flat environment variable override helpers.
@@ -216,7 +216,7 @@ where
         }
     }
 
-    // Load via rustlib cascade (dotenv + YAML + figment env)
+    // Load via scalo cascade (dotenv + YAML + figment env)
     let cfg = super::Config::new(opts)?;
     let mut config: T = cfg.unmarshal().unwrap_or_default();
 

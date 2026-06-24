@@ -163,7 +163,7 @@ decompresses transparently regardless of producer codec.
   `partitioner.ignore.keys`.
 - **KIP-848 (new consumer group protocol)** and **Kafka 4.0** -- the sizing
   surface is property-name based and forward-compatible: as librdkafka adds
-  support, the raw escape hatch can set the new properties without a rustlib
+  support, the raw escape hatch can set the new properties without a scalo
   change. Share groups (below) are the 4.0 answer to partition-limited
   scaling.
 
@@ -228,7 +228,7 @@ topic has partitions -- extra members sit idle. So adding pods past the
 partition count does nothing for throughput; the lag just keeps growing while
 half the pods do nothing.
 
-rustlib DETECTS this and tells you. It does NOT fix it by mutating topology.
+scalo DETECTS this and tells you. It does NOT fix it by mutating topology.
 `KafkaTransport::check_partition_limited` (governor feature,
 `src/transport/kafka/mod.rs`) reads:
 
@@ -260,7 +260,7 @@ WARN  kafka consumer group is partition-limited: members >= partitions with
       members=8 partitions=4 lag=120000
 ```
 
-Resolution is an operator / topology decision, not something rustlib should
+Resolution is an operator / topology decision, not something scalo should
 do silently:
 
 - **More partitions per pod** -- raise per-pod parallelism so each consumer

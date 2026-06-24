@@ -3,7 +3,7 @@
 // Purpose:   Redis Streams DLQ backend variant
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Redis Streams backend variant for the DLQ enum.

@@ -3,7 +3,7 @@
 // Purpose:   Configuration for adaptive worker pool
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// Configuration for the adaptive worker pool.
 ///
 /// All values are overridable via the 7-layer config cascade
-/// (CLI > ENV > .env > settings.{env}.yaml > settings.yaml > defaults > rustlib > hard-coded).
+/// (CLI > ENV > .env > settings.{env}.yaml > settings.yaml > defaults > scalo > hard-coded).
 ///
 /// Every field is also emitted as a gauge metric for Grafana overlay.
 #[derive(Debug, Clone, Serialize, Deserialize)]

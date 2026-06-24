@@ -3,7 +3,7 @@
 // Purpose:   Secret provider trait and file provider implementation
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Secret provider trait and implementations.

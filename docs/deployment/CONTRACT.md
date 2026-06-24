@@ -1,7 +1,7 @@
 # Contract
 
 `DeploymentContract` is the one struct each HyperI service fills in.
-From it, rustlib derives every deployment artefact -- Dockerfile, Helm
+From it, scalo derives every deployment artefact -- Dockerfile, Helm
 chart, Compose fragment, ArgoCD `Application`, container manifest,
 runtime-stage fragment -- with no YAML templates in the app.
 
@@ -39,7 +39,7 @@ struct shape changes in a way that breaks downstream consumers.
 
 ```mermaid
 flowchart LR
-    R[Rust service<br/>uses rustlib] -->|generate-artefacts| C[deployment-contract.json]
+    R[Rust service<br/>uses scalo] -->|generate-artefacts| C[deployment-contract.json]
     P[Python service<br/>uses pylib] -.roadmap.-> C
     O[bash / TS / Go service<br/>via hyperi-ci templater] -.roadmap.-> C
     C --> D[Dockerfile]
@@ -51,7 +51,7 @@ flowchart LR
 
 | Tier | Producer | Status |
 |------|----------|--------|
-| 1 | rustlib (this crate) -- Rust services emit the contract from their config struct | **Shipped** |
+| 1 | scalo (this crate) -- Rust services emit the contract from their config struct | **Shipped** |
 | 2 | pylib -- Python services emit the same contract shape | **Roadmap** |
 | 3 | hyperi-ci templater -- bash/TS/Go services emit the contract via templating | **Roadmap** |
 

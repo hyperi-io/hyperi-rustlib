@@ -3,7 +3,7 @@
 // Purpose:   At-rest encryption helpers for the secrets disk cache
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! At-rest encryption for cached secret payloads.

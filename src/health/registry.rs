@@ -3,7 +3,7 @@
 // Purpose:   Global health registry singleton for component health tracking
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Global health registry for unified service health state.

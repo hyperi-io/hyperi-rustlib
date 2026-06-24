@@ -3,7 +3,7 @@
 // Purpose:   Memory guard with backpressure signals
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Memory guard with backpressure signals.
@@ -31,9 +31,9 @@ static HEAP_SOURCE: OnceLock<fn() -> usize> = OnceLock::new();
 ///
 /// **Why a global hook and not a dependency:** a tracking allocator must be
 /// the binary's single `#[global_allocator]`, which is the *application's*
-/// choice, not a library's -- and rustlib is `#![forbid(unsafe_code)]`, so it
+/// choice, not a library's -- and scalo is `#![forbid(unsafe_code)]`, so it
 /// cannot implement one anyway. The application installs its allocator and
-/// wires it here in a few lines. This keeps rustlib allocator-agnostic with no
+/// wires it here in a few lines. This keeps scalo allocator-agnostic with no
 /// allocator dependency in its graph.
 ///
 /// The first call wins and returns `true`; later calls are a no-op and return

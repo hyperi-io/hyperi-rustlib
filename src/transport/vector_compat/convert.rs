@@ -3,7 +3,7 @@
 // Purpose:   Vector <-> hyperi message conversion
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Bidirectional conversion between Vector protobuf types and serde_json::Value.

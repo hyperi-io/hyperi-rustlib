@@ -3,7 +3,7 @@
 // Purpose:   Memory operational-test harness (NOT a product binary)
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Memory backpressure operational-test harness.
@@ -12,7 +12,7 @@
 //! test (see `scripts/operational-mem-test.sh` and the plan's "Operational
 //! testing" section). It is deliberately a *black box*: drive it under a real
 //! cgroup `--memory` limit and observe the KERNEL outcome (OOM-killed vs
-//! survives) and its stdout backpressure counters -- not rustlib's internals.
+//! survives) and its stdout backpressure counters -- not scalo's internals.
 //!
 //! It wires the real [`MemoryGuard`] and runs an OVER-SUBSCRIBED producer:
 //! payloads arrive far faster than a deliberately slow sink drains them, so

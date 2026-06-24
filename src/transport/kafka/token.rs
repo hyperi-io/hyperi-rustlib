@@ -3,7 +3,7 @@
 // Purpose:   Kafka transport commit token
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use crate::transport::traits::CommitToken;

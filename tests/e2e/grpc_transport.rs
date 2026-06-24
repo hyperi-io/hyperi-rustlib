@@ -3,7 +3,7 @@
 // Purpose:   Integration tests for gRPC transport (bidirectional client/server)
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Integration tests for the gRPC transport layer.

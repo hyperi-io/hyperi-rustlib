@@ -4,7 +4,7 @@
 # Purpose:   Download and cache Vector binary for integration tests
 # Language:  Bash
 #
-# License:   BUSL-1.1
+# License:   Apache-2.0
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 #
 # Usage:

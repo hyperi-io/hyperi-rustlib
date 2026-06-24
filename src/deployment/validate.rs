@@ -3,7 +3,7 @@
 // Purpose:   Validate Helm charts and Dockerfiles against deployment contract
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Validate deployment artifacts against the app contract.

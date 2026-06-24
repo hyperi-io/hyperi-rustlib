@@ -3,12 +3,12 @@
 // Purpose:   Kafka-based DLQ backend variant
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Kafka backend variant for the DLQ enum.
 //!
-//! Routes failed messages to Kafka topics using rustlib's
+//! Routes failed messages to Kafka topics using scalo's
 //! [`KafkaProducer`](crate::transport::kafka::KafkaProducer). The
 //! producer uses the `LowLatency` profile -- DLQ volume is low and we
 //! want failures visible quickly.

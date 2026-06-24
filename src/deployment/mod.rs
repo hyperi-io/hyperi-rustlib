@@ -3,7 +3,7 @@
 // Purpose:   Deployment contract validation and generation for Helm charts and Dockerfiles
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Deployment contract validation and generation for Kubernetes/Helm/Docker.

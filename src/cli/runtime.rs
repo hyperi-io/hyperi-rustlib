@@ -3,7 +3,7 @@
 // Purpose:   ServiceRuntime -- pre-built infrastructure for DFE service apps
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Pre-built service infrastructure for DFE pipeline applications.

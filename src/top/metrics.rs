@@ -3,7 +3,7 @@
 // Purpose:   Prometheus text format parser and HTTP metrics fetcher
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Prometheus text exposition format parser and HTTP scraper.

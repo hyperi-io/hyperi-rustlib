@@ -3,7 +3,7 @@
 // Purpose:   CPU operational-test harness (NOT a product binary)
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! CPU oversubscription operational-test harness.
@@ -12,7 +12,7 @@
 //! `scripts/operational-cpu-test.sh` and the plan's "Operational testing"
 //! section). Like the memory harness it is a *black box*: drive it under a
 //! real cgroup `--cpus` cap and observe the KERNEL outcome (CPU-seconds the
-//! process actually burned, and cgroup throttling) -- not rustlib internals.
+//! process actually burned, and cgroup throttling) -- not scalo internals.
 //!
 //! The property under test is the adaptive worker pool's **parked-idle**
 //! behaviour: when there is no work, workers block on a `Condvar` and consume

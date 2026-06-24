@@ -162,7 +162,7 @@ sub-components (filter engine lives inside every transport).
 ### Workflow artefacts (not user docs)
 
 - [superpowers/](superpowers/) — design specs and execution plans for in-flight work
-- [MIGRATIONS.md](MIGRATIONS.md) — API surface changes by rustlib version; consumer-rebuild playbook
+- [MIGRATIONS.md](MIGRATIONS.md) — API surface changes by scalo version; consumer-rebuild playbook
 
 ---
 

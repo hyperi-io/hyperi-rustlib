@@ -3,7 +3,7 @@
 // Purpose:   File output sink error types
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Error types for the file output sink.

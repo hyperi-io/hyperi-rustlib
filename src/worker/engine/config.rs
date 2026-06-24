@@ -3,7 +3,7 @@
 // Purpose:   Configuration for the SIMD-optimised batch processing engine
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use serde::{Deserialize, Serialize};
@@ -47,7 +47,7 @@ pub enum PreRouteFilterConfig {
 /// Configuration for the batch processing engine.
 ///
 /// All values are overridable via the 7-layer config cascade
-/// (CLI > ENV > .env > settings.{env}.yaml > settings.yaml > defaults > rustlib > hard-coded).
+/// (CLI > ENV > .env > settings.{env}.yaml > settings.yaml > defaults > scalo > hard-coded).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchProcessingConfig {
     /// Maximum number of messages per rayon chunk.

@@ -3,7 +3,7 @@
 // Purpose:   Sliding window rate calculator
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Sliding window rate calculator for scaling components.

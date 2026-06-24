@@ -3,7 +3,7 @@
 // Purpose:   Core NDJSON file writer with rotation and metrics
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Core NDJSON file writer with automatic rotation.

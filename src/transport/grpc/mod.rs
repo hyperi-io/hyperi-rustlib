@@ -3,7 +3,7 @@
 // Purpose:   gRPC transport backend
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # gRPC Transport
@@ -436,7 +436,7 @@ impl TransportSender for GrpcTransport {
     /// Send a whole batch of records in ONE `RouteBatch` RPC (Task 0.6).
     ///
     /// Native batch override of [`TransportSender::send_batch`]: serde-less
-    /// rustlib<->rustlib transfer. Records map to a proto
+    /// scalo<->scalo transfer. Records map to a proto
     /// [`Batch`](proto::Batch) via [`batch::records_to_proto`]; payloads travel
     /// as OPAQUE `bytes`, the JSON / MsgPack codec is NEVER invoked in transit.
     ///
@@ -846,7 +846,7 @@ impl proto::dfe_transport_server::DfeTransport for DfeTransportServiceImpl {
 
         let proto_batch = request.into_inner();
 
-        // Decode proto Batch -> rustlib Records (payloads zero-copy `Bytes`,
+        // Decode proto Batch -> scalo Records (payloads zero-copy `Bytes`,
         // codec NOT invoked). Records fan into the SAME mpsc channel the
         // single-message Push path uses, so recv() delivers them unchanged.
         let records = batch::proto_batch_to_records(proto_batch);

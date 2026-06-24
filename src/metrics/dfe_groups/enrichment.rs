@@ -3,7 +3,7 @@
 // Purpose:   DFE enrichment metrics group
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Enrichment cache metrics (GeoIP, reputation, lookup tables).

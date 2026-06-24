@@ -3,7 +3,7 @@
 // Purpose:   Integration tests for Vector wire protocol compatibility
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Integration tests for Vector compat gRPC transport.
@@ -567,7 +567,7 @@ sinks:
         .map(|i| {
             serde_json::json!({
                 "message": format!("client-event-{i}"),
-                "source": "rustlib-test"
+                "source": "scalo-test"
             })
         })
         .collect();
@@ -612,7 +612,7 @@ sinks:
     // Count JSON lines with our marker
     let matching_lines: Vec<&str> = output
         .lines()
-        .filter(|line| line.contains("rustlib-test"))
+        .filter(|line| line.contains("scalo-test"))
         .collect();
 
     assert_eq!(

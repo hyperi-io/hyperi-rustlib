@@ -3,14 +3,14 @@
 // Purpose:   E2E tests for generated container contract artefacts (TEMPLATE)
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! ============================================================================
 //! TEMPLATE -- copy this file into your DFE consumer's `tests/e2e/` and
 //! adapt the FIXTURE section. The probe/skip/cluster helpers live in
 //! `scalo::deployment::test_support` so each consumer's copy
-//! stays short and benefits from any bug fixes pushed to rustlib.
+//! stays short and benefits from any bug fixes pushed to scalo.
 //!
 //! Bring the test_support helpers into scope by adding a dev-dependency
 //! on scalo version 2.7.3 or higher with the
@@ -52,7 +52,7 @@
 //! # Why a mock binary?
 //!
 //! `generate_dockerfile()` produces a Dockerfile that `COPY`s the
-//! consumer app's binary into the image. rustlib itself isn't an app, so
+//! consumer app's binary into the image. scalo itself isn't an app, so
 //! for Tier A this template drops a tiny POSIX shell script into the
 //! build context that responds to `--help`. Real consumer copies of this
 //! template should REPLACE the mock with `cargo build --release --bin
@@ -85,7 +85,7 @@ fn test_contract() -> DeploymentContract {
     DeploymentContract {
         app_name: "hyperi-contract-test".into(),
         binary_name: "hyperi-contract-test".into(),
-        description: "Throwaway test app for rustlib contract e2e".into(),
+        description: "Throwaway test app for scalo contract e2e".into(),
         metrics_port: 9090,
         health: HealthContract::default(),
         env_prefix: "HCT".into(),

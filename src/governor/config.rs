@@ -3,7 +3,7 @@
 // Purpose:   SelfRegulationConfig -- cascade-overridable governor settings
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Cascade-overridable configuration for the self-regulation governor.
@@ -274,7 +274,7 @@ mod tests {
 
     /// The governor profile must serialise as snake_case so the
     /// `self_regulation.profile` cascade key reads identically to the Kafka
-    /// sizing profile (rustlib<->pylib config-consistency rule).
+    /// sizing profile (scalo<->pylib config-consistency rule).
     #[cfg(feature = "config")]
     #[test]
     fn profile_serialises_snake_case() {

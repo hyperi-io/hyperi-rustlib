@@ -25,7 +25,7 @@ backends. Callers never block on disk, Kafka, HTTP, or Redis I/O.
 
 Backends are concrete variants of a `DlqBackend` enum (static
 dispatch, no `Box<dyn>`, no `async-trait` macro). Adding a new backend
-means extending the enum in rustlib — consumers never construct backend
+means extending the enum in scalo — consumers never construct backend
 types directly.
 
 ---

@@ -3,7 +3,7 @@
 # Purpose:   Build the CPU operational-test harness for cgroup-confined runs
 # Language:  Dockerfile
 #
-# License:   BUSL-1.1
+# License:   Apache-2.0
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 #
 # The `worker` feature pulls rayon + parking_lot (no native libs), so the build

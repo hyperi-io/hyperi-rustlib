@@ -4,19 +4,31 @@
 [![Build Status](https://github.com/hyperi-io/scalo-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/hyperi-io/scalo-rs/actions)
 [![Crates.io](https://img.shields.io/crates/v/scalo?logo=rust)](https://crates.io/crates/scalo)
 [![docs.rs](https://img.shields.io/docsrs/scalo?logo=rust)](https://docs.rs/scalo)
-[![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 <!-- BADGES:END -->
 
-There's plenty of sage advice out there about how to run Rust services in production at scale — config cascades, structured logging, masking secrets, multi-backend secrets management, Prometheus, OpenTelemetry, Kafka transports, tiered disk-spillover sinks, adaptive worker pools, graceful shutdown — but almost none of it as code you can just install and use.
+> There's plenty of sage advice about running services in production at
+> scale -- config cascades, structured logging, secret masking, Prometheus,
+> OpenTelemetry, Kafka transports, tiered disk-spillover sinks, adaptive
+> worker pools, graceful shutdown -- but almost none of it as code you can
+> just install and use.
+>
+> This is that code.
 
-This is that code.
+scalo is the embedded, self-regulating runtime for data-plane services.
+Opinionated about correctness -- backpressure, memory safety and the probe
+trinity are on by default. Unopinionated about your domain -- no web
+framework, no ORM, no enforced transport. Drop it in; it works out of the box.
 
-Opinionated, drop-in, working out of the box. The patterns from blog posts, watercooler chats and beers with your Google mates as actual library — not a framework you assemble from twenty crates and 8 weeks of munging.
+Same batteries, idiomatic in each language: `cargo add scalo` (scalo-rs) /
+`pip install scalo` (scalo-py).
 
-Built as the foundation for HyperI's PB/hr data services. Generic enough
-that you don't need to be at HyperI to use it.
+Not a framework you assemble from twenty crates and 8 weeks of munging. Built
+as the foundation for PB/hr data services.
 
-This module exists because of this — <https://www.youtube.com/watch?v=xE9W9Ghe4Jk> — but for the backend. And of course, no microservices.
+This module exists because of this --
+<https://www.youtube.com/watch?v=xE9W9Ghe4Jk> -- but for the backend. And of
+course, no microservices.
 
 ## Quick Start
 
@@ -53,7 +65,6 @@ Pick the slice you need; pay only for what you use.
 | `runtime` | Runtime path resolution (XDG/container-aware) |
 | `config` | 7-layer config cascade (figment-based) |
 | `config-reload` | `SharedConfig<T>` + `ConfigReloader` hot-reload |
-| `config-postgres` | PostgreSQL config source |
 | `logger` | Structured logging, JSON/text auto-detect, sensitive-field masking |
 | `metrics` | Prometheus metrics + process/container metrics |
 | `otel-metrics` | OpenTelemetry metrics export (OTLP) |
@@ -81,7 +92,6 @@ Pick the slice you need; pay only for what you use.
 | `expression` | CEL expression evaluation |
 | `deployment` | Deployment-contract validation |
 | `version-check` | Optional startup version check |
-| `resilience` | Circuit breaker, retry, bulkhead (tower-resilience) |
 | `full` | Everything |
 
 ## Native System Dependencies
@@ -165,7 +175,7 @@ explicit `set_ready()` call — cleared during graceful shutdown.
 
 ## Self-regulation (default vertical scaling)
 
-A rustlib data-plane app regulates its own intake. Sized for steady state, a
+A scalo data-plane app regulates its own intake. Sized for steady state, a
 pod slows down or speeds up WITHIN itself first -- the default, fast, local
 response to a burst, a stalled upstream, or a transform that balloons memory.
 Only when that vertical headroom is exhausted does it escalate to horizontal
@@ -184,7 +194,7 @@ config cascade reference.
 
 ## License
 
-[BUSL-1.1](LICENSE) — Business Source License 1.1, transitions to Apache 2.0 after 3 years.
+[Apache-2.0](LICENSE) — Business Source License 1.1, transitions to Apache 2.0 after 3 years.
 
 ## Related
 

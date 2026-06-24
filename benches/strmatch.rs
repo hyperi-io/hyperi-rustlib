@@ -3,7 +3,7 @@
 // Purpose:   Criterion benchmarks proving the strmatch cost budgets
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Cost-budget verification for the four strmatch tiers.

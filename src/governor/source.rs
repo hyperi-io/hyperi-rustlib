@@ -3,7 +3,7 @@
 // Purpose:   Pressure seam + memory source for the self-regulation governor
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Pressure seam: normalised readings, sources, and the unified latch.

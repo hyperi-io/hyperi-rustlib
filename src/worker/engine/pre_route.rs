@@ -3,7 +3,7 @@
 // Purpose:   Zero-copy pre-route field extraction and filter evaluation
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Pre-route phase: extract a routing field from raw JSON bytes using

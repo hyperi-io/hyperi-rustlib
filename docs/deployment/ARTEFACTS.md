@@ -81,7 +81,7 @@ Produced by `generate_container_manifest(&contract)`. Schema version
 Runtime-stage fragment of a multi-stage Dockerfile, produced by
 `generate_runtime_stage(&contract)`. CI composes the full Dockerfile
 by prepending its own builder stages (cargo-chef pattern) and
-appending this fragment. Boundary: rustlib owns what's *in* the
+appending this fragment. Boundary: scalo owns what's *in* the
 container, CI owns how to *build* the binary.
 
 ```dockerfile
@@ -90,7 +90,7 @@ FROM ubuntu:24.04 AS runtime
 
 LABEL org.opencontainers.image.title="dfe-loader"
 LABEL org.opencontainers.image.vendor="HYPERI PTY LIMITED"
-LABEL org.opencontainers.image.licenses="BUSL-1.1"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL io.hyperi.profile="production"
 
 # Runtime shared libraries for dynamically-linked Rust crates.

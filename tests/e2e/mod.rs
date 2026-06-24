@@ -3,7 +3,7 @@
 // Purpose:   E2E test module declarations
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 #[cfg(feature = "transport-grpc")]

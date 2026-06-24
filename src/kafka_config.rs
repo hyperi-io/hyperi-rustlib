@@ -3,7 +3,7 @@
 // Purpose:   Shared Kafka librdkafka defaults, profiles, and file config loader
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Shared Kafka librdkafka configuration profiles, merge helper, and file loader.

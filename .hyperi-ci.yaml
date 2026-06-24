@@ -9,6 +9,7 @@
 # Reference: config/defaults.yaml in hyperi-ci.
 
 language: rust
+license: Apache-2.0
 quality:
   enabled: true
 test:

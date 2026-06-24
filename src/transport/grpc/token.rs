@@ -3,7 +3,7 @@
 // Purpose:   gRPC commit token abstraction
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 use super::super::traits::CommitToken;

@@ -3,7 +3,7 @@
 // Purpose:   Runtime native dependency declarations for container images
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Runtime native dependency contracts for Dockerfile generation.

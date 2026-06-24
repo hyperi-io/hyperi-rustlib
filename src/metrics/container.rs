@@ -3,7 +3,7 @@
 // Purpose:   Container-level metrics from cgroups
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Container metrics from cgroups (v1 and v2).

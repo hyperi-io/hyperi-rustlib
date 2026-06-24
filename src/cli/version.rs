@@ -3,7 +3,7 @@
 // Purpose:   Version information types
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Version information for DFE services.
@@ -27,12 +27,12 @@ pub struct VersionInfo {
     pub rustc_version: Option<String>,
     /// Target triple (e.g. "x86_64-unknown-linux-gnu").
     pub target: Option<String>,
-    /// rustlib version.
+    /// scalo version.
     pub rustlib_version: String,
 }
 
 impl VersionInfo {
-    /// Create with required fields, using rustlib version from this crate.
+    /// Create with required fields, using scalo version from this crate.
     #[must_use]
     pub fn new(name: impl Into<String>, version: impl Into<String>) -> Self {
         Self {
@@ -99,7 +99,7 @@ impl fmt::Display for VersionInfo {
         if let Some(ref t) = self.target {
             writeln!(f, "  target:  {t}")?;
         }
-        write!(f, "  rustlib: {}", self.rustlib_version)
+        write!(f, "  scalo: {}", self.rustlib_version)
     }
 }
 
@@ -149,6 +149,6 @@ mod tests {
         assert!(output.contains("dfe-loader 1.9.7"));
         assert!(output.contains("commit:  abc1234"));
         assert!(output.contains("target:  x86_64-unknown-linux-gnu"));
-        assert!(output.contains(&format!("rustlib: {}", crate::VERSION)));
+        assert!(output.contains(&format!("scalo: {}", crate::VERSION)));
     }
 }

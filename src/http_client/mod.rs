@@ -3,7 +3,7 @@
 // Purpose:   Production HTTP client with retry middleware
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Production HTTP client with automatic retries and timeouts.

@@ -3,7 +3,7 @@
 // Purpose:   Tiered sink with disk spillover for resilient message delivery
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Tiered sink with automatic disk spillover for resilient message delivery.

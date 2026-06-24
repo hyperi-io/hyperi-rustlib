@@ -3,7 +3,7 @@
 // Purpose:   Black-box, cgroup-confined memory backpressure operational test
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Operational memory test (CRITICAL, see the plan's "Operational testing"

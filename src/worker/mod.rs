@@ -3,7 +3,7 @@
 // Purpose:   Adaptive worker pool with hybrid rayon + tokio execution
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Adaptive worker pool and batch processing framework.

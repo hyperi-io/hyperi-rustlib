@@ -3,7 +3,7 @@
 // Purpose:   Single-binary e2e test entry point (external infrastructure required)
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! End-to-end tests requiring external infrastructure.

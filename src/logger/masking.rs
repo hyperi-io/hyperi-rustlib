@@ -3,7 +3,7 @@
 // Purpose:   Sensitive data masking for log output
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Sensitive data masking for tracing log output.

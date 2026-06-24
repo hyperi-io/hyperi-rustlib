@@ -3,7 +3,7 @@
 // Purpose:   CEL expression compile / evaluate / validate wrappers
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Core CEL expression operations -- compile, evaluate, validate.

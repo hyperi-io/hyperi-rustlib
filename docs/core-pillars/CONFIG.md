@@ -30,7 +30,8 @@ Each YAML layer is searched in this order, first match wins:
 ```
 
 `<app_name>` resolves from `ConfigOptions::app_name`, then `APP_NAME`, then
-`HYPERI_LIB_APP_NAME`. No name -> the home-config path is skipped.
+`SCALO_APP_NAME` (deprecated `HYPERI_LIB_APP_NAME`). No name -> the home-config
+path is skipped.
 
 ---
 

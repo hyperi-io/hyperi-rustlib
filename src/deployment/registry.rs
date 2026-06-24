@@ -3,7 +3,7 @@
 // Purpose:   Config-cascade-driven container registry resolution
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Container registry resolution for deployment contracts.

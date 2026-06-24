@@ -4,7 +4,7 @@
 # Purpose:   Cgroup-confined CPU oversubscription operational test (black box)
 # Language:  Bash
 #
-# License:   BUSL-1.1
+# License:   Apache-2.0
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 #
 # Proves the adaptive worker pool PARKS idle workers in operation (not just in
@@ -21,7 +21,7 @@
 #                                 If cap=off did not, the test proves nothing.
 #
 # BLACK BOX: asserts on the CPU-seconds the process actually burned (from
-# /proc/self/stat) and the cgroup's throttled_usec -- NOT on rustlib internals.
+# /proc/self/stat) and the cgroup's throttled_usec -- NOT on scalo internals.
 #
 # Usage:  scripts/operational-cpu-test.sh [CPUS] [IDLE_MS]
 #   CPUS     docker --cpus value             (default 0.5)

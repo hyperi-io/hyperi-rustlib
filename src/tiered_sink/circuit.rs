@@ -3,7 +3,7 @@
 // Purpose:   Circuit breaker for sink health tracking
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Circuit breaker for sink health tracking.

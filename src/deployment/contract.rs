@@ -3,7 +3,7 @@
 // Purpose:   Deployment contract types
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Deployment contract types.
@@ -162,7 +162,7 @@ fn default_vendor() -> String {
 }
 
 fn default_license() -> String {
-    "BUSL-1.1".to_string()
+    "Apache-2.0".to_string()
 }
 
 fn default_schema_version() -> u32 {

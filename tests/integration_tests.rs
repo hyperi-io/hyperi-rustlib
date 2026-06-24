@@ -3,7 +3,7 @@
 // Purpose:   Single-binary integration test entry point
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Integration tests — consolidated into a single binary for compile-time efficiency.

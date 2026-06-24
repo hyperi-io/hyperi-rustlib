@@ -3,12 +3,12 @@
 // Purpose:   Native batch transport -- WorkBatch <-> proto Batch wire mapper
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! # Native batch transport wire mapper (Task 0.6)
 //!
-//! Serde-less rustlib<->rustlib (DFE<->DFE) transfer of a whole
+//! Serde-less scalo<->scalo (DFE<->DFE) transfer of a whole
 //! [`WorkBatch`](crate::transport::WorkBatch) over the existing gRPC mesh. One
 //! `WorkBatch` maps to one proto [`Batch`](super::proto::Batch) and travels in a
 //! single `RouteBatch` RPC -- batch-at-a-time, NOT record-by-record streaming.
@@ -42,7 +42,7 @@ use crate::transport::work_batch::{Record, RecordMeta};
 use bytes::Bytes;
 use std::sync::Arc;
 
-/// Map a rustlib [`PayloadFormat`] onto the proto [`Format`](proto::Format).
+/// Map a scalo [`PayloadFormat`] onto the proto [`Format`](proto::Format).
 fn format_to_proto(format: PayloadFormat) -> proto::Format {
     match format {
         PayloadFormat::Auto => proto::Format::Auto,
@@ -51,9 +51,9 @@ fn format_to_proto(format: PayloadFormat) -> proto::Format {
     }
 }
 
-/// Map a proto [`Format`](proto::Format) back onto a rustlib [`PayloadFormat`].
+/// Map a proto [`Format`](proto::Format) back onto a scalo [`PayloadFormat`].
 ///
-/// `FORMAT_ARROW_IPC` has no rustlib equivalent yet, so it collapses to
+/// `FORMAT_ARROW_IPC` has no scalo equivalent yet, so it collapses to
 /// [`PayloadFormat::Auto`] (the safe "detect later" default). An out-of-range
 /// enum value (forward-compat from a newer peer) likewise maps to `Auto`.
 fn format_from_proto(format: i32) -> PayloadFormat {
@@ -65,7 +65,7 @@ fn format_from_proto(format: i32) -> PayloadFormat {
     }
 }
 
-/// Map one rustlib [`Record`] onto a proto [`Record`](proto::Record).
+/// Map one scalo [`Record`] onto a proto [`Record`](proto::Record).
 ///
 /// The payload `Bytes` handle is MOVED onto the proto field (no copy). `key`
 /// `None` becomes the empty string; `Some(k)` carries the key text.
@@ -92,7 +92,7 @@ fn record_to_proto(record: Record) -> proto::Record {
     }
 }
 
-/// Map a proto [`Record`](proto::Record) back onto a rustlib [`Record`].
+/// Map a proto [`Record`](proto::Record) back onto a scalo [`Record`].
 ///
 /// The payload is the prost-decoded [`Bytes`] handle MOVED across (zero-copy --
 /// a refcounted view of the decode buffer). An empty `key` string maps back to
@@ -123,7 +123,7 @@ fn record_from_proto(record: proto::Record) -> Record {
     }
 }
 
-/// Map a slice of rustlib [`Record`]s onto a proto [`Batch`](proto::Batch).
+/// Map a slice of scalo [`Record`]s onto a proto [`Batch`](proto::Batch).
 ///
 /// SEND-side mapper. Takes records, not the whole `WorkBatch<T>` (commit
 /// tokens and DLQ entries do not cross the wire -- see module docs). Payloads
@@ -322,7 +322,7 @@ mod tests {
         assert_eq!(back.key, None);
     }
 
-    /// FORMAT_ARROW_IPC (no rustlib equivalent) maps back to `Auto`.
+    /// FORMAT_ARROW_IPC (no scalo equivalent) maps back to `Auto`.
     #[test]
     fn arrow_format_collapses_to_auto() {
         let p = proto::Record {

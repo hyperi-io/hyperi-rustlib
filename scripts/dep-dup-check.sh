@@ -4,7 +4,7 @@
 # Purpose:   Warning-only dependency-duplication report (finding P2 / task 4.3)
 # Language:  Bash
 #
-# License:   BUSL-1.1
+# License:   Apache-2.0
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 #
 # Prints duplicated crate versions (`cargo tree -d`). WARNING-ONLY: it never

@@ -1,6 +1,6 @@
 # Native Deps
 
-rustlib dynamically links against system C libraries -- rdkafka,
+scalo dynamically links against system C libraries -- rdkafka,
 libgit2, zstd, openssl, zlib -- instead of static compilation. Saves
 ~30 minutes of C++ build per CI run. Cost: the runtime container needs
 the `.so` files present.
@@ -125,7 +125,7 @@ Opt-in keeps the image lean.
 
 ## Codename override
 
-For a base image rustlib doesn't recognise, set
+For a base image scalo doesn't recognise, set
 `AptRepoContract::codename` directly. The field is empty when derived;
 set it by hand and the generator uses your value as-is. Useful on a
 private base image where the substring match misses.

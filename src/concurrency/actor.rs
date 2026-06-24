@@ -3,7 +3,7 @@
 // Purpose:   ActorHandle -- stateful command-queue actor
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Stateful command-queue actor.

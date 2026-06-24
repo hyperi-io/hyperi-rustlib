@@ -3,7 +3,7 @@
 // Purpose:   Docker Compose fragment generation
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 #![allow(clippy::format_push_string)]

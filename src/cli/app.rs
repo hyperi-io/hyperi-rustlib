@@ -3,7 +3,7 @@
 // Purpose:   ServiceApp trait and standard lifecycle runner
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Application trait and lifecycle runner for DFE services.

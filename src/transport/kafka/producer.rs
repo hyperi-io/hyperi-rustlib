@@ -3,7 +3,7 @@
 // Purpose:   High-throughput Kafka producer for PB/day workloads
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! High-throughput Kafka producer optimized for PB/day workloads.

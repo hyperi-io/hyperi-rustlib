@@ -3,7 +3,7 @@
 // Purpose:   Concurrent field name interning for the batch processing engine
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Field name interning for the batch processing engine.

@@ -3,7 +3,7 @@
 // Purpose:   Kafka transport configuration with profiles and config-driven overrides
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Kafka configuration with profile-based defaults and config-driven overrides.
@@ -1854,7 +1854,7 @@ mod tests {
 
     /// The Kafka sizing profile must serialise as snake_case so the
     /// `self_regulation.profile` cascade key reads identically to the governor
-    /// profile (rustlib<->pylib config-consistency rule). The doc table at the
+    /// profile (scalo<->pylib config-consistency rule). The doc table at the
     /// enum definition uses `low_latency`; this asserts the wire form matches.
     #[test]
     fn sizing_profile_serialises_snake_case() {

@@ -3,7 +3,7 @@
 // Purpose:   Atomic pipeline statistics for lock-free concurrent access
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Atomic pipeline statistics for DFE services.

@@ -3,7 +3,7 @@
 // Purpose:   Tests for the WorkBatch engine run-loop driver
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Driver run-loop tests, split out of driver.rs to keep that file focused

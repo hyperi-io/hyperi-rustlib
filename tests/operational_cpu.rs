@@ -3,7 +3,7 @@
 // Purpose:   Black-box, cgroup-confined CPU oversubscription operational test
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Operational CPU test (CRITICAL, see the plan's "Operational testing"

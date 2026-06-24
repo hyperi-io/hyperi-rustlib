@@ -3,7 +3,7 @@
 // Purpose:   Unified dead letter queue with pluggable backends
 // Language:  Rust
 //
-// License:   BUSL-1.1
+// License:   Apache-2.0
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
 //! Unified dead letter queue (DLQ) with pluggable backends.
@@ -24,7 +24,7 @@
 //!
 //! Backends are selected and configured via [`DlqConfig`]; consumers
 //! never construct backend types directly. To add a new backend, extend
-//! the [`DlqBackend`] enum in rustlib itself.
+//! the [`DlqBackend`] enum in scalo itself.
 //!
 //! ## Modes
 //!
