@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/secrets/vault.rs
 // Purpose:   OpenBao/Vault secret provider
 // Language:  Rust

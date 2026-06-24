@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/error.rs
 // Purpose:   Deployment validation error types
 // Language:  Rust

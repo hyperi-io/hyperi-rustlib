@@ -38,7 +38,7 @@ the runtime hook (or call `HttpServer` directly for tooling-style
 apps):
 
 ```rust
-use hyperi_rustlib::http_server::{HttpServer, HttpServerConfig};
+use scalo::http_server::{HttpServer, HttpServerConfig};
 use axum::{Router, routing::get};
 
 let server = HttpServer::new(HttpServerConfig::default());

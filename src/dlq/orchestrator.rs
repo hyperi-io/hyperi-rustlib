@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/dlq/orchestrator.rs
 // Purpose:   Dlq orchestrator over BackgroundSink<DlqEntry>
 // Language:  Rust

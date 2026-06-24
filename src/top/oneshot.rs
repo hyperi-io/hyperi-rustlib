@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/top/oneshot.rs
 // Purpose:   Non-interactive single-scrape output for top command
 // Language:  Rust

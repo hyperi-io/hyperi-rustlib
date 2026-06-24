@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/e2e/vector_compat.rs
 // Purpose:   Integration tests for Vector wire protocol compatibility
 // Language:  Rust
@@ -29,9 +29,9 @@ use std::process::Command;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use hyperi_rustlib::transport::VectorCompatClient;
-use hyperi_rustlib::transport::grpc::{GrpcConfig, GrpcTransport};
-use hyperi_rustlib::transport::{SendResult, TransportBase, TransportReceiver, TransportSender};
+use scalo::transport::VectorCompatClient;
+use scalo::transport::grpc::{GrpcConfig, GrpcTransport};
+use scalo::transport::{SendResult, TransportBase, TransportReceiver, TransportSender};
 
 /// Resolve the path to the Vector binary (cached via fetch-vector.sh or system PATH).
 ///

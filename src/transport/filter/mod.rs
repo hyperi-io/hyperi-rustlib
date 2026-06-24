@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/filter/mod.rs
 // Purpose:   Transport-level message filtering engine
 // Language:  Rust
@@ -418,7 +418,7 @@ fn warn_msgpack_bypass_once(direction: FilterDirection) {
     };
     if !flag.swap(true, Ordering::AcqRel) {
         tracing::warn!(
-            target: "hyperi_rustlib::transport::filter",
+            target: "scalo::transport::filter",
             direction = %direction,
             "transport filters skipped a MsgPack payload -- \
              filters are JSON-only. Scrape \

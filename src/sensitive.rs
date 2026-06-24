@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/sensitive.rs
 // Purpose:   Compile-time safe sensitive string type that never serialises its value
 // Language:  Rust
@@ -27,7 +27,7 @@
 //! # Usage
 //!
 //! ```rust
-//! use hyperi_rustlib::SensitiveString;
+//! use scalo::SensitiveString;
 //! use serde::{Serialize, Deserialize};
 //!
 //! #[derive(Serialize, Deserialize)]
@@ -105,7 +105,7 @@ impl Drop for ExposeGuard {
 /// # Examples
 ///
 /// ```rust
-/// use hyperi_rustlib::{SensitiveString, expose_during};
+/// use scalo::{SensitiveString, expose_during};
 /// use serde::{Serialize, Deserialize};
 ///
 /// #[derive(Serialize, Deserialize)]
@@ -182,7 +182,7 @@ impl serde::Serialize for SensitiveString {
         // emits the redacted constant. Inside `expose_during`, the
         // serializer emits the inner value verbatim, which is what
         // figment / serde round-trips need to avoid destroying secrets
-        // (see hyperi-rustlib#41).
+        // (see scalo#41).
         if EXPOSE.with(Cell::get) {
             serializer.serialize_str(&self.0)
         } else {
@@ -330,9 +330,9 @@ mod tests {
         assert_eq!(s.expose(), secret);
     }
 
-    // ----- Round-trip preservation (hyperi-rustlib#41) -----
+    // ----- Round-trip preservation (scalo#41) -----
 
-    /// The motivating case from hyperi-rustlib#41: serialise to a serde
+    /// The motivating case from scalo#41: serialise to a serde
     /// `Value`, then deserialise back. Without `expose_during` the
     /// inner string is destroyed (replaced by `***REDACTED***`); inside
     /// the helper, the value survives.

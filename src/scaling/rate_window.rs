@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/scaling/rate_window.rs
 // Purpose:   Sliding window rate calculator
 // Language:  Rust
@@ -26,7 +26,7 @@ use parking_lot::RwLock;
 /// # Example
 ///
 /// ```rust
-/// use hyperi_rustlib::scaling::RateWindow;
+/// use scalo::scaling::RateWindow;
 /// use std::time::Duration;
 ///
 /// let window = RateWindow::new(Duration::from_secs(60));

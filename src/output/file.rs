@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/output/file.rs
 // Purpose:   File output sink using NdjsonWriter
 // Language:  Rust

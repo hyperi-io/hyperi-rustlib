@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/memory/cgroup.rs
 // Purpose:   Cgroup-aware memory limit + pressure detection
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/directory_config/error.rs
 // Purpose:   Error types for DirectoryConfigStore
 // Language:  Rust

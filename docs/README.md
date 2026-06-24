@@ -1,4 +1,4 @@
-# hyperi-rustlib docs
+# scalo docs
 
 Shared Rust library for HyperI services. Wire three lines at startup and you
 get config cascade, structured logs, Prometheus metrics, health probes, OTel
@@ -168,7 +168,7 @@ sub-components (filter engine lives inside every transport).
 
 ## Project facts
 
-- **Crate:** [hyperi-rustlib](https://crates.io/crates/hyperi-rustlib) (crates.io)
+- **Crate:** [scalo](https://crates.io/crates/scalo) (crates.io)
 - **Edition:** 2024
 - **MSRV:** see `rust-version` in `Cargo.toml`
 - **Used by:** [dfe-loader](https://github.com/hyperi-io/dfe-loader), [dfe-receiver](https://github.com/hyperi-io/dfe-receiver), [dfe-fetcher](https://github.com/hyperi-io/dfe-fetcher), [dfe-archiver](https://github.com/hyperi-io/dfe-archiver), [dfe-transform-vrl](https://github.com/hyperi-io/dfe-transform-vrl), [dfe-transform-vector](https://github.com/hyperi-io/dfe-transform-vector)

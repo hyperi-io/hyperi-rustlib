@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/directory_config/git.rs
 // Purpose:   Git operations for DirectoryConfigStore via git2
 // Language:  Rust

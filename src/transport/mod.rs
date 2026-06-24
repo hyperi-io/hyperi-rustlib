@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/mod.rs
 // Purpose:   Transport abstraction layer for message delivery
 // Language:  Rust
@@ -42,7 +42,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::{TransportSender, TransportConfig};
+//! use scalo::transport::{TransportSender, TransportConfig};
 //!
 //! // Factory creates the right backend from config
 //! let sender: Box<dyn TransportSender> = transport::sender_from_config("transport.output").await?;

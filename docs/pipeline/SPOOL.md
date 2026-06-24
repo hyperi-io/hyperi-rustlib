@@ -138,7 +138,7 @@ Builder methods on `SpoolConfig` cover the common shapes —
 ## Usage
 
 ```rust
-use hyperi_rustlib::spool::{Spool, SpoolConfig};
+use scalo::spool::{Spool, SpoolConfig};
 
 let cfg = SpoolConfig::new("/var/spool/myapp")
     .compress(true)

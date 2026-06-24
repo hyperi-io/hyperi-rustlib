@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/vector_compat/mod.rs
 // Purpose:   Vector gRPC compatibility layer
 // Language:  Rust

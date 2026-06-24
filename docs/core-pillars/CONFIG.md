@@ -40,7 +40,7 @@ Each YAML layer is searched in this order, first match wins:
 ### Setup + ad-hoc reads
 
 ```rust
-use hyperi_rustlib::config::{self, ConfigOptions};
+use scalo::config::{self, ConfigOptions};
 
 config::setup(ConfigOptions { env_prefix: "DFE_LOADER".into(), ..Default::default() })?;
 
@@ -112,7 +112,7 @@ but Figment's nested convention is double-underscore (`DFE_LOADER__KAFKA__BROKER
 Without bridging, K8s overrides silently fail to apply.
 
 ```rust
-use hyperi_rustlib::config::flat_env::ApplyFlatEnv;
+use scalo::config::flat_env::ApplyFlatEnv;
 
 let cfg = Figment::new()
     .merge(Yaml::file("settings.yaml"))

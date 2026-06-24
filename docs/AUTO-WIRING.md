@@ -144,7 +144,7 @@ for the test pattern.
 
 ## What this looks like for a module author
 
-When you add a new module to `hyperi-rustlib` (or to a downstream app
+When you add a new module to `scalo` (or to a downstream app
 that has one), the auto-wiring contract is:
 
 1. **If the module has configurable behaviour**, load via the cascade —

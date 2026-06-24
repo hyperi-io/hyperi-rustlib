@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/expression/error.rs
 // Purpose:   Expression error types
 // Language:  Rust

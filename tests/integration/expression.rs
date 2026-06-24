@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/integration/expression.rs
 // Purpose:   Integration tests for CEL expression module
 // Language:  Rust
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 
 use serde_json::json;
 
-use hyperi_rustlib::expression::{
+use scalo::expression::{
     ALLOWED_FUNCTIONS, DISALLOWED_FUNCTIONS, ExpressionError, ProfileConfig,
     check_profile_with_config, compile, evaluate, evaluate_condition, validate,
 };
@@ -461,7 +461,7 @@ fn compile_and_execute() {
         ("quantity".into(), json!(5)),
         ("threshold".into(), json!(40)),
     ]);
-    let ctx = hyperi_rustlib::expression::build_context(&data).unwrap();
+    let ctx = scalo::expression::build_context(&data).unwrap();
     let result = program.execute(&ctx).unwrap();
     assert_eq!(result, true.into());
 }
@@ -471,11 +471,11 @@ fn compile_reuse() {
     let program = compile(r#"severity == "critical""#).unwrap();
 
     let data1 = HashMap::from([("severity".into(), json!("critical"))]);
-    let ctx1 = hyperi_rustlib::expression::build_context(&data1).unwrap();
+    let ctx1 = scalo::expression::build_context(&data1).unwrap();
     assert_eq!(program.execute(&ctx1).unwrap(), true.into());
 
     let data2 = HashMap::from([("severity".into(), json!("low"))]);
-    let ctx2 = hyperi_rustlib::expression::build_context(&data2).unwrap();
+    let ctx2 = scalo::expression::build_context(&data2).unwrap();
     assert_eq!(program.execute(&ctx2).unwrap(), false.into());
 }
 

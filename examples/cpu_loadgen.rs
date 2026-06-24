@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      examples/cpu_loadgen.rs
 // Purpose:   CPU operational-test harness (NOT a product binary)
 // Language:  Rust
@@ -42,7 +42,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use hyperi_rustlib::worker::{AdaptiveWorkerPool, WorkerPoolConfig};
+use scalo::worker::{AdaptiveWorkerPool, WorkerPoolConfig};
 use parking_lot::Mutex;
 
 fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {

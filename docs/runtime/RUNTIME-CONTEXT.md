@@ -65,7 +65,7 @@ which checks v2 then v1 then total system memory.
 ## Global singleton
 
 ```rust
-use hyperi_rustlib::env::runtime_context;
+use scalo::env::runtime_context;
 
 let ctx = runtime_context();   // &'static RuntimeContext
 tracing::info!(
@@ -137,7 +137,7 @@ the `CONTAINER_BASE_PATH` env var. App name on bare metal comes
 from `APP_NAME`, defaulting to `hs-app`.
 
 ```rust
-use hyperi_rustlib::runtime::RuntimePaths;
+use scalo::runtime::RuntimePaths;
 
 let paths = RuntimePaths::discover();
 paths.ensure_dirs()?;              // mkdir -p all of them

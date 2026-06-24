@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/contract.rs
 // Purpose:   Deployment contract types
 // Language:  Rust
@@ -109,7 +109,7 @@ pub struct DeploymentContract {
     /// Runtime native dependencies for the container image.
     ///
     /// Use [`NativeDepsContract::for_rustlib_features`] to auto-populate from
-    /// hyperi-rustlib feature flags. The Dockerfile generator emits the correct
+    /// scalo feature flags. The Dockerfile generator emits the correct
     /// APT repo setup and package installation commands.
     #[serde(default)]
     pub native_deps: NativeDepsContract,

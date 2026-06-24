@@ -14,7 +14,7 @@ matters at production scale.
 ## Usage
 
 ```rust
-use hyperi_rustlib::http_client::HttpClient;
+use scalo::http_client::HttpClient;
 
 let client = HttpClient::from_cascade()?;
 

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/traits.rs
 // Purpose:   Transport trait definitions (sender + receiver split)
 // Language:  Rust

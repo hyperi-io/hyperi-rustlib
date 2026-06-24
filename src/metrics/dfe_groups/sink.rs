@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/dfe_groups/sink.rs
 // Purpose:   DFE sink metrics group
 // Language:  Rust

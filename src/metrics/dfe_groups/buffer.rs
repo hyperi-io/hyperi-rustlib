@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/dfe_groups/buffer.rs
 // Purpose:   DFE buffer metrics group
 // Language:  Rust

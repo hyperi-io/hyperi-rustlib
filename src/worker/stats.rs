@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/stats.rs
 // Purpose:   Atomic pipeline statistics for lock-free concurrent access
 // Language:  Rust

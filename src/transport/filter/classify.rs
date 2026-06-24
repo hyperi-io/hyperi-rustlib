@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/filter/classify.rs
 // Purpose:   CEL expression classification into performance tiers
 // Language:  Rust

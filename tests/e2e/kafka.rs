@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/e2e/kafka.rs
 // Purpose:   Kafka transport integration tests
 // Language:  Rust
@@ -13,10 +13,10 @@
 //!
 //! Or set up via environment variables:
 //! - `TEST_KAFKA_BROKERS`: Kafka broker addresses (default: localhost:9092)
-//! - `TEST_KAFKA_TOPIC`: Test topic name (default: hyperi-rustlib-test)
-//! - `TEST_KAFKA_GROUP`: Consumer group ID (default: hyperi-rustlib-test-group)
+//! - `TEST_KAFKA_TOPIC`: Test topic name (default: scalo-test)
+//! - `TEST_KAFKA_GROUP`: Consumer group ID (default: scalo-test-group)
 
-use hyperi_rustlib::transport::kafka::{
+use scalo::transport::kafka::{
     BrokerMetrics, DEVTEST_PROFILE, KafkaAdmin, KafkaConfig, KafkaMetrics, KafkaProfile,
     KafkaToken, PRODUCTION_PROFILE, StatsContext, TopicInfo, healthy_broker_count,
     total_consumer_lag,
@@ -150,8 +150,8 @@ fn test_kafka_config_defaults() {
     let config = KafkaConfig::default();
 
     assert_eq!(config.brokers, vec!["localhost:9092"]);
-    assert_eq!(config.group, "hyperi-rustlib-consumer");
-    assert_eq!(config.client_id, "hyperi-rustlib");
+    assert_eq!(config.group, "scalo-consumer");
+    assert_eq!(config.client_id, "scalo");
     assert!(!config.enable_auto_commit);
     assert_eq!(config.auto_offset_reset, "earliest");
     assert_eq!(config.fetch_max_bytes, 52_428_800); // 50MB
@@ -566,9 +566,9 @@ fn get_test_config() -> Option<KafkaConfig> {
     Some(KafkaConfig {
         brokers: brokers.split(',').map(|s| s.to_string()).collect(),
         group: std::env::var("TEST_KAFKA_GROUP")
-            .unwrap_or_else(|_| "hyperi-rustlib-test-group".to_string()),
+            .unwrap_or_else(|_| "scalo-test-group".to_string()),
         topics: vec![
-            std::env::var("TEST_KAFKA_TOPIC").unwrap_or_else(|_| "hyperi-rustlib-test".to_string()),
+            std::env::var("TEST_KAFKA_TOPIC").unwrap_or_else(|_| "scalo-test".to_string()),
         ],
         ..Default::default()
     })
@@ -577,7 +577,7 @@ fn get_test_config() -> Option<KafkaConfig> {
 #[tokio::test]
 #[ignore = "requires Kafka broker - set TEST_KAFKA_BROKERS to run"]
 async fn test_kafka_transport_connection() {
-    use hyperi_rustlib::transport::kafka::KafkaTransport;
+    use scalo::transport::kafka::KafkaTransport;
 
     let Some(config) = get_test_config() else {
         eprintln!("Skipping: TEST_KAFKA_BROKERS not set");
@@ -634,7 +634,7 @@ async fn test_kafka_admin_describe_topic() {
 #[tokio::test]
 #[ignore = "requires Kafka broker - set TEST_KAFKA_BROKERS to run"]
 async fn test_kafka_send_receive_batch() {
-    use hyperi_rustlib::transport::{TransportReceiver, TransportSender, kafka::KafkaTransport};
+    use scalo::transport::{TransportReceiver, TransportSender, kafka::KafkaTransport};
 
     let Some(mut config) = get_test_config() else {
         eprintln!("Skipping: TEST_KAFKA_BROKERS not set");
@@ -642,7 +642,7 @@ async fn test_kafka_send_receive_batch() {
     };
 
     // Use unique group to avoid interference
-    config.group = format!("hyperi-rustlib-test-{}", std::process::id());
+    config.group = format!("scalo-test-{}", std::process::id());
 
     let transport = KafkaTransport::new(&config).await.unwrap();
     let topic = config.topics.first().unwrap();

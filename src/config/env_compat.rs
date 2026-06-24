@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/config/env_compat.rs
 // Purpose:   Environment variable compatibility layer with deprecation warnings
 // Language:  Rust
@@ -17,7 +17,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::config::env_compat::EnvVar;
+//! use scalo::config::env_compat::EnvVar;
 //!
 //! // Define a variable with legacy aliases
 //! let host = EnvVar::new("PGHOST")

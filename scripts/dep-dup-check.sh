@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Project:   hyperi-rustlib
+# Project:   scalo
 # File:      scripts/dep-dup-check.sh
 # Purpose:   Warning-only dependency-duplication report (finding P2 / task 4.3)
 # Language:  Bash

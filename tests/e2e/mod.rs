@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/e2e/mod.rs
 // Purpose:   E2E test module declarations
 // Language:  Rust

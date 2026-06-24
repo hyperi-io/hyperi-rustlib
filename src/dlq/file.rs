@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/dlq/file.rs
 // Purpose:   File-based DLQ backend using AsyncNdjsonWriter
 // Language:  Rust

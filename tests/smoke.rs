@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/smoke.rs
 // Purpose:   Startup smoke test — catches init panics before production
 // Language:  Rust
@@ -13,7 +13,7 @@
 
 #[test]
 fn smoke_env_detection() {
-    let env = hyperi_rustlib::env::Environment::detect();
+    let env = scalo::env::Environment::detect();
     assert!(
         !format!("{env:?}").is_empty(),
         "environment detection must return a valid variant"
@@ -22,7 +22,7 @@ fn smoke_env_detection() {
 
 #[test]
 fn smoke_runtime_paths() {
-    let paths = hyperi_rustlib::runtime::RuntimePaths::discover();
+    let paths = scalo::runtime::RuntimePaths::discover();
     assert!(
         !paths.data_dir.as_os_str().is_empty(),
         "runtime data_dir must be non-empty"

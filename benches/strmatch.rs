@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      benches/strmatch.rs
 // Purpose:   Criterion benchmarks proving the strmatch cost budgets
 // Language:  Rust
@@ -19,7 +19,7 @@
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 
-use hyperi_rustlib::strmatch::{MatcherTier, StrMatcher, StrMatcherSet};
+use scalo::strmatch::{MatcherTier, StrMatcher, StrMatcherSet};
 
 const HAYSTACK_SHORT: &[u8] =
     b"2026-05-13T11:00:00.123+11:00 INFO request_id=req_abc123 user=alice action=login src=10.0.0.1";

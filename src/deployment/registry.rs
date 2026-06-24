@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/registry.rs
 // Purpose:   Config-cascade-driven container registry resolution
 // Language:  Rust
@@ -52,7 +52,7 @@ pub const DEFAULT_BASE_IMAGE: &str = "ubuntu:24.04";
 /// # Example
 ///
 /// ```rust,no_run
-/// use hyperi_rustlib::deployment::{DeploymentContract, image_registry_from_cascade};
+/// use scalo::deployment::{DeploymentContract, image_registry_from_cascade};
 /// # fn dummy() -> DeploymentContract { unimplemented!() }
 /// let mut contract = dummy();
 /// contract.image_registry = image_registry_from_cascade();

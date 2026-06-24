@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/filter/compiled.rs
 // Purpose:   Compiled filter variants with Tier 1 SIMD evaluation
 // Language:  Rust

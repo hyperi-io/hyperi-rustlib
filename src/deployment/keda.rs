@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/keda.rs
 // Purpose:   KEDA autoscaling configuration and contract types
 // Language:  Rust

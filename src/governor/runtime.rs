@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/governor/runtime.rs
 // Purpose:   SelfRegulationGovernor -- the built, wired-in governor bundle
 // Language:  Rust

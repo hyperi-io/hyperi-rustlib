@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/top/mod.rs
 // Purpose:   TUI metrics dashboard module
 // Language:  Rust

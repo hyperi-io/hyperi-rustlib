@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/integration/env_parity.rs
 // Purpose:   Environment detection parity tests
 // Language:  Rust
@@ -13,7 +13,7 @@
 //! These tests verify that environment detection behaves identically
 //! to hyperi-golib's env package.
 
-use hyperi_rustlib::env::{Environment, get_app_env};
+use scalo::env::{Environment, get_app_env};
 
 /// Test that Environment::detect() returns valid enum.
 #[test]

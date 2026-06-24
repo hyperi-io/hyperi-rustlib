@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/grpc/token.rs
 // Purpose:   gRPC commit token abstraction
 // Language:  Rust

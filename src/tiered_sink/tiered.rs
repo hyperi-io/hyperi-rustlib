@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/tiered_sink/tiered.rs
 // Purpose:   TieredSink implementation
 // Language:  Rust

@@ -1,6 +1,6 @@
 # Integration
 
-This walks through wiring `hyperi-rustlib` into a new DFE service from
+This walks through wiring `scalo` into a new DFE service from
 empty `Cargo.toml` to running binary. The goal is a self-contained recipe;
 the deep-dive details for each line live in the subsystem docs.
 
@@ -21,7 +21,7 @@ For a typical DFE service that talks to Kafka, ingests gRPC, scales under
 KEDA, and ships container artefacts, the `Cargo.toml` reads:
 
 ```toml
-[dependencies.hyperi-rustlib]
+[dependencies.scalo]
 version = "2"
 features = [
     "cli-service",          # DfeApp trait, run_app, ServiceRuntime
@@ -78,9 +78,9 @@ pub struct KafkaConfig {
     pub brokers: Vec<String>,
     pub topic: String,
     #[serde(default)]
-    pub username: Option<hyperi_rustlib::SensitiveString>,
+    pub username: Option<scalo::SensitiveString>,
     #[serde(default)]
-    pub password: Option<hyperi_rustlib::SensitiveString>,
+    pub password: Option<scalo::SensitiveString>,
 }
 ```
 
@@ -98,12 +98,12 @@ nesting).
 ## 3. Implement `DfeApp`
 
 ```rust
-use hyperi_rustlib::cli::{
+use scalo::cli::{
     CliError, CommonArgs, DfeApp, ScalingComponent, ServiceRuntime,
     StandardCommand, VersionInfo, run_app,
 };
-use hyperi_rustlib::metrics::MetricsManager;
-use hyperi_rustlib::deployment::DeploymentContract;
+use scalo::metrics::MetricsManager;
+use scalo::deployment::DeploymentContract;
 
 #[derive(clap::Parser)]
 pub struct LoaderCli {
@@ -126,7 +126,7 @@ impl DfeApp for LoaderCli {
 
     fn load_config(&self, path: Option<&str>) -> Result<LoaderConfig, CliError> {
         // The cascade does the work; you just call it.
-        hyperi_rustlib::config::load_typed(path, self.env_prefix())
+        scalo::config::load_typed(path, self.env_prefix())
             .map_err(CliError::from)
     }
 
@@ -183,7 +183,7 @@ Notes on the trait surface:
 
 ```rust
 use clap::Parser;
-use hyperi_rustlib::cli::{CliError, run_app};
+use scalo::cli::{CliError, run_app};
 
 #[tokio::main]
 async fn main() -> Result<(), CliError> {

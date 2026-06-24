@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/engine_integration.rs
 // Purpose:   Integration tests for BatchEngine WorkBatch driver run loop
 // Language:  Rust
@@ -10,8 +10,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use hyperi_rustlib::transport::{MemoryConfig, MemoryTransport, WorkBatch};
-use hyperi_rustlib::worker::{BatchEngine, BatchProcessingConfig, CommitMode, EngineError};
+use scalo::transport::{MemoryConfig, MemoryTransport, WorkBatch};
+use scalo::worker::{BatchEngine, BatchProcessingConfig, CommitMode, EngineError};
 use tokio_util::sync::CancellationToken;
 
 /// Build a default engine.
@@ -80,7 +80,7 @@ async fn run_workbatch_processes_injected_records_then_shuts_down() {
                     .iter()
                     .map(|r| {
                         let parsed =
-                            hyperi_rustlib::transport::codec::parse(&r.payload, r.metadata.format)
+                            scalo::transport::codec::parse(&r.payload, r.metadata.format)
                                 .expect("valid json");
                         parsed.field_str("_table").unwrap_or("?").to_string()
                     })
@@ -265,7 +265,7 @@ async fn transport_inject_recv_roundtrip() {
     let transport = make_transport();
     transport.inject(None, b"hello".to_vec()).await.unwrap();
 
-    use hyperi_rustlib::transport::TransportReceiver;
+    use scalo::transport::TransportReceiver;
     let records = transport.recv(1).await.unwrap().records;
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].payload.as_ref(), b"hello");

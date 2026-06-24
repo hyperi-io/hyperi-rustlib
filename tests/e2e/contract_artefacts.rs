@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/e2e/contract_artefacts.rs
 // Purpose:   E2E tests for generated container contract artefacts (TEMPLATE)
 // Language:  Rust
@@ -9,11 +9,11 @@
 //! ============================================================================
 //! TEMPLATE -- copy this file into your DFE consumer's `tests/e2e/` and
 //! adapt the FIXTURE section. The probe/skip/cluster helpers live in
-//! `hyperi_rustlib::deployment::test_support` so each consumer's copy
+//! `scalo::deployment::test_support` so each consumer's copy
 //! stays short and benefits from any bug fixes pushed to rustlib.
 //!
 //! Bring the test_support helpers into scope by adding a dev-dependency
-//! on hyperi-rustlib version 2.7.3 or higher with the
+//! on scalo version 2.7.3 or higher with the
 //! `deployment-test-support` feature enabled.
 //!
 //! Then in your consumer's tests/e2e/contract_artefacts.rs, replace this
@@ -43,7 +43,7 @@
 //! # Skip policy
 //!
 //! Every test that needs an external tool / daemon / cluster probes first
-//! via `hyperi_rustlib::deployment::test_support` and skips cleanly when
+//! via `scalo::deployment::test_support` and skips cleanly when
 //! the dependency is absent. Skip emissions use the canonical prefix
 //! `HYPERCI-SKIP[contract-e2e][tier-a|tier-b]:` so downstream test
 //! runners can grep, count, and emit a summary line at the end of a CI
@@ -67,11 +67,11 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-use hyperi_rustlib::deployment::test_support::{
+use scalo::deployment::test_support::{
     docker_available, docker_empty_creds_json, ensure_kind_cluster, helm_available,
     kubeconform_available, skip, tier_b_enabled, wait_until,
 };
-use hyperi_rustlib::deployment::{
+use scalo::deployment::{
     ArgocdConfig, ContractIdentity, DeploymentContract, HealthContract, ImageProfile, OciLabels,
     generate_argocd_application, generate_chart, generate_dockerfile,
 };
@@ -96,7 +96,7 @@ fn test_contract() -> DeploymentContract {
         entrypoint_args: vec![],
         secrets: vec![],
         base_image: "ubuntu:24.04".into(),
-        native_deps: hyperi_rustlib::deployment::NativeDepsContract::default(),
+        native_deps: scalo::deployment::NativeDepsContract::default(),
         image_profile: ImageProfile::Production,
         oci_labels: OciLabels::default(),
         schema_version: 1,
@@ -122,7 +122,7 @@ fn write_mock_binary(build_ctx: &Path, binary_name: &str) -> std::io::Result<()>
     let mut f = std::fs::File::create(&path)?;
     f.write_all(
         b"#!/bin/sh\n\
-          # Mock binary for hyperi-rustlib contract-artefact e2e test.\n\
+          # Mock binary for scalo contract-artefact e2e test.\n\
           # The real consumer's binary is replaced by this stub during testing.\n\
           if [ \"$1\" = \"--help\" ] || [ \"$1\" = \"-h\" ]; then\n\
           \x20 echo \"hyperi-contract-test: ok\"\n\

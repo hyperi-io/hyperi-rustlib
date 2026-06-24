@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/dfe_groups/schema_cache.rs
 // Purpose:   DFE schema cache metrics group
 // Language:  Rust

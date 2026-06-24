@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/otel.rs
 // Purpose:   OTel MeterProvider setup and recorder installation
 // Language:  Rust

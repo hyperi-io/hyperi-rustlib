@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/integration_tests.rs
 // Purpose:   Single-binary integration test entry point
 // Language:  Rust

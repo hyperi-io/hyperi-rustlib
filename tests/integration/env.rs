@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/integration/env.rs
 // Purpose:   Integration tests for environment variable loading
 // Language:  Rust
@@ -53,7 +53,7 @@ impl Drop for EnvGuard {
 #[cfg(feature = "transport-kafka")]
 mod kafka_env {
     use super::*;
-    use hyperi_rustlib::transport::kafka::KafkaConfig;
+    use scalo::transport::kafka::KafkaConfig;
 
     #[test]
     fn test_kafka_from_env_standard_names() {
@@ -174,7 +174,7 @@ mod kafka_env {
 
         assert_eq!(
             config.profile,
-            hyperi_rustlib::transport::kafka::KafkaProfile::DevTest
+            scalo::transport::kafka::KafkaProfile::DevTest
         );
         // DevTest should auto-enable ssl_skip_verify
         assert!(config.ssl_skip_verify);
@@ -188,7 +188,7 @@ mod kafka_env {
 #[cfg(feature = "secrets-vault")]
 mod vault_env {
     use super::*;
-    use hyperi_rustlib::secrets::{OpenBaoAuth, OpenBaoConfig};
+    use scalo::secrets::{OpenBaoAuth, OpenBaoConfig};
 
     /// All vault/openbao env vars that could interfere with tests.
     /// Must be cleared before each test to prevent leakage from the host.
@@ -369,7 +369,7 @@ mod vault_env {
 #[cfg(feature = "secrets-aws")]
 mod aws_env {
     use super::*;
-    use hyperi_rustlib::secrets::AwsConfig;
+    use scalo::secrets::AwsConfig;
 
     #[test]
     fn test_aws_from_env_region() {
@@ -440,7 +440,7 @@ mod aws_env {
 #[cfg(feature = "config")]
 mod env_compat_tests {
     use super::*;
-    use hyperi_rustlib::config::env_compat::{self, EnvVar};
+    use scalo::config::env_compat::{self, EnvVar};
 
     #[test]
     fn test_postgres_standard_env() {

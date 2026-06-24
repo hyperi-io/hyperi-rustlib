@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/grpc/batch.rs
 // Purpose:   Native batch transport -- WorkBatch <-> proto Batch wire mapper
 // Language:  Rust

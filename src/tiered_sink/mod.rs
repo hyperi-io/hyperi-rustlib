@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/tiered_sink/mod.rs
 // Purpose:   Tiered sink with disk spillover for resilient message delivery
 // Language:  Rust
@@ -47,7 +47,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::tiered_sink::{TieredSink, TieredSinkConfig, Sink, SinkError};
+//! use scalo::tiered_sink::{TieredSink, TieredSinkConfig, Sink, SinkError};
 //!
 //! // Implement Sink for your backend
 //! struct MyKafkaSink { /* ... */ }

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/logger/format.rs
 // Purpose:   Coloured log output formatter using owo-colors
 // Language:  Rust

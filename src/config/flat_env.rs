@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/config/flat_env.rs
 // Purpose:   Flat environment variable override helpers for K8s-friendly config
 // Language:  Rust
@@ -25,7 +25,7 @@
 //! generated code, but are also usable standalone:
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::config::flat_env::*;
+//! use scalo::config::flat_env::*;
 //!
 //! // In production, env vars are set by the container/K8s ConfigMap.
 //! // std::env::set_var is unsafe in edition 2024 -- use temp_env in tests.

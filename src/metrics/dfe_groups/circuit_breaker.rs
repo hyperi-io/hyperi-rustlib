@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/dfe_groups/circuit_breaker.rs
 // Purpose:   DFE circuit breaker metrics group
 // Language:  Rust

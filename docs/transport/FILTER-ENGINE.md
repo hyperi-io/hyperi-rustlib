@@ -205,7 +205,7 @@ and the operator has reviewed the cost (Tier 3 is unbounded CPU; see
 ## API surface
 
 ```rust
-use hyperi_rustlib::transport::filter::{
+use scalo::transport::filter::{
     TransportFilterEngine, FilterDisposition,
     FilteredBatch, FilteredDlqEntry,
     FilterAction, FilterDirection, FilterRule, FilterTier,

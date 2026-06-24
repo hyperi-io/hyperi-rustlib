@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/scaling/config.rs
 // Purpose:   Scaling pressure configuration types
 // Language:  Rust
@@ -69,7 +69,7 @@ impl ScalingPressureConfig {
 /// Apps define their components with service-specific signals:
 ///
 /// ```rust
-/// use hyperi_rustlib::scaling::ScalingComponent;
+/// use scalo::scaling::ScalingComponent;
 ///
 /// let components = vec![
 ///     ScalingComponent::new("kafka_lag", 0.35, 100_000.0),

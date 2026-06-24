@@ -4,7 +4,7 @@
 > Regenerate with `scripts/dep-dup-check.sh` (warning-only).
 
 `cargo tree -d --features full -e normal` reports **56 duplicated crate
-versions**. Every one is **transitive** -- hyperi-rustlib's *direct*
+versions**. Every one is **transitive** -- scalo's *direct*
 dependencies pin a single version each. Duplicates fall into three buckets.
 
 ## 1. Actionable (transitive, upgrade path exists)

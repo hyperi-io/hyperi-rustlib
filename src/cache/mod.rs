@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/cache/mod.rs
 // Purpose:   In-memory cache with per-source TTL, metrics, and invalidation
 // Language:  Rust
@@ -27,7 +27,7 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::cache::{Cache, CacheConfig};
+//! use scalo::cache::{Cache, CacheConfig};
 //!
 //! #[tokio::main]
 //! async fn main() {

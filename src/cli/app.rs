@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/cli/app.rs
 // Purpose:   DfeApp trait and standard lifecycle runner
 // Language:  Rust
@@ -13,7 +13,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::cli::{CommonArgs, DfeApp, CliError, VersionInfo, run_app};
+//! use scalo::cli::{CommonArgs, DfeApp, CliError, VersionInfo, run_app};
 //!
 //! struct MyApp { common: CommonArgs }
 //!

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/file.rs
 // Purpose:   NDJSON file transport
 // Language:  Rust
@@ -23,7 +23,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::file::{FileTransport, FileTransportConfig};
+//! use scalo::transport::file::{FileTransport, FileTransportConfig};
 //!
 //! let config = FileTransportConfig { path: "/tmp/events.ndjson".into(), append: true, ..Default::default() };
 //! let transport = FileTransport::new(&config).await?;

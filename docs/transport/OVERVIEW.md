@@ -58,7 +58,7 @@ The fix is **enum dispatch**, not `dyn`.
 ## `AnySender` — the factory return type
 
 ```rust
-use hyperi_rustlib::transport::AnySender;
+use scalo::transport::AnySender;
 
 let sender = AnySender::from_config("transport.output").await?;
 sender.send("events.land", payload).await;

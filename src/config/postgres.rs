@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/config/postgres.rs
 // Purpose:   PostgreSQL configuration source for the config cascade
 // Language:  Rust
@@ -25,7 +25,7 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::config::postgres::{PostgresConfigSource, PostgresConfig};
+//! use scalo::config::postgres::{PostgresConfigSource, PostgresConfig};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -50,7 +50,7 @@
 //! On successful load, the config is written to the fallback file for future use.
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::config::postgres::{PostgresConfigSource, FallbackMode};
+//! use scalo::config::postgres::{PostgresConfigSource, FallbackMode};
 //!
 //! let source = PostgresConfigSource {
 //!     enabled: true,

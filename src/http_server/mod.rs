@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/http_server/mod.rs
 // Purpose:   High-performance HTTP server with axum
 // Language:  Rust
@@ -21,7 +21,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::http_server::{HttpServer, HttpServerConfig};
+//! use scalo::http_server::{HttpServer, HttpServerConfig};
 //! use axum::{Router, routing::get};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/output/mod.rs
 // Purpose:   File output sink module
 // Language:  Rust
@@ -14,7 +14,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::output::{FileOutput, FileOutputConfig};
+//! use scalo::output::{FileOutput, FileOutputConfig};
 //!
 //! let config = FileOutputConfig {
 //!     enabled: true,

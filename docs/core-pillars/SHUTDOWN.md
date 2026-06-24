@@ -53,7 +53,7 @@ When SIGTERM arrives in K8s, the handler increments `pod_eviction_received_total
 Every long-running loop should `select!` on `token.cancelled()` as its first arm:
 
 ```rust
-use hyperi_rustlib::shutdown;
+use scalo::shutdown;
 use tokio_util::sync::CancellationToken;
 
 async fn consumer_loop(token: CancellationToken, mut rx: kafka::Consumer) {
@@ -108,8 +108,8 @@ corrupting committed offsets. The fix is the `pin!` hoist in
 For tests, integration drivers, or an internal watchdog:
 
 ```rust
-hyperi_rustlib::shutdown::trigger();        // cancel global token; idempotent
-hyperi_rustlib::shutdown::is_shutdown();    // check state without awaiting
+scalo::shutdown::trigger();        // cancel global token; idempotent
+scalo::shutdown::is_shutdown();    // check state without awaiting
 ```
 
 ---

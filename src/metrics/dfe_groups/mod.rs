@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/dfe_groups/mod.rs
 // Purpose:   DFE-specific metric groups
 // Language:  Rust
@@ -17,8 +17,8 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::metrics::MetricsManager;
-//! use hyperi_rustlib::metrics::dfe_groups::*;
+//! use scalo::metrics::MetricsManager;
+//! use scalo::metrics::dfe_groups::*;
 //!
 //! let mgr = MetricsManager::new("dfe_loader");
 //! let app = AppMetrics::new(&mgr, env!("CARGO_PKG_VERSION"), "abc123");

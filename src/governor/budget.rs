@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/governor/budget.rs
 // Purpose:   Byte-budget controller: AIMD lever with memory HARD override
 // Language:  Rust

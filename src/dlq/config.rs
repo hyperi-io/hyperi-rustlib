@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/dlq/config.rs
 // Purpose:   DLQ configuration types
 // Language:  Rust

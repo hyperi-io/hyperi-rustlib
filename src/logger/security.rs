@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/logger/security.rs
 // Purpose:   Structured security event logging following OWASP Logging Vocabulary
 // Language:  Rust
@@ -15,7 +15,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use hyperi_rustlib::logger::security::{SecurityEvent, SecurityOutcome, auth_failure};
+//! use scalo::logger::security::{SecurityEvent, SecurityOutcome, auth_failure};
 //! use std::net::{IpAddr, Ipv4Addr};
 //!
 //! // Builder pattern for full control

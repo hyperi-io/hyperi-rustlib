@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/memory/mod.rs
 // Purpose:   In-memory transport using tokio channels
 // Language:  Rust
@@ -14,7 +14,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::{MemoryTransport, MemoryConfig, Transport};
+//! use scalo::transport::{MemoryTransport, MemoryConfig, Transport};
 //!
 //! let config = MemoryConfig::default();
 //! let transport = MemoryTransport::new(&config).expect("memory transport with valid config must construct");

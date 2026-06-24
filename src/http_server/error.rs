@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/http_server/error.rs
 // Purpose:   HTTP server error types
 // Language:  Rust

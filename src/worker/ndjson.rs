@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/ndjson.rs
 // Purpose:   NDJSON batch splitting and parallel parsing utilities
 // Language:  Rust
@@ -17,7 +17,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::worker::ndjson;
+//! use scalo::worker::ndjson;
 //!
 //! let payload = b"{\"a\":1}\n{\"b\":2}\n{\"c\":3}\n";
 //! let lines = ndjson::split_lines(payload);

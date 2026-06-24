@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/work_batch.rs
 // Purpose:   Canonical data-plane contract: Record + WorkBatch
 // Language:  Rust

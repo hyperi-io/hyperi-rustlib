@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/tiered_sink/circuit.rs
 // Purpose:   Circuit breaker for sink health tracking
 // Language:  Rust

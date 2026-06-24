@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/secrets/error.rs
 // Purpose:   Secrets error types
 // Language:  Rust

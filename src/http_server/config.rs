@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/http_server/config.rs
 // Purpose:   HTTP server configuration
 // Language:  Rust

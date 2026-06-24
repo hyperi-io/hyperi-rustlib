@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/health/registry.rs
 // Purpose:   Global health registry singleton for component health tracking
 // Language:  Rust

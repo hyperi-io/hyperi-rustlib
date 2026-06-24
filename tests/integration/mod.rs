@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/integration/mod.rs
 // Purpose:   Integration test module declarations
 // Language:  Rust

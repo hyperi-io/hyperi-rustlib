@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/tiered_sink/sink.rs
 // Purpose:   Sink trait for async message delivery
 // Language:  Rust
@@ -22,7 +22,7 @@ use std::future::Future;
 /// # Example
 ///
 /// ```rust,ignore
-/// use hyperi_rustlib::tiered_sink::{Sink, SinkError};
+/// use scalo::tiered_sink::{Sink, SinkError};
 ///
 /// struct MyKafkaSink {
 ///     producer: KafkaProducer,

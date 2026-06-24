@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/tls.rs
 // Purpose:   Unified TLS trust + client-config construction (private-CA first)
 // Language:  Rust

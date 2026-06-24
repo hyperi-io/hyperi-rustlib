@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/io/config.rs
 // Purpose:   Shared file writer configuration types
 // Language:  Rust

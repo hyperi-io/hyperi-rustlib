@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/logger/masking.rs
 // Purpose:   Sensitive data masking for log output
 // Language:  Rust

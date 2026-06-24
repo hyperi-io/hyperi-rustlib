@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/io/mod.rs
 // Purpose:   Shared NDJSON file I/O module
 // Language:  Rust

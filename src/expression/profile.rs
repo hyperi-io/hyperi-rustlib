@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/expression/profile.rs
 // Purpose:   DFE expression profile -- allowed/restricted CEL functions
 // Language:  Rust

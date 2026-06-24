@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/logger/helpers.rs
 // Purpose:   Log spam protection helpers
 // Language:  Rust
@@ -22,7 +22,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// # Example
 /// ```
 /// use std::sync::atomic::AtomicBool;
-/// use hyperi_rustlib::logger::log_state_change;
+/// use scalo::logger::log_state_change;
 ///
 /// static PRESSURE_HIGH: AtomicBool = AtomicBool::new(false);
 /// if log_state_change(&PRESSURE_HIGH, true) {
@@ -42,7 +42,7 @@ pub fn log_state_change(flag: &AtomicBool, new_state: bool) -> bool {
 /// # Example
 /// ```
 /// use std::sync::atomic::AtomicU64;
-/// use hyperi_rustlib::logger::log_sampled;
+/// use scalo::logger::log_sampled;
 ///
 /// static SEND_ERRORS: AtomicU64 = AtomicU64::new(0);
 /// if log_sampled(&SEND_ERRORS, 1000) {
@@ -62,7 +62,7 @@ pub fn log_sampled(counter: &AtomicU64, sample_rate: u64) -> bool {
 /// # Example
 /// ```
 /// use std::sync::atomic::AtomicU64;
-/// use hyperi_rustlib::logger::log_debounced;
+/// use scalo::logger::log_debounced;
 ///
 /// static LAST_WARN: AtomicU64 = AtomicU64::new(0);
 /// if log_debounced(&LAST_WARN, 5000) {

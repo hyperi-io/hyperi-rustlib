@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/kafka_config.rs
 // Purpose:   Shared Kafka librdkafka defaults, profiles, and file config loader
 // Language:  Rust
@@ -19,7 +19,7 @@
 //! them with [`config_from_file`]:
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::kafka_config::{config_from_file, merge_with_overrides, CONSUMER_PRODUCTION};
+//! use scalo::kafka_config::{config_from_file, merge_with_overrides, CONSUMER_PRODUCTION};
 //!
 //! let overrides = config_from_file("/config/kafka.properties")?;
 //! let rdkafka_config = merge_with_overrides(CONSUMER_PRODUCTION, &overrides);
@@ -373,7 +373,7 @@ pub enum ServiceRole {
 /// # Examples
 ///
 /// ```
-/// use hyperi_rustlib::kafka_config::{DfeSource, ServiceRole};
+/// use scalo::kafka_config::{DfeSource, ServiceRole};
 ///
 /// let source = DfeSource::new("syslog");
 /// assert_eq!(source.input_topic(), "syslog_land");
@@ -508,7 +508,7 @@ impl DfeSource {
     /// Returns `None` if the topic doesn't end with a known suffix.
     ///
     /// ```
-    /// use hyperi_rustlib::kafka_config::DfeSource;
+    /// use scalo::kafka_config::DfeSource;
     ///
     /// assert_eq!(DfeSource::source_from_topic("syslog_land"), Some("syslog"));
     /// assert_eq!(DfeSource::source_from_topic("netflow_load"), Some("netflow"));

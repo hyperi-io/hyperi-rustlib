@@ -123,7 +123,7 @@ app publish a composite 0.0-100.0 score that a Prometheus-trigger KEDA
 scaler reads.
 
 ```rust
-use hyperi_rustlib::scaling::{ScalingPressure, ScalingPressureConfig, ScalingComponent};
+use scalo::scaling::{ScalingPressure, ScalingPressureConfig, ScalingComponent};
 
 let pressure = ScalingPressure::new(
     ScalingPressureConfig::default(),

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/operational_memory.rs
 // Purpose:   Black-box, cgroup-confined memory backpressure operational test
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/kafka/mod.rs
 // Purpose:   High-throughput Kafka transport for PB/day workloads
 // Language:  Rust
@@ -22,7 +22,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::{KafkaTransport, KafkaConfig, Transport};
+//! use scalo::transport::{KafkaTransport, KafkaConfig, Transport};
 //!
 //! let config = KafkaConfig {
 //!     brokers: vec!["kafka:9092".to_string()],

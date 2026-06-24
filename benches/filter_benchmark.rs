@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      benches/filter_benchmark.rs
 // Purpose:   Criterion benchmarks for transport filter engine performance
 // Language:  Rust
@@ -13,7 +13,7 @@
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 
-use hyperi_rustlib::transport::filter::{
+use scalo::transport::filter::{
     FilterAction, FilterDisposition, FilterRule, TransportFilterEngine, TransportFilterTierConfig,
 };
 

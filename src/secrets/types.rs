@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/secrets/types.rs
 // Purpose:   Secrets type definitions
 // Language:  Rust

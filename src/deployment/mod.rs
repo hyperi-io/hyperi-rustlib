@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/mod.rs
 // Purpose:   Deployment contract validation and generation for Helm charts and Dockerfiles
 // Language:  Rust
@@ -29,7 +29,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::deployment::{
+//! use scalo::deployment::{
 //!     DeploymentContract, HealthContract, ImageProfile, KedaContract, NativeDepsContract,
 //!     generate_dockerfile, generate_chart, generate_compose_fragment,
 //! };

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/smoke.rs
 // Purpose:   Smoke-test helper for generated Dockerfiles
 // Language:  Rust
@@ -28,11 +28,11 @@
 //! #[test]
 //! fn smoke_test_dockerfile_builds_and_runs() {
 //!     // Skip if no docker on CI runner / dev machine
-//!     if !hyperi_rustlib::deployment::smoke::docker_available() {
+//!     if !scalo::deployment::smoke::docker_available() {
 //!         return;
 //!     }
 //!     let contract = my_app::deployment::contract();
-//!     let r = hyperi_rustlib::deployment::smoke::smoke_test_build(
+//!     let r = scalo::deployment::smoke::smoke_test_build(
 //!         &contract,
 //!         std::path::Path::new("target/debug/my-app"),
 //!         &["version"],

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/dlq/entry.rs
 // Purpose:   Shared DLQ entry envelope format
 // Language:  Rust

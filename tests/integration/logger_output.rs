@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/integration/logger_output.rs
 // Purpose:   Integration tests for logger output capturing and masking
 // Language:  Rust
@@ -17,7 +17,7 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::layer::SubscriberExt;
 
-use hyperi_rustlib::logger::MaskingWriter;
+use scalo::logger::MaskingWriter;
 
 // ---------------------------------------------------------------------------
 // Test writer infrastructure
@@ -352,7 +352,7 @@ fn test_masking_preserves_all_normal_fields() {
 
 #[test]
 fn test_coloured_output_contains_ansi_escapes() {
-    use hyperi_rustlib::logger::format::ColouredFormatter;
+    use scalo::logger::format::ColouredFormatter;
 
     let buf = TestBuf::new();
     let shared = buf.0.clone();
@@ -390,7 +390,7 @@ fn test_coloured_output_contains_ansi_escapes() {
 
 #[test]
 fn test_no_colour_output_is_clean() {
-    use hyperi_rustlib::logger::format::ColouredFormatter;
+    use scalo::logger::format::ColouredFormatter;
 
     let buf = TestBuf::new();
     let shared = buf.0.clone();
@@ -427,7 +427,7 @@ fn test_no_colour_output_is_clean() {
 
 #[test]
 fn test_coloured_output_has_all_components() {
-    use hyperi_rustlib::logger::format::ColouredFormatter;
+    use scalo::logger::format::ColouredFormatter;
 
     let buf = TestBuf::new();
     let shared = buf.0.clone();

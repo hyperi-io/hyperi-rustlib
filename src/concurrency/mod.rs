@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/concurrency/mod.rs
 // Purpose:   Three generic async primitives for HyperI Rust libraries
 // Language:  Rust
@@ -52,7 +52,7 @@
 //!   subscriber; orthogonal to this module's tokio-runtime concerns.
 //!
 //! Rationale per [Alice Ryhl's "Actors with Tokio"](https://ryhl.io/blog/actors-with-tokio/)
-//! and the [2026-05-08 audit](https://github.com/hyperi-io/hyperi-rustlib).
+//! and the [2026-05-08 audit](https://github.com/hyperi-io/scalo-rs).
 
 mod actor;
 mod error;

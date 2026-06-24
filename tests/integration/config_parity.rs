@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/integration/config_parity.rs
 // Purpose:   Config parity tests against hyperi-pylib
 // Language:  Rust
@@ -23,7 +23,7 @@
 //! 6. defaults.yaml              → Safe fallback defaults
 //! 7. Hard-coded                 → Last resort in code
 
-use hyperi_rustlib::config::{Config, ConfigOptions};
+use scalo::config::{Config, ConfigOptions};
 use std::fs;
 use tempfile::TempDir;
 

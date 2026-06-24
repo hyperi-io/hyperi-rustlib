@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/governor/gate.rs
 // Purpose:   Inbound gate: edge-detecting pause/resume over the pressure latch
 // Language:  Rust

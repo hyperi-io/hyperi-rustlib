@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/dfe_groups/app.rs
 // Purpose:   Mandatory app-level DFE metrics
 // Language:  Rust

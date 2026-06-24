@@ -20,11 +20,11 @@ metal.
 ## Setup
 
 ```rust
-use hyperi_rustlib::logger;
+use scalo::logger;
 logger::setup_default()?;                       // env-driven -- what DfeApp calls
 
 // or explicit
-use hyperi_rustlib::logger::{setup, LoggerOptions, LogFormat};
+use scalo::logger::{setup, LoggerOptions, LogFormat};
 setup(LoggerOptions {
     level: tracing::Level::DEBUG,
     format: LogFormat::Json,
@@ -84,7 +84,7 @@ suppressed.
 
 ```rust
 use std::sync::atomic::{AtomicBool, AtomicU64};
-use hyperi_rustlib::logger::{log_state_change, log_sampled, log_debounced};
+use scalo::logger::{log_state_change, log_sampled, log_debounced};
 
 // 1. Sustained conditions -- log only on the transition
 static PRESSURE_HIGH: AtomicBool = AtomicBool::new(false);

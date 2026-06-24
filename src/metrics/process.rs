@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/process.rs
 // Purpose:   Process-level metrics collection
 // Language:  Rust

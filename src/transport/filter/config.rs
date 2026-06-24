@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/filter/config.rs
 // Purpose:   Configuration types for transport-level message filtering
 // Language:  Rust

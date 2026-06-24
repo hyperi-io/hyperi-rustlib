@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/spool/config.rs
 // Purpose:   Spool configuration
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/config/mod.rs
 // Purpose:   8-layer configuration cascade
 // Language:  Rust
@@ -37,7 +37,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::config::{self, ConfigOptions};
+//! use scalo::config::{self, ConfigOptions};
 //!
 //! // Initialise with env prefix
 //! config::setup(ConfigOptions {

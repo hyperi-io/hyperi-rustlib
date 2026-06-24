@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/secrets/provider.rs
 // Purpose:   Secret provider trait and file provider implementation
 // Language:  Rust

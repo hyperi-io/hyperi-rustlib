@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use hyperi_rustlib::worker::{
+use scalo::worker::{
     AdaptiveWorkerPool, FanOutPolicy, FanOutResult, ScalingDecision, ScalingInput, WorkerPoolConfig,
 };
 

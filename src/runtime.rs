@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/runtime.rs
 // Purpose:   Container-aware runtime path management
 // Language:  Rust

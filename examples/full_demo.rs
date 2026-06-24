@@ -1,12 +1,12 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      examples/full_demo.rs
-// Purpose:   Demonstrate all hyperi-rustlib core features
+// Purpose:   Demonstrate all scalo core features
 // Language:  Rust
 //
 // License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! Full demonstration of hyperi-rustlib features.
+//! Full demonstration of scalo features.
 //!
 //! This example shows how to use:
 //! - Environment detection
@@ -27,11 +27,11 @@
 
 use std::time::Duration;
 
-use hyperi_rustlib::config::{Config, ConfigOptions};
-use hyperi_rustlib::env::{Environment, get_app_env};
-use hyperi_rustlib::logger;
-use hyperi_rustlib::metrics::{MetricsConfig, MetricsManager};
-use hyperi_rustlib::runtime::RuntimePaths;
+use scalo::config::{Config, ConfigOptions};
+use scalo::env::{Environment, get_app_env};
+use scalo::logger;
+use scalo::metrics::{MetricsConfig, MetricsManager};
+use scalo::runtime::RuntimePaths;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -123,7 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         enable_container_metrics: environment.is_container(),
         update_interval: Duration::from_secs(15),
         #[cfg(feature = "otel-metrics")]
-        otel: hyperi_rustlib::OtelMetricsConfig::default(),
+        otel: scalo::OtelMetricsConfig::default(),
     };
 
     let mut manager = MetricsManager::with_config(metrics_config);

@@ -1,9 +1,9 @@
-# hyperi-rustlib
+# scalo
 
 <!-- BADGES:START -->
-[![Build Status](https://github.com/hyperi-io/hyperi-rustlib/actions/workflows/ci.yml/badge.svg)](https://github.com/hyperi-io/hyperi-rustlib/actions)
-[![Crates.io](https://img.shields.io/crates/v/hyperi-rustlib?logo=rust)](https://crates.io/crates/hyperi-rustlib)
-[![docs.rs](https://img.shields.io/docsrs/hyperi-rustlib?logo=rust)](https://docs.rs/hyperi-rustlib)
+[![Build Status](https://github.com/hyperi-io/scalo-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/hyperi-io/scalo-rs/actions)
+[![Crates.io](https://img.shields.io/crates/v/scalo?logo=rust)](https://crates.io/crates/scalo)
+[![docs.rs](https://img.shields.io/docsrs/scalo?logo=rust)](https://docs.rs/scalo)
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
 <!-- BADGES:END -->
 
@@ -22,13 +22,13 @@ This module exists because of this — <https://www.youtube.com/watch?v=xE9W9Ghe
 
 ```toml
 [dependencies]
-hyperi-rustlib = "2"
+scalo = "2"
 ```
 
 Default features: `config`, `logger`. Add the others you want explicitly.
 
 ```rust
-use hyperi_rustlib::{config, logger, env};
+use scalo::{config, logger, env};
 
 fn main() -> anyhow::Result<()> {
     let environment = env::Environment::detect();

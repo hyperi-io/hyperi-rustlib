@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/propagation.rs
 // Purpose:   W3C Trace Context propagation helpers for transport layer
 // Language:  Rust

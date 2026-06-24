@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/directory_config/store.rs
 // Purpose:   Core DirectoryConfigStore implementation
 // Language:  Rust

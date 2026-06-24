@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/vector_compat/source.rs
 // Purpose:   Vector gRPC source compatibility wrapper
 // Language:  Rust

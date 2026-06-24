@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/secrets/aws.rs
 // Purpose:   AWS Secrets Manager provider
 // Language:  Rust

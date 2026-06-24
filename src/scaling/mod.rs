@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/scaling/mod.rs
 // Purpose:   Scaling pressure calculation for KEDA autoscaling
 // Language:  Rust
@@ -30,7 +30,7 @@
 //! 4. Call `calculate()` when rendering Prometheus metrics
 //!
 //! ```rust
-//! use hyperi_rustlib::scaling::{ScalingPressure, ScalingPressureConfig, ScalingComponent};
+//! use scalo::scaling::{ScalingPressure, ScalingPressureConfig, ScalingComponent};
 //!
 //! let pressure = ScalingPressure::new(
 //!     ScalingPressureConfig::default(),

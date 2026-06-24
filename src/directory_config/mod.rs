@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/directory_config/mod.rs
 // Purpose:   Directory-based YAML config store module root
 // Language:  Rust
@@ -24,7 +24,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::directory_config::{DirectoryConfigStore, DirectoryConfigStoreConfig};
+//! use scalo::directory_config::{DirectoryConfigStore, DirectoryConfigStoreConfig};
 //! use std::path::PathBuf;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

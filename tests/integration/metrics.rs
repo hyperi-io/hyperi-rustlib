@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/integration/metrics.rs
 // Purpose:   Integration tests for metrics HTTP server
 // Language:  Rust
@@ -22,7 +22,7 @@
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
-use hyperi_rustlib::metrics::{MetricsConfig, MetricsError, MetricsManager};
+use scalo::metrics::{MetricsConfig, MetricsError, MetricsManager};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::time::timeout;

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/governor/source.rs
 // Purpose:   Pressure seam + memory source for the self-regulation governor
 // Language:  Rust

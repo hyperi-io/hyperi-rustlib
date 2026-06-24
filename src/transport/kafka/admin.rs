@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/kafka/admin.rs
 // Purpose:   Kafka administrative operations
 // Language:  Rust
@@ -15,7 +15,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::kafka::{KafkaAdmin, KafkaConfig};
+//! use scalo::transport::kafka::{KafkaAdmin, KafkaConfig};
 //!
 //! let config = KafkaConfig::default();
 //! let admin = KafkaAdmin::new(&config)?;

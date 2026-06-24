@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/manifest.rs
 // Purpose:   Metric manifest types and registry for /metrics/manifest endpoint
 // Language:  Rust

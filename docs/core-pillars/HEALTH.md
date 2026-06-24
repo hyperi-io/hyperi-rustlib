@@ -37,7 +37,7 @@ lifetime. **Registration is manual** (modules call `register` at construction);
 endpoint-side wiring).
 
 ```rust
-use hyperi_rustlib::health::{HealthRegistry, HealthStatus};
+use scalo::health::{HealthRegistry, HealthStatus};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static KAFKA_HEALTHY: AtomicBool = AtomicBool::new(true);

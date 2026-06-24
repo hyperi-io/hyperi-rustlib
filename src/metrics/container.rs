@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/container.rs
 // Purpose:   Container-level metrics from cgroups
 // Language:  Rust

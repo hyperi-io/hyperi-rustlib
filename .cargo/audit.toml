@@ -1,4 +1,4 @@
-# Project:   hyperi-rustlib
+# Project:   scalo
 # File:      .cargo/audit.toml
 # Purpose:   cargo-audit advisory ignore list for transitive deps
 # Language:  TOML

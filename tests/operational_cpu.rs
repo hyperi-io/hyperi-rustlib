@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/operational_cpu.rs
 // Purpose:   Black-box, cgroup-confined CPU oversubscription operational test
 // Language:  Rust

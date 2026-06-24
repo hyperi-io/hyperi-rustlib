@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/http_client/mod.rs
 // Purpose:   Production HTTP client with retry middleware
 // Language:  Rust

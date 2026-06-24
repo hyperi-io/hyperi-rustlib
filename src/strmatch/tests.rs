@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/strmatch/tests.rs
 // Purpose:   Tests for the strmatch tier classifier and dispatcher
 // Language:  Rust

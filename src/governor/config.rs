@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/governor/config.rs
 // Purpose:   SelfRegulationConfig -- cascade-overridable governor settings
 // Language:  Rust

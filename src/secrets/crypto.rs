@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/secrets/crypto.rs
 // Purpose:   At-rest encryption helpers for the secrets disk cache
 // Language:  Rust
@@ -59,8 +59,8 @@ use super::error::{SecretsError, SecretsResult};
 /// `encryption_key` produce the same derived key (the user's intent
 /// is "same key = same cache"). Not secret. 32 bytes of high-entropy
 /// constant.
-const HKDF_SALT: &[u8] = b"hyperi-rustlib::secrets::cache::v1::hkdf-salt-32bytes!";
-const HKDF_INFO: &[u8] = b"hyperi-rustlib secrets disk cache AES-256-GCM key";
+const HKDF_SALT: &[u8] = b"scalo::secrets::cache::v1::hkdf-salt-32bytes!";
+const HKDF_INFO: &[u8] = b"scalo secrets disk cache AES-256-GCM key";
 
 const ENVELOPE_VERSION: u8 = 1;
 const NONCE_LEN: usize = 12; // 96 bits -- standard for AES-GCM
@@ -68,7 +68,7 @@ const NONCE_LEN: usize = 12; // 96 bits -- standard for AES-GCM
 /// AAD prefix. Domain-separates the cache AAD namespace so a future
 /// reuse of `seal`/`open` for a different purpose can't share AAD
 /// values with the cache by accident.
-const AAD_DOMAIN: &[u8] = b"hyperi-rustlib:secrets-cache:v1:";
+const AAD_DOMAIN: &[u8] = b"scalo:secrets-cache:v1:";
 
 /// Compose AAD for a cache slot: domain prefix + cache-key bytes.
 pub(super) fn aad_for(cache_key: &str) -> Vec<u8> {

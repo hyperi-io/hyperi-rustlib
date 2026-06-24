@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/detect.rs
 // Purpose:   Stateful payload format detection with auto-locking
 // Language:  Rust
@@ -21,7 +21,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use hyperi_rustlib::transport::{FormatDetector, FormatMode, DetectedFormat};
+//! use scalo::transport::{FormatDetector, FormatMode, DetectedFormat};
 //!
 //! let detector = FormatDetector::new();
 //!

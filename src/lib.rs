@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/lib.rs
 // Purpose:   Main library entry point and public API exports
 // Language:  Rust
@@ -6,7 +6,7 @@
 // License:   BUSL-1.1
 // Copyright: (c) 2026 HYPERI PTY LIMITED
 
-//! # hyperi-rustlib
+//! # scalo
 //!
 //! There's plenty of sage advice out there about how to run Rust services in production at scale -- config cascades, structured logging, masking secrets, multi-backend secrets management, Prometheus, OpenTelemetry, Kafka transports, tiered disk-spillover sinks, adaptive worker pools, graceful shutdown -- but almost none of it as code you can just install and use.
 //!
@@ -17,14 +17,14 @@
 //! Built as the foundation for HyperI's PB/hr data services. Generic enough
 //! that you don't need to be at HyperI to use it.
 //!
-//! Full reference docs live under [`docs/`](https://github.com/hyperi-io/hyperi-rustlib/tree/main/docs).
-//! Start at [`docs/README.md`](https://github.com/hyperi-io/hyperi-rustlib/blob/main/docs/README.md)
+//! Full reference docs live under [`docs/`](https://github.com/hyperi-io/scalo-rs/tree/main/docs).
+//! Start at [`docs/README.md`](https://github.com/hyperi-io/scalo-rs/blob/main/docs/README.md)
 //! for the entry-point index.
 //!
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::{env, config, logger, metrics};
+//! use scalo::{env, config, logger, metrics};
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Detect runtime environment

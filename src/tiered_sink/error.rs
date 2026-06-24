@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/tiered_sink/error.rs
 // Purpose:   TieredSink error types
 // Language:  Rust

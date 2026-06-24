@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/concurrency/periodic.rs
 // Purpose:   PeriodicWorker -- timer-driven loop with biased shutdown
 // Language:  Rust

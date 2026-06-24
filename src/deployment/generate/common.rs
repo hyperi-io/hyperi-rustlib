@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/generate/common.rs
 // Purpose:   Shared template helpers (camel-case, go-ident, file write)
 // Language:  Rust

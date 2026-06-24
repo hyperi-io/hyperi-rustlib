@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/test_support.rs
 // Purpose:   Reusable test helpers for contract-artefact e2e tests
 // Language:  Rust
@@ -25,10 +25,10 @@
 //!
 //! # Usage from a consumer's `tests/e2e/`
 //!
-//! Add `hyperi-rustlib` with the `deployment` feature in dev-dependencies:
+//! Add `scalo` with the `deployment` feature in dev-dependencies:
 //!
 //! ```ignore
-//! use hyperi_rustlib::deployment::test_support::{
+//! use scalo::deployment::test_support::{
 //!     docker_available, ensure_kind_cluster, skip, tier_b_enabled,
 //! };
 //!

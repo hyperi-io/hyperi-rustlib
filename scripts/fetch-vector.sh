@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Project:   hyperi-rustlib
+# Project:   scalo
 # File:      scripts/fetch-vector.sh
 # Purpose:   Download and cache Vector binary for integration tests
 # Language:  Bash

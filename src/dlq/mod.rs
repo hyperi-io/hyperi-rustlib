@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/dlq/mod.rs
 // Purpose:   Unified dead letter queue with pluggable backends
 // Language:  Rust
@@ -36,7 +36,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::dlq::{Dlq, DlqConfig, DlqEntry, DlqSource};
+//! use scalo::dlq::{Dlq, DlqConfig, DlqEntry, DlqSource};
 //! use tokio_util::sync::CancellationToken;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

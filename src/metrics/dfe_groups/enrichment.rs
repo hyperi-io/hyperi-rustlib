@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/dfe_groups/enrichment.rs
 // Purpose:   DFE enrichment metrics group
 // Language:  Rust

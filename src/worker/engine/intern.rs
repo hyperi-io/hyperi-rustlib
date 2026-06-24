@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/engine/intern.rs
 // Purpose:   Concurrent field name interning for the batch processing engine
 // Language:  Rust

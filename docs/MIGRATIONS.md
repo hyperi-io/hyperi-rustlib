@@ -37,7 +37,7 @@ commits EXACTLY the `N` input tokens after the `2N`-record block is sent
 commit tokens and DLQ entries flow through untouched.
 
 `WorkBatch`, `Record`, `RecordMeta`, `FramingError` are re-exported as
-`hyperi_rustlib::transport::*`. Zero-copy framing helpers: `WorkBatch::single`
+`scalo::transport::*`. Zero-copy framing helpers: `WorkBatch::single`
 (whole blob), `WorkBatch::from_ndjson`, `WorkBatch::from_json_array` (each
 slices one inbound `Bytes` into per-record views -- no payload copy).
 
@@ -132,7 +132,7 @@ deeply-nested payload exhausting the worker stack. Legitimate payloads rarely
 nest past a handful of levels, so this is a security floor, not a tuning knob.
 
 `CodecError`, `FieldRef`, `ParsedPayload`, `parse` are re-exported as
-`hyperi_rustlib::transport::*`.
+`scalo::transport::*`.
 
 ### Self-regulation default-ON (BEHAVIOUR CHANGE, opt-out)
 
@@ -222,7 +222,7 @@ unaffected (the policy never triggers).
 **Consumer adjustment** — pick a policy explicitly:
 
 ```rust
-use hyperi_rustlib::worker::engine::FilterDlqPolicy;
+use scalo::worker::engine::FilterDlqPolicy;
 
 // Route dead-letters onward (recommended). The sink is FALLIBLE: return Ok on
 // success; an Err is a terminal ack-barrier failure (commit skipped, block
@@ -340,7 +340,7 @@ cache.set(&key, &value, source)?;
 
 ### `expose_during` (additive)
 
-New crate-root helper `hyperi_rustlib::expose_during<F, R>(f: F) -> R`
+New crate-root helper `scalo::expose_during<F, R>(f: F) -> R`
 flips a thread-local flag so `SensitiveString` serialises its real
 value inside the closure. Wrap any figment / serde round-trip that
 must preserve secrets:
@@ -360,7 +360,7 @@ auth fails.
 
 ### `memory::set_heap_source` — total-heap backpressure (additive, opt-in)
 
-New crate hook `hyperi_rustlib::memory::set_heap_source(fn() -> usize)`.
+New crate hook `scalo::memory::set_heap_source(fn() -> usize)`.
 When registered, every `MemoryGuard` switches its read path
 (`current_bytes`, pressure checks, `try_reserve` admission) from the
 per-batch reservation counter to a true **total-process heap** figure --
@@ -377,7 +377,7 @@ startup. Prefer an actively-maintained allocator -- `tikv-jemalloc-ctl`
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() {
-    hyperi_rustlib::memory::set_heap_source(|| {
+    scalo::memory::set_heap_source(|| {
         tikv_jemalloc_ctl::epoch::advance().ok();
         tikv_jemalloc_ctl::stats::allocated::read().unwrap_or(0)
     });
@@ -508,7 +508,7 @@ dfe.record_flush(0.012, "size");
 dfe.transport_sent("kafka", 1);
 
 // After
-use hyperi_rustlib::metrics::{AuthFailureReason, FlushTrigger, TransportKind};
+use scalo::metrics::{AuthFailureReason, FlushTrigger, TransportKind};
 dfe.auth_failure(AuthFailureReason::Expired);
 dfe.record_flush(0.012, FlushTrigger::Size);
 dfe.transport_sent(TransportKind::Kafka, 1);

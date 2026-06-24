@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/http.rs
 // Purpose:   HTTP/HTTPS transport (send via POST, receive via embedded server)
 // Language:  Rust
@@ -23,7 +23,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::http::{HttpTransport, HttpTransportConfig};
+//! use scalo::transport::http::{HttpTransport, HttpTransportConfig};
 //!
 //! // Send-only
 //! let config = HttpTransportConfig {

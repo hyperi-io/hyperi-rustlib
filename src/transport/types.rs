@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/types.rs
 // Purpose:   Transport data types and configuration
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/strmatch/mod.rs
 // Purpose:   Public API for the strmatch regex→fast-path matcher
 // Language:  Rust
@@ -47,7 +47,7 @@
 //! ## Example
 //!
 //! ```
-//! use hyperi_rustlib::strmatch::{MatcherTier, OnBelowMin, StrMatcher};
+//! use scalo::strmatch::{MatcherTier, OnBelowMin, StrMatcher};
 //!
 //! // Byte tier -- anchored single byte, dispatches to hay.first() == Some(b)
 //! let m = StrMatcher::new(r"^/")?;
@@ -71,7 +71,7 @@
 //!     .build(r"\w+@\w+")
 //!     .unwrap_err();
 //! assert!(err.to_string().contains("tier"));
-//! # Ok::<(), hyperi_rustlib::strmatch::BuildError>(())
+//! # Ok::<(), scalo::strmatch::BuildError>(())
 //! ```
 
 mod classify;
@@ -753,7 +753,7 @@ mod warn {
 
         if force || n <= WARN_CAP {
             tracing::warn!(
-                target: "hyperi_rustlib::strmatch",
+                target: "scalo::strmatch",
                 pattern,
                 reason,
                 hint,
@@ -761,7 +761,7 @@ mod warn {
             );
         } else {
             tracing::debug!(
-                target: "hyperi_rustlib::strmatch",
+                target: "scalo::strmatch",
                 pattern,
                 reason,
                 hint,
@@ -771,7 +771,7 @@ mod warn {
 
         if !force && n == WARN_CAP + 1 && !SUMMARY_EMITTED.swap(true, Ordering::Relaxed) {
             tracing::info!(
-                target: "hyperi_rustlib::strmatch",
+                target: "scalo::strmatch",
                 cap = WARN_CAP,
                 "{}+ distinct patterns have fallen through to the regex engine; \
                  further fall-throughs log at DEBUG. Inspect StrMatcher::tier() / \

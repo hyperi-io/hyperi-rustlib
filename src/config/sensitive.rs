@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/config/sensitive.rs
 // Purpose:   Re-export SensitiveString for backward compatibility
 // Language:  Rust
@@ -10,6 +10,6 @@
 //!
 //! The canonical location is now [`crate::sensitive`], which is always available
 //! regardless of feature gates. This module preserves the old import path
-//! `hyperi_rustlib::config::sensitive::SensitiveString`.
+//! `scalo::config::sensitive::SensitiveString`.
 
 pub use crate::sensitive::*;

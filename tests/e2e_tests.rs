@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/e2e_tests.rs
 // Purpose:   Single-binary e2e test entry point (external infrastructure required)
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/validate.rs
 // Purpose:   Validate Helm charts and Dockerfiles against deployment contract
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/tiered_sink/drainer.rs
 // Purpose:   Background drain task for spooled messages
 // Language:  Rust

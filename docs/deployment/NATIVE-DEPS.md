@@ -14,11 +14,11 @@ forgot to add `libssl3`" outages.
 ## Auto-detection from features
 
 The usual path is `for_rustlib_features()`. Pass the same feature flags
-the app enables on hyperi-rustlib, get back the runtime packages and
+the app enables on scalo, get back the runtime packages and
 any custom APT repos:
 
 ```rust
-use hyperi_rustlib::deployment::NativeDepsContract;
+use scalo::deployment::NativeDepsContract;
 
 let deps = NativeDepsContract::for_rustlib_features(
     &["transport-kafka", "spool", "tiered-sink", "secrets"],
@@ -94,7 +94,7 @@ packages on the runner.
 
 ## Reading from `Cargo.toml`
 
-`from_cargo_toml()` parses the `hyperi-rustlib` features array from the
+`from_cargo_toml()` parses the `scalo` features array from the
 app's `Cargo.toml` and runs the same mapping -- for tooling that won't
 hard-code the feature list:
 

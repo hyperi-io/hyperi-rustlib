@@ -1,4 +1,4 @@
-# Project:   hyperi-rustlib
+# Project:   scalo
 # File:      scripts/operational/Dockerfile.mem_loadgen
 # Purpose:   Build the memory operational-test harness for cgroup-confined runs
 # Language:  Dockerfile

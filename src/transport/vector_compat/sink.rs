@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/vector_compat/sink.rs
 // Purpose:   Vector gRPC sink compatibility wrapper
 // Language:  Rust

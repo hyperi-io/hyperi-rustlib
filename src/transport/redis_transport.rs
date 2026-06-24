@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/redis_transport.rs
 // Purpose:   Redis/Valkey Streams transport
 // Language:  Rust
@@ -29,7 +29,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::redis_transport::{RedisTransport, RedisTransportConfig};
+//! use scalo::transport::redis_transport::{RedisTransport, RedisTransportConfig};
 //!
 //! let config = RedisTransportConfig {
 //!     stream: Some("events".into()),

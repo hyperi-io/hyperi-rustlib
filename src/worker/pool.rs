@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/pool.rs
 // Purpose:   Rayon pool + semaphore management, process_batch(), fan_out_async()
 // Language:  Rust

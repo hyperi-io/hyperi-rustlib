@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/cli/runtime.rs
 // Purpose:   ServiceRuntime -- pre-built infrastructure for DFE service apps
 // Language:  Rust

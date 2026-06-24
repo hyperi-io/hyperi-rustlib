@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/cli/mod.rs
 // Purpose:   Standard CLI framework for DFE services
 // Language:  Rust
@@ -16,7 +16,7 @@
 //!
 //! ```rust,ignore
 //! use clap::Parser;
-//! use hyperi_rustlib::cli::{CommonArgs, DfeApp, CliError, StandardCommand, VersionInfo, run_app};
+//! use scalo::cli::{CommonArgs, DfeApp, CliError, StandardCommand, VersionInfo, run_app};
 //!
 //! #[derive(Parser)]
 //! #[command(name = "dfe-loader", version)]

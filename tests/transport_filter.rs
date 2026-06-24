@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/transport_filter.rs
 // Purpose:   Integration + adversarial tests for transport filter engine
 // Language:  Rust
@@ -18,11 +18,11 @@
 
 #![cfg(feature = "transport-memory")]
 
-use hyperi_rustlib::transport::filter::{
+use scalo::transport::filter::{
     FilterAction, FilterDisposition, FilterRule, TransportFilterEngine, TransportFilterTierConfig,
 };
-use hyperi_rustlib::transport::memory::{MemoryConfig, MemoryTransport};
-use hyperi_rustlib::transport::{TransportReceiver, TransportSender};
+use scalo::transport::memory::{MemoryConfig, MemoryTransport};
+use scalo::transport::{TransportReceiver, TransportSender};
 
 // ============================================================================
 // Helper: build a MemoryTransport with inbound filters
@@ -1303,13 +1303,13 @@ fn tier3_patterns_rejected_by_default() {
 // runtime engine agree on classification — no drift.
 //
 // To add a new test case, edit the fixture in BOTH:
-//   * /projects/hyperi-rustlib/tests/fixtures/cel_classifier_parity.json
+//   * /projects/scalo/tests/fixtures/cel_classifier_parity.json
 //   * /projects/dfe-engine/tests/fixtures/cel_classifier_parity.json
 // They must remain byte-identical.
 
 #[test]
 fn classifier_matches_python_fixture() {
-    use hyperi_rustlib::transport::filter::classify::{ClassifyResult, Tier1Op, classify};
+    use scalo::transport::filter::classify::{ClassifyResult, Tier1Op, classify};
 
     #[derive(serde::Deserialize)]
     struct Fixture {
@@ -1339,9 +1339,9 @@ fn classifier_matches_python_fixture() {
             .unwrap_or_else(|e| panic!("classify failed for {:?}: {}", case.expression, e));
 
         let actual_tier_num: u8 = match result.tier() {
-            hyperi_rustlib::transport::filter::FilterTier::Tier1 => 1,
-            hyperi_rustlib::transport::filter::FilterTier::Tier2 => 2,
-            hyperi_rustlib::transport::filter::FilterTier::Tier3 => 3,
+            scalo::transport::filter::FilterTier::Tier1 => 1,
+            scalo::transport::filter::FilterTier::Tier2 => 2,
+            scalo::transport::filter::FilterTier::Tier3 => 3,
         };
         assert_eq!(
             actual_tier_num, case.tier,

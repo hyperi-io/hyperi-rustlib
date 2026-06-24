@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/e2e/grpc_transport.rs
 // Purpose:   Integration tests for gRPC transport (bidirectional client/server)
 // Language:  Rust
@@ -18,8 +18,8 @@ use std::time::Duration;
 
 use std::sync::Arc;
 
-use hyperi_rustlib::transport::grpc::{GrpcConfig, GrpcTransport};
-use hyperi_rustlib::transport::{
+use scalo::transport::grpc::{GrpcConfig, GrpcTransport};
+use scalo::transport::{
     PayloadFormat, Record, RecordMeta, SendResult, TransportBase, TransportReceiver,
     TransportSender,
 };
@@ -467,10 +467,10 @@ async fn test_route_batch_fits_capacity_accepts_all() {
 #[cfg(feature = "governor")]
 #[tokio::test]
 async fn test_route_batch_pressure_hold_accepts_nothing() {
-    use hyperi_rustlib::governor::{
+    use scalo::governor::{
         Hysteresis, MemoryPressureSource, PressureSource, UnifiedPressure,
     };
-    use hyperi_rustlib::memory::{MemoryGuard, MemoryGuardConfig};
+    use scalo::memory::{MemoryGuard, MemoryGuardConfig};
 
     let port = find_available_port().await;
     let addr = format!("127.0.0.1:{port}");

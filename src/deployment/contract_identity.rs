@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/contract_identity.rs
 // Purpose:   Contract Identity Annotation Scheme v1
 // Language:  Rust

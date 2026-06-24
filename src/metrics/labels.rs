@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/labels.rs
 // Purpose:   Bounded enum types for low-cardinality Prometheus labels
 // Language:  Rust

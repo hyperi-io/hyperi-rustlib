@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/otel_types.rs
 // Purpose:   Configuration types for OTel metrics backend
 // Language:  Rust

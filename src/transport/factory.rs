@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/factory.rs
 // Purpose:   Transport factory -- create senders from config
 // Language:  Rust
@@ -23,7 +23,7 @@
 //! ```
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::factory::AnySender;
+//! use scalo::transport::factory::AnySender;
 //!
 //! let sender = AnySender::from_config("transport.output").await?;
 //! sender.send("events.land", payload).await;

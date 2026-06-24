@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/dfe_groups/consumer.rs
 // Purpose:   DFE consumer metrics group
 // Language:  Rust

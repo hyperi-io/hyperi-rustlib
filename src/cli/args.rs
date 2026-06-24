@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/cli/args.rs
 // Purpose:   Standard CLI arguments for DFE services
 // Language:  Rust
@@ -12,7 +12,7 @@
 //!
 //! ```rust,ignore
 //! use clap::Parser;
-//! use hyperi_rustlib::cli::CommonArgs;
+//! use scalo::cli::CommonArgs;
 //!
 //! #[derive(Parser)]
 //! struct App {

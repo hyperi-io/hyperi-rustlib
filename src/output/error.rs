@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/output/error.rs
 // Purpose:   File output sink error types
 // Language:  Rust

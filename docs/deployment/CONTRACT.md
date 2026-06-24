@@ -65,7 +65,7 @@ serialised form), not this crate.
 ## Struct shape
 
 ```rust
-use hyperi_rustlib::deployment::*;
+use scalo::deployment::*;
 
 let contract = DeploymentContract {
     schema_version: 2,

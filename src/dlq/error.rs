@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/dlq/error.rs
 // Purpose:   DLQ error types
 // Language:  Rust

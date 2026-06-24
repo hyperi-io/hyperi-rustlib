@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/generate/mod.rs
 // Purpose:   Generate deployment artifacts from DeploymentContract
 // Language:  Rust

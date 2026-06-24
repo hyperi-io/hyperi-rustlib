@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/pipe.rs
 // Purpose:   Unix pipe transport (stdin/stdout)
 // Language:  Rust
@@ -14,7 +14,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::{PipeTransport, PipeTransportConfig};
+//! use scalo::transport::{PipeTransport, PipeTransportConfig};
 //!
 //! let config = PipeTransportConfig::default();
 //! let transport = PipeTransport::new(&config);

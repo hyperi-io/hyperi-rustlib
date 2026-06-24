@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/config/shared.rs
 // Purpose:   Thread-safe shared configuration with hot-reload support
 // Language:  Rust
@@ -16,7 +16,7 @@
 //! ## Usage
 //!
 //! ```rust
-//! use hyperi_rustlib::config::shared::SharedConfig;
+//! use scalo::config::shared::SharedConfig;
 //!
 //! #[derive(Clone, Debug, Default)]
 //! struct AppConfig {

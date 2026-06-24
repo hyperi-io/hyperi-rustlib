@@ -191,5 +191,5 @@ auto-wired vs explicit.
 - **Edition:** 2024
 - **MSRV:** see `rust-version` in `Cargo.toml`
 - **Sibling lib:** `hyperi-pylib` (Python equivalent)
-- **Downstream:** the six core DFE apps consume `hyperi-rustlib` in
+- **Downstream:** the six core DFE apps consume `scalo` in
   lockstep (see [README.md § Project facts](README.md#project-facts))

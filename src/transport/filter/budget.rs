@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/filter/budget.rs
 // Purpose:   Static + runtime budget for Tier 2/3 CEL filters
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/logger/mod.rs
 // Purpose:   Structured logging with JSON output and sensitive data masking
 // Language:  Rust
@@ -21,7 +21,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::logger;
+//! use scalo::logger;
 //!
 //! // Initialise with defaults (auto-detects format)
 //! logger::setup_default().unwrap();

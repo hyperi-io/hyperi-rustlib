@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/batch.rs
 // Purpose:   BatchProcessor trait and BatchPipeline for parallel-then-sequential processing
 // Language:  Rust
@@ -27,7 +27,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::worker::{BatchPipeline, BatchProcessor};
+//! use scalo::worker::{BatchPipeline, BatchProcessor};
 //!
 //! struct MyProcessor<'a> { router: &'a Router, ... }
 //!

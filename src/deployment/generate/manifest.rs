@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/generate/manifest.rs
 // Purpose:   Container manifest (CI-consumable JSON) generation
 // Language:  Rust

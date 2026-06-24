@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/waves.rs
 // Purpose:   Shared ArgoCD sync-wave constants
 //

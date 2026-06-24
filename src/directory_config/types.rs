@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/directory_config/types.rs
 // Purpose:   Configuration types for DirectoryConfigStore
 // Language:  Rust

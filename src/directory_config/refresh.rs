@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/directory_config/refresh.rs
 // Purpose:   Background polling refresh for DirectoryConfigStore
 // Language:  Rust

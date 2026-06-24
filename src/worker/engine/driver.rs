@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/engine/driver.rs
 // Purpose:   Unified WorkBatch engine driver (get -> process -> send -> commit)
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/io/ndjson_writer.rs
 // Purpose:   Core NDJSON file writer with rotation and metrics
 // Language:  Rust

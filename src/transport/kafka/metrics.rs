@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/kafka/metrics.rs
 // Purpose:   Kafka metrics collection via librdkafka statistics
 // Language:  Rust
@@ -17,7 +17,7 @@
 //! Enable statistics by setting `statistics.interval.ms` in the Kafka config:
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::kafka::{KafkaConfig, KafkaMetrics, StatsContext};
+//! use scalo::transport::kafka::{KafkaConfig, KafkaMetrics, StatsContext};
 //! use std::sync::Arc;
 //!
 //! let stats = Arc::new(StatsContext::new());

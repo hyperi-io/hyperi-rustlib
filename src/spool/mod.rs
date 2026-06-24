@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/spool/mod.rs
 // Purpose:   Disk-backed async FIFO queue with optional compression
 // Language:  Rust
@@ -26,7 +26,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::spool::{Spool, SpoolConfig};
+//! use scalo::spool::{Spool, SpoolConfig};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = SpoolConfig {

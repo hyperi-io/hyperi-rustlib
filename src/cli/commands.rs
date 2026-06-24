@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/cli/commands.rs
 // Purpose:   Standard CLI subcommands for DFE services
 // Language:  Rust
@@ -17,7 +17,7 @@
 ///
 /// ```rust,ignore
 /// use clap::Subcommand;
-/// use hyperi_rustlib::cli::StandardCommand;
+/// use scalo::cli::StandardCommand;
 ///
 /// #[derive(Subcommand)]
 /// enum Commands {

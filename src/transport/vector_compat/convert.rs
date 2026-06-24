@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/vector_compat/convert.rs
 // Purpose:   Vector <-> hyperi message conversion
 // Language:  Rust

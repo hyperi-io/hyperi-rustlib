@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/kafka/producer.rs
 // Purpose:   High-throughput Kafka producer for PB/day workloads
 // Language:  Rust
@@ -25,7 +25,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::kafka::{KafkaProducer, KafkaConfig, ProducerProfile};
+//! use scalo::transport::kafka::{KafkaProducer, KafkaConfig, ProducerProfile};
 //!
 //! // High-throughput producer
 //! let config = KafkaConfig::production();

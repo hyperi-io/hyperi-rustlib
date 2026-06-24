@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/concurrency/error.rs
 // Purpose:   Error types for the three async concurrency primitives
 // Language:  Rust

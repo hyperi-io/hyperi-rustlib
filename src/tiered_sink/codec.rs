@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/tiered_sink/codec.rs
 // Purpose:   Compression codec selection for spool storage
 // Language:  Rust

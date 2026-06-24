@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/error.rs
 // Purpose:   Transport error types
 // Language:  Rust

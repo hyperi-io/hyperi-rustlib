@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/config/registry.rs
 // Purpose:   Auto-registering config registry for reflection and admin endpoints
 // Language:  Rust
@@ -19,7 +19,7 @@
 //! # Auto-registration
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::config;
+//! use scalo::config;
 //!
 //! // This automatically registers "expression" in the registry:
 //! let cfg = config::get();

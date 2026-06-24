@@ -42,7 +42,7 @@ subsystem that needs durable side-channel writes without blocking the
 hot path.
 
 ```rust
-use hyperi_rustlib::concurrency::{BackgroundSink, BackgroundSinkConfig, SinkDrain, Overflow};
+use scalo::concurrency::{BackgroundSink, BackgroundSinkConfig, SinkDrain, Overflow};
 
 struct NdjsonDrain { path: PathBuf }
 
@@ -100,7 +100,7 @@ Used by the [scaling pressure refresher](../pipeline/SCALING.md), by
 "check every N seconds" requirement.
 
 ```rust
-use hyperi_rustlib::concurrency::{PeriodicTask, PeriodicWorker};
+use scalo::concurrency::{PeriodicTask, PeriodicWorker};
 
 struct RefreshScaling;
 
@@ -138,7 +138,7 @@ hot-reload](../core-pillars/CONFIG.md#hot-reload), by anywhere
 (e.g. multi-step command sequences, side-effects between commands).
 
 ```rust
-use hyperi_rustlib::concurrency::{Actor, ActorConfig, ActorHandle};
+use scalo::concurrency::{Actor, ActorConfig, ActorHandle};
 
 enum Cmd {
     AddRule(Rule),

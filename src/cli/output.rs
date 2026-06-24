@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/cli/output.rs
 // Purpose:   CLI output formatting helpers
 // Language:  Rust

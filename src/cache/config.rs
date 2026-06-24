@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/cache/config.rs
 // Purpose:   Cache configuration
 // Language:  Rust

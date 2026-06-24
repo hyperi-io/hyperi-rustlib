@@ -1,4 +1,4 @@
-# Project:   hyperi-rustlib
+# Project:   scalo
 # File:      Makefile
 # Purpose:   CI targets wrapping hyperi-ci
 #

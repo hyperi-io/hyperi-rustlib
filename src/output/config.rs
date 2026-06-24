@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/output/config.rs
 // Purpose:   File output sink configuration
 // Language:  Rust

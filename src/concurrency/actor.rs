@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/concurrency/actor.rs
 // Purpose:   ActorHandle -- stateful command-queue actor
 // Language:  Rust

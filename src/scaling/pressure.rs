@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/scaling/pressure.rs
 // Purpose:   Lock-free scaling pressure calculator
 // Language:  Rust
@@ -94,7 +94,7 @@ struct ComponentEntry {
 /// # Example
 ///
 /// ```rust
-/// use hyperi_rustlib::scaling::{ScalingPressure, ScalingPressureConfig, ScalingComponent};
+/// use scalo::scaling::{ScalingPressure, ScalingPressureConfig, ScalingComponent};
 ///
 /// let pressure = ScalingPressure::new(
 ///     ScalingPressureConfig::default(),

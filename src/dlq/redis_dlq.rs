@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/dlq/redis_dlq.rs
 // Purpose:   Redis Streams DLQ backend variant
 // Language:  Rust

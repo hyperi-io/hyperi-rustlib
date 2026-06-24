@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/integration/directory_config.rs
 // Purpose:   Integration tests for DirectoryConfigStore
 // Language:  Rust
@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use hyperi_rustlib::directory_config::{
+use scalo::directory_config::{
     ChangeOperation, DirectoryConfigError, DirectoryConfigStore, DirectoryConfigStoreConfig,
     WriteMode,
 };

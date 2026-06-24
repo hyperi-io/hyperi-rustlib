@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/dfe.rs
 // Purpose:   Standard DFE metric definitions with transport labels
 // Language:  Rust
@@ -15,7 +15,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::metrics::{MetricsManager, DfeMetrics, TransportKind};
+//! use scalo::metrics::{MetricsManager, DfeMetrics, TransportKind};
 //!
 //! let mgr = MetricsManager::new("myapp");
 //! let dfe = DfeMetrics::register(&mgr);

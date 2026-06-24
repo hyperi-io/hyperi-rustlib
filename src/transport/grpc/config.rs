@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/grpc/config.rs
 // Purpose:   gRPC transport configuration
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/config/reloader.rs
 // Purpose:   Universal config hot-reload with SIGHUP, periodic, and file polling
 // Language:  Rust
@@ -24,8 +24,8 @@
 //! ```rust,no_run
 //! use std::path::PathBuf;
 //! use std::time::Duration;
-//! use hyperi_rustlib::config::reloader::{ConfigReloader, ReloaderConfig};
-//! use hyperi_rustlib::config::shared::SharedConfig;
+//! use scalo::config::reloader::{ConfigReloader, ReloaderConfig};
+//! use scalo::config::shared::SharedConfig;
 //!
 //! #[derive(Clone, Debug, Default)]
 //! struct AppConfig {
@@ -165,8 +165,8 @@ impl<T: Clone + Send + Sync + 'static> ConfigReloader<T> {
     /// Use this to connect to the config registry:
     ///
     /// ```rust,no_run
-    /// # use hyperi_rustlib::config::reloader::ConfigReloader;
-    /// # use hyperi_rustlib::config::registry;
+    /// # use scalo::config::reloader::ConfigReloader;
+    /// # use scalo::config::registry;
     /// // reloader.with_registry_update("my_app");
     /// ```
     #[must_use]

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/version_check/mod.rs
 // Purpose:   Startup version check against HyperI version API
 // Language:  Rust
@@ -15,7 +15,7 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::version_check::{VersionCheck, VersionCheckConfig};
+//! use scalo::version_check::{VersionCheck, VersionCheckConfig};
 //!
 //! #[tokio::main]
 //! async fn main() {

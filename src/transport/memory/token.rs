@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/memory/token.rs
 // Purpose:   Memory transport commit token
 // Language:  Rust

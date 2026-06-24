@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/database/mod.rs
 // Purpose:   Database connection string builders from env vars and config
 // Language:  Rust
@@ -27,7 +27,7 @@
 //! # Usage
 //!
 //! ```rust
-//! use hyperi_rustlib::database::{PostgresUrl, DatabaseUrl};
+//! use scalo::database::{PostgresUrl, DatabaseUrl};
 //!
 //! // From explicit values
 //! let url = PostgresUrl::new("db.prod.internal", 5432, "app_user", "secret", "dfe_db");

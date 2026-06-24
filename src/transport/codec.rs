@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/codec.rs
 // Purpose:   Parse-on-demand WorkBatch codec (native JSON + MsgPack, no bridge)
 // Language:  Rust

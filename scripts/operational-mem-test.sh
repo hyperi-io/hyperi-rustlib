@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Project:   hyperi-rustlib
+# Project:   scalo
 # File:      scripts/operational-mem-test.sh
 # Purpose:   Cgroup-confined memory backpressure operational test (black box)
 # Language:  Bash
@@ -32,7 +32,7 @@ set -euo pipefail
 MEM="${1:-512m}"
 DURATION="${2:-15}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-IMAGE="hyperi-rustlib-mem-loadgen:optest"
+IMAGE="scalo-mem-loadgen:optest"
 DOCKERFILE="$REPO_ROOT/scripts/operational/Dockerfile.mem_loadgen"
 
 if ! command -v docker >/dev/null 2>&1; then

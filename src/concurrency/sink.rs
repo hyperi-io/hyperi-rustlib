@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/concurrency/sink.rs
 // Purpose:   BackgroundSink -- generic fire-and-forget durable sink
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      examples/mem_loadgen.rs
 // Purpose:   Memory operational-test harness (NOT a product binary)
 // Language:  Rust
@@ -37,7 +37,7 @@
 
 use std::time::{Duration, Instant};
 
-use hyperi_rustlib::memory::{MemoryGuard, MemoryGuardConfig};
+use scalo::memory::{MemoryGuard, MemoryGuardConfig};
 
 fn env_or<T: std::str::FromStr>(key: &str, default: T) -> T {
     std::env::var(key)

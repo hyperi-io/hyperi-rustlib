@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/engine/config.rs
 // Purpose:   Configuration for the SIMD-optimised batch processing engine
 // Language:  Rust

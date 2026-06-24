@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/spool/error.rs
 // Purpose:   Spool error types
 // Language:  Rust

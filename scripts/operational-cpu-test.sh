@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Project:   hyperi-rustlib
+# Project:   scalo
 # File:      scripts/operational-cpu-test.sh
 # Purpose:   Cgroup-confined CPU oversubscription operational test (black box)
 # Language:  Bash
@@ -34,7 +34,7 @@ set -euo pipefail
 CPUS="${1:-0.5}"
 IDLE_MS="${2:-6000}"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-IMAGE="hyperi-rustlib-cpu-loadgen:optest"
+IMAGE="scalo-cpu-loadgen:optest"
 DOCKERFILE="$REPO_ROOT/scripts/operational/Dockerfile.cpu_loadgen"
 
 if ! command -v docker >/dev/null 2>&1; then

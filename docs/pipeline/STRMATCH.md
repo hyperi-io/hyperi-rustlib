@@ -64,7 +64,7 @@ that classify below an operator-chosen tier. Useful for hot-path
 configs where regex fall-through is unacceptable:
 
 ```rust
-use hyperi_rustlib::strmatch::{MatcherTier, OnBelowMin, StrMatcher};
+use scalo::strmatch::{MatcherTier, OnBelowMin, StrMatcher};
 
 let scrubber = StrMatcher::builder()
     .min_tier(MatcherTier::LiteralSet)

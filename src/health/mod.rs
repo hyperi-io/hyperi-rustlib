@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/health/mod.rs
 // Purpose:   Unified health registry for service health state
 // Language:  Rust
@@ -15,7 +15,7 @@
 //! # Usage
 //!
 //! ```rust
-//! use hyperi_rustlib::health::{HealthRegistry, HealthStatus};
+//! use scalo::health::{HealthRegistry, HealthStatus};
 //!
 //! // Register a component health check at construction
 //! HealthRegistry::register("kafka_consumer", || HealthStatus::Healthy);

@@ -37,7 +37,7 @@ inbound.
 ## Setup
 
 ```rust
-use hyperi_rustlib::otel_tracing::{OtelTracingConfig, build_tracer_layer};
+use scalo::otel_tracing::{OtelTracingConfig, build_tracer_layer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 let cfg = OtelTracingConfig {

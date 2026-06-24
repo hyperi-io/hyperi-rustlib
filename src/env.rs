@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/env.rs
 // Purpose:   Runtime environment detection (K8s, Docker, container, bare metal)
 // Language:  Rust

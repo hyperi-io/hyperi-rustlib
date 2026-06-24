@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/engine/types.rs
 // Purpose:   Core message types for the SIMD-optimised batch processing engine
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/kafka/topic_resolver.rs
 // Purpose:   Kafka topic auto-discovery with configurable suppression rules and regex filters
 // Language:  Rust
@@ -15,7 +15,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::kafka::{KafkaConfig, TopicResolver};
+//! use scalo::transport::kafka::{KafkaConfig, TopicResolver};
 //!
 //! let config = KafkaConfig {
 //!     topic_include: vec!["^events_".to_string()],

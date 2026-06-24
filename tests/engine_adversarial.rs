@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/engine_adversarial.rs
 // Purpose:   Adversarial tests for BatchEngine — edge cases, boundaries, stress
 // Language:  Rust
@@ -13,10 +13,10 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use hyperi_rustlib::transport::{PayloadFormat, Record, RecordMeta};
-use hyperi_rustlib::worker::engine::config::PreRouteFilterConfig;
-use hyperi_rustlib::worker::engine::intern::FieldInterner;
-use hyperi_rustlib::worker::engine::{BatchEngine, BatchProcessingConfig};
+use scalo::transport::{PayloadFormat, Record, RecordMeta};
+use scalo::worker::engine::config::PreRouteFilterConfig;
+use scalo::worker::engine::intern::FieldInterner;
+use scalo::worker::engine::{BatchEngine, BatchProcessingConfig};
 use sonic_rs::JsonValueTrait as _;
 
 // --- Helpers ---
@@ -388,7 +388,7 @@ fn process_raw_large_batch() {
 fn parse_error_action_skip() {
     // With Skip action, invalid messages are silently dropped — not included in results.
     let config = BatchProcessingConfig {
-        parse_error_action: hyperi_rustlib::worker::engine::ParseErrorAction::Skip,
+        parse_error_action: scalo::worker::engine::ParseErrorAction::Skip,
         ..Default::default()
     };
     let engine = BatchEngine::new(config);
@@ -419,7 +419,7 @@ fn parse_error_action_skip() {
 fn parse_error_action_fail_batch() {
     // With FailBatch, any parse error causes the entire batch to return Err.
     let config = BatchProcessingConfig {
-        parse_error_action: hyperi_rustlib::worker::engine::ParseErrorAction::FailBatch,
+        parse_error_action: scalo::worker::engine::ParseErrorAction::FailBatch,
         ..Default::default()
     };
     let engine = BatchEngine::new(config);

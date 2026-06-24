@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/config.rs
 // Purpose:   Configuration for adaptive worker pool
 // Language:  Rust

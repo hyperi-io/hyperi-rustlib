@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/shutdown.rs
 // Purpose:   Unified graceful shutdown with global CancellationToken
 // Language:  Rust
@@ -15,7 +15,7 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::shutdown;
+//! use scalo::shutdown;
 //!
 //! #[tokio::main]
 //! async fn main() {

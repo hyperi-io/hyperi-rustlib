@@ -79,7 +79,7 @@ optional; without it, an unknown key returns `SendResult::Fatal`.
 
 ```rust
 use std::collections::HashMap;
-use hyperi_rustlib::transport::{
+use scalo::transport::{
     AnySender, RoutedSender, TransportConfig, TransportSender,
 };
 

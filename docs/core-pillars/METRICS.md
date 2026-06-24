@@ -33,7 +33,7 @@ don't drag a TCP listener into dependents.
 ## Setup
 
 ```rust
-use hyperi_rustlib::metrics::MetricsManager;
+use scalo::metrics::MetricsManager;
 
 let mut mgr = MetricsManager::new("dfe_loader");
 

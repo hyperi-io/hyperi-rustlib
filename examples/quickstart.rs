@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      examples/quickstart.rs
 // Purpose:   Minimal quickstart example
 // Language:  Rust
@@ -13,9 +13,9 @@
 //! cargo run --example quickstart
 //! ```
 
-use hyperi_rustlib::config::{Config, ConfigOptions};
-use hyperi_rustlib::env::Environment;
-use hyperi_rustlib::logger;
+use scalo::config::{Config, ConfigOptions};
+use scalo::env::Environment;
+use scalo::logger;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Detect environment

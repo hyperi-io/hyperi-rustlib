@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/top/metrics.rs
 // Purpose:   Prometheus text format parser and HTTP metrics fetcher
 // Language:  Rust

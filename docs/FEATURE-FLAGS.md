@@ -1,6 +1,6 @@
 # Feature flags
 
-`hyperi-rustlib` ships ~60 cargo features. The trim in 2.6.0 dropped
+`scalo` ships ~60 cargo features. The trim in 2.6.0 dropped
 defaults to the minimum (`config`, `logger`) so the
 "I-just-want-config" use case avoids ~200 transitive deps. Every other
 feature is opt-in.
@@ -21,7 +21,7 @@ that costs.
 ## Defaults
 
 ```toml
-[dependencies.hyperi-rustlib]
+[dependencies.scalo]
 version = "2"
 # default = ["config", "logger"]
 ```

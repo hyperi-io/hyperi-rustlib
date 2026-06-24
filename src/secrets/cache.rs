@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/secrets/cache.rs
 // Purpose:   Secret caching with disk persistence and stale fallback
 // Language:  Rust
@@ -75,7 +75,7 @@ impl SecretCache {
                 // Auto-detect cache directory
                 dirs::cache_dir()
                     .unwrap_or_else(|| PathBuf::from("/tmp"))
-                    .join("hyperi-rustlib")
+                    .join("scalo")
                     .join("secrets")
             });
 

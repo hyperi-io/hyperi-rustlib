@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/accumulator.rs
 // Purpose:   Bounded batch accumulator with time/count/bytes drain thresholds
 // Language:  Rust
@@ -20,7 +20,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::worker::BatchAccumulator;
+//! use scalo::worker::BatchAccumulator;
 //! use std::time::Duration;
 //!
 //! let (acc, mut drainer) = BatchAccumulator::new(

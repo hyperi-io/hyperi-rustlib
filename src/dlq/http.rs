@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/dlq/http.rs
 // Purpose:   HTTP POST DLQ backend variant
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/top/config.rs
 // Purpose:   TUI dashboard configuration
 // Language:  Rust

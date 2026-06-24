@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/kafka/token.rs
 // Purpose:   Kafka transport commit token
 // Language:  Rust

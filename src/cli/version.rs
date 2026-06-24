@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/cli/version.rs
 // Purpose:   Version information types
 // Language:  Rust

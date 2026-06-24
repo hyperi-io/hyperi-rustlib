@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/memory/mod.rs
 // Purpose:   Memory management and OOM prevention
 // Language:  Rust

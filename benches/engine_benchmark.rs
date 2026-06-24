@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      benches/engine_benchmark.rs
 // Purpose:   Criterion benchmarks for BatchEngine throughput and overhead
 // Language:  Rust
@@ -11,8 +11,8 @@ use std::sync::Arc;
 use bytes::Bytes;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
-use hyperi_rustlib::transport::{PayloadFormat, Record, RecordMeta};
-use hyperi_rustlib::worker::engine::{BatchEngine, BatchProcessingConfig};
+use scalo::transport::{PayloadFormat, Record, RecordMeta};
+use scalo::worker::engine::{BatchEngine, BatchProcessingConfig};
 
 fn make_messages(n: usize) -> Vec<Record> {
     (0..n)

@@ -116,7 +116,7 @@ worker_pool:
 ## Usage
 
 ```rust
-use hyperi_rustlib::worker::AdaptiveWorkerPool;
+use scalo::worker::AdaptiveWorkerPool;
 
 let pool = std::sync::Arc::new(AdaptiveWorkerPool::from_cascade("worker_pool")?);
 pool.register_metrics(metrics_manager);

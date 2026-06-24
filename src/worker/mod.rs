@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/mod.rs
 // Purpose:   Adaptive worker pool with hybrid rayon + tokio execution
 // Language:  Rust
@@ -22,7 +22,7 @@
 //! ## Quick Start
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::worker::{AdaptiveWorkerPool, WorkerPoolConfig};
+//! use scalo::worker::{AdaptiveWorkerPool, WorkerPoolConfig};
 //!
 //! let pool = AdaptiveWorkerPool::from_cascade("worker_pool")?;
 //! pool.register_metrics(&metrics_manager);

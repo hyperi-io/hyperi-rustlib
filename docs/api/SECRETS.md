@@ -30,7 +30,7 @@ Backend-specific providers are opt-in.
 ## Usage
 
 ```rust
-use hyperi_rustlib::secrets::{SecretsConfig, SecretsManager};
+use scalo::secrets::{SecretsConfig, SecretsManager};
 
 let mgr = SecretsManager::new(SecretsConfig::from_cascade()?)?;
 

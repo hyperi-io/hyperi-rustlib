@@ -15,7 +15,7 @@ moka handles concurrency lock-free on the hot path.
 ## Usage
 
 ```rust
-use hyperi_rustlib::cache::{Cache, CacheConfig};
+use scalo::cache::{Cache, CacheConfig};
 
 let cache = Cache::from_cascade();
 

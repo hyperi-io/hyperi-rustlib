@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/parse_guard.rs
 // Purpose:   Stack-safe nesting-depth guard for the JSON/MsgPack parse paths
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/scaler.rs
 // Purpose:   Scaling controller loop, watermark algorithm, CPU sampling
 // Language:  Rust

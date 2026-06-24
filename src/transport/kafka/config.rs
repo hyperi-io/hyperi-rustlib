@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/kafka/config.rs
 // Purpose:   Kafka transport configuration with profiles and config-driven overrides
 // Language:  Rust
@@ -562,7 +562,7 @@ impl std::fmt::Display for KafkaProfile {
 ///
 /// ```rust,ignore
 /// use std::collections::HashMap;
-/// use hyperi_rustlib::transport::kafka::config::{merge_with_overrides, PRODUCTION_PROFILE};
+/// use scalo::transport::kafka::config::{merge_with_overrides, PRODUCTION_PROFILE};
 ///
 /// let mut overrides = HashMap::new();
 /// overrides.insert("fetch.min.bytes".to_string(), "2097152".to_string());
@@ -998,11 +998,11 @@ fn default_brokers() -> Vec<String> {
 }
 
 fn default_group() -> String {
-    "hyperi-rustlib-consumer".to_string()
+    "scalo-consumer".to_string()
 }
 
 fn default_client_id() -> String {
-    "hyperi-rustlib".to_string()
+    "scalo".to_string()
 }
 
 fn default_security_protocol() -> String {

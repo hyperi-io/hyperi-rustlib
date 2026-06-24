@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/strmatch/classify.rs
 // Purpose:   Classify a regex pattern into a strmatch tier
 // Language:  Rust

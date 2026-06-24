@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/sync_in_async.rs
 // Purpose:   Mechanical lint enforcing the "no blocking I/O in async" rule
 // Language:  Rust

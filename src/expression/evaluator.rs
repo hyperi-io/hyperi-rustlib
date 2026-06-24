@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/expression/evaluator.rs
 // Purpose:   CEL expression compile / evaluate / validate wrappers
 // Language:  Rust
@@ -32,7 +32,7 @@
 //! # Usage
 //!
 //! ```rust
-//! use hyperi_rustlib::expression::{compile, evaluate, evaluate_condition, validate};
+//! use scalo::expression::{compile, evaluate, evaluate_condition, validate};
 //! use std::collections::HashMap;
 //! use serde_json::json;
 //!

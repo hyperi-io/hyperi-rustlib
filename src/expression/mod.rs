@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/expression/mod.rs
 // Purpose:   CEL expression evaluation for DFE components
 // Language:  Rust
@@ -38,7 +38,7 @@
 //! # Usage
 //!
 //! ```rust
-//! use hyperi_rustlib::expression::{compile, evaluate, evaluate_condition, validate};
+//! use scalo::expression::{compile, evaluate, evaluate_condition, validate};
 //! use std::collections::HashMap;
 //! use serde_json::json;
 //!

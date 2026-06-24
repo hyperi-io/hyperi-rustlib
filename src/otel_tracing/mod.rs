@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/otel_tracing/mod.rs
 // Purpose:   OpenTelemetry trace span exporter (OTLP) + tracing-subscriber bridge
 // Language:  Rust
@@ -21,7 +21,7 @@
 //! # Quick start
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::otel_tracing::{OtelTracingConfig, build_tracer_layer};
+//! use scalo::otel_tracing::{OtelTracingConfig, build_tracer_layer};
 //! use tracing_subscriber::layer::SubscriberExt;
 //! use tracing_subscriber::util::SubscriberInitExt;
 //!
@@ -186,7 +186,7 @@ where
         .with_resource(resource)
         .build();
 
-    let tracer = provider.tracer("hyperi-rustlib");
+    let tracer = provider.tracer("scalo");
 
     // Install as global so propagation.rs picks up the active context.
     opentelemetry::global::set_tracer_provider(provider.clone());

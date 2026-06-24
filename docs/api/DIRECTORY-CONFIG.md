@@ -30,7 +30,7 @@ want this module instead.
 ## Usage
 
 ```rust
-use hyperi_rustlib::directory_config::{
+use scalo::directory_config::{
     DirectoryConfigStore, DirectoryConfigStoreConfig,
 };
 

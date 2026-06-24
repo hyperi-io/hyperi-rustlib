@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/deployment/native_deps.rs
 // Purpose:   Runtime native dependency declarations for container images
 // Language:  Rust
@@ -8,7 +8,7 @@
 
 //! Runtime native dependency contracts for Dockerfile generation.
 //!
-//! Maps hyperi-rustlib Cargo features to the system packages needed at runtime
+//! Maps scalo Cargo features to the system packages needed at runtime
 //! in the container image. The Dockerfile generator uses this to emit APT repo
 //! setup and `apt-get install` commands automatically.
 
@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 /// Runtime native dependencies for a container image.
 ///
 /// Populated via [`NativeDepsContract::for_rustlib_features`] -- pass the list
-/// of hyperi-rustlib features your app enables, get back the runtime packages
+/// of scalo features your app enables, get back the runtime packages
 /// and any custom APT repos needed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NativeDepsContract {
@@ -80,7 +80,7 @@ fn codename_from_base_image(base_image: &str) -> &'static str {
 }
 
 impl NativeDepsContract {
-    /// Build runtime native deps from a list of hyperi-rustlib feature names.
+    /// Build runtime native deps from a list of scalo feature names.
     ///
     /// Pass the same feature strings you use in `Cargo.toml` (e.g.,
     /// `"transport-kafka"`, `"spool"`, `"secrets-aws"`). The base image is
@@ -89,7 +89,7 @@ impl NativeDepsContract {
     /// # Example
     ///
     /// ```rust
-    /// use hyperi_rustlib::deployment::NativeDepsContract;
+    /// use scalo::deployment::NativeDepsContract;
     ///
     /// let deps = NativeDepsContract::for_rustlib_features(
     ///     &["transport-kafka", "spool", "tiered-sink", "secrets"],
@@ -155,7 +155,7 @@ impl NativeDepsContract {
 
     /// Auto-detect native deps from the app's Cargo.toml.
     ///
-    /// Reads `[dependencies.hyperi-rustlib]` features from the given Cargo.toml
+    /// Reads `[dependencies.scalo]` features from the given Cargo.toml
     /// and maps them to runtime packages. Falls back to empty deps if parsing fails.
     #[must_use]
     pub fn from_cargo_toml(cargo_toml_path: &std::path::Path, base_image: &str) -> Self {
@@ -163,7 +163,7 @@ impl NativeDepsContract {
             return Self::default();
         };
 
-        // Parse features from the hyperi-rustlib dependency line
+        // Parse features from the scalo dependency line
         // Matches: features = ["transport-kafka", "spool", ...]
         let features = extract_rustlib_features(&content);
         if features.is_empty() {
@@ -181,20 +181,20 @@ impl NativeDepsContract {
     }
 }
 
-/// Extract hyperi-rustlib feature names from Cargo.toml content.
+/// Extract scalo feature names from Cargo.toml content.
 ///
-/// Parses the `features = [...]` array from the `hyperi-rustlib` dependency.
+/// Parses the `features = [...]` array from the `scalo` dependency.
 /// Returns empty vec if not found or parsing fails.
 fn extract_rustlib_features(content: &str) -> Vec<String> {
-    // Find the hyperi-rustlib dependency line
+    // Find the scalo dependency line
     let mut in_rustlib = false;
     let mut features = Vec::new();
 
     for line in content.lines() {
         let trimmed = line.trim();
 
-        // Single-line: hyperi-rustlib = { version = "...", features = [...] }
-        if trimmed.starts_with("hyperi-rustlib")
+        // Single-line: scalo = { version = "...", features = [...] }
+        if trimmed.starts_with("scalo")
             && trimmed.contains("features")
             && let Some(start) = trimmed.find("features = [")
         {
@@ -212,7 +212,7 @@ fn extract_rustlib_features(content: &str) -> Vec<String> {
         }
 
         // Multi-line: features = [\n"transport-kafka",\n...\n]
-        if trimmed.starts_with("hyperi-rustlib") {
+        if trimmed.starts_with("scalo") {
             in_rustlib = true;
             continue;
         }

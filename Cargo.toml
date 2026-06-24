@@ -1,4 +1,4 @@
-# Project:   hyperi-rustlib
+# Project:   scalo
 # File:      Cargo.toml
 # Purpose:   Rust shared library for HyperI projects
 # Language:  TOML
@@ -7,7 +7,7 @@
 # Copyright: (c) 2026 HYPERI PTY LIMITED
 
 [package]
-name = "hyperi-rustlib"
+name = "scalo"
 version = "2.8.0"
 edition = "2024"
 rust-version = "1.95"
@@ -21,7 +21,7 @@ Opinionated, drop-in, working out of the box. The patterns from blog posts, wate
 # BUSL-1.1 (Business Source License 1.1); each release converts to Apache-2.0
 # on its third anniversary. Full text + Affiliate/Australia annexures: LICENSE.
 license-file = "LICENSE"
-repository = "https://github.com/hyperi-io/hyperi-rustlib"
+repository = "https://github.com/hyperi-io/scalo-rs"
 publish = true
 keywords = ["observability", "kubernetes", "prometheus", "opentelemetry", "kafka"]
 categories = ["asynchronous", "config", "network-programming", "concurrency", "development-tools"]

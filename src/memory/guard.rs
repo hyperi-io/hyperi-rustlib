@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/memory/guard.rs
 // Purpose:   Memory guard with backpressure signals
 // Language:  Rust
@@ -50,7 +50,7 @@ static HEAP_SOURCE: OnceLock<fn() -> usize> = OnceLock::new();
 /// static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 ///
 /// fn main() {
-///     hyperi_rustlib::memory::set_heap_source(|| {
+///     scalo::memory::set_heap_source(|| {
 ///         tikv_jemalloc_ctl::epoch::advance().ok();
 ///         tikv_jemalloc_ctl::stats::allocated::read().unwrap_or(0)
 ///     });
@@ -217,7 +217,7 @@ impl MemoryGuardConfig {
     /// ```
     ///
     /// ```rust,no_run
-    /// use hyperi_rustlib::memory::MemoryGuardConfig;
+    /// use scalo::memory::MemoryGuardConfig;
     /// let config = MemoryGuardConfig::from_env("DFE");
     /// ```
     #[must_use]
@@ -286,7 +286,7 @@ impl MemoryGuardConfig {
 /// # Usage
 ///
 /// ```rust,no_run
-/// use hyperi_rustlib::memory::{MemoryGuard, MemoryGuardConfig};
+/// use scalo::memory::{MemoryGuard, MemoryGuardConfig};
 ///
 /// let guard = MemoryGuard::new(MemoryGuardConfig::default());
 ///

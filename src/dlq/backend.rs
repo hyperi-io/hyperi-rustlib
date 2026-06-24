@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/dlq/backend.rs
 // Purpose:   DlqBackend enum -- variant per supported backend
 // Language:  Rust

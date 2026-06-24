@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/spool/queue.rs
 // Purpose:   Disk-backed async FIFO queue implementation using yaque
 // Language:  Rust

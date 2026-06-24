@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/top/dashboard.rs
 // Purpose:   TUI metrics dashboard rendering and event loop
 // Language:  Rust

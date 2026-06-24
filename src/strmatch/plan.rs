@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/strmatch/plan.rs
 // Purpose:   Plan enum + match-time dispatch for strmatch
 // Language:  Rust

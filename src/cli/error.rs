@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/cli/error.rs
 // Purpose:   CLI error types
 // Language:  Rust

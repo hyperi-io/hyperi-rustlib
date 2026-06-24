@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/governor/mod.rs
 // Purpose:   Unified self-regulation pressure governor
 // Language:  Rust

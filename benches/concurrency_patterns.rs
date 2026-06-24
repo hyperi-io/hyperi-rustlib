@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      benches/concurrency_patterns.rs
 // Purpose:   Criterion benchmarks for the three async primitives
 // Language:  Rust
@@ -28,7 +28,7 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 
-use hyperi_rustlib::concurrency::{
+use scalo::concurrency::{
     Actor, ActorConfig, ActorHandle, BackgroundSink, BackgroundSinkConfig, DrainError, Overflow,
     SinkDrain,
 };

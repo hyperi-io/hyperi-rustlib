@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      benches/config_benchmark.rs
 // Purpose:   Configuration loading benchmarks
 // Language:  Rust
@@ -13,7 +13,7 @@ fn config_loading_benchmark(c: &mut Criterion) {
     c.bench_function("config_new_default", |b| {
         b.iter(|| {
             // Benchmark creating a new config with defaults
-            let opts = hyperi_rustlib::config::ConfigOptions::default();
+            let opts = scalo::config::ConfigOptions::default();
             black_box(opts)
         });
     });

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/metrics/mod.rs
 // Purpose:   Prometheus metrics with process and container awareness
 // Language:  Rust
@@ -20,7 +20,7 @@
 //! ## Basic Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::metrics::{MetricsManager, MetricsConfig};
+//! use scalo::metrics::{MetricsManager, MetricsConfig};
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -47,9 +47,9 @@
 //!
 //! ```rust,ignore
 //! use std::sync::Arc;
-//! use hyperi_rustlib::metrics::MetricsManager;
-//! use hyperi_rustlib::scaling::{ScalingPressure, ScalingPressureConfig};
-//! use hyperi_rustlib::memory::{MemoryGuard, MemoryGuardConfig};
+//! use scalo::metrics::MetricsManager;
+//! use scalo::scaling::{ScalingPressure, ScalingPressureConfig};
+//! use scalo::memory::{MemoryGuard, MemoryGuardConfig};
 //! use axum::{Router, routing::post};
 //!
 //! let mut mgr = MetricsManager::new("myapp");

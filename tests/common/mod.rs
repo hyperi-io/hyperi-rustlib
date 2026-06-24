@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      tests/common/mod.rs
 // Purpose:   Shared test fixtures and utilities
 // Language:  Rust

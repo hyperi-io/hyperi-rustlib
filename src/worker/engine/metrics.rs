@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/engine/metrics.rs
 // Purpose:   Metric registration and threshold gauge emission for BatchEngine
 // Language:  Rust

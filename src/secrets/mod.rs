@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/secrets/mod.rs
 // Purpose:   Secrets management with multi-provider support and caching
 // Language:  Rust
@@ -28,7 +28,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use hyperi_rustlib::secrets::{SecretsManager, SecretsConfig, SecretSource};
+//! use scalo::secrets::{SecretsManager, SecretsConfig, SecretSource};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {

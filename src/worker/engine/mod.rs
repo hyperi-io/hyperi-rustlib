@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/worker/engine/mod.rs
 // Purpose:   SIMD-optimised batch processing engine for DFE pipelines
 // Language:  Rust

@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/grpc/proto.rs
 // Purpose:   gRPC protobuf bindings
 // Language:  Rust

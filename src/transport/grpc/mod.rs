@@ -1,4 +1,4 @@
-// Project:   hyperi-rustlib
+// Project:   scalo
 // File:      src/transport/grpc/mod.rs
 // Purpose:   gRPC transport backend
 // Language:  Rust
@@ -25,7 +25,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use hyperi_rustlib::transport::{GrpcTransport, GrpcConfig, TransportReceiver};
+//! use scalo::transport::{GrpcTransport, GrpcConfig, TransportReceiver};
 //!
 //! // Server mode (receive from remote senders)
 //! let config = GrpcConfig::server("0.0.0.0:6000");
