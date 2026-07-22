@@ -149,15 +149,17 @@ anniversary of its release.
 ## Run the checks locally before you push
 
 HyperI projects gate every push through CI (lint, format, tests, secret scan,
-dependency audit, build). Run the SAME checks locally first with `hyperi-ci` so
-your change lands green instead of bouncing:
+dependency audit, build). Run the SAME checks locally first so your change lands
+green instead of bouncing:
 
 ```
-uvx hyperi-ci check       # no install needed (hyperi-ci is public on PyPI)
+hyperi-ci check
 ```
 
-`hyperi-ci check` runs the project's full local validation -- the same suite CI
-runs -- and reports what to fix. Run it before every push and before opening a
+`hyperi-ci` is the HyperI CI CLI (public on PyPI). If you do not have it, install
+it once with `uv tool install hyperi-ci` (or `pipx install hyperi-ci`), or run it
+ad hoc with `uvx hyperi-ci check`. It runs the project's full local validation --
+the same suite CI runs -- and reports what to fix. Run it before every push and before opening a
 pull request; it is the single best way to give your change the best chance of
 surviving CI.
 
